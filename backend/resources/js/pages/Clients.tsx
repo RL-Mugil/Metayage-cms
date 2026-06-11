@@ -404,6 +404,7 @@ export default function Clients() {
                 </div>
               </div>
             )}
+          </>
         )}
 
         {/* Grid view */}
