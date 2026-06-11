@@ -11,6 +11,13 @@ class ModulePagesTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+        // CI does not build frontend assets; fake the Vite manifest so blade renders.
+        $this->withoutVite();
+    }
+
     /** Each of the 9 demo-shell module routes and the Inertia component it must render. */
     private const MODULES = [
         '/portal'            => 'Portal',
