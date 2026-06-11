@@ -1,0 +1,45 @@
+# Dependencies
+node_modules/
+backend/vendor/
+backend/node_modules/
+
+# Build output
+dist/
+backend/public/build/
+backend/public/hot
+
+# Environment & secrets
+.env
+.env.*
+!.env.example
+backend/.env
+*.pem
+*.key
+
+# Laravel runtime
+backend/storage/*.key
+backend/storage/logs/*.log
+backend/storage/framework/cache/*
+backend/storage/framework/sessions/*
+backend/storage/framework/views/*
+backend/bootstrap/cache/*.php
+backend/database/*.sqlite
+
+# Build artifacts / packaging
+*.tar.gz
+/tmp/
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Logs & scratch
+*.log
+spec_dump.txt
+spec_plain.txt
+spec_extract.py
+check_tools.py
+run_composer.py
