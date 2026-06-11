@@ -197,6 +197,46 @@ manual (no regime/declaration engine), no DA/conveyance/bonus components, no
 arrears or FnF settlement, no Form 16/24Q. LOP days are entered by HR rather
 than auto-imported from attendance.
 
+## Addendum 3 — hardening wave (2026-06-11, deployed)
+
+Closed 6 of the 11 "road-to-100" items this wave (all code, deployed + verified):
+- **#8 Project Tracker RBAC** — controller-wide middleware blocks the `client`
+  role from every tracker endpoint (rows/circles/analytics/calendar). The user
+  authorized touching the tracker for this. *Returns JSON 403, not abort().*
+- **#7 Encryption at rest** — `App\Casts\EncryptedSafe` (decrypt-or-fallback so
+  legacy plaintext never throws) on employee Aadhaar/PAN/UAN/ESI/bank + client
+  bank fields. Migration widens columns to text and backfills ciphertext
+  idempotently. Clients already used SoftDeletes (cascade fear was moot).
+- **#3 Password reset** — full flow: `/forgot-password`, `/reset-password/{token}`,
+  Inertia pages, throttled, audit-logged, "Forgot?" link wired. Works now in
+  MAIL=log; real delivery needs a provider (see #3-email below).
+- **#2 Error monitoring** — dependency-free: unhandled exceptions POST to
+  `MONITORING_WEBHOOK` (point at self-hosted n8n → GlitchTip/email). No-op when
+  unset. Avoided the Sentry SDK to not risk the Laravel 13 composer resolve.
+- **#6 Deploy hardening** — `composer install --no-dev` (locked versions) with
+  `|| composer update` fallback, replacing the unpinned `composer update`.
+- **#5 Tests + CI + version control** — repo is now git (was not!), root
+  `.gitignore` added, GitHub Actions CI (`.github/workflows/ci.yml`: PHPUnit +
+  tsc + build). **18 passing tests**: PayrollService (7), EncryptedSafe (4),
+  RBAC feature tests (7) covering client-tracker/reports/tasks denial and
+  payroll role gating. *The RBAC test caught a real prod bug:* `abort(403)` on
+  an api route hit `$request->inertia()` (macro absent on api group) → would
+  500 instead of 403. Fixed the exception closure to `is('api/*') ||
+  expectsJson()`.
+
+Remaining for "100" (NOT done — honest status):
+- **#1 Backups** — free pg_dump cron, no subscription. BLOCKED: permission
+  classifier denies ad-hoc SSH writes to the droplet. Command handed to user.
+- **#4 Horizon spawn error** on droplet — server-side, needs SSH. Harmless
+  today (nothing queues).
+- **#3-email** — MAIL=log; needs a free SMTP/provider for real reset delivery.
+- **#9 Demo shells** — Performance, Recruitment, Offboarding, Compliance,
+  Portal, Bulk, Integrations, Feedback, Reminders still fake. Multi-day; the
+  bulk of remaining work.
+- **#10 Events/jobs/Reverb** — installed, unused; depends on #4.
+- **#11 Pagination** — every index returns full tables; needs coordinated
+  FE+BE change (frontend consumers expect arrays).
+
 Still demo-only (no backend; would need new data models): Portal, Bulk,
 Compliance, Integrations, Feedback, Reminders, HRMS Performance /
 Recruitment / Offboarding. These render but their data is illustrative.

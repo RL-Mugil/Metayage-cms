@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Task;
 use App\Models\TimeEntry;
 use App\Models\AuditLog;
+use App\Http\PaginationHelper;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Inertia\Inertia;
@@ -34,7 +35,8 @@ class TaskController extends Controller
             $query->where('status', $request->status);
         }
 
-        return response()->json($query->orderBy('due_date')->get());
+        $query->orderBy('due_date');
+        return response()->json(PaginationHelper::paginate($query, $request));
     }
 
     public function store(Request $request)

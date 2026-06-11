@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Client;
 use App\Models\ClientContact;
 use App\Models\AuditLog;
+use App\Http\PaginationHelper;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 
@@ -89,7 +90,8 @@ class ClientController extends Controller
             });
         }
 
-        return response()->json($query->orderBy('company_name')->get());
+        $query->orderBy('company_name');
+        return response()->json(PaginationHelper::paginate($query, $request));
     }
 
     public function show(Request $request, $id)

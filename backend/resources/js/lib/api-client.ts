@@ -45,8 +45,14 @@ export const api = {
   },
 
   // ── Clients ──
-  async getClients(search?: string): Promise<any[]> {
-    return this.request(`/clients${search ? `?search=${encodeURIComponent(search)}` : ''}`)
+  async getClients(params?: string | URLSearchParams): Promise<any> {
+    let query = '';
+    if (params instanceof URLSearchParams) {
+      query = '?' + params.toString();
+    } else if (typeof params === 'string') {
+      query = `?search=${encodeURIComponent(params)}`;
+    }
+    return this.request(`/clients${query}`);
   },
   async getClient(id: number | string): Promise<any> { return this.request(`/clients/${id}`) },
   async createClient(data: any): Promise<any> {

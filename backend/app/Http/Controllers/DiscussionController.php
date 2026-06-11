@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\DiscussionMessage;
 use App\Models\DiscussionThread;
+use App\Http\PaginationHelper;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -21,24 +22,25 @@ class DiscussionController extends Controller
     {
         if ($deny = $this->denyClients($request)) return $deny;
 
-        $threads = DiscussionThread::with(['messages.author:id,name'])
-            ->orderByDesc('updated_at')->limit(100)->get()
-            ->map(fn ($t) => [
-                'id'         => $t->id,
-                'title'      => $t->title,
-                'tag'        => $t->tag ?? 'General',
-                'status'     => $t->status,
-                'author'     => $t->messages->first()?->author?->name ?? '—',
-                'last_reply' => $t->updated_at?->diffForHumans(),
-                'messages'   => $t->messages->map(fn ($m) => [
-                    'id'     => $m->id,
-                    'author' => $m->author?->name ?? '—',
-                    'time'   => $m->created_at?->diffForHumans(),
-                    'text'   => $m->content,
-                ]),
-            ]);
+        $query = DiscussionThread::with(['messages.author:id,name'])->orderByDesc('updated_at');
+        $paginated = PaginationHelper::paginate($query, $request);
 
-        return response()->json($threads);
+        $paginated['data'] = $paginated['data']->map(fn ($t) => [
+            'id'         => $t->id,
+            'title'      => $t->title,
+            'tag'        => $t->tag ?? 'General',
+            'status'     => $t->status,
+            'author'     => $t->messages->first()?->author?->name ?? '—',
+            'last_reply' => $t->updated_at?->diffForHumans(),
+            'messages'   => $t->messages->map(fn ($m) => [
+                'id'     => $m->id,
+                'author' => $m->author?->name ?? '—',
+                'time'   => $m->created_at?->diffForHumans(),
+                'text'   => $m->content,
+            ]),
+        ]);
+
+        return response()->json($paginated);
     }
 
     public function store(Request $request)

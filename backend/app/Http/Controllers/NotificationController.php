@@ -4,16 +4,22 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use App\Http\PaginationHelper;
 
 class NotificationController extends Controller
 {
     public function index(Request $request)
     {
-        $items = DB::table('ip_notifications')
+        $query = DB::table('ip_notifications')
             ->where('user_id', $request->user()->id)
-            ->orderByDesc('created_at')
-            ->limit(60)
-            ->get()
+            ->orderByDesc('created_at');
+
+        $perPage = (int) $request->query('per_page', 25);
+        $page = max(1, (int) $request->query('page', 1));
+        $perPage = max(1, min($perPage, 500));
+
+        $total = $query->count();
+        $items = $query->forPage($page, $perPage)->get()
             ->map(fn($n) => [
                 'id'          => $n->id,
                 'type'        => $n->type,
@@ -24,7 +30,15 @@ class NotificationController extends Controller
                 'created_at'  => $n->created_at,
             ]);
 
-        return response()->json($items);
+        $hasMore = ($page * $perPage) < $total;
+        return response()->json([
+            'data' => $items,
+            'total' => $total,
+            'per_page' => $perPage,
+            'current_page' => $page,
+            'last_page' => (int) ceil($total / $perPage),
+            'has_more' => $hasMore,
+        ]);
     }
 
     public function markAllRead(Request $request)

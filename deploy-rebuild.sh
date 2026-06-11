@@ -55,6 +55,14 @@ if ! grep -q "SANCTUM_STATEFUL_DOMAINS" .env; then
     echo "SESSION_LIFETIME=120" >> .env
 fi
 
+echo "--- Email configuration note ---"
+echo "Password resets require SMTP setup. Configure in .env:"
+echo "  MAIL_MAILER=smtp"
+echo "  MAIL_HOST=sandbox.smtp.mailtrap.io (or your provider)"
+echo "  MAIL_PORT=2525"
+echo "  MAIL_USERNAME=your-username"
+echo "  MAIL_PASSWORD=your-password"
+
 echo "--- Running migrations ---"
 php artisan migrate --force
 

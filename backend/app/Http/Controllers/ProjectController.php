@@ -7,6 +7,7 @@ use App\Models\Project;
 use App\Models\ProjectStage;
 use App\Models\AuditLog;
 use App\Models\Notification;
+use App\Http\PaginationHelper;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Inertia\Inertia;
@@ -51,7 +52,8 @@ class ProjectController extends Controller
             });
         }
 
-        return response()->json($query->orderBy('hard_deadline')->get());
+        $query->orderBy('hard_deadline');
+        return response()->json(PaginationHelper::paginate($query, $request));
     }
 
     public function show(Request $request, $id)

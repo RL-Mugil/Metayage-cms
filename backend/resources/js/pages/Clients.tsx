@@ -139,14 +139,12 @@ const BLANK: CF = {
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 export default function Clients() {
-  const [clients, setClients]   = useState<any[]>([]);
+  const [paginatedResult, setPaginatedResult] = useState<any>({ data: [], total: 0, per_page: 25, current_page: 1, last_page: 1, has_more: false });
   const [users, setUsers]       = useState<any[]>([]);
   const [loading, setLoading]   = useState(true);
   const [search, setSearch]     = useState("");
   const [view, setView]         = useState<"list"|"grid">("list");
   const [statusF, setStatusF]   = useState("All");
-  const [page, setPage]         = useState(1);
-  const [perPage, setPerPage]   = useState(25);
 
   const [showForm, setShowForm] = useState(false);
   const [editC, setEditC]       = useState<any>(null);
@@ -157,25 +155,35 @@ export default function Clients() {
   const [deleting, setDeleting] = useState(false);
   const [refQ, setRefQ]         = useState("");
 
+  const fetchClients = (p: number = 1) => {
+    const params = new URLSearchParams();
+    params.set('page', String(p));
+    if (search) params.set('search', search);
+    api.getClients(params)
+      .then(setPaginatedResult)
+      .catch(() => setLoading(false))
+      .finally(() => setLoading(false));
+  };
+
   useEffect(() => {
-    Promise.all([api.getClients(), api.getUsers()])
-      .then(([c, u]) => { setClients(c); setUsers(u); setLoading(false); })
-      .catch(() => setLoading(false));
-  }, []);
+    setLoading(true);
+    fetchClients(1);
+    api.getUsers().then(setUsers).catch(() => {});
+  }, [search]);
 
   const isOrg    = form.client_type === "organization";
   const isIndian = form.nationality.toLowerCase() === "india";
   const gstType  = computeGstType(form.nationality, form.has_gstin, form.client_type);
-  const previewCode = editC?.client_code ?? nextClientCode(clients, form.nationality);
+  const previewCode = editC?.client_code ?? nextClientCode(paginatedResult.data, form.nationality);
 
   const set = (f: keyof CF, v: any) => setForm((p) => ({ ...p, [f]: v }));
 
   const refOptions = useMemo(() =>
-    clients
+    paginatedResult.data
       .filter((c) => c.client_code && /^[C-Z][0-9]{2}[MY]?$/.test(c.client_code))
       .filter((c) => !refQ || (c.client_code+"|"+(c.legal_name??c.company_name??"")).toLowerCase().includes(refQ.toLowerCase()))
       .slice(0, 10),
-    [clients, refQ]);
+    [paginatedResult.data, refQ]);
 
   function openCreate() { setForm(BLANK); setEditC(null); setFErr(""); setShowForm(true); }
 
@@ -219,13 +227,12 @@ export default function Clients() {
         account_manager_id: form.account_manager_id ? parseInt(form.account_manager_id) : null,
       };
       if (editC) {
-        const updated = await api.updateClient(editC.id, payload);
-        setClients((p) => p.map((c) => c.id === editC.id ? updated : c));
+        await api.updateClient(editC.id, payload);
       } else {
-        const created = await api.createClient(payload);
-        setClients((p) => [...p, created]);
+        await api.createClient(payload);
       }
       setShowForm(false);
+      fetchClients(paginatedResult.current_page);
     } catch (e: any) {
       setFErr(e.message ?? "Failed to save client.");
     } finally { setSaving(false); }
@@ -236,27 +243,13 @@ export default function Clients() {
     setDeleting(true);
     try {
       await api.deleteClient(delTarget.id);
-      setClients((p) => p.filter((c) => c.id !== delTarget.id));
       setDelTarget(null);
+      fetchClients(paginatedResult.current_page);
     } finally { setDeleting(false); }
   }
 
   const dname = (c: any) => c.legal_name ?? c.company_name ?? "—";
-
-  const filtered = useMemo(() => {
-    setPage(1);
-    return clients.filter((c) => {
-      const n = (c.legal_name ?? c.company_name ?? "").toLowerCase();
-      const q = search.toLowerCase();
-      if (q && !n.includes(q) && !(c.client_code ?? "").toLowerCase().includes(q)) return false;
-      if (statusF !== "All" && c.status !== statusF) return false;
-      return true;
-    });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clients, search, statusF]);
-
-  const totalPages = Math.max(1, Math.ceil(filtered.length / perPage));
-  const paginated  = filtered.slice((page - 1) * perPage, page * perPage);
+  const clients = paginatedResult.data;
 
   if (loading) return (
     <AppLayout>
@@ -338,100 +331,87 @@ export default function Clients() {
 
         {/* List view */}
         {view === "list" && (
-          <Card className="border-border">
-            <CardContent className="p-0">
-              <table className="w-full text-sm">
-                <thead className="bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground">
-                  <tr>
-                    <th className="px-4 py-3 text-left">Code</th>
-                    <th className="px-4 py-3 text-left">Legal Name</th>
-                    <th className="px-4 py-3 text-left">Type</th>
-                    <th className="px-4 py-3 text-left">GST</th>
-                    <th className="px-4 py-3 text-left">Contact</th>
-                    <th className="px-4 py-3 text-left">State</th>
-                    <th className="px-4 py-3 text-left">Onboarded</th>
-                    <th className="px-4 py-3 text-left">Status</th>
-                    <th className="px-4 py-3 text-left">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {paginated.map((c) => {
-                    const gm = GST_META[c.gst_type ?? ""] ?? null;
-                    return (
-                      <tr key={c.id} className="border-t border-border hover:bg-muted/20">
-                        <td className="px-4 py-3 font-mono text-xs font-semibold text-gold">{c.client_code ?? "—"}</td>
-                        <td className="px-4 py-3">
-                          <div className="font-medium">{dname(c)}</div>
-                          {c.pan_number && <div className="text-xs text-muted-foreground font-mono">PAN: {c.pan_number}</div>}
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                            {c.client_type==="individual"?<User className="h-3 w-3"/>:<Building2 className="h-3 w-3"/>}
-                            {c.entity_subtype ?? (c.client_type==="individual"?"Individual":"Organization")}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3">
-                          {gm ? <Badge variant="outline" className={`text-[10px] ${gm.color}`}>{gm.label}</Badge> : "—"}
-                        </td>
-                        <td className="px-4 py-3 text-xs text-muted-foreground">
-                          <div>{c.contact_name ?? c.contact_email ?? "—"}</div>
-                          {c.phone && <div>{c.phone}</div>}
-                        </td>
-                        <td className="px-4 py-3 text-xs text-muted-foreground">{c.state ?? "—"}</td>
-                        <td className="px-4 py-3 text-xs text-muted-foreground font-mono">{fmtDate(c.date_onboarded)}</td>
-                        <td className="px-4 py-3">
-                          <Badge variant="outline" className={c.status==="Active"?"text-green-600 border-green-200 bg-green-50 text-[10px]":"text-[10px]"}>
-                            {c.status ?? "Active"}
-                          </Badge>
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="flex gap-1">
-                            <Button size="sm" variant="outline" className="h-7 w-7 p-0" onClick={()=>openEdit(c)}><Pencil className="h-3 w-3"/></Button>
-                            <Button size="sm" variant="outline" className="h-7 w-7 p-0 text-destructive border-destructive/30" onClick={()=>setDelTarget(c)}>
-                              <Trash2 className="h-3 w-3"/>
-                            </Button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  {paginated.length===0 && <tr><td colSpan={9} className="px-4 py-10 text-center text-sm text-muted-foreground">No clients found.</td></tr>}
-                </tbody>
-              </table>
-              {/* Pagination bar */}
-              {filtered.length > 0 && (
+          <>
+            <Card className="border-border">
+              <CardContent className="p-0">
+                <table className="w-full text-sm">
+                  <thead className="bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground">
+                    <tr>
+                      <th className="px-4 py-3 text-left">Code</th>
+                      <th className="px-4 py-3 text-left">Legal Name</th>
+                      <th className="px-4 py-3 text-left">Type</th>
+                      <th className="px-4 py-3 text-left">GST</th>
+                      <th className="px-4 py-3 text-left">Contact</th>
+                      <th className="px-4 py-3 text-left">State</th>
+                      <th className="px-4 py-3 text-left">Onboarded</th>
+                      <th className="px-4 py-3 text-left">Status</th>
+                      <th className="px-4 py-3 text-left">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {clients.map((c) => {
+                      const gm = GST_META[c.gst_type ?? ""] ?? null;
+                      return (
+                        <tr key={c.id} className="border-t border-border hover:bg-muted/20">
+                          <td className="px-4 py-3 font-mono text-xs font-semibold text-gold">{c.client_code ?? "—"}</td>
+                          <td className="px-4 py-3">
+                            <div className="font-medium">{dname(c)}</div>
+                            {c.pan_number && <div className="text-xs text-muted-foreground font-mono">PAN: {c.pan_number}</div>}
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                              {c.client_type==="individual"?<User className="h-3 w-3"/>:<Building2 className="h-3 w-3"/>}
+                              {c.entity_subtype ?? (c.client_type==="individual"?"Individual":"Organization")}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3">
+                            {gm ? <Badge variant="outline" className={`text-[10px] ${gm.color}`}>{gm.label}</Badge> : "—"}
+                          </td>
+                          <td className="px-4 py-3 text-xs text-muted-foreground">
+                            <div>{c.contact_name ?? c.contact_email ?? "—"}</div>
+                            {c.phone && <div>{c.phone}</div>}
+                          </td>
+                          <td className="px-4 py-3 text-xs text-muted-foreground">{c.state ?? "—"}</td>
+                          <td className="px-4 py-3 text-xs text-muted-foreground font-mono">{fmtDate(c.date_onboarded)}</td>
+                          <td className="px-4 py-3">
+                            <Badge variant="outline" className={c.status==="Active"?"text-green-600 border-green-200 bg-green-50 text-[10px]":"text-[10px]"}>
+                              {c.status ?? "Active"}
+                            </Badge>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex gap-1">
+                              <Button size="sm" variant="outline" className="h-7 w-7 p-0" onClick={()=>openEdit(c)}><Pencil className="h-3 w-3"/></Button>
+                              <Button size="sm" variant="outline" className="h-7 w-7 p-0 text-destructive border-destructive/30" onClick={()=>setDelTarget(c)}>
+                                <Trash2 className="h-3 w-3"/>
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {clients.length===0 && <tr><td colSpan={9} className="px-4 py-10 text-center text-sm text-muted-foreground">No clients found.</td></tr>}
+                  </tbody>
+                </table>
+              </CardContent>
+              {paginatedResult.total > 0 && (
                 <div className="flex items-center justify-between px-4 py-3 border-t border-border text-xs text-muted-foreground">
-                  <span>Showing {Math.min((page-1)*perPage+1, filtered.length)}–{Math.min(page*perPage, filtered.length)} of {filtered.length}</span>
+                  <span>Showing {((paginatedResult.current_page - 1) * paginatedResult.per_page) + 1}–{Math.min(paginatedResult.current_page * paginatedResult.per_page, paginatedResult.total)} of {paginatedResult.total}</span>
                   <div className="flex items-center gap-3">
-                    <span>Rows per page:</span>
-                    {[10,25,50].map(n=>(
-                      <button key={n} onClick={()=>{setPerPage(n);setPage(1);}}
-                        className={`px-2 py-0.5 rounded border text-xs transition-colors ${perPage===n?"border-gold text-gold bg-gold/10":"border-border hover:border-gold/40"}`}>
-                        {n}
-                      </button>
-                    ))}
-                    <div className="flex items-center gap-1 ml-2">
-                      <button disabled={page===1} onClick={()=>setPage(p=>p-1)}
-                        className="px-2 py-0.5 rounded border border-border disabled:opacity-40 hover:bg-muted/40">‹</button>
-                      {Array.from({length:Math.min(5,totalPages)},(_,i)=>{
-                        const pg = totalPages<=5 ? i+1 : page<=3 ? i+1 : page>=totalPages-2 ? totalPages-4+i : page-2+i;
-                        return <button key={pg} onClick={()=>setPage(pg)}
-                          className={`px-2 py-0.5 rounded border text-xs ${pg===page?"border-gold bg-gold/10 text-gold":"border-border hover:bg-muted/40"}`}>{pg}</button>;
-                      })}
-                      <button disabled={page===totalPages} onClick={()=>setPage(p=>p+1)}
-                        className="px-2 py-0.5 rounded border border-border disabled:opacity-40 hover:bg-muted/40">›</button>
+                    <div className="flex items-center gap-1">
+                      <Button variant="outline" size="sm" disabled={paginatedResult.current_page === 1} onClick={() => fetchClients(paginatedResult.current_page - 1)}>‹</Button>
+                      <span>Page {paginatedResult.current_page} of {paginatedResult.last_page}</span>
+                      <Button variant="outline" size="sm" disabled={!paginatedResult.has_more} onClick={() => fetchClients(paginatedResult.current_page + 1)}>›</Button>
                     </div>
                   </div>
                 </div>
               )}
-            </CardContent>
-          </Card>
+            </Card>
         )}
 
         {/* Grid view */}
         {view === "grid" && (
           <div className="grid grid-cols-2 xl:grid-cols-3 gap-4">
-            {paginated.map((c) => {
+            {clients.map((c) => {
               const gm = GST_META[c.gst_type ?? ""] ?? null;
               return (
                 <Card key={c.id} className="border-border hover:border-gold/30 transition-colors">

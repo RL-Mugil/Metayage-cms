@@ -6,7 +6,9 @@ use App\Models\AuditLog;
 use App\Models\ExpenseClaim;
 use App\Models\LeaveRequest;
 use App\Services\LeaveApprovalService;
+use App\Http\PaginationHelper;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 
 class ApprovalController extends Controller
 {
@@ -19,8 +21,7 @@ class ApprovalController extends Controller
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
-        $leaves = LeaveRequest::with('employee:id,full_name')
-            ->orderByDesc('created_at')->limit(200)->get()
+        $leaves = LeaveRequest::with('employee:id,full_name')->get()
             ->map(fn ($l) => [
                 'id'        => $l->id,
                 'type'      => 'Leave',
@@ -32,10 +33,10 @@ class ApprovalController extends Controller
                 'submitted' => $l->created_at?->toDateString(),
                 'status'    => strtolower($l->status === 'Cancelled' ? 'Rejected' : $l->status),
                 'urgency'   => ((float) $l->total_days) > 5 ? 'High' : 'Normal',
+                'created_at' => $l->created_at,
             ]);
 
-        $expenses = ExpenseClaim::with('employee:id,full_name')
-            ->orderByDesc('created_at')->limit(200)->get()
+        $expenses = ExpenseClaim::with('employee:id,full_name')->get()
             ->map(fn ($e) => [
                 'id'        => $e->id,
                 'type'      => 'Expense',
@@ -47,9 +48,28 @@ class ApprovalController extends Controller
                 'submitted' => $e->created_at?->toDateString(),
                 'status'    => strtolower($e->status === 'Paid' ? 'Approved' : $e->status),
                 'urgency'   => ((float) $e->amount) > 50000 ? 'High' : 'Normal',
+                'created_at' => $e->created_at,
             ]);
 
-        return response()->json($leaves->concat($expenses)->sortByDesc('submitted')->values());
+        $allApprovals = $leaves->concat($expenses)->sortByDesc('created_at')->values();
+
+        $perPage = (int) $request->query('per_page', 25);
+        $page = max(1, (int) $request->query('page', 1));
+        $perPage = max(1, min($perPage, 500));
+
+        $total = $allApprovals->count();
+        $lastPage = (int) ceil($total / $perPage);
+        $data = $allApprovals->slice(($page - 1) * $perPage, $perPage)->values();
+        $hasMore = ($page * $perPage) < $total;
+
+        return response()->json([
+            'data' => $data,
+            'total' => $total,
+            'per_page' => $perPage,
+            'current_page' => $page,
+            'last_page' => $lastPage,
+            'has_more' => $hasMore,
+        ]);
     }
 
     public function resolve(Request $request)
