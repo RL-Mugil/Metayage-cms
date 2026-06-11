@@ -1,5 +1,5 @@
 import { Head } from "@inertiajs/react";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { Shield, AlertTriangle, CheckCircle, Clock, Globe, FileText, Download, X } from "lucide-react";
 import { downloadCSV } from "@/lib/api-client";
 import { fmtDate } from "@/lib/date-utils";
@@ -132,8 +132,8 @@ export default function Compliance() {
                 {filtered.map((item) => {
                   const { color, icon: Icon } = statusConfig[item.status];
                   return (
-                    <>
-                      <tr key={item.id} className="border-t border-border hover:bg-muted/30">
+                    <Fragment key={item.id}>
+                      <tr className="border-t border-border hover:bg-muted/30">
                         <td className="px-4 py-3">
                           <div className="font-medium text-xs">{item.matter}</div>
                           <div className="text-xs text-muted-foreground">{item.assignee}</div>
@@ -160,7 +160,7 @@ export default function Compliance() {
                         </td>
                       </tr>
                       {actionItem === item.id && (
-                        <tr key={`action-${item.id}`} className="border-t border-dashed border-gold/30 bg-gold/5">
+                        <tr className="border-t border-dashed border-gold/30 bg-gold/5">
                           <td colSpan={8} className="px-6 py-4">
                             <div className="flex flex-wrap items-center gap-3">
                               <div className="flex flex-wrap gap-2">
@@ -177,7 +177,7 @@ export default function Compliance() {
                           </td>
                         </tr>
                       )}
-                    </>
+                    </Fragment>
                   );
                 })}
               </tbody>

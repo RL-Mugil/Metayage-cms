@@ -48,6 +48,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/reminders', fn () => Inertia::render('Reminders'))->name('reminders');
     Route::get('/notifications', fn () => Inertia::render('Notifications'))->name('notifications');
     Route::get('/bulk', fn () => Inertia::render('Bulk'))->name('bulk');
+    Route::get('/compliance', fn () => Inertia::render('Compliance'))->name('compliance');
     Route::get('/integrations', fn () => Inertia::render('Integrations'))->name('integrations');
     Route::get('/settings', fn () => Inertia::render('Settings'))->name('settings');
 

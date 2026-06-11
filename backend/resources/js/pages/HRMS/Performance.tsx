@@ -1,5 +1,5 @@
 import { Head } from "@inertiajs/react";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { Star, Target, TrendingUp, CheckCircle, Clock, Award, Plus } from "lucide-react";
 import AppLayout from "@/layouts/AppLayout";
 import { PageHeader } from "@/components/page-header";
@@ -9,11 +9,29 @@ import { Button } from "@/components/ui/button";
 
 type ReviewTab = "reviews" | "goals" | "360";
 
-const reviews: { id: number; employee: string; reviewer: string; period: string; rating: number; status: string }[] = [];
+const reviews: { id: number; employee: string; reviewer: string; period: string; rating: number; status: string }[] = [
+  { id: 1, employee: "Priya Sharma", reviewer: "Vikram Singh", period: "Q2 2026", rating: 4.5, status: "Completed" },
+  { id: 2, employee: "Rahul Menon", reviewer: "Vikram Singh", period: "Q2 2026", rating: 4.0, status: "Completed" },
+  { id: 3, employee: "Kavya Nair", reviewer: "Priya Sharma", period: "Q2 2026", rating: 0, status: "In Progress" },
+  { id: 4, employee: "Arjun Patel", reviewer: "Priya Sharma", period: "Q2 2026", rating: 0, status: "Not Started" },
+  { id: 5, employee: "Sneha Reddy", reviewer: "Vikram Singh", period: "Q2 2026", rating: 4.2, status: "Completed" },
+  { id: 6, employee: "Karthik Iyer", reviewer: "Rahul Menon", period: "Q2 2026", rating: 0, status: "Not Started" },
+];
 
-const goals: { id: number; title: string; employee: string; due: string; progress: number; status: string }[] = [];
+const goals: { id: number; title: string; employee: string; due: string; progress: number; status: string }[] = [
+  { id: 1, title: "File 12 patent applications in H1 2026", employee: "Priya Sharma", due: "30 Jun 2026", progress: 75, status: "On Track" },
+  { id: 2, title: "Reduce average drafting turnaround to 10 days", employee: "Rahul Menon", due: "15 Jul 2026", progress: 40, status: "At Risk" },
+  { id: 3, title: "Complete EPO qualification course", employee: "Kavya Nair", due: "31 Aug 2026", progress: 60, status: "On Track" },
+  { id: 4, title: "Grow trademark portfolio revenue 20%", employee: "Arjun Patel", due: "30 Sep 2026", progress: 35, status: "At Risk" },
+  { id: 5, title: "Mentor 2 junior associates through first filings", employee: "Sneha Reddy", due: "31 Dec 2026", progress: 50, status: "On Track" },
+];
 
-const feedback360: { id: number; from: string; to: string; sent: string; status: string }[] = [];
+const feedback360: { id: number; from: string; to: string; sent: string; status: string }[] = [
+  { id: 1, from: "Rahul Menon", to: "Priya Sharma", sent: "02 Jun 2026", status: "Submitted" },
+  { id: 2, from: "Kavya Nair", to: "Priya Sharma", sent: "02 Jun 2026", status: "Pending" },
+  { id: 3, from: "Arjun Patel", to: "Rahul Menon", sent: "05 Jun 2026", status: "Submitted" },
+  { id: 4, from: "Sneha Reddy", to: "Kavya Nair", sent: "08 Jun 2026", status: "Pending" },
+];
 
 function Stars({ rating }: { rating: number }) {
   return (
@@ -49,7 +67,7 @@ export default function HRMSPerformance() {
             <div className="flex-1">
               <div className="font-semibold text-sm">Q2 2026 Review Cycle — Active</div>
               <div className="flex items-center gap-2 mt-2">
-                <div className="flex-1 h-2 bg-muted rounded-full"><div className="h-full bg-gold rounded-full" style={{ width: `${(completed / reviews.length) * 100}%` }} /></div>
+                <div className="flex-1 h-2 bg-muted rounded-full"><div className="h-full bg-gold rounded-full" style={{ width: `${reviews.length ? (completed / reviews.length) * 100 : 0}%` }} /></div>
                 <span className="text-xs text-muted-foreground">{completed}/{reviews.length} complete</span>
               </div>
             </div>
@@ -102,8 +120,8 @@ export default function HRMSPerformance() {
                 </thead>
                 <tbody>
                   {reviews.map((r) => (
-                    <>
-                      <tr key={r.id} className="border-t border-border hover:bg-muted/30">
+                    <Fragment key={r.id}>
+                      <tr className="border-t border-border hover:bg-muted/30">
                         <td className="px-4 py-3 font-medium">{r.employee}</td>
                         <td className="px-4 py-3 text-muted-foreground">{r.reviewer}</td>
                         <td className="px-4 py-3"><Badge variant="outline">{r.period}</Badge></td>
@@ -123,7 +141,7 @@ export default function HRMSPerformance() {
                         </td>
                       </tr>
                       {activeReview === r.id && (
-                        <tr key={`form-${r.id}`} className="border-t border-dashed border-gold/30 bg-gold/5">
+                        <tr className="border-t border-dashed border-gold/30 bg-gold/5">
                           <td colSpan={6} className="px-6 py-5">
                             <div className="text-sm font-semibold mb-3">Review: {r.employee}</div>
                             <div className="grid grid-cols-2 gap-4">
@@ -149,7 +167,7 @@ export default function HRMSPerformance() {
                           </td>
                         </tr>
                       )}
-                    </>
+                    </Fragment>
                   ))}
                 </tbody>
               </table>

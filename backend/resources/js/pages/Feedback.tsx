@@ -19,7 +19,16 @@ const CLIENTS = [
   "FutureMark LLC",
 ];
 
-const FEEDBACK_DATA: { id: number; client: string; rating: number; comment: string; date: string; category: string }[] = [];
+const FEEDBACK_DATA: { id: number; client: string; rating: number; comment: string; date: string; category: string }[] = [
+  { id: 1, client: "Acme Corporation", rating: 5, comment: "Outstanding handling of our patent portfolio. The team caught a critical prior-art issue before filing that saved us months of prosecution.", date: "2026-06-08", category: "Overall" },
+  { id: 2, client: "Tech Solutions Ltd", rating: 4, comment: "Very thorough trademark clearance search. Would appreciate slightly faster initial responses, but the quality of work is excellent.", date: "2026-06-05", category: "Service" },
+  { id: 3, client: "InnovateTech Inc", rating: 5, comment: "PCT national phase entries were completed well ahead of deadline across all five jurisdictions. Impressive turnaround.", date: "2026-05-28", category: "Turnaround" },
+  { id: 4, client: "GlobalPatent Group", rating: 3, comment: "Good legal work, but we had to chase for status updates on the EPO opposition. A monthly summary would help.", date: "2026-05-22", category: "Communication" },
+  { id: 5, client: "BioMed Research", rating: 5, comment: "The team's understanding of biotech claims is exceptional. Our examiner interviews went smoothly thanks to their preparation.", date: "2026-05-18", category: "Service" },
+  { id: 6, client: "StartupLabs", rating: 4, comment: "Great value for a startup budget. The provisional-to-PCT strategy advice was practical and clear.", date: "2026-05-12", category: "Overall" },
+  { id: 7, client: "Enterprise Corp", rating: 2, comment: "Renewal reminder came too close to the deadline for comfort. We expect at least 60 days notice for maintenance fees.", date: "2026-05-06", category: "Turnaround" },
+  { id: 8, client: "FutureMark LLC", rating: 4, comment: "Responsive team and clear fee estimates. The trademark watch reports are detailed and actionable.", date: "2026-04-30", category: "Communication" },
+];
 
 const CATEGORY_COLORS: Record<string, string> = {
   Service: "bg-blue-100 text-blue-700 border-blue-200",
@@ -59,12 +68,12 @@ export default function Feedback() {
   });
 
   const total = FEEDBACK_DATA.length;
-  const avgRating = (FEEDBACK_DATA.reduce((s, f) => s + f.rating, 0) / total).toFixed(1);
+  const avgRating = total ? (FEEDBACK_DATA.reduce((s, f) => s + f.rating, 0) / total).toFixed(1) : "0.0";
 
   const distribution = [5, 4, 3, 2, 1].map((star) => ({
     star,
     count: FEEDBACK_DATA.filter((f) => f.rating === star).length,
-    pct: Math.round((FEEDBACK_DATA.filter((f) => f.rating === star).length / total) * 100),
+    pct: total ? Math.round((FEEDBACK_DATA.filter((f) => f.rating === star).length / total) * 100) : 0,
   }));
 
   function handleSend() {

@@ -3,7 +3,7 @@ import {
   LayoutDashboard, Users, Briefcase, GitBranch, ListChecks,
   BellRing, UserCircle2, FolderLock, MessagesSquare, CheckCircle2,
   Bell, BarChart3, FileBarChart2, Wallet, Sparkles, Building2, Star, Layers,
-  CalendarDays, Plug, Settings, IdCard, Scale, LogOut, TableProperties,
+  CalendarDays, Plug, Settings, IdCard, Scale, LogOut, TableProperties, ShieldCheck,
 } from "lucide-react";
 import {
   Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel,
@@ -59,6 +59,7 @@ const groups = [
     label: "Operations",
     items: [
       { to: "/bulk", title: "Bulk Operations", icon: Layers },
+      { to: "/compliance", title: "Compliance", icon: ShieldCheck },
       { to: "/integrations", title: "Integrations", icon: Plug },
       { to: "/settings", title: "Settings", icon: Settings },
     ],

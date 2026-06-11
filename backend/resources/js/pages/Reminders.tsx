@@ -22,7 +22,15 @@ interface Reminder {
   section: "today" | "week" | "upcoming";
 }
 
-const INITIAL_REMINDERS: Reminder[] = [];
+const INITIAL_REMINDERS: Reminder[] = [
+  { id: 1, title: "Pay USPTO maintenance fee — US9876543", description: "3.5-year window closes June 18 — surcharge applies after", category: "Deadline", dueDate: "2026-06-11", dueTime: "17:00", assignedTo: "You", completed: false, section: "today" },
+  { id: 2, title: "Client call — Acme Corporation", description: "Quarterly portfolio review with R&D head", category: "Meeting", dueDate: "2026-06-11", dueTime: "15:30", assignedTo: "You", completed: false, section: "today" },
+  { id: 3, title: "Follow up on EUIPO renewal documents", description: "GlobalTech logo trademark — POA still pending from client", category: "Renewal", dueDate: "2026-06-15", assignedTo: "Team", completed: false, section: "week" },
+  { id: 4, title: "Draft FER response — IN202441087", description: "First examination report response due to IPO", category: "Deadline", dueDate: "2026-06-17", assignedTo: "You", completed: false, section: "week" },
+  { id: 5, title: "Send CSAT survey to BioMed Research", description: "Post-filing feedback for biotech device application", category: "Follow-up", dueDate: "2026-06-16", assignedTo: "Team", completed: true, section: "week" },
+  { id: 6, title: "EPO renewal fee — EP3456789 (Year 4)", description: "Clean energy system patent annuity", category: "Renewal", dueDate: "2026-07-10", assignedTo: "Team", completed: false, section: "upcoming" },
+  { id: 7, title: "PCT national phase entry — PCT/US2024/12345", description: "Medical device — confirm target jurisdictions with client", category: "Deadline", dueDate: "2026-08-05", assignedTo: "You", completed: false, section: "upcoming" },
+];
 
 const CATEGORY_COLORS: Record<Category, string> = {
   Deadline: "bg-red-100 text-red-700 border-red-200",

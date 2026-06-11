@@ -7,9 +7,34 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
-const jobs: { id: number; title: string; dept: string; posted: string; applicants: number; status: string }[] = [];
+const jobs: { id: number; title: string; dept: string; posted: string; applicants: number; status: string }[] = [
+  { id: 1, title: "Senior Patent Attorney", dept: "Legal", posted: "2026-05-12", applicants: 18, status: "Active" },
+  { id: 2, title: "Trademark Paralegal", dept: "Legal Ops", posted: "2026-05-20", applicants: 31, status: "Active" },
+  { id: 3, title: "IP Docketing Specialist", dept: "Operations", posted: "2026-04-28", applicants: 24, status: "Closed" },
+  { id: 4, title: "Business Development Manager", dept: "Growth", posted: "2026-06-02", applicants: 9, status: "Active" },
+];
 
-const pipeline: { stage: string; color: string; candidates: { id: number; name: string; role: string; date: string }[] }[] = [];
+const pipeline: { stage: string; color: string; candidates: { id: number; name: string; role: string; date: string }[] }[] = [
+  { stage: "Applied", color: "border-border bg-background", candidates: [
+    { id: 1, name: "Ananya Krishnan", role: "Senior Patent Attorney", date: "Jun 8" },
+    { id: 2, name: "Rohit Verma", role: "Trademark Paralegal", date: "Jun 7" },
+    { id: 3, name: "Meera Pillai", role: "BD Manager", date: "Jun 6" },
+  ]},
+  { stage: "Screening", color: "border-blue-200 bg-blue-50", candidates: [
+    { id: 4, name: "Sanjay Kumar", role: "Senior Patent Attorney", date: "Jun 4" },
+    { id: 5, name: "Divya Raghavan", role: "Trademark Paralegal", date: "Jun 3" },
+  ]},
+  { stage: "Interview", color: "border-amber-200 bg-amber-50", candidates: [
+    { id: 6, name: "Aditya Rao", role: "Senior Patent Attorney", date: "May 30" },
+    { id: 7, name: "Nisha Thomas", role: "BD Manager", date: "May 28" },
+  ]},
+  { stage: "Offer", color: "border-purple-200 bg-purple-50", candidates: [
+    { id: 8, name: "Farhan Ali", role: "Trademark Paralegal", date: "May 26" },
+  ]},
+  { stage: "Hired", color: "border-green-200 bg-green-50", candidates: [
+    { id: 9, name: "Lakshmi Narayanan", role: "IP Docketing Specialist", date: "May 15" },
+  ]},
+];
 
 export default function HRMSRecruitment() {
   const [showNewJob, setShowNewJob] = useState(false);
@@ -81,7 +106,7 @@ export default function HRMSRecruitment() {
                 <div className="flex gap-2 mt-4">
                   <Button size="sm" className="bg-gold hover:bg-gold/90 text-black" onClick={() => {
                     if (!newJob.title.trim()) return;
-                    const newId = Math.max(...jobsList.map(j => j.id)) + 1;
+                    const newId = jobsList.length ? Math.max(...jobsList.map(j => j.id)) + 1 : 1;
                     setJobsList(prev => [...prev, { id: newId, title: newJob.title, dept: newJob.dept || "General", posted: new Date().toISOString().slice(0,10), applicants: 0, status: "Active" }]);
                     setNewJob({ title: "", dept: "", description: "", type: "Full-time" });
                     setShowNewJob(false);

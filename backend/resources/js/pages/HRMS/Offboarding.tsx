@@ -29,9 +29,16 @@ interface Case {
   status: "In Progress" | "Completed" | "Scheduled";
 }
 
-const cases: Case[] = [];
+const cases: Case[] = [
+  { id: 1, employee: "Deepak Chawla", dept: "Engineering", lastDay: "27 Jun 2026", exitType: "Resignation", completed: 5, assignedHR: "Anita Desai", status: "In Progress" },
+  { id: 2, employee: "Sunita Rao", dept: "Finance", lastDay: "30 Jun 2026", exitType: "Retirement", completed: 3, assignedHR: "Anita Desai", status: "In Progress" },
+  { id: 3, employee: "Manoj Gupta", dept: "Legal Ops", lastDay: "15 Jul 2026", exitType: "Resignation", completed: 0, assignedHR: "Ravi Shankar", status: "Scheduled" },
+];
 
-const completed_cases: { id: number; employee: string; dept: string; lastDay: string; exitType: "Resignation" | "Retirement" | "Termination"; completedDate: string }[] = [];
+const completed_cases: { id: number; employee: string; dept: string; lastDay: string; exitType: "Resignation" | "Retirement" | "Termination"; completedDate: string }[] = [
+  { id: 101, employee: "Tarun Mehta", dept: "Sales", lastDay: "30 Apr 2026", exitType: "Resignation", completedDate: "05 May 2026" },
+  { id: 102, employee: "Geeta Joshi", dept: "Admin", lastDay: "31 Mar 2026", exitType: "Retirement", completedDate: "02 Apr 2026" },
+];
 
 const exitColors: Record<Case["exitType"], string> = {
   Resignation: "text-amber-600 bg-amber-50 border-amber-200",
