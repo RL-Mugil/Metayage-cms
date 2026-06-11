@@ -290,10 +290,10 @@ export default function Clients() {
         {/* Stats */}
         <div className="grid grid-cols-4 gap-3">
           {[
-            { l:"Total Clients", v:clients.length,                                  c:"text-gold"        },
-            { l:"Active",        v:clients.filter((c)=>c.status==="Active").length,  c:"text-green-500"   },
-            { l:"B2B (GST Reg)", v:clients.filter((c)=>c.gst_type==="B2B").length,  c:"text-blue-500"    },
-            { l:"Export",        v:clients.filter((c)=>c.gst_type==="Export").length,c:"text-purple-500" },
+            { l:"Total Clients", v:clients.length,                                      c:"text-gold"        },
+            { l:"Active",        v:clients.filter((c: any)=>c.status==="Active").length,  c:"text-green-500"   },
+            { l:"B2B (GST Reg)", v:clients.filter((c: any)=>c.gst_type==="B2B").length,  c:"text-blue-500"    },
+            { l:"Export",        v:clients.filter((c: any)=>c.gst_type==="Export").length,c:"text-purple-500" },
           ].map(({l,v,c}) => (
             <Card key={l} className="border-border">
               <CardContent className="p-3 text-center">
@@ -688,7 +688,7 @@ export default function Clients() {
                     {form.referred_by_code && !refQ && (
                       <div className="flex items-center gap-2 mt-1.5 px-1">
                         <span className="font-mono text-gold text-xs font-semibold">{form.referred_by_code}</span>
-                        <span className="text-xs text-muted-foreground">{clients.find((c)=>c.client_code===form.referred_by_code)?.legal_name ?? ""}</span>
+                        <span className="text-xs text-muted-foreground">{clients.find((c: any)=>c.client_code===form.referred_by_code)?.legal_name ?? ""}</span>
                         <button type="button" onClick={()=>set("referred_by_code","")} className="ml-auto text-muted-foreground"><X className="h-3 w-3"/></button>
                       </div>
                     )}
