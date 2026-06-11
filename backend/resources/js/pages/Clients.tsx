@@ -57,7 +57,7 @@ function computeGstType(nationality: string, hasGstin: boolean, clientType: stri
 function nextClientCode(existing: any[], nationality: string): string {
   // Strip optional M/Y suffix, sort on the 3-char base (letter + 2 digits)
   const bases = existing
-    .map((c) => c.client_code)
+    .map((c: any) => c.client_code)
     .filter((c) => c && /^[C-Z][0-9]{2}[MY]?$/.test(c))
     .map((c) => c.slice(0, 3))
     .sort();
@@ -180,8 +180,8 @@ export default function Clients() {
 
   const refOptions = useMemo(() =>
     paginatedResult.data
-      .filter((c) => c.client_code && /^[C-Z][0-9]{2}[MY]?$/.test(c.client_code))
-      .filter((c) => !refQ || (c.client_code+"|"+(c.legal_name??c.company_name??"")).toLowerCase().includes(refQ.toLowerCase()))
+      .filter((c: any) => c.client_code && /^[C-Z][0-9]{2}[MY]?$/.test(c.client_code))
+      .filter((c: any) => !refQ || (c.client_code+"|"+(c.legal_name??c.company_name??"")).toLowerCase().includes(refQ.toLowerCase()))
       .slice(0, 10),
     [paginatedResult.data, refQ]);
 
@@ -269,7 +269,7 @@ export default function Clients() {
           <>
             <Button variant="outline" size="sm" onClick={() =>
               downloadCSV(`clients-${new Date().toISOString().slice(0,10)}.csv`,
-                filtered.map((c) => ({
+                clients.map((c: any) => ({
                   Code: c.client_code ?? "", "Legal Name": dname(c),
                   Type: c.client_type ?? "", "GST Type": c.gst_type ?? "",
                   GSTIN: c.gstin ?? "", PAN: c.pan_number ?? "",
@@ -349,7 +349,7 @@ export default function Clients() {
                     </tr>
                   </thead>
                   <tbody>
-                    {clients.map((c) => {
+                    {clients.map((c: any) => {
                       const gm = GST_META[c.gst_type ?? ""] ?? null;
                       return (
                         <tr key={c.id} className="border-t border-border hover:bg-muted/20">
@@ -410,7 +410,7 @@ export default function Clients() {
         {/* Grid view */}
         {view === "grid" && (
           <div className="grid grid-cols-2 xl:grid-cols-3 gap-4">
-            {clients.map((c) => {
+            {clients.map((c: any) => {
               const gm = GST_META[c.gst_type ?? ""] ?? null;
               return (
                 <Card key={c.id} className="border-border hover:border-gold/30 transition-colors">
@@ -673,7 +673,7 @@ export default function Clients() {
                         className={ic} placeholder="Search code or name…"/>
                       {refQ && (
                         <div className="absolute z-10 top-full mt-1 w-full bg-background border border-border rounded-md shadow-lg max-h-40 overflow-y-auto">
-                          {refOptions.map((c)=>(
+                          {refOptions.map((c: any) => (
                             <button key={c.id} type="button"
                               onClick={()=>{ set("referred_by_code",c.client_code); setRefQ(""); }}
                               className="w-full text-left px-3 py-2 text-sm hover:bg-muted/40 flex items-center gap-2">
