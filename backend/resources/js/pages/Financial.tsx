@@ -36,7 +36,7 @@ export default function Financial() {
 
   useEffect(() => {
     Promise.all([api.getInvoices(), api.getClients(), api.getProjects()])
-      .then(([i, c, p]) => { setInvoices(i); setClients(c); setProjects(p); })
+      .then(([i, c, p]) => { setInvoices(i.data || i); setClients(c.data || c); setProjects(p.data || p); })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
@@ -84,7 +84,7 @@ export default function Financial() {
     try {
       await api.recordPayment({ invoice_id: showPayment.id, amount: parseFloat(payForm.amount), payment_method: payForm.payment_method, transaction_reference: payForm.transaction_reference });
       const updated = await api.getInvoices();
-      setInvoices(updated);
+      setInvoices(updated.data || updated);
       setShowPayment(null);
     } catch (e: any) { alert(e.message || "Payment failed."); }
     finally { setPaying(false); }
