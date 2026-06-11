@@ -394,14 +394,14 @@ export default function Clients() {
                 </table>
               </CardContent>
               {paginatedResult.total > 0 && (
-                <CardContent className="px-4 py-3 border-t border-border text-xs text-muted-foreground flex items-center justify-between">
+                <div className="px-4 py-3 border-t border-border text-xs text-muted-foreground flex items-center justify-between">
                   <span>Showing {((paginatedResult.current_page - 1) * paginatedResult.per_page) + 1}–{Math.min(paginatedResult.current_page * paginatedResult.per_page, paginatedResult.total)} of {paginatedResult.total}</span>
                   <div className="flex items-center gap-1">
                     <Button variant="outline" size="sm" disabled={paginatedResult.current_page === 1} onClick={() => fetchClients(paginatedResult.current_page - 1)}>‹</Button>
                     <span>Page {paginatedResult.current_page} of {paginatedResult.last_page}</span>
                     <Button variant="outline" size="sm" disabled={!paginatedResult.has_more} onClick={() => fetchClients(paginatedResult.current_page + 1)}>›</Button>
                   </div>
-                </CardContent>
+                </div>
               )}
             </Card>
         )}
