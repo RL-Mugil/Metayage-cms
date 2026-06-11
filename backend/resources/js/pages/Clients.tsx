@@ -394,16 +394,14 @@ export default function Clients() {
                 </table>
               </CardContent>
               {paginatedResult.total > 0 && (
-                <div className="flex items-center justify-between px-4 py-3 border-t border-border text-xs text-muted-foreground">
+                <CardContent className="px-4 py-3 border-t border-border text-xs text-muted-foreground flex items-center justify-between">
                   <span>Showing {((paginatedResult.current_page - 1) * paginatedResult.per_page) + 1}–{Math.min(paginatedResult.current_page * paginatedResult.per_page, paginatedResult.total)} of {paginatedResult.total}</span>
-                  <div className="flex items-center gap-3">
-                    <div className="flex items-center gap-1">
-                      <Button variant="outline" size="sm" disabled={paginatedResult.current_page === 1} onClick={() => fetchClients(paginatedResult.current_page - 1)}>‹</Button>
-                      <span>Page {paginatedResult.current_page} of {paginatedResult.last_page}</span>
-                      <Button variant="outline" size="sm" disabled={!paginatedResult.has_more} onClick={() => fetchClients(paginatedResult.current_page + 1)}>›</Button>
-                    </div>
+                  <div className="flex items-center gap-1">
+                    <Button variant="outline" size="sm" disabled={paginatedResult.current_page === 1} onClick={() => fetchClients(paginatedResult.current_page - 1)}>‹</Button>
+                    <span>Page {paginatedResult.current_page} of {paginatedResult.last_page}</span>
+                    <Button variant="outline" size="sm" disabled={!paginatedResult.has_more} onClick={() => fetchClients(paginatedResult.current_page + 1)}>›</Button>
                   </div>
-                </div>
+                </CardContent>
               )}
             </Card>
         )}
@@ -441,7 +439,7 @@ export default function Clients() {
                 </Card>
               );
             })}
-            {paginated.length===0 && <div className="col-span-3 py-12 text-center text-sm text-muted-foreground">No clients found.</div>}
+            {clients.length===0 && <div className="col-span-3 py-12 text-center text-sm text-muted-foreground">No clients found.</div>}
           </div>
         )}
       </div>
