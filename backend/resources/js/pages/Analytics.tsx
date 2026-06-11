@@ -135,7 +135,11 @@ export default function Analytics() {
       api.getTrackerAnalytics(),
     ])
       .then(([p, t, i, c, tr]) => {
-        setProjects(p.data || p); setTasks(t.data || t); setInvoices(i.data || i); setClients(c.data || c); setTracker(tr);
+        setProjects(Array.isArray(p) ? p : (p as any).data || []);
+        setTasks(Array.isArray(t) ? t : (t as any).data || []);
+        setInvoices(Array.isArray(i) ? i : (i as any).data || []);
+        setClients(Array.isArray(c) ? c : (c as any).data || []);
+        setTracker(tr);
       })
       .catch((err) => console.error("Analytics load error:", err))
       .finally(() => setLoading(false));

@@ -50,7 +50,11 @@ export default function Dashboard() {
           api.getDashboardMetrics(), api.getProjects(),
           api.getTasks(), api.getInvoices(), api.getClients(),
         ]);
-        setMetrics(m.metrics); setProjects(p.data || p); setTasks(t.data || t); setInvoices(i.data || i); setClients(c.data || c);
+        setMetrics(m.metrics);
+        setProjects(Array.isArray(p) ? p : (p as any).data || []);
+        setTasks(Array.isArray(t) ? t : (t as any).data || []);
+        setInvoices(Array.isArray(i) ? i : (i as any).data || []);
+        setClients(Array.isArray(c) ? c : (c as any).data || []);
       } catch (e) { console.error(e); }
       finally { setLoading(false); }
     };

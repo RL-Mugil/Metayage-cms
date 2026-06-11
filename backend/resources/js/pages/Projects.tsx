@@ -350,7 +350,11 @@ export default function Projects() {
 
   useEffect(() => {
     Promise.all([api.getProjects(), api.getClients(), api.getUsers()])
-      .then(([p, c, u]) => { setProjects(p.data || p); setClients(c.data || c); setUsers(u); })
+      .then(([p, c, u]) => {
+        setProjects(Array.isArray(p) ? p : (p as any).data || []);
+        setClients(Array.isArray(c) ? c : (c as any).data || []);
+        setUsers(u);
+      })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
