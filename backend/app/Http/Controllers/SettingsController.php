@@ -13,7 +13,7 @@ class SettingsController extends Controller
 {
     public function getSettings(Request $request)
     {
-        $user = $request->user();
+        $user = $request->user()->fresh();
 
         $data = [
             'profile' => [
@@ -56,7 +56,11 @@ class SettingsController extends Controller
             'language' => 'nullable|string|max:50',
         ]);
 
-        User::where('id', $user->id)->update(array_filter($validated, fn ($v) => $v !== null));
+        $user->name     = $validated['name'];
+        $user->email    = $validated['email'];
+        if (isset($validated['timezone'])) $user->timezone = $validated['timezone'];
+        if (isset($validated['language'])) $user->language = $validated['language'];
+        $user->save();
 
         AuditLog::create([
             'user_id'    => $user->id,
@@ -83,7 +87,8 @@ class SettingsController extends Controller
             ]);
         }
 
-        User::where('id', $user->id)->update(['password' => Hash::make($validated['password'])]);
+        $user->password = $validated['password']; // cast handles hashing
+        $user->save();
 
         AuditLog::create([
             'user_id'    => $user->id,
@@ -107,7 +112,8 @@ class SettingsController extends Controller
             'monthlyReport'   => 'boolean',
         ]);
 
-        User::where('id', $user->id)->update(['notification_prefs' => json_encode($prefs)]);
+        $user->notification_prefs = $prefs;
+        $user->save();
 
         return response()->json(['ok' => true]);
     }
@@ -146,6 +152,31 @@ class SettingsController extends Controller
             'metadata'   => array_keys($validated),
             'ip_address' => $request->ip(),
             'user_agent' => $request->userAgent(),
+        ]);
+
+        return response()->json(['ok' => true]);
+    }
+
+    public function resetUserPassword(Request $request, $id)
+    {
+        $actor = $request->user();
+        if (! in_array($actor->role, ['super_admin'])) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        $request->validate(['password' => 'required|string|min:6']);
+
+        $target = User::findOrFail($id);
+        $target->password = $request->input('password');
+        $target->save();
+
+        AuditLog::create([
+            'user_id'      => $actor->id,
+            'action'       => 'admin_reset_password',
+            'subject_type' => 'User',
+            'subject_id'   => $target->id,
+            'ip_address'   => $request->ip(),
+            'user_agent'   => $request->userAgent(),
         ]);
 
         return response()->json(['ok' => true]);

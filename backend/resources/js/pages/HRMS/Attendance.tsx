@@ -1,6 +1,6 @@
 import { Head } from "@inertiajs/react";
 import { useEffect, useState } from "react";
-import { Loader2, Clock } from "lucide-react";
+import { Loader2, Clock, LogOut } from "lucide-react";
 import AppLayout from "@/layouts/AppLayout";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent } from "@/components/ui/card";
@@ -13,6 +13,7 @@ export default function HRMSAttendance() {
   const [logs, setLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [clocking, setClocking] = useState(false);
+  const [clockError, setClockError] = useState("");
 
   useEffect(() => {
     api.getAttendance().then((data) => {
@@ -23,10 +24,13 @@ export default function HRMSAttendance() {
 
   const handleClockIn = async () => {
     setClocking(true);
+    setClockError("");
     try {
       await api.clockIn();
       const data = await api.getAttendance();
       setLogs(data);
+    } catch (e: any) {
+      setClockError(e.message || "Failed to clock in. Make sure your employee profile is set up.");
     } finally {
       setClocking(false);
     }
@@ -34,10 +38,13 @@ export default function HRMSAttendance() {
 
   const handleClockOut = async () => {
     setClocking(true);
+    setClockError("");
     try {
       await api.clockOut();
       const data = await api.getAttendance();
       setLogs(data);
+    } catch (e: any) {
+      setClockError(e.message || "Failed to clock out.");
     } finally {
       setClocking(false);
     }
@@ -53,17 +60,29 @@ export default function HRMSAttendance() {
         title="Attendance"
         description="Your check-in/out history"
         actions={
-          <div className="flex gap-2">
-            {!todayLog?.check_in && (
-              <Button onClick={handleClockIn} disabled={clocking}>
-                <Clock className="h-4 w-4 mr-2" /> Clock In
-              </Button>
-            )}
-            {todayLog?.check_in && !todayLog?.check_out && (
-              <Button variant="outline" onClick={handleClockOut} disabled={clocking}>
-                Clock Out
-              </Button>
-            )}
+          <div className="flex flex-col items-end gap-1">
+            <div className="flex gap-2">
+              {!todayLog?.check_in && (
+                <Button onClick={handleClockIn} disabled={clocking}>
+                  {clocking ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Clock className="h-4 w-4 mr-2" />}
+                  Clock In
+                </Button>
+              )}
+              {todayLog?.check_in && !todayLog?.check_out && (
+                <Button
+                  onClick={handleClockOut}
+                  disabled={clocking}
+                  className="bg-red-600 hover:bg-red-700 text-white"
+                >
+                  {clocking ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <LogOut className="h-4 w-4 mr-2" />}
+                  Clock Out
+                </Button>
+              )}
+              {todayLog?.check_out && (
+                <Badge variant="secondary" className="text-xs px-3 py-1.5">Done for today</Badge>
+              )}
+            </div>
+            {clockError && <p className="text-xs text-red-500 max-w-64 text-right">{clockError}</p>}
           </div>
         }
       />

@@ -55,6 +55,13 @@ if ! grep -q "SANCTUM_STATEFUL_DOMAINS" .env; then
     echo "SESSION_LIFETIME=120" >> .env
 fi
 
+echo "--- Updating .env: Groq AI key ---"
+if ! grep -q "GROQ_API_KEY" .env; then
+    echo "" >> .env
+    echo "GROQ_API_KEY=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" >> .env
+    echo "GROQ_MODEL=meta-llama/llama-4-scout-17b-16e-instruct" >> .env
+fi
+
 echo "--- Email configuration note ---"
 echo "Password resets require SMTP setup. Configure in .env:"
 echo "  MAIL_MAILER=smtp"

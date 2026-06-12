@@ -365,6 +365,9 @@ export const api = {
   async createPortal(data: { client_id: number; email: string }): Promise<any> {
     return this.request('/portal/create', { method: 'POST', body: JSON.stringify(data) })
   },
+  async resetUserPassword(userId: number | string, password: string): Promise<{ ok: boolean }> {
+    return this.request(`/users/${userId}/reset-password`, { method: 'PUT', body: JSON.stringify({ password }) })
+  },
 
   // ── Bulk operations ──
   async bulkExecute(data: { entity: string; ids: number[]; action: string; status?: string }): Promise<{ ok: boolean; affected: number }> {

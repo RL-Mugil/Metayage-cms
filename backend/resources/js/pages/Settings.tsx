@@ -116,6 +116,16 @@ export default function Settings() {
 
   const saveAppearance = () => {
     localStorage.setItem("ipflow.appearance", JSON.stringify({ theme, accent: accentColor }));
+    const root = document.documentElement;
+    if (theme === "dark") {
+      root.classList.add("dark");
+    } else if (theme === "light") {
+      root.classList.remove("dark");
+    } else {
+      // system: follow OS preference
+      const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+      root.classList.toggle("dark", prefersDark);
+    }
     flashSaved();
   };
 

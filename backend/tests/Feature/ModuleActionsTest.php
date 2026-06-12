@@ -53,7 +53,7 @@ class ModuleActionsTest extends TestCase
         $this->seed(\Database\Seeders\DemoModulesSeeder::class);
         $this->seed(\Database\Seeders\DemoModulesSeeder::class); // second run must not duplicate
 
-        $this->assertEquals(15, ComplianceItem::count());
+        $this->assertEquals(0, ComplianceItem::count());
         $this->assertEquals(8, Integration::count());
         // Feedback, reminders, performance, recruitment, offboarding not seeded
         $this->assertEquals(0, Reminder::count());

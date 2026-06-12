@@ -192,7 +192,7 @@ class HRMSController extends Controller
         }
 
         $today    = Carbon::today()->toDateString();
-        $existing = Attendance::where('employee_id', $employee->id)->where('attendance_date', $today)->first();
+        $existing = Attendance::where('employee_id', $employee->id)->whereDate('attendance_date', $today)->first();
 
         if ($existing) {
             return response()->json(['message' => 'Already checked in today'], 400);
@@ -226,7 +226,7 @@ class HRMSController extends Controller
         }
 
         $today = Carbon::today()->toDateString();
-        $log   = Attendance::where('employee_id', $employee->id)->where('attendance_date', $today)->firstOrFail();
+        $log   = Attendance::where('employee_id', $employee->id)->whereDate('attendance_date', $today)->firstOrFail();
 
         $checkoutTime    = Carbon::now()->toTimeString();
         $durationMinutes = (int) abs(Carbon::parse($log->check_in)->diffInMinutes(Carbon::parse($checkoutTime)));

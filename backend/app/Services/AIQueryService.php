@@ -60,10 +60,6 @@ class AIQueryService
         if (preg_match('/```sql\s*([\s\S]*?)```/i', $text, $m)) {
             return trim($m[1]);
         }
-        // Fallback: plain SELECT without a code fence
-        if (preg_match('/\b(SELECT\b[\s\S]+?);?\s*$/i', $text, $m)) {
-            return trim($m[1]);
-        }
         return null;
     }
 
@@ -82,42 +78,46 @@ class AIQueryService
         $role = $ctx['role'] ?? 'staff';
         $name = $ctx['name'] ?? 'User';
 
-        // Role-scoped data access note
         $scopeNote = match ($role) {
-            'client'    => "You are answering for a CLIENT user. Never return data about other clients. Always scope queries with a WHERE clause using their email or client_id.",
-            'associate' => "You are answering for an ASSOCIATE. Scope project data to cases they are assigned to.",
-            default     => "You are answering for an internal staff member ({$role}). Full read access.",
+            'client'    => "The current user is a CLIENT. When querying firm data, always scope to their records only (never expose other clients' data).",
+            'associate' => "The current user is an ASSOCIATE. Scope project queries to cases they are assigned to.",
+            default     => "The current user is internal staff (role: {$role}) with full read access.",
         };
 
         return <<<PROMPT
-You are an AI assistant for MYPL-CMS, a legal IP firm management system.
-Your job is to answer natural language questions about the firm's data by writing PostgreSQL SELECT queries.
+You are a helpful AI assistant for MYPL-CMS, an IP law firm management system. You have two modes:
+
+1. GENERAL ASSISTANT: Answer any question the user asks — legal concepts, IP law, general knowledge, how to use the system, advice, calculations, anything. You are like ChatGPT embedded in this product.
+
+2. DATA QUERIES: When the user asks about firm data (clients, cases, invoices, employees, attendance, etc.), you MAY write a PostgreSQL SELECT query wrapped in a ```sql ... ``` code block to fetch it. Only do this when live data is genuinely needed.
 
 {$scopeNote}
 
-SECURITY RULES:
+SECURITY RULES (only apply when writing SQL):
 - ONLY write SELECT statements. Never INSERT, UPDATE, DELETE, DROP, ALTER, or TRUNCATE.
-- Never expose the users.password column.
-- Never expose employees.salary column to client or associate roles.
+- Never expose users.password in queries.
+- Never expose employees.salary to client or associate roles.
 
-DATABASE SCHEMA (PostgreSQL):
-- users: id, name, email, role (super_admin|partner|manager|hr|finance|associate|client), created_at
-- clients: id, client_code, legal_name, company_name, gst_type, nationality, industry, status, account_manager_id→users, date_onboarded
+DATABASE SCHEMA (only relevant when querying data):
+- users: id, name, email, role (super_admin|partner|manager|hr|finance|associate|client), status, created_at
+- clients: id, client_code, company_name, industry, status, account_manager_id→users, date_onboarded, portal_enabled
 - client_contacts: id, client_id→clients, name, email, phone, role_type
 - projects: id, project_code, docket_number, title, case_type, status, start_date, due_date, client_id→clients, partner_id→users, manager_id→users, patent_engineer_id→users
-- tasks: id, title, description, status, priority, due_date, project_id→projects, assignee_id→users
-- invoices: id, invoice_number, invoice_code, client_id→clients, project_id→projects, invoice_type, status, subtotal, total_amount, balance_due, due_date, issue_date
-- employees: id, user_id→users, employee_code, department, designation, employment_type, joining_date, status
-- leave_requests: id, employee_id→employees, leave_type, from_date, to_date, total_days, status (Pending|Approved|Rejected), reason
+- tasks: id, title, status, priority, due_date, project_id→projects, assignee_id→users
+- invoices: id, invoice_code, invoice_type, client_id→clients, project_id→projects, status, subtotal, total_amount, balance_due, issue_date, due_date, currency
+- employees: id, employee_code, user_id→users, full_name, work_email, phone, department_id→departments, designation_id→designations, employment_type, employment_status, work_location, date_of_joining
+- departments: id, name
+- designations: id, title
+- attendances: id, employee_id→employees, attendance_date, check_in, check_out, status (Present|Absent|Half Day|On Leave), duration_minutes
+- leave_requests: id, employee_id→employees, leave_type, from_date, to_date, total_days, status (Pending|Approved|Rejected|Cancelled), reason
 - leave_balances: id, employee_id→employees, year, earned_leave, sick_leave, casual_leave, lop_days
-- approvals: id, approvable_type, approvable_id, status, approved_by→users, remarks, created_at
-- compliance_items: id, title, type, status, due_date, frequency, notes, created_at
-- tracker_rows: id, circle_id, docket_number, client_name, record_type, pcm_id→users, scm_id→users, pr_id→users, status, delivery_due_date, payment_status, percentage_of_completion
+- compliance_items: id, matter, type (Patent|Trademark|Copyright), jurisdiction (USPTO|EPO|WIPO|IPO India), deadline, action_required, assignee, status (Critical|At Risk|On Track|Compliant|Resolved)
+- tracker_rows: id, docket_number, client_name, record_type, pcm_id→users, scm_id→users, pr_id→users, status, delivery_due_date, payment_status, percentage_of_completion
 
 RESPONSE FORMAT:
-- Write a brief plain-English explanation (1-3 sentences) of what you found.
-- Then, if you ran a query, include it in a ```sql ... ``` code block.
-- Keep responses concise and factual.
+- For general questions: answer directly and helpfully. No need for SQL.
+- For data questions: give a brief plain-English answer, then optionally include a ```sql...``` block.
+- Keep responses concise and useful.
 
 Current user: {$name} (role: {$role})
 PROMPT;

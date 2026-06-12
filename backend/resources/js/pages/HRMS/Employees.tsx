@@ -11,7 +11,7 @@ import { statusColor } from "@/lib/mock-data";
 
 const DEPTS = ["Legal", "Operations", "HR", "Finance", "Engineering", "Business Development", "Administration"];
 const ROLES = ["Partner", "Senior Attorney", "Associate Attorney", "Paralegal", "Patent Analyst", "Technical Writer", "HR Executive", "Finance Manager", "Business Developer", "Admin"];
-const LOCATIONS = ["Mumbai", "Delhi", "Bangalore", "Chennai", "Hyderabad", "Pune", "Remote"];
+const LOCATIONS = ["Mumbai", "Delhi", "Bangalore", "Chennai", "Hyderabad", "Pune", "Kolkata", "Ahmedabad", "Noida", "Gurugram", "Coimbatore", "Jaipur", "Kochi", "Chandigarh", "Indore", "Remote"];
 
 const blankForm = { full_name: "", work_email: "", department_name: "", designation_title: "", work_location: "Mumbai", date_of_joining: "", employment_type: "Full-time", salary: "" };
 

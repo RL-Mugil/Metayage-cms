@@ -1,6 +1,6 @@
 import { Head } from "@inertiajs/react";
-import { useEffect, useState } from "react";
-import { Globe, Eye, EyeOff, Clock, Download, LogIn, Mail, Loader2, Plus, X, CheckCircle } from "lucide-react";
+import { useEffect, useState, useRef } from "react";
+import { Globe, Eye, EyeOff, Mail, Loader2, Plus, X, CheckCircle, Search, KeyRound, ChevronLeft, ChevronRight } from "lucide-react";
 import AppLayout from "@/layouts/AppLayout";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,58 +8,64 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api-client";
 
-const HARDCODED_LAST_LOGINS = [
-  "2 hours ago",
-  "Yesterday",
-  "3 days ago",
-  "1 week ago",
-  "Today, 9:41 AM",
-  "Today, 11:05 AM",
-  "2 days ago",
-  "Never",
-];
-
-const HARDCODED_DOCS_SHARED = [4, 7, 2, 11, 3, 9, 1, 6];
-
-const ACTIVITY_FEED = [
-  { icon: Download, text: "Acme Corp downloaded Patent_Filing_2024.pdf", time: "2 hours ago" },
-  { icon: LogIn,    text: "Tech Solutions logged in",                    time: "Yesterday" },
-  { icon: Download, text: "Bright Innovations downloaded Trademark_App_TM221.pdf", time: "Yesterday" },
-  { icon: Mail,     text: "Portal invite sent to GlobalTech Inc",        time: "2 days ago" },
-  { icon: LogIn,    text: "Nexgen Partners logged in",                   time: "3 days ago" },
-  { icon: Download, text: "Sunrise Brands downloaded NDA_Signed_Copy.pdf", time: "3 days ago" },
-  { icon: LogIn,    text: "Crestview LLC logged in",                    time: "4 days ago" },
-  { icon: Mail,     text: "Portal invite resent to Delta Systems",       time: "1 week ago" },
-];
+const PAGE_SIZE = 10;
 
 export default function Portal() {
   const [clients, setClients] = useState<any[]>([]);
+  const [allClients, setAllClients] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [tableSearch, setTableSearch] = useState("");
+  const [page, setPage] = useState(1);
 
+  // New Portal modal
   const [showNewPortal, setShowNewPortal] = useState(false);
-  const [newPortalClient, setNewPortalClient] = useState("");
+  const [portalSearch, setPortalSearch] = useState("");
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [selectedClient, setSelectedClient] = useState<any | null>(null);
   const [newPortalEmail, setNewPortalEmail] = useState("");
   const [portalCreated, setPortalCreated] = useState(false);
   const [saving, setSaving] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
+  // Invite All modal
   const [showInviteAll, setShowInviteAll] = useState(false);
   const [inviteAllDone, setInviteAllDone] = useState(false);
 
-  const load = () => api.getPortalClients().then(setClients).catch(() => {}).finally(() => setLoading(false));
-  useEffect(() => { load(); }, []);
+  // Reset Password modal
+  const [resetTarget, setResetTarget] = useState<any | null>(null);
+  const [resetPw, setResetPw] = useState("");
+  const [resetSaving, setResetSaving] = useState(false);
+  const [resetDone, setResetDone] = useState(false);
+  const [resetError, setResetError] = useState("");
+
+  const loadPortal = () => api.getPortalClients().then(setClients).catch(() => {}).finally(() => setLoading(false));
+  const loadAll = () => api.getClients().then((res: any) => setAllClients(Array.isArray(res) ? res : res?.data ?? [])).catch(() => {});
+
+  useEffect(() => { loadPortal(); loadAll(); }, []);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    function handler(e: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setShowDropdown(false);
+      }
+    }
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
 
   function toggleStatus(id: number) {
     setClients((prev) => prev.map((c) => (c.id === id ? { ...c, portal_enabled: !c.portal_enabled } : c)));
-    api.togglePortal(id).catch(() => load());
+    api.togglePortal(id).catch(() => loadPortal());
   }
 
   async function createPortal() {
-    if (!newPortalClient || !newPortalEmail) return;
+    if (!selectedClient || !newPortalEmail) return;
     setSaving(true);
     try {
-      await api.createPortal({ client_id: parseInt(newPortalClient), email: newPortalEmail });
+      await api.createPortal({ client_id: selectedClient.id, email: newPortalEmail });
       setPortalCreated(true);
-      load();
+      loadPortal();
     } catch { /* keep modal open */ }
     finally { setSaving(false); }
   }
@@ -69,14 +75,41 @@ export default function Portal() {
     try {
       await api.portalInviteAll();
       setInviteAllDone(true);
-      load();
+      loadPortal();
     } catch { /* keep modal open */ }
     finally { setSaving(false); }
+  }
+
+  async function resetPassword() {
+    if (!resetTarget || !resetPw) return;
+    if (resetPw.length < 6) { setResetError("Password must be at least 6 characters."); return; }
+    setResetSaving(true);
+    setResetError("");
+    try {
+      await api.resetUserPassword(resetTarget.user_id ?? resetTarget.id, resetPw);
+      setResetDone(true);
+    } catch (e: any) {
+      setResetError(e.message || "Failed to reset password.");
+    } finally {
+      setResetSaving(false);
+    }
   }
 
   const activePortals = clients.filter((c) => c.portal_enabled).length;
   const pendingInvites = clients.filter((c) => !c.portal_enabled && c.portal_invited_at).length;
   const inactiveCount = clients.filter((c) => !c.portal_enabled).length;
+
+  const filteredClients = clients.filter((c) => {
+    const q = tableSearch.toLowerCase();
+    return !q || c.company_name?.toLowerCase().includes(q) || c.client_code?.toLowerCase().includes(q);
+  });
+  const totalPages = Math.max(1, Math.ceil(filteredClients.length / PAGE_SIZE));
+  const pagedClients = filteredClients.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  const filteredDropdown = allClients.filter((c) => {
+    const q = portalSearch.toLowerCase();
+    return !q || c.company_name?.toLowerCase().includes(q) || c.client_code?.toLowerCase().includes(q);
+  }).slice(0, 20);
 
   if (loading) {
     return (
@@ -104,13 +137,14 @@ export default function Portal() {
             <Button variant="outline" onClick={() => { setShowInviteAll(true); setInviteAllDone(false); }}>
               <Mail className="h-4 w-4 mr-2" />Invite All Inactive
             </Button>
-            <Button onClick={() => { setShowNewPortal(true); setPortalCreated(false); setNewPortalClient(""); setNewPortalEmail(""); }}>
+            <Button onClick={() => { setShowNewPortal(true); setPortalCreated(false); setSelectedClient(null); setPortalSearch(""); setNewPortalEmail(""); }}>
               <Globe className="h-4 w-4 mr-2" />New Portal
             </Button>
           </>
         }
       />
 
+      {/* Create Portal Modal */}
       {showNewPortal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
           <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-md p-6 m-4">
@@ -122,19 +156,38 @@ export default function Portal() {
               <div className="text-center py-4">
                 <CheckCircle className="h-10 w-10 text-green-500 mx-auto mb-3" />
                 <div className="font-semibold">Portal Created!</div>
-                <div className="text-sm text-muted-foreground mt-1">Access credentials have been sent to {newPortalEmail}</div>
+                <div className="text-sm text-muted-foreground mt-1">Credentials sent to {newPortalEmail}</div>
                 <Button className="mt-4" variant="outline" onClick={() => setShowNewPortal(false)}>Close</Button>
               </div>
             ) : (
               <>
                 <div className="space-y-3">
-                  <div>
+                  <div ref={dropdownRef}>
                     <label className="block text-xs text-muted-foreground mb-1">Client</label>
-                    <select value={newPortalClient} onChange={e => setNewPortalClient(e.target.value)}
-                      className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold">
-                      <option value="">Select client</option>
-                      {clients.map(c => <option key={c.id} value={c.id}>{c.company_name}</option>)}
-                    </select>
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                      <input
+                        type="text"
+                        placeholder="Search by name or client code…"
+                        value={selectedClient ? selectedClient.company_name : portalSearch}
+                        onFocus={() => { setShowDropdown(true); if (selectedClient) { setPortalSearch(""); setSelectedClient(null); } }}
+                        onChange={(e) => { setPortalSearch(e.target.value); setSelectedClient(null); setShowDropdown(true); }}
+                        className="w-full h-9 rounded-md border border-border bg-background pl-8 pr-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold"
+                      />
+                    </div>
+                    {showDropdown && (
+                      <div className="absolute z-50 mt-1 w-full max-w-sm rounded-md border border-border bg-background shadow-lg max-h-48 overflow-y-auto">
+                        {filteredDropdown.length === 0 ? (
+                          <div className="px-3 py-2 text-sm text-muted-foreground">No clients found</div>
+                        ) : filteredDropdown.map((c) => (
+                          <button key={c.id} className="w-full text-left px-3 py-2 text-sm hover:bg-muted/40 flex items-center gap-2"
+                            onClick={() => { setSelectedClient(c); setPortalSearch(""); setShowDropdown(false); }}>
+                            <span className="font-medium">{c.company_name}</span>
+                            <span className="text-xs text-muted-foreground ml-auto">{c.client_code}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                   <div>
                     <label className="block text-xs text-muted-foreground mb-1">Contact Email</label>
@@ -144,7 +197,7 @@ export default function Portal() {
                   </div>
                 </div>
                 <div className="flex gap-2 mt-5">
-                  <Button className="bg-gold hover:bg-gold/90 text-black flex-1" disabled={!newPortalClient || !newPortalEmail || saving}
+                  <Button className="bg-gold hover:bg-gold/90 text-black flex-1" disabled={!selectedClient || !newPortalEmail || saving}
                     onClick={createPortal}>
                     {saving ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Creating…</> : <>Create &amp; Send Credentials</>}
                   </Button>
@@ -156,6 +209,7 @@ export default function Portal() {
         </div>
       )}
 
+      {/* Invite All Modal */}
       {showInviteAll && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
           <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-md p-6 m-4">
@@ -180,6 +234,46 @@ export default function Portal() {
                     {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Mail className="h-4 w-4 mr-2" />}Send All Invitations
                   </Button>
                   <Button variant="outline" onClick={() => setShowInviteAll(false)}>Cancel</Button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Reset Password Modal */}
+      {resetTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-sm p-6 m-4">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-display text-lg font-semibold">Reset Portal Password</h2>
+              <button onClick={() => { setResetTarget(null); setResetPw(""); setResetDone(false); setResetError(""); }}>
+                <X className="h-5 w-5 text-muted-foreground" />
+              </button>
+            </div>
+            {resetDone ? (
+              <div className="text-center py-4">
+                <CheckCircle className="h-10 w-10 text-green-500 mx-auto mb-3" />
+                <div className="font-semibold">Password Reset!</div>
+                <div className="text-sm text-muted-foreground mt-1">Password updated for {resetTarget.company_name}.</div>
+                <Button className="mt-4" variant="outline" onClick={() => { setResetTarget(null); setResetPw(""); setResetDone(false); }}>Close</Button>
+              </div>
+            ) : (
+              <>
+                <p className="text-sm text-muted-foreground mb-3">Set a new password for <strong>{resetTarget.company_name}</strong>.</p>
+                {resetError && <p className="text-xs text-red-500 mb-2">{resetError}</p>}
+                <input
+                  type="password"
+                  value={resetPw}
+                  onChange={e => setResetPw(e.target.value)}
+                  placeholder="New password (min. 6 chars)"
+                  className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold mb-4"
+                />
+                <div className="flex gap-2">
+                  <Button className="bg-gold hover:bg-gold/90 text-black flex-1" disabled={!resetPw || resetSaving} onClick={resetPassword}>
+                    {resetSaving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <KeyRound className="h-4 w-4 mr-2" />}Reset Password
+                  </Button>
+                  <Button variant="outline" onClick={() => { setResetTarget(null); setResetPw(""); setResetError(""); }}>Cancel</Button>
                 </div>
               </>
             )}
@@ -219,8 +313,8 @@ export default function Portal() {
           <Card className="border-border">
             <CardContent className="pt-6">
               <div className="flex items-center gap-4">
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-green-500/10">
-                  <LogIn className="h-5 w-5 text-green-500" />
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted">
+                  <EyeOff className="h-5 w-5 text-muted-foreground" />
                 </div>
                 <div>
                   <div className="font-display text-2xl font-semibold">{inactiveCount}</div>
@@ -233,40 +327,38 @@ export default function Portal() {
 
         {/* Client portal table */}
         <Card className="border-border">
-          <CardHeader>
+          <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="font-display">Client Portals</CardTitle>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+              <input
+                type="text"
+                placeholder="Search by name or code…"
+                value={tableSearch}
+                onChange={e => { setTableSearch(e.target.value); setPage(1); }}
+                className="h-8 w-52 rounded-md border border-border bg-background pl-8 pr-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold"
+              />
+            </div>
           </CardHeader>
           <CardContent className="p-0">
             <table className="w-full text-sm">
               <thead className="bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground">
                 <tr>
-                  <th className="px-4 py-3 text-left">Client Name</th>
-                  <th className="px-4 py-3 text-left">Company</th>
+                  <th className="px-4 py-3 text-left">Client</th>
+                  <th className="px-4 py-3 text-left">Code</th>
                   <th className="px-4 py-3 text-left">Portal Status</th>
-                  <th className="px-4 py-3 text-left">Last Login</th>
-                  <th className="px-4 py-3 text-left">Docs Shared</th>
                   <th className="px-4 py-3 text-left">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {clients.map((client, idx) => {
+                {pagedClients.map((client) => {
                   const isActive = !!client.portal_enabled;
-                  const lastLogin = isActive ? HARDCODED_LAST_LOGINS[idx % HARDCODED_LAST_LOGINS.length] : "Never";
-                  const docsShared = isActive ? HARDCODED_DOCS_SHARED[idx % HARDCODED_DOCS_SHARED.length] : 0;
-                  const contactName =
-                    client.client_code ?? `Client #${client.id}`;
-                  const company = client.company_name ?? client.company ?? "—";
-
                   return (
                     <tr key={client.id} className="border-t border-border hover:bg-muted/30">
-                      <td className="px-4 py-3 font-medium">{contactName}</td>
-                      <td className="px-4 py-3 text-muted-foreground">{company}</td>
+                      <td className="px-4 py-3 font-medium">{client.company_name ?? "—"}</td>
+                      <td className="px-4 py-3 text-muted-foreground font-mono text-xs">{client.client_code}</td>
                       <td className="px-4 py-3">
-                        <button
-                          onClick={() => toggleStatus(client.id)}
-                          className="flex items-center gap-1.5 focus:outline-none"
-                          title="Toggle portal status"
-                        >
+                        <button onClick={() => toggleStatus(client.id)} className="focus:outline-none">
                           {isActive ? (
                             <Badge className="cursor-pointer flex items-center gap-1 bg-green-500/10 text-green-600 border-green-500/30 hover:bg-green-500/20">
                               <Eye className="h-3 w-3" /> Active
@@ -278,68 +370,63 @@ export default function Portal() {
                           )}
                         </button>
                       </td>
-                      <td className="px-4 py-3 text-muted-foreground text-xs">
-                        <div className="flex items-center gap-1.5">
-                          <Clock className="h-3.5 w-3.5" />
-                          {lastLogin}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-muted-foreground text-center">{docsShared}</td>
                       <td className="px-4 py-3">
-                        {isActive ? (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="text-xs h-7 text-destructive border-destructive/40 hover:bg-destructive/10"
-                            onClick={() => toggleStatus(client.id)}
-                          >
-                            Disable
+                        <div className="flex items-center gap-2">
+                          {isActive ? (
+                            <Button size="sm" variant="outline" className="text-xs h-7 text-destructive border-destructive/40 hover:bg-destructive/10"
+                              onClick={() => toggleStatus(client.id)}>
+                              Disable
+                            </Button>
+                          ) : (
+                            <Button size="sm" variant="outline" className="text-xs h-7"
+                              onClick={() => toggleStatus(client.id)}>
+                              <Mail className="h-3 w-3 mr-1" /> Invite
+                            </Button>
+                          )}
+                          <Button size="sm" variant="outline" className="text-xs h-7"
+                            onClick={() => { setResetTarget(client); setResetPw(""); setResetDone(false); setResetError(""); }}>
+                            <KeyRound className="h-3 w-3 mr-1" /> Reset PW
                           </Button>
-                        ) : (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="text-xs h-7"
-                            onClick={() => toggleStatus(client.id)}
-                          >
-                            <Mail className="h-3 w-3 mr-1" /> Invite
-                          </Button>
-                        )}
+                        </div>
                       </td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
-            {clients.length === 0 && (
+            {filteredClients.length === 0 && (
               <div className="py-12 text-center text-muted-foreground text-sm">
-                No clients found.
+                {clients.length === 0 ? "No clients found." : "No results match your search."}
+              </div>
+            )}
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between px-4 py-3 border-t border-border">
+                <span className="text-xs text-muted-foreground">
+                  {filteredClients.length} clients · Page {page} of {totalPages}
+                </span>
+                <div className="flex items-center gap-1">
+                  <Button size="sm" variant="outline" className="h-7 w-7 p-0" disabled={page === 1} onClick={() => setPage(p => p - 1)}>
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  <Button size="sm" variant="outline" className="h-7 w-7 p-0" disabled={page === totalPages} onClick={() => setPage(p => p + 1)}>
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
             )}
           </CardContent>
         </Card>
 
-        {/* Recent Activity */}
+        {/* Recent Activity — empty state (no hardcoded data) */}
         <Card className="border-border">
           <CardHeader>
             <CardTitle className="font-display">Recent Activity</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-1 pb-4">
-            {ACTIVITY_FEED.map((item, idx) => {
-              const Icon = item.icon;
-              return (
-                <div
-                  key={idx}
-                  className="flex items-center gap-3 rounded-md px-3 py-2.5 hover:bg-muted/30 border-t border-border first:border-t-0"
-                >
-                  <div className="flex h-7 w-7 items-center justify-center rounded-full bg-muted flex-shrink-0">
-                    <Icon className="h-3.5 w-3.5 text-gold" />
-                  </div>
-                  <span className="flex-1 text-sm text-foreground">{item.text}</span>
-                  <span className="text-xs text-muted-foreground whitespace-nowrap">{item.time}</span>
-                </div>
-              );
-            })}
+          <CardContent>
+            <div className="py-8 text-center text-muted-foreground text-sm">
+              No recent activity to display.
+            </div>
           </CardContent>
         </Card>
       </div>
