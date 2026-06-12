@@ -25,7 +25,12 @@ class DocumentController extends Controller
     {
         if ($deny = $this->denyNonInternal($request)) return $deny;
 
-        $files = collect(Storage::disk('local')->allFiles('documents'))
+        $perPage = max(1, min(500, (int) $request->query('per_page', 50)));
+        $page    = max(1, (int) $request->query('page', 1));
+
+        $folder = $request->query('folder');
+
+        $all = collect(Storage::disk('local')->allFiles('documents'))
             ->map(function ($path) {
                 $parts  = explode('/', $path);
                 $folder = count($parts) > 2 ? $parts[1] : 'General';
@@ -39,7 +44,22 @@ class DocumentController extends Controller
             })
             ->sortByDesc('modified')
             ->values();
-        return response()->json($files);
+
+        if ($folder && in_array($folder, self::FOLDERS)) {
+            $all = $all->where('folder', $folder)->values();
+        }
+
+        $total = $all->count();
+        $data  = $all->slice(($page - 1) * $perPage, $perPage)->values();
+
+        return response()->json([
+            'data'         => $data,
+            'total'        => $total,
+            'per_page'     => $perPage,
+            'current_page' => $page,
+            'last_page'    => max(1, (int) ceil($total / $perPage)),
+            'has_more'     => ($page * $perPage) < $total,
+        ]);
     }
 
     public function store(Request $request)

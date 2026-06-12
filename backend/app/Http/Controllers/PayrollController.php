@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\PaginationHelper;
 use App\Models\AuditLog;
 use App\Models\Employee;
 use App\Models\PayrollRun;
@@ -253,16 +254,15 @@ class PayrollController extends Controller
         }
 
         $employee = Employee::where('user_id', $user->id)->first();
-        if (! $employee) return response()->json([]);
+        if (! $employee) return response()->json(['data' => [], 'total' => 0, 'per_page' => 25, 'current_page' => 1, 'last_page' => 1, 'has_more' => false]);
 
         // Drafts are HR work-in-progress; employees only see finalized/paid slips.
-        $slips = Payslip::with('run:id,period,status')
+        $query = Payslip::with('run:id,period,status')
             ->where('employee_id', $employee->id)
             ->whereHas('run', fn ($q) => $q->whereIn('status', ['Finalized', 'Paid']))
-            ->orderByDesc('id')
-            ->get();
+            ->orderByDesc('id');
 
-        return response()->json($slips);
+        return response()->json(PaginationHelper::paginate($query, $request));
     }
 
     /* ── Helpers ───────────────────────────────────────────────────────── */

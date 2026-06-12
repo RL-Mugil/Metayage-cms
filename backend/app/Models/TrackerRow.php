@@ -24,6 +24,11 @@ class TrackerRow extends Model
         return $this->belongsTo(TrackerCircle::class, 'circle_id');
     }
 
+    public function project()
+    {
+        return $this->belongsTo(Project::class);
+    }
+
     public function pcmUser()
     {
         return $this->belongsTo(User::class, 'pcm_id');
