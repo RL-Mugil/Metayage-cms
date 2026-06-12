@@ -86,7 +86,7 @@ class ModuleActionsTest extends TestCase
 
         $this->putJson("/api/compliance/{$item->id}", ['resolved' => true])->assertOk();
         $this->assertEquals('Resolved', $item->fresh()->status);
-        $this->getJson('/api/compliance')->assertOk()->assertJsonCount(0);
+        $this->getJson('/api/compliance')->assertOk()->assertJsonCount(0, 'data');
     }
 
     public function test_compliance_note_and_assignee_persist(): void
@@ -133,7 +133,7 @@ class ModuleActionsTest extends TestCase
         ]);
 
         $response = $this->getJson('/api/reminders')->assertOk()->json();
-        $titles = array_column($response, 'title');
+        $titles = array_column($response['data'], 'title');
         $this->assertContains('File response', $titles);
         $this->assertContains('Team-wide', $titles);
         $this->assertNotContains('Private to other', $titles);

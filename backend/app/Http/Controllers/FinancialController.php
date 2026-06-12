@@ -9,6 +9,7 @@ use App\Models\ClientLedger;
 use App\Models\Quotation;
 use App\Models\Client;
 use App\Models\AuditLog;
+use App\Http\PaginationHelper;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Inertia\Inertia;
@@ -34,7 +35,7 @@ class FinancialController extends Controller
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
-        return response()->json($query->orderBy('issue_date', 'desc')->get());
+        return response()->json(PaginationHelper::paginate($query->orderBy('issue_date', 'desc'), $request));
     }
 
     public function quotations(Request $request)
@@ -50,7 +51,7 @@ class FinancialController extends Controller
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
-        return response()->json($query->orderBy('created_at', 'desc')->get());
+        return response()->json(PaginationHelper::paginate($query->orderBy('created_at', 'desc'), $request));
     }
 
     public function createInvoice(Request $request)

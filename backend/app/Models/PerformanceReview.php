@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class PerformanceReview extends Model
 {
@@ -12,4 +13,14 @@ class PerformanceReview extends Model
         'scores' => 'array',
         'rating' => 'float',
     ];
+
+    public function employeeRecord(): BelongsTo
+    {
+        return $this->belongsTo(Employee::class, 'employee_id');
+    }
+
+    public function reviewerUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'reviewer_id');
+    }
 }

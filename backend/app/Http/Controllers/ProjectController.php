@@ -8,6 +8,8 @@ use App\Models\ProjectStage;
 use App\Models\AuditLog;
 use App\Models\Notification;
 use App\Http\PaginationHelper;
+use App\Http\Requests\StoreProjectRequest;
+use App\Http\Requests\UpdateProjectRequest;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Inertia\Inertia;
@@ -72,37 +74,10 @@ class ProjectController extends Controller
         return response()->json($project);
     }
 
-    public function store(Request $request)
+    public function store(StoreProjectRequest $request)
     {
         $user = $request->user();
-        if (! in_array($user->role, ['super_admin', 'partner', 'manager'])) {
-            return response()->json(['message' => 'Forbidden'], 403);
-        }
-
-        $validated = $request->validate([
-            'client_id'            => 'required|exists:clients,id',
-            'project_name'         => 'required|string|max:255',
-            'project_type'         => 'nullable|string',
-            'case_type'            => 'nullable|string|max:100',
-            'invention_title'      => 'nullable|string',
-            'technology_field'     => 'nullable|string',
-            'application_number'   => 'nullable|string|max:100',
-            'patent_office_code'   => 'nullable|string|max:10',
-            'service_code'         => 'nullable|string|max:50',
-            'filing_date'          => 'nullable|date',
-            'assigned_partner_id'  => 'nullable|exists:users,id',
-            'assigned_manager_id'  => 'nullable|exists:users,id',
-            'secondary_manager_id' => 'nullable|exists:users,id',
-            'patent_engineer_id'   => 'nullable|exists:users,id',
-            'assigned_team'        => 'nullable|array',
-            'start_date'           => 'nullable|date',
-            'target_filing_date'   => 'nullable|date',
-            'hard_deadline'        => 'nullable|date',
-            'fee_arrangement'      => 'nullable|string',
-            'urgency'              => 'nullable|string',
-            'confidentiality_level'=> 'nullable|string',
-            'notes'                => 'nullable|string',
-        ]);
+        $validated = $request->validated();
 
         $validated['assigned_partner_id'] = $validated['assigned_partner_id'] ?? $user->id;
         $validated['assigned_manager_id'] = $validated['assigned_manager_id'] ?? $user->id;
@@ -166,39 +141,11 @@ class ProjectController extends Controller
         return response()->json($project, 201);
     }
 
-    public function update(Request $request, $id)
+    public function update(UpdateProjectRequest $request, $id)
     {
         $user = $request->user();
         $project = Project::findOrFail($id);
-
-        if (! in_array($user->role, ['super_admin', 'partner', 'manager']) && $project->assigned_manager_id !== $user->id) {
-            return response()->json(['message' => 'Forbidden'], 403);
-        }
-
-        $validated = $request->validate([
-            'client_id'            => 'sometimes|exists:clients,id',
-            'project_name'         => 'sometimes|required|string|max:255',
-            'project_type'         => 'nullable|string',
-            'case_type'            => 'nullable|string|max:100',
-            'invention_title'      => 'nullable|string',
-            'technology_field'     => 'nullable|string',
-            'application_number'   => 'nullable|string|max:100',
-            'patent_office_code'   => 'nullable|string|max:10',
-            'service_code'         => 'nullable|string|max:50',
-            'filing_date'          => 'nullable|date',
-            'status'               => 'sometimes|string',
-            'urgency'              => 'nullable|string',
-            'hard_deadline'        => 'nullable|date',
-            'start_date'           => 'nullable|date',
-            'target_filing_date'   => 'nullable|date',
-            'fee_arrangement'      => 'nullable|string',
-            'confidentiality_level'=> 'nullable|string',
-            'assigned_partner_id'  => 'nullable|exists:users,id',
-            'assigned_manager_id'  => 'nullable|exists:users,id',
-            'secondary_manager_id' => 'nullable|exists:users,id',
-            'patent_engineer_id'   => 'nullable|exists:users,id',
-            'notes'                => 'nullable|string',
-        ]);
+        $validated = $request->validated();
 
         $project->update($validated);
 

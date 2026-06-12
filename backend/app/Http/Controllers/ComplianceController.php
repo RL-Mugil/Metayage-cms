@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\PaginationHelper;
 use App\Models\ComplianceItem;
 use App\Models\Reminder;
 use Illuminate\Http\Request;
@@ -30,26 +31,27 @@ class ComplianceController extends Controller
     {
         if ($deny = $this->denyClients($request)) return $deny;
 
-        $items = ComplianceItem::where('status', '!=', 'Resolved')
-            ->orderBy('deadline')
-            ->get()
-            ->map(function ($i) {
-                $daysLeft = (int) Carbon::today()->diffInDays(Carbon::parse($i->deadline), false);
-                return [
-                    'id' => $i->id,
-                    'matter' => $i->matter,
-                    'type' => $i->type,
-                    'jurisdiction' => $i->jurisdiction,
-                    'deadline' => $i->deadline->format('Y-m-d'),
-                    'daysLeft' => $daysLeft,
-                    'status' => $this->alertLevel($daysLeft),
-                    'action' => $i->action_required,
-                    'assignee' => $i->assignee,
-                    'notes' => $i->notes ?? [],
-                ];
-            });
+        $query = ComplianceItem::where('status', '!=', 'Resolved')->orderBy('deadline');
+        $result = PaginationHelper::paginate($query, $request, 50);
 
-        return response()->json($items);
+        $result['data'] = $result['data']->map(function ($i) {
+            $daysLeft = (int) Carbon::today()->diffInDays(Carbon::parse($i->deadline), false);
+            return [
+                'id'           => $i->id,
+                'matter'       => $i->matter,
+                'type'         => $i->type,
+                'jurisdiction' => $i->jurisdiction,
+                'deadline'     => $i->deadline->format('Y-m-d'),
+                'daysLeft'     => $daysLeft,
+                'status'       => $this->alertLevel($daysLeft),
+                'action'       => $i->action_required,
+                'assignee'     => $i->assignee,
+                'assignee_id'  => $i->assignee_id ?? null,
+                'notes'        => $i->notes ?? [],
+            ];
+        });
+
+        return response()->json($result);
     }
 
     public function update(Request $request, $id)

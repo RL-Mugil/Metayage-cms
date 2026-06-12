@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class ComplianceItem extends Model
 {
@@ -13,4 +14,9 @@ class ComplianceItem extends Model
         'notes' => 'array',
         'resolved_at' => 'datetime',
     ];
+
+    public function assigneeUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'assignee_id');
+    }
 }

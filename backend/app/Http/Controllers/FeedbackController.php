@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\PaginationHelper;
 use App\Models\FeedbackEntry;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -20,17 +21,18 @@ class FeedbackController extends Controller
     {
         if ($deny = $this->denyClients($request)) return $deny;
 
-        $entries = FeedbackEntry::orderByDesc('entry_date')->get()
-            ->map(fn ($f) => [
-                'id' => $f->id,
-                'client' => $f->client_name,
-                'rating' => $f->rating,
-                'comment' => $f->comment,
-                'date' => $f->entry_date->format('Y-m-d'),
-                'category' => $f->category,
-            ]);
+        $query = FeedbackEntry::orderByDesc('entry_date');
+        $result = PaginationHelper::paginate($query, $request);
+        $result['data'] = $result['data']->map(fn ($f) => [
+            'id'       => $f->id,
+            'client'   => $f->client_name,
+            'rating'   => $f->rating,
+            'comment'  => $f->comment,
+            'date'     => $f->entry_date->format('Y-m-d'),
+            'category' => $f->category,
+        ]);
 
-        return response()->json($entries);
+        return response()->json($result);
     }
 
     /** Record a feedback request; surfaces as an in-app notification for the requester. */

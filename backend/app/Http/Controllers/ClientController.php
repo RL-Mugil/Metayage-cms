@@ -6,6 +6,8 @@ use App\Models\Client;
 use App\Models\ClientContact;
 use App\Models\AuditLog;
 use App\Http\PaginationHelper;
+use App\Http\Requests\StoreClientRequest;
+use App\Http\Requests\UpdateClientRequest;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 
@@ -106,54 +108,11 @@ class ClientController extends Controller
         return response()->json($client);
     }
 
-    public function store(Request $request)
+    public function store(StoreClientRequest $request)
     {
         $user = $request->user();
-        if (!in_array($user->role, ['super_admin', 'partner', 'manager'])) {
-            return response()->json(['message' => 'Forbidden'], 403);
-        }
 
-        $v = $request->validate([
-            // Classification
-            'client_type'         => 'required|in:individual,organization',
-            'nationality'         => 'nullable|string|max:100',
-            'has_gstin'           => 'boolean',
-            'gstin'               => 'nullable|string|max:15',
-
-            // Identity
-            'legal_name'          => 'required|string|max:255',
-            'entity_type'         => 'nullable|string|max:100',    // tier: Enterprise/SME/Startup
-            'entity_subtype'      => 'nullable|string|max:100',    // Pvt Ltd/LLP…
-            'pan_number'          => 'nullable|string|max:10',
-            'cin_number'          => 'nullable|string|max:21',
-            'trade_name'          => 'nullable|string|max:255',
-            'website'             => 'nullable|string|max:255',
-
-            // Contact
-            'contact_name'        => 'nullable|string|max:255',
-            'contact_email'       => 'nullable|email|max:255',
-            'phone'               => 'nullable|string|max:20',
-            'address'             => 'nullable|string',
-            'state'               => 'nullable|string|max:100',
-            'primary_jurisdiction'=> 'nullable|string|max:10',
-            'language_preference' => 'nullable|string|max:50',
-
-            // Business
-            'industry'            => 'nullable|string|max:100',
-            'payment_terms'       => 'nullable|string|max:50',
-            'account_manager_id'  => 'nullable|exists:users,id',
-
-            // Banking
-            'bank_name'           => 'nullable|string|max:255',
-            'bank_account'        => 'nullable|string|max:50',
-            'bank_ifsc'           => 'nullable|string|max:20',
-
-            // Admin
-            'referred_by_code'    => 'nullable|string|max:10',
-            'accounts_person'     => 'nullable|string|max:255',
-            'remarks'             => 'nullable|string',
-            'status'              => 'nullable|string|max:50',
-        ]);
+        $v = $request->validated();
 
         $nationality = $v['nationality']  ?? 'India';
         $hasGstin    = (bool) ($v['has_gstin'] ?? false);
@@ -183,45 +142,11 @@ class ClientController extends Controller
         return response()->json($client->load('accountManager'), 201);
     }
 
-    public function update(Request $request, $id)
+    public function update(UpdateClientRequest $request, $id)
     {
         $user = $request->user();
-        if (!in_array($user->role, ['super_admin', 'partner', 'manager'])) {
-            return response()->json(['message' => 'Forbidden'], 403);
-        }
-
         $client = Client::findOrFail($id);
-
-        $v = $request->validate([
-            'client_type'         => 'sometimes|in:individual,organization',
-            'nationality'         => 'nullable|string|max:100',
-            'has_gstin'           => 'boolean',
-            'gstin'               => 'nullable|string|max:15',
-            'legal_name'          => 'sometimes|required|string|max:255',
-            'entity_type'         => 'nullable|string|max:100',
-            'entity_subtype'      => 'nullable|string|max:100',
-            'pan_number'          => 'nullable|string|max:10',
-            'cin_number'          => 'nullable|string|max:21',
-            'trade_name'          => 'nullable|string|max:255',
-            'website'             => 'nullable|string|max:255',
-            'contact_name'        => 'nullable|string|max:255',
-            'contact_email'       => 'nullable|email|max:255',
-            'phone'               => 'nullable|string|max:20',
-            'address'             => 'nullable|string',
-            'state'               => 'nullable|string|max:100',
-            'primary_jurisdiction'=> 'nullable|string|max:10',
-            'language_preference' => 'nullable|string|max:50',
-            'industry'            => 'nullable|string|max:100',
-            'payment_terms'       => 'nullable|string|max:50',
-            'account_manager_id'  => 'nullable|exists:users,id',
-            'bank_name'           => 'nullable|string|max:255',
-            'bank_account'        => 'nullable|string|max:50',
-            'bank_ifsc'           => 'nullable|string|max:20',
-            'referred_by_code'    => 'nullable|string|max:10',
-            'accounts_person'     => 'nullable|string|max:255',
-            'remarks'             => 'nullable|string',
-            'status'              => 'nullable|string|max:50',
-        ]);
+        $v = $request->validated();
 
         $nationality = $v['nationality'] ?? $client->nationality ?? 'India';
         $hasGstin    = array_key_exists('has_gstin', $v) ? (bool) $v['has_gstin'] : (bool) $client->has_gstin;

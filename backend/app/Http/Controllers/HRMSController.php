@@ -10,6 +10,9 @@ use App\Models\LeaveRequest;
 use App\Models\LeaveBalance;
 use App\Models\AuditLog;
 use App\Models\User;
+use App\Http\PaginationHelper;
+use App\Http\Requests\StoreEmployeeRequest;
+use App\Http\Requests\UpdateEmployeeRequest;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Hash;
@@ -29,41 +32,25 @@ class HRMSController extends Controller
         if (! in_array($user->role, ['super_admin', 'partner', 'manager', 'hr'])) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
-        $employees = Employee::with('department', 'designation', 'user')->get();
+
+        $query = Employee::with('department', 'designation', 'user');
+        $result = PaginationHelper::paginate($query, $request);
 
         // Compensation, banking and identity fields are HR-only.
         if (! in_array($user->role, ['super_admin', 'hr'])) {
-            $employees->makeHidden([
+            $result['data']->makeHidden([
                 'salary', 'bank_account_number', 'bank_name', 'bank_ifsc_code',
                 'aadhaar_ssn_encrypted', 'pan_tax_id', 'uan_pf_number', 'esi_number',
             ]);
         }
 
-        return response()->json($employees);
+        return response()->json($result);
     }
 
-    public function createEmployee(Request $request)
+    public function createEmployee(StoreEmployeeRequest $request)
     {
         $user = $request->user();
-        if (! in_array($user->role, ['super_admin', 'hr'])) {
-            return response()->json(['message' => 'Forbidden'], 403);
-        }
-
-        $validated = $request->validate([
-            'full_name'        => 'required|string|max:255',
-            'work_email'       => 'required|email',
-            'phone'            => 'nullable|string|max:20',
-            'department_id'    => 'nullable|exists:departments,id',
-            'department_name'  => 'nullable|string',
-            'designation_id'   => 'nullable|exists:designations,id',
-            'designation_title'=> 'nullable|string',
-            'date_of_joining'  => 'nullable|date',
-            'employment_type'  => 'nullable|string',
-            'employment_status'=> 'nullable|string',
-            'work_location'    => 'nullable|string',
-            'salary'           => 'nullable|numeric',
-            'password'         => 'nullable|string|min:8',
-        ]);
+        $validated = $request->validated();
 
         // Resolve department by name if ID not provided
         $deptId = $validated['department_id'] ?? null;
@@ -141,27 +128,10 @@ class HRMSController extends Controller
         return response()->json($employee->load('department', 'designation', 'user'), 201);
     }
 
-    public function updateEmployee(Request $request, $id)
+    public function updateEmployee(UpdateEmployeeRequest $request, $id)
     {
-        $user = $request->user();
-        if (! in_array($user->role, ['super_admin', 'hr'])) {
-            return response()->json(['message' => 'Forbidden'], 403);
-        }
-
         $employee = Employee::findOrFail($id);
-        $validated = $request->validate([
-            'full_name'        => 'sometimes|required|string|max:255',
-            'phone'            => 'nullable|string|max:20',
-            'department_id'    => 'nullable|exists:departments,id',
-            'department_name'  => 'nullable|string',
-            'designation_id'   => 'nullable|exists:designations,id',
-            'designation_title'=> 'nullable|string',
-            'date_of_joining'  => 'sometimes|nullable|date',
-            'employment_type'  => 'nullable|string',
-            'employment_status'=> 'nullable|string',
-            'work_location'    => 'nullable|string',
-            'salary'           => 'nullable|numeric',
-        ]);
+        $validated = $request->validated();
 
         if (!isset($validated['department_id']) && !empty($validated['department_name'])) {
             $dept = Department::firstOrCreate(['name' => $validated['department_name']]);

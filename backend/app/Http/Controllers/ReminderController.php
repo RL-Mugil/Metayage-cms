@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\PaginationHelper;
 use App\Models\Reminder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -29,22 +30,23 @@ class ReminderController extends Controller
         if ($deny = $this->denyClients($request)) return $deny;
 
         $user = $request->user();
-        $reminders = Reminder::where(fn ($q) => $q->where('user_id', $user->id)->orWhere('scope', 'team'))
-            ->orderBy('due_date')
-            ->get()
-            ->map(fn ($r) => [
-                'id' => $r->id,
-                'title' => $r->title,
-                'description' => $r->description ?? '',
-                'category' => $r->category,
-                'dueDate' => $r->due_date->format('Y-m-d'),
-                'dueTime' => $r->due_time,
-                'assignedTo' => $r->scope === 'team' ? 'Team' : ($r->user_id === $user->id ? 'You' : 'Team'),
-                'completed' => $r->completed,
-                'section' => $this->section(Carbon::parse($r->due_date)),
-            ]);
+        $query = Reminder::where(fn ($q) => $q->where('user_id', $user->id)->orWhere('scope', 'team'))
+            ->orderBy('due_date');
 
-        return response()->json($reminders);
+        $result = PaginationHelper::paginate($query, $request);
+        $result['data'] = $result['data']->map(fn ($r) => [
+            'id'         => $r->id,
+            'title'      => $r->title,
+            'description'=> $r->description ?? '',
+            'category'   => $r->category,
+            'dueDate'    => $r->due_date->format('Y-m-d'),
+            'dueTime'    => $r->due_time,
+            'assignedTo' => $r->scope === 'team' ? 'Team' : ($r->user_id === $user->id ? 'You' : 'Team'),
+            'completed'  => $r->completed,
+            'section'    => $this->section(Carbon::parse($r->due_date)),
+        ]);
+
+        return response()->json($result);
     }
 
     public function store(Request $request)
