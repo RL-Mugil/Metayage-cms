@@ -1,5 +1,5 @@
 import { Head, usePage } from "@inertiajs/react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { User, Bell, Shield, Palette, Settings as SettingsIcon, Key, Building, Loader2 } from "lucide-react";
 import AppLayout from "@/layouts/AppLayout";
 import { PageHeader } from "@/components/page-header";
@@ -51,13 +51,27 @@ export default function Settings() {
   const [pwForm, setPwForm] = useState({ current: "", next: "", confirm: "" });
   const [system, setSystem] = useState(() => loadPrefs("ipflow.system", { company: "My IP Law Firm", timezone: "Asia/Kolkata", currency: "INR", fiscalMonth: "April", maxUploadMB: "50" }));
 
+  useEffect(() => {
+    api.getSettings().then((data) => {
+      if (data.profile) {
+        setProfile((p) => ({ ...p, ...data.profile }));
+      }
+      if (data.notifications) {
+        setNotifs((n) => ({ ...n, ...data.notifications }));
+      }
+      if (data.system) {
+        setSystem((s) => ({ ...s, ...data.system }));
+      }
+    }).catch(() => {});
+  }, []);
+
   const flashSaved = () => { setError(""); setSaved(true); setTimeout(() => setSaved(false), 2500); };
 
   const saveProfile = async () => {
     setSaving(true);
     setError("");
     try {
-      await api.updateProfile({ name: profile.name, email: profile.email });
+      await api.updateProfile({ name: profile.name, email: profile.email, timezone: profile.timezone, language: profile.language });
       flashSaved();
     } catch (e: any) {
       setError(e.message || "Failed to save profile.");
@@ -86,9 +100,37 @@ export default function Settings() {
     }
   };
 
-  const saveNotifs = () => { localStorage.setItem("ipflow.notifs", JSON.stringify(notifs)); flashSaved(); };
-  const saveAppearance = () => { localStorage.setItem("ipflow.appearance", JSON.stringify({ theme, accent: accentColor })); flashSaved(); };
-  const saveSystem = () => { localStorage.setItem("ipflow.system", JSON.stringify(system)); flashSaved(); };
+  const saveNotifs = async () => {
+    setSaving(true);
+    setError("");
+    try {
+      await api.updateNotifications(notifs);
+      localStorage.setItem("ipflow.notifs", JSON.stringify(notifs));
+      flashSaved();
+    } catch (e: any) {
+      setError(e.message || "Failed to save notification preferences.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveAppearance = () => {
+    localStorage.setItem("ipflow.appearance", JSON.stringify({ theme, accent: accentColor }));
+    flashSaved();
+  };
+
+  const saveSystem = async () => {
+    setSaving(true);
+    setError("");
+    try {
+      await api.updateSystemSettings(system);
+      flashSaved();
+    } catch (e: any) {
+      setError(e.message || "Failed to save system settings.");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <AppLayout>
@@ -187,7 +229,11 @@ export default function Settings() {
                     <Toggle checked={notifs[key]} onChange={(v) => setNotifs((p) => ({ ...p, [key]: v }))} />
                   </div>
                 ))}
-                <div className="pt-4"><Button onClick={saveNotifs} className="bg-gold hover:bg-gold/90 text-black">Save Preferences</Button></div>
+                <div className="pt-4">
+                  <Button onClick={saveNotifs} disabled={saving} className="bg-gold hover:bg-gold/90 text-black">
+                    {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}Save Preferences
+                  </Button>
+                </div>
               </CardContent>
             </Card>
           )}
@@ -274,7 +320,9 @@ export default function Settings() {
                       className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
                   </div>
                 ))}
-                <Button onClick={saveSystem} className="bg-gold hover:bg-gold/90 text-black mt-2"><SettingsIcon className="h-4 w-4 mr-2" />Save System Settings</Button>
+                <Button onClick={saveSystem} disabled={saving} className="bg-gold hover:bg-gold/90 text-black mt-2">
+                  {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <SettingsIcon className="h-4 w-4 mr-2" />}Save System Settings
+                </Button>
               </CardContent>
             </Card>
           )}

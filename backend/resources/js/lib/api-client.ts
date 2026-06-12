@@ -245,11 +245,20 @@ export const api = {
   },
 
   // ── Settings ──
-  async updateProfile(data: { name: string; email: string }): Promise<any> {
+  async getSettings(): Promise<any> {
+    return this.request('/settings')
+  },
+  async updateProfile(data: { name: string; email: string; timezone?: string; language?: string }): Promise<any> {
     return this.request('/settings/profile', { method: 'PUT', body: JSON.stringify(data) })
   },
   async updatePassword(data: { current_password: string; password: string; password_confirmation: string }): Promise<any> {
     return this.request('/settings/password', { method: 'PUT', body: JSON.stringify(data) })
+  },
+  async updateNotifications(data: Record<string, boolean>): Promise<any> {
+    return this.request('/settings/notifications', { method: 'PUT', body: JSON.stringify(data) })
+  },
+  async updateSystemSettings(data: { company: string; currency: string; fiscalMonth: string; maxUploadMB: string }): Promise<any> {
+    return this.request('/settings/system', { method: 'PUT', body: JSON.stringify(data) })
   },
 
   // ── Compliance ──

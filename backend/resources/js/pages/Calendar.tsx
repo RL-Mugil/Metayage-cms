@@ -14,9 +14,12 @@ type CaseEvent = {
   record_type: string | null;
   delivery_due_date: string;
   status: string | null;
-  pcm: string | null;
-  scm: string | null;
-  pr: string | null;
+  pcm_id: number | null;
+  pcm_name: string | null;
+  scm_id: number | null;
+  scm_name: string | null;
+  pr_id: number | null;
+  pr_name: string | null;
   percentage_of_completion: number;
   my_role: "PCM" | "SCM" | "PR" | null;
 };
@@ -275,8 +278,8 @@ export default function Calendar() {
                               {e.my_role}
                             </span>
                           )}
-                          {isAdmin && e.pcm && (
-                            <span className="text-[10px] text-muted-foreground">PCM: {e.pcm}</span>
+                          {isAdmin && e.pcm_name && (
+                            <span className="text-[10px] text-muted-foreground">PCM: {e.pcm_name}</span>
                           )}
                         </div>
                         {e.status && (

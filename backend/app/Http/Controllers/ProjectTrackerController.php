@@ -92,11 +92,17 @@ class ProjectTrackerController extends Controller implements HasMiddleware
     public function rows(Request $request)
     {
         $circle = TrackerCircle::where('slug', $request->circle ?? 'a')->firstOrFail();
-        $rows = TrackerRow::where('circle_id', $circle->id)
+        $rows = TrackerRow::with(['pcmUser:id,name', 'scmUser:id,name', 'prUser:id,name'])
+            ->where('circle_id', $circle->id)
             ->orderBy('sort_order')
             ->orderBy('created_at')
             ->get();
-        return response()->json($rows);
+
+        return response()->json($rows->map(fn ($r) => array_merge($r->toArray(), [
+            'pcm' => $r->pcmUser?->name,
+            'scm' => $r->scmUser?->name,
+            'pr'  => $r->prUser?->name,
+        ])));
     }
 
     // Lightweight project list for docket combobox
@@ -123,8 +129,11 @@ class ProjectTrackerController extends Controller implements HasMiddleware
                     'project_code'  => $p->project_code,
                     'docket_number' => $p->docket_number,
                     'client_name'   => $p->client?->company_name,
+                    'partner_id'    => $p->partner_id,
                     'partner_name'  => $p->partner?->name,
+                    'manager_id'    => $p->manager_id,
                     'manager_name'  => $p->manager?->name,
+                    'engineer_id'   => $p->patent_engineer_id,
                     'engineer_name' => $p->patentEngineer?->name,
                     'start_date'    => $p->start_date?->toDateString(),
                     'record_type'   => $p->case_type,
@@ -153,7 +162,7 @@ class ProjectTrackerController extends Controller implements HasMiddleware
 
         $allowed = [
             'project_id', 'docket_number', 'client_name', 'record_type',
-            'pcm', 'scm', 'pr', 'project_start_date', 'status',
+            'pcm_id', 'scm_id', 'pr_id', 'project_start_date', 'status',
             'delivery_due_date', 'payment_status', 'uin', 'sort_order',
         ];
 
@@ -221,16 +230,17 @@ class ProjectTrackerController extends Controller implements HasMiddleware
             ->groupBy('status')->map->count()->sortDesc()->take(10)
             ->map(fn($c, $s) => ['status' => $s, 'count' => $c])->values();
 
-        // Workload per team member (from PCM/SCM/PR name strings)
+        // Workload per team member (from PCM/SCM/PR user IDs)
+        $rows->load(['pcmUser:id,name', 'scmUser:id,name', 'prUser:id,name']);
         $workload = [];
         foreach ($rows as $r) {
-            foreach (['pcm' => 'PCM', 'scm' => 'SCM', 'pr' => 'PR'] as $field => $role) {
-                $name = trim($r->$field ?? '');
-                if ($name === '') continue;
-                $first = explode(' ', $name)[0];
-                if (!isset($workload[$first])) $workload[$first] = ['name' => $first, 'PCM' => 0, 'SCM' => 0, 'PR' => 0, 'total' => 0];
-                $workload[$first][$role]++;
-                $workload[$first]['total']++;
+            foreach (['pcmUser' => 'PCM', 'scmUser' => 'SCM', 'prUser' => 'PR'] as $rel => $role) {
+                $user = $r->$rel;
+                if (!$user) continue;
+                $key = $user->id;
+                if (!isset($workload[$key])) $workload[$key] = ['name' => $user->name, 'PCM' => 0, 'SCM' => 0, 'PR' => 0, 'total' => 0];
+                $workload[$key][$role]++;
+                $workload[$key]['total']++;
             }
         }
         usort($workload, fn($a, $b) => $b['total'] - $a['total']);
@@ -251,14 +261,15 @@ class ProjectTrackerController extends Controller implements HasMiddleware
         $user = $request->user();
         $isAdmin = in_array($user->role, ['super_admin', 'admin']);
 
-        $query = TrackerRow::whereNotNull('delivery_due_date');
+        $query = TrackerRow::with(['pcmUser:id,name', 'scmUser:id,name', 'prUser:id,name'])
+            ->whereNotNull('delivery_due_date');
 
         if (!$isAdmin) {
-            $firstName = strtolower(explode(' ', trim($user->name))[0]);
-            $query->where(function ($q) use ($firstName) {
-                $q->whereRaw('LOWER(pcm) LIKE ?', ["%{$firstName}%"])
-                  ->orWhereRaw('LOWER(scm) LIKE ?', ["%{$firstName}%"])
-                  ->orWhereRaw('LOWER(pr) LIKE ?',  ["%{$firstName}%"]);
+            $userId = $user->id;
+            $query->where(function ($q) use ($userId) {
+                $q->where('pcm_id', $userId)
+                  ->orWhere('scm_id', $userId)
+                  ->orWhere('pr_id',  $userId);
             });
         }
 
@@ -267,10 +278,9 @@ class ProjectTrackerController extends Controller implements HasMiddleware
         return response()->json($rows->map(function ($r) use ($user, $isAdmin) {
             $myRole = null;
             if (!$isAdmin) {
-                $first = strtolower(explode(' ', trim($user->name))[0]);
-                if ($r->pcm && str_contains(strtolower($r->pcm), $first))      $myRole = 'PCM';
-                elseif ($r->scm && str_contains(strtolower($r->scm), $first))  $myRole = 'SCM';
-                elseif ($r->pr  && str_contains(strtolower($r->pr),  $first))  $myRole = 'PR';
+                if ($r->pcm_id === $user->id)      $myRole = 'PCM';
+                elseif ($r->scm_id === $user->id)  $myRole = 'SCM';
+                elseif ($r->pr_id  === $user->id)  $myRole = 'PR';
             }
             return [
                 'id'                       => $r->id,
@@ -279,9 +289,12 @@ class ProjectTrackerController extends Controller implements HasMiddleware
                 'record_type'              => $r->record_type,
                 'delivery_due_date'        => $r->delivery_due_date?->toDateString(),
                 'status'                   => $r->status,
-                'pcm'                      => $r->pcm,
-                'scm'                      => $r->scm,
-                'pr'                       => $r->pr,
+                'pcm_id'                   => $r->pcm_id,
+                'pcm_name'                 => $r->pcmUser?->name,
+                'scm_id'                   => $r->scm_id,
+                'scm_name'                 => $r->scmUser?->name,
+                'pr_id'                    => $r->pr_id,
+                'pr_name'                  => $r->prUser?->name,
                 'percentage_of_completion' => $r->percentage_of_completion,
                 'my_role'                  => $myRole,
             ];

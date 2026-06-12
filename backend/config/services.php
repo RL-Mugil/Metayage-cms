@@ -35,8 +35,9 @@ return [
         ],
     ],
 
-    'ai_sidecar' => [
-        'url' => env('AI_SIDECAR_URL', 'http://127.0.0.1:8001'),
+    'groq' => [
+        'api_key' => env('GROQ_API_KEY'),
+        'model'   => env('GROQ_MODEL', 'meta-llama/llama-4-scout-17b-16e-instruct'),
     ],
 
     // Error monitoring webhook (point at a self-hosted n8n workflow, which

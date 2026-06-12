@@ -78,8 +78,11 @@ interface TrackerRow {
   docket_number: string | null;
   client_name: string | null;
   record_type: string | null;
+  pcm_id: number | null;
   pcm: string | null;
+  scm_id: number | null;
   scm: string | null;
+  pr_id: number | null;
   pr: string | null;
   project_start_date: string | null;
   status: string | null;
@@ -96,8 +99,11 @@ interface TrackerProject {
   project_code: string;
   docket_number: string | null;
   client_name: string | null;
+  partner_id: number | null;
   partner_name: string | null;
+  manager_id: number | null;
   manager_name: string | null;
+  engineer_id: number | null;
   engineer_name: string | null;
   start_date: string | null;
   record_type: string | null;
@@ -187,6 +193,8 @@ export default function ProjectTracker() {
   // ── Cell save ─────────────────────────────────────────────────────────────
   function cancelCell() { setActiveCell(null); setEditVal(""); }
 
+  const USER_COLS: Record<string, string> = { pcm: "pcm_id", scm: "scm_id", pr: "pr_id" };
+
   function commitCell(rowId: number, col: string, val?: string) {
     const value = val !== undefined ? val : editVal;
     setActiveCell(null);
@@ -196,8 +204,18 @@ export default function ProjectTracker() {
     const prevStr = ((row as any)[col] ?? "") === null ? "" : String((row as any)[col] ?? "");
     if (value === prevStr) return;
 
+    // For user-type cols: send the ID, not the name string
+    const idField = USER_COLS[col];
+    let updates: Record<string, any>;
+    if (idField) {
+      const matched = users.find((u) => u.name.toLowerCase() === value.toLowerCase());
+      const userId = matched ? matched.id : null;
+      updates = { [idField]: userId, [col]: value || null };
+    } else {
+      updates = { [col]: value || null };
+    }
+
     // For status: also update % completion locally (locked)
-    const updates: Record<string, any> = { [col]: value || null };
     if (col === "status") {
       const pct = STATUS_COMPLETION[value];
       if (pct !== null && pct !== undefined) updates.percentage_of_completion = pct;
@@ -214,6 +232,7 @@ export default function ProjectTracker() {
   function clearDocket(rowId: number) {
     const updates: Record<string, any> = {
       project_id: null, docket_number: null, client_name: null,
+      pcm_id: null, scm_id: null, pr_id: null,
       pcm: null, scm: null, pr: null, uin: null, record_type: null,
     };
     setSavingIds((s) => new Set(s).add(rowId));
@@ -229,8 +248,11 @@ export default function ProjectTracker() {
       project_id:    project.id,
       docket_number: display,
       client_name:   project.client_name || null,
+      pcm_id:        project.partner_id || null,
       pcm:           project.partner_name || null,
+      scm_id:        project.manager_id || null,
       scm:           project.manager_name || null,
+      pr_id:         project.engineer_id || null,
       pr:            project.engineer_name || null,
       uin:           display,
       record_type:   project.record_type || null,

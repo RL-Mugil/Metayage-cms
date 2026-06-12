@@ -113,8 +113,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/discussions/{id}/reply', [\App\Http\Controllers\DiscussionController::class, 'reply']);
 
     // Settings
-    Route::put('/settings/profile', [\App\Http\Controllers\SettingsController::class, 'updateProfile']);
-    Route::put('/settings/password', [\App\Http\Controllers\SettingsController::class, 'updatePassword']);
+    Route::get('/settings',               [\App\Http\Controllers\SettingsController::class, 'getSettings']);
+    Route::put('/settings/profile',       [\App\Http\Controllers\SettingsController::class, 'updateProfile']);
+    Route::put('/settings/password',      [\App\Http\Controllers\SettingsController::class, 'updatePassword']);
+    Route::put('/settings/notifications', [\App\Http\Controllers\SettingsController::class, 'updateNotifications']);
+    Route::put('/settings/system',        [\App\Http\Controllers\SettingsController::class, 'updateSystem']);
 
     // Compliance
     Route::get('/compliance', [\App\Http\Controllers\ComplianceController::class, 'index']);
