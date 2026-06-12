@@ -5,12 +5,6 @@ namespace Database\Seeders;
 use App\Models\ComplianceItem;
 use App\Models\FeedbackEntry;
 use App\Models\Integration;
-use App\Models\JobCandidate;
-use App\Models\JobPosting;
-use App\Models\OffboardingCase;
-use App\Models\PerformanceFeedback360;
-use App\Models\PerformanceGoal;
-use App\Models\PerformanceReview;
 use App\Models\Reminder;
 use App\Models\User;
 use Illuminate\Database\Seeder;
@@ -65,105 +59,6 @@ class DemoModulesSeeder extends Seeder
                 FeedbackEntry::create([
                     'client_name' => $client, 'rating' => $rating, 'comment' => $comment,
                     'entry_date' => $date, 'category' => $category,
-                ]);
-            }
-        }
-
-        if (PerformanceReview::count() === 0) {
-            $reviews = [
-                ['Priya Sharma', 'Vikram Singh', 4.5, 'Completed'],
-                ['Rahul Menon', 'Vikram Singh', 4.0, 'Completed'],
-                ['Kavya Nair', 'Priya Sharma', 0, 'In Progress'],
-                ['Arjun Patel', 'Priya Sharma', 0, 'Not Started'],
-                ['Sneha Reddy', 'Vikram Singh', 4.2, 'Completed'],
-                ['Karthik Iyer', 'Rahul Menon', 0, 'Not Started'],
-            ];
-            foreach ($reviews as [$employee, $reviewer, $rating, $status]) {
-                PerformanceReview::create([
-                    'employee' => $employee, 'reviewer' => $reviewer, 'period' => 'Q2 2026',
-                    'rating' => $rating, 'status' => $status,
-                ]);
-            }
-        }
-
-        if (PerformanceGoal::count() === 0) {
-            $goals = [
-                ['File 12 patent applications in H1 2026', 'Priya Sharma', '30 Jun 2026', 75, 'On Track'],
-                ['Reduce average drafting turnaround to 10 days', 'Rahul Menon', '15 Jul 2026', 40, 'At Risk'],
-                ['Complete EPO qualification course', 'Kavya Nair', '31 Aug 2026', 60, 'On Track'],
-                ['Grow trademark portfolio revenue 20%', 'Arjun Patel', '30 Sep 2026', 35, 'At Risk'],
-                ['Mentor 2 junior associates through first filings', 'Sneha Reddy', '31 Dec 2026', 50, 'On Track'],
-            ];
-            foreach ($goals as [$title, $employee, $due, $progress, $status]) {
-                PerformanceGoal::create([
-                    'title' => $title, 'employee' => $employee, 'due_label' => $due,
-                    'progress' => $progress, 'status' => $status,
-                ]);
-            }
-        }
-
-        if (PerformanceFeedback360::count() === 0) {
-            $rows = [
-                ['Rahul Menon', 'Priya Sharma', '02 Jun 2026', 'Submitted'],
-                ['Kavya Nair', 'Priya Sharma', '02 Jun 2026', 'Pending'],
-                ['Arjun Patel', 'Rahul Menon', '05 Jun 2026', 'Submitted'],
-                ['Sneha Reddy', 'Kavya Nair', '08 Jun 2026', 'Pending'],
-            ];
-            foreach ($rows as [$from, $to, $sent, $status]) {
-                PerformanceFeedback360::create([
-                    'from_name' => $from, 'to_name' => $to, 'sent_label' => $sent, 'status' => $status,
-                ]);
-            }
-        }
-
-        if (JobPosting::count() === 0) {
-            $jobs = [
-                ['Senior Patent Attorney', 'Legal', '2026-05-12', 18, 'Active'],
-                ['Trademark Paralegal', 'Legal Ops', '2026-05-20', 31, 'Active'],
-                ['IP Docketing Specialist', 'Operations', '2026-04-28', 24, 'Closed'],
-                ['Business Development Manager', 'Growth', '2026-06-02', 9, 'Active'],
-            ];
-            foreach ($jobs as [$title, $dept, $posted, $applicants, $status]) {
-                JobPosting::create([
-                    'title' => $title, 'dept' => $dept, 'posted_date' => $posted,
-                    'applicants' => $applicants, 'status' => $status,
-                ]);
-            }
-        }
-
-        if (JobCandidate::count() === 0) {
-            $candidates = [
-                ['Ananya Krishnan', 'Senior Patent Attorney', 'Applied', 'Jun 8'],
-                ['Rohit Verma', 'Trademark Paralegal', 'Applied', 'Jun 7'],
-                ['Meera Pillai', 'BD Manager', 'Applied', 'Jun 6'],
-                ['Sanjay Kumar', 'Senior Patent Attorney', 'Screening', 'Jun 4'],
-                ['Divya Raghavan', 'Trademark Paralegal', 'Screening', 'Jun 3'],
-                ['Aditya Rao', 'Senior Patent Attorney', 'Interview', 'May 30'],
-                ['Nisha Thomas', 'BD Manager', 'Interview', 'May 28'],
-                ['Farhan Ali', 'Trademark Paralegal', 'Offer', 'May 26'],
-                ['Lakshmi Narayanan', 'IP Docketing Specialist', 'Hired', 'May 15'],
-            ];
-            foreach ($candidates as [$name, $role, $stage, $date]) {
-                JobCandidate::create([
-                    'name' => $name, 'role' => $role, 'stage' => $stage, 'applied_label' => $date,
-                ]);
-            }
-        }
-
-        if (OffboardingCase::count() === 0) {
-            $cases = [
-                ['Deepak Chawla', 'Engineering', '27 Jun 2026', 'Resignation', 5, 'Anita Desai', 'In Progress', null],
-                ['Sunita Rao', 'Finance', '30 Jun 2026', 'Retirement', 3, 'Anita Desai', 'In Progress', null],
-                ['Manoj Gupta', 'Legal Ops', '15 Jul 2026', 'Resignation', 0, 'Ravi Shankar', 'Scheduled', null],
-                ['Tarun Mehta', 'Sales', '30 Apr 2026', 'Resignation', 8, 'Anita Desai', 'Completed', '05 May 2026'],
-                ['Geeta Joshi', 'Admin', '31 Mar 2026', 'Retirement', 8, 'Ravi Shankar', 'Completed', '02 Apr 2026'],
-            ];
-            foreach ($cases as [$employee, $dept, $lastDay, $exitType, $done, $hr, $status, $completedLabel]) {
-                OffboardingCase::create([
-                    'employee' => $employee, 'dept' => $dept, 'last_day' => $lastDay,
-                    'exit_type' => $exitType, 'assigned_hr' => $hr, 'status' => $status,
-                    'checklist' => array_map(fn ($i) => $i < $done, range(0, 7)),
-                    'completed_label' => $completedLabel,
                 ]);
             }
         }

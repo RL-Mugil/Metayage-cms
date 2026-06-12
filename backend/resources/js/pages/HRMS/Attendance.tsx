@@ -43,7 +43,7 @@ export default function HRMSAttendance() {
     }
   };
 
-  const todayLog = logs.find((l) => l.attendance_date === new Date().toISOString().split("T")[0]);
+  const todayLog = logs.find((l) => l.attendance_date === new Date().toLocaleDateString('en-CA'));
 
   return (
     <AppLayout>

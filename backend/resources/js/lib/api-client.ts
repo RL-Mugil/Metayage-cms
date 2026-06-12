@@ -88,7 +88,8 @@ export const api = {
 
   // ── Tasks ──
   async getTasks(status?: string): Promise<any[]> {
-    return this.request(`/tasks${status ? `?status=${encodeURIComponent(status)}` : ''}`)
+    const res: any = await this.request(`/tasks${status ? `?status=${encodeURIComponent(status)}` : ''}`)
+    return Array.isArray(res) ? res : (res?.data ?? [])
   },
   async createTask(data: any): Promise<any> {
     return this.request('/tasks', { method: 'POST', body: JSON.stringify(data) })
@@ -107,7 +108,10 @@ export const api = {
   },
 
   // ── HRMS ──
-  async getEmployees(): Promise<any[]> { return this.request('/hrms/employees') },
+  async getEmployees(): Promise<any[]> {
+    const res: any = await this.request('/hrms/employees')
+    return Array.isArray(res) ? res : (res?.data ?? [])
+  },
   async createEmployee(data: any): Promise<any> {
     return this.request('/hrms/employees', { method: 'POST', body: JSON.stringify(data) })
   },
@@ -130,7 +134,10 @@ export const api = {
   },
 
   // ── Financial ──
-  async getInvoices(): Promise<any[]> { return this.request('/financial/invoices') },
+  async getInvoices(): Promise<any[]> {
+    const res: any = await this.request('/financial/invoices')
+    return Array.isArray(res) ? res : (res?.data ?? [])
+  },
   async createInvoice(data: any): Promise<any> {
     return this.request('/financial/invoices', { method: 'POST', body: JSON.stringify(data) })
   },
@@ -140,7 +147,10 @@ export const api = {
   async deleteInvoice(id: number | string): Promise<any> {
     return this.request(`/financial/invoices/${id}`, { method: 'DELETE' })
   },
-  async getQuotations(): Promise<any[]> { return this.request('/financial/quotations') },
+  async getQuotations(): Promise<any[]> {
+    const res: any = await this.request('/financial/quotations')
+    return Array.isArray(res) ? res : (res?.data ?? [])
+  },
   async recordPayment(data: {
     invoice_id: number; amount: number; payment_method: string
     transaction_reference?: string; notes?: string
@@ -165,7 +175,10 @@ export const api = {
   async getTrackerAnalytics(): Promise<any> { return this.request('/analytics/tracker') },
 
   // ── Notifications ──
-  async getNotifications(): Promise<any[]> { return this.request('/notifications') },
+  async getNotifications(): Promise<any[]> {
+    const res: any = await this.request('/notifications')
+    return Array.isArray(res) ? res : (res?.data ?? [])
+  },
   async markAllNotificationsRead(): Promise<any> { return this.request('/notifications/mark-all-read', { method: 'POST' }) },
   async markNotificationRead(id: number | string): Promise<any> { return this.request(`/notifications/${id}/read`, { method: 'POST' }) },
   async dismissNotification(id: number | string): Promise<any> { return this.request(`/notifications/${id}`, { method: 'DELETE' }) },
@@ -195,7 +208,10 @@ export const api = {
   },
 
   // ── Documents ──
-  async getDocuments(): Promise<any[]> { return this.request('/documents') },
+  async getDocuments(): Promise<any[]> {
+    const res: any = await this.request('/documents')
+    return Array.isArray(res) ? res : (res?.data ?? [])
+  },
   async uploadDocument(file: File, folder?: string): Promise<any> {
     const formData = new FormData()
     formData.append('file', file)
@@ -230,13 +246,19 @@ export const api = {
   },
 
   // ── Approvals ──
-  async getApprovals(): Promise<any[]> { return this.request('/approvals') },
+  async getApprovals(): Promise<any[]> {
+    const res: any = await this.request('/approvals')
+    return Array.isArray(res) ? res : (res?.data ?? [])
+  },
   async resolveApproval(type: string, id: number, action: 'Approved' | 'Rejected'): Promise<any> {
     return this.request('/approvals/resolve', { method: 'POST', body: JSON.stringify({ type, id, action }) })
   },
 
   // ── Discussions ──
-  async getDiscussions(): Promise<any[]> { return this.request('/discussions') },
+  async getDiscussions(): Promise<any[]> {
+    const res: any = await this.request('/discussions')
+    return Array.isArray(res) ? res : (res?.data ?? [])
+  },
   async createDiscussion(data: { title: string; tag: string; message: string }): Promise<any> {
     return this.request('/discussions', { method: 'POST', body: JSON.stringify(data) })
   },
@@ -262,7 +284,10 @@ export const api = {
   },
 
   // ── Compliance ──
-  async getCompliance(): Promise<any[]> { return this.request('/compliance') },
+  async getCompliance(): Promise<any[]> {
+    const res: any = await this.request('/compliance')
+    return Array.isArray(res) ? res : (res?.data ?? [])
+  },
   async updateCompliance(id: number | string, data: { assignee?: string; note?: string; resolved?: boolean }): Promise<any> {
     return this.request(`/compliance/${id}`, { method: 'PUT', body: JSON.stringify(data) })
   },
@@ -271,7 +296,10 @@ export const api = {
   },
 
   // ── Reminders ──
-  async getReminders(): Promise<any[]> { return this.request('/reminders') },
+  async getReminders(): Promise<any[]> {
+    const res: any = await this.request('/reminders')
+    return Array.isArray(res) ? res : (res?.data ?? [])
+  },
   async createReminder(data: any): Promise<any> {
     return this.request('/reminders', { method: 'POST', body: JSON.stringify(data) })
   },
@@ -280,7 +308,10 @@ export const api = {
   },
 
   // ── Feedback / CSAT ──
-  async getFeedback(): Promise<any[]> { return this.request('/feedback') },
+  async getFeedback(): Promise<any[]> {
+    const res: any = await this.request('/feedback')
+    return Array.isArray(res) ? res : (res?.data ?? [])
+  },
   async requestFeedback(data: { client: string; subject: string }): Promise<any> {
     return this.request('/feedback/request', { method: 'POST', body: JSON.stringify(data) })
   },
@@ -360,7 +391,10 @@ export const api = {
   async updatePayslip(id: number | string, data: { lop_days?: number; tds?: number }): Promise<any> {
     return this.request(`/payroll/payslips/${id}`, { method: 'PUT', body: JSON.stringify(data) })
   },
-  async getMyPayslips(): Promise<any[]> { return this.request('/payroll/my-slips') },
+  async getMyPayslips(): Promise<any[]> {
+    const res: any = await this.request('/payroll/my-slips')
+    return Array.isArray(res) ? res : (res?.data ?? [])
+  },
 }
 
 // ── CSV Download Utility ──
