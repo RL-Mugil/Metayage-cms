@@ -35,39 +35,48 @@ const ACTIVITY_FEED = [
 export default function Portal() {
   const [clients, setClients] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [portalStatus, setPortalStatus] = useState<Record<number, boolean>>({});
 
   const [showNewPortal, setShowNewPortal] = useState(false);
   const [newPortalClient, setNewPortalClient] = useState("");
   const [newPortalEmail, setNewPortalEmail] = useState("");
   const [portalCreated, setPortalCreated] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   const [showInviteAll, setShowInviteAll] = useState(false);
   const [inviteAllDone, setInviteAllDone] = useState(false);
 
-  useEffect(() => {
-    api
-      .getClients()
-      .then((data) => {
-        setClients(data);
-        // Default: first 70% of clients are "active"
-        const initial: Record<number, boolean> = {};
-        data.forEach((c: any, i: number) => {
-          initial[c.id] = i < Math.ceil(data.length * 0.7);
-        });
-        setPortalStatus(initial);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
-  }, []);
+  const load = () => api.getPortalClients().then(setClients).catch(() => {}).finally(() => setLoading(false));
+  useEffect(() => { load(); }, []);
 
   function toggleStatus(id: number) {
-    setPortalStatus((prev) => ({ ...prev, [id]: !prev[id] }));
+    setClients((prev) => prev.map((c) => (c.id === id ? { ...c, portal_enabled: !c.portal_enabled } : c)));
+    api.togglePortal(id).catch(() => load());
   }
 
-  const activePortals = Object.values(portalStatus).filter(Boolean).length;
-  const pendingInvites = 3;
-  const lastLoginToday = 7;
+  async function createPortal() {
+    if (!newPortalClient || !newPortalEmail) return;
+    setSaving(true);
+    try {
+      await api.createPortal({ client_id: parseInt(newPortalClient), email: newPortalEmail });
+      setPortalCreated(true);
+      load();
+    } catch { /* keep modal open */ }
+    finally { setSaving(false); }
+  }
+
+  async function inviteAll() {
+    setSaving(true);
+    try {
+      await api.portalInviteAll();
+      setInviteAllDone(true);
+      load();
+    } catch { /* keep modal open */ }
+    finally { setSaving(false); }
+  }
+
+  const activePortals = clients.filter((c) => c.portal_enabled).length;
+  const pendingInvites = clients.filter((c) => !c.portal_enabled && c.portal_invited_at).length;
+  const inactiveCount = clients.filter((c) => !c.portal_enabled).length;
 
   if (loading) {
     return (
@@ -135,9 +144,9 @@ export default function Portal() {
                   </div>
                 </div>
                 <div className="flex gap-2 mt-5">
-                  <Button className="bg-gold hover:bg-gold/90 text-black flex-1" disabled={!newPortalClient || !newPortalEmail}
-                    onClick={() => { if (newPortalClient) { const c = clients.find(x => x.id == newPortalClient); if (c) setPortalStatus(p => ({ ...p, [c.id]: true })); } setPortalCreated(true); }}>
-                    Create &amp; Send Credentials
+                  <Button className="bg-gold hover:bg-gold/90 text-black flex-1" disabled={!newPortalClient || !newPortalEmail || saving}
+                    onClick={createPortal}>
+                    {saving ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Creating…</> : <>Create &amp; Send Credentials</>}
                   </Button>
                   <Button variant="outline" onClick={() => setShowNewPortal(false)}>Cancel</Button>
                 </div>
@@ -158,17 +167,17 @@ export default function Portal() {
               <div className="text-center py-4">
                 <CheckCircle className="h-10 w-10 text-green-500 mx-auto mb-3" />
                 <div className="font-semibold">Invitations Sent!</div>
-                <div className="text-sm text-muted-foreground mt-1">{Object.values(portalStatus).filter(v => !v).length} inactive clients have been notified.</div>
+                <div className="text-sm text-muted-foreground mt-1">{inactiveCount} inactive clients have been notified.</div>
                 <Button className="mt-4" variant="outline" onClick={() => setShowInviteAll(false)}>Close</Button>
               </div>
             ) : (
               <>
                 <p className="text-sm text-muted-foreground mb-4">
-                  This will send portal access invitations to all <strong>{Object.values(portalStatus).filter(v => !v).length}</strong> inactive clients.
+                  This will send portal access invitations to all <strong>{inactiveCount}</strong> inactive clients.
                 </p>
                 <div className="flex gap-2">
-                  <Button className="bg-gold hover:bg-gold/90 text-black flex-1" onClick={() => setInviteAllDone(true)}>
-                    <Mail className="h-4 w-4 mr-2" />Send All Invitations
+                  <Button className="bg-gold hover:bg-gold/90 text-black flex-1" disabled={saving} onClick={inviteAll}>
+                    {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Mail className="h-4 w-4 mr-2" />}Send All Invitations
                   </Button>
                   <Button variant="outline" onClick={() => setShowInviteAll(false)}>Cancel</Button>
                 </div>
@@ -214,8 +223,8 @@ export default function Portal() {
                   <LogIn className="h-5 w-5 text-green-500" />
                 </div>
                 <div>
-                  <div className="font-display text-2xl font-semibold">{lastLoginToday}</div>
-                  <div className="text-xs text-muted-foreground">Last Login Today</div>
+                  <div className="font-display text-2xl font-semibold">{inactiveCount}</div>
+                  <div className="text-xs text-muted-foreground">Portals Inactive</div>
                 </div>
               </div>
             </CardContent>
@@ -241,9 +250,9 @@ export default function Portal() {
               </thead>
               <tbody>
                 {clients.map((client, idx) => {
-                  const isActive = portalStatus[client.id] ?? false;
-                  const lastLogin = HARDCODED_LAST_LOGINS[idx % HARDCODED_LAST_LOGINS.length];
-                  const docsShared = HARDCODED_DOCS_SHARED[idx % HARDCODED_DOCS_SHARED.length];
+                  const isActive = !!client.portal_enabled;
+                  const lastLogin = isActive ? HARDCODED_LAST_LOGINS[idx % HARDCODED_LAST_LOGINS.length] : "Never";
+                  const docsShared = isActive ? HARDCODED_DOCS_SHARED[idx % HARDCODED_DOCS_SHARED.length] : 0;
                   const contactName =
                     client.client_code ?? `Client #${client.id}`;
                   const company = client.company_name ?? client.company ?? "—";

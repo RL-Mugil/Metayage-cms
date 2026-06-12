@@ -1,6 +1,7 @@
 import { Head } from "@inertiajs/react";
-import { useState } from "react";
-import { Bell, BellOff, CheckCircle2, Clock, Calendar, Plus, AlertCircle } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Bell, BellOff, CheckCircle2, Clock, Calendar, Plus, AlertCircle, Loader2 } from "lucide-react";
+import { api } from "@/lib/api-client";
 import AppLayout from "@/layouts/AppLayout";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,16 +23,6 @@ interface Reminder {
   section: "today" | "week" | "upcoming";
 }
 
-const INITIAL_REMINDERS: Reminder[] = [
-  { id: 1, title: "Pay USPTO maintenance fee — US9876543", description: "3.5-year window closes June 18 — surcharge applies after", category: "Deadline", dueDate: "2026-06-11", dueTime: "17:00", assignedTo: "You", completed: false, section: "today" },
-  { id: 2, title: "Client call — Acme Corporation", description: "Quarterly portfolio review with R&D head", category: "Meeting", dueDate: "2026-06-11", dueTime: "15:30", assignedTo: "You", completed: false, section: "today" },
-  { id: 3, title: "Follow up on EUIPO renewal documents", description: "GlobalTech logo trademark — POA still pending from client", category: "Renewal", dueDate: "2026-06-15", assignedTo: "Team", completed: false, section: "week" },
-  { id: 4, title: "Draft FER response — IN202441087", description: "First examination report response due to IPO", category: "Deadline", dueDate: "2026-06-17", assignedTo: "You", completed: false, section: "week" },
-  { id: 5, title: "Send CSAT survey to BioMed Research", description: "Post-filing feedback for biotech device application", category: "Follow-up", dueDate: "2026-06-16", assignedTo: "Team", completed: true, section: "week" },
-  { id: 6, title: "EPO renewal fee — EP3456789 (Year 4)", description: "Clean energy system patent annuity", category: "Renewal", dueDate: "2026-07-10", assignedTo: "Team", completed: false, section: "upcoming" },
-  { id: 7, title: "PCT national phase entry — PCT/US2024/12345", description: "Medical device — confirm target jurisdictions with client", category: "Deadline", dueDate: "2026-08-05", assignedTo: "You", completed: false, section: "upcoming" },
-];
-
 const CATEGORY_COLORS: Record<Category, string> = {
   Deadline: "bg-red-100 text-red-700 border-red-200",
   Meeting: "bg-blue-100 text-blue-700 border-blue-200",
@@ -42,7 +33,9 @@ const CATEGORY_COLORS: Record<Category, string> = {
 const CATEGORIES: Category[] = ["Deadline", "Meeting", "Follow-up", "Renewal"];
 
 export default function Reminders() {
-  const [reminders, setReminders] = useState<Reminder[]>(INITIAL_REMINDERS);
+  const [reminders, setReminders] = useState<Reminder[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [newReminder, setNewReminder] = useState({
     title: "",
@@ -53,37 +46,34 @@ export default function Reminders() {
     assignedTo: "self",
   });
 
+  const load = () => api.getReminders().then(setReminders).catch(() => {}).finally(() => setLoading(false));
+  useEffect(() => { load(); }, []);
+
   function toggleComplete(id: number) {
-    setReminders((prev) =>
-      prev.map((r) => (r.id === id ? { ...r, completed: !r.completed } : r))
-    );
+    const target = reminders.find((r) => r.id === id);
+    if (!target) return;
+    const next = !target.completed;
+    setReminders((prev) => prev.map((r) => (r.id === id ? { ...r, completed: next } : r)));
+    api.updateReminder(id, { completed: next }).catch(() => load());
   }
 
-  function saveReminder() {
+  async function saveReminder() {
     if (!newReminder.title || !newReminder.dueDate) return;
-    const today = new Date().toISOString().split("T")[0];
-    const section =
-      newReminder.dueDate === today
-        ? "today"
-        : newReminder.dueDate <= new Date(Date.now() + 7 * 86400000).toISOString().split("T")[0]
-        ? "week"
-        : "upcoming";
-    setReminders((prev) => [
-      ...prev,
-      {
-        id: Date.now(),
+    setSaving(true);
+    try {
+      await api.createReminder({
         title: newReminder.title,
-        description: newReminder.description,
+        description: newReminder.description || null,
         category: newReminder.category,
-        dueDate: newReminder.dueDate,
-        dueTime: newReminder.dueTime,
-        assignedTo: newReminder.assignedTo === "self" ? "You" : "Team",
-        completed: false,
-        section,
-      },
-    ]);
-    setNewReminder({ title: "", description: "", dueDate: "", dueTime: "", category: "Deadline", assignedTo: "self" });
-    setShowForm(false);
+        due_date: newReminder.dueDate,
+        due_time: newReminder.dueTime || null,
+        scope: newReminder.assignedTo === "self" ? "self" : "team",
+      });
+      setNewReminder({ title: "", description: "", dueDate: "", dueTime: "", category: "Deadline", assignedTo: "self" });
+      setShowForm(false);
+      load();
+    } catch { /* validation errors keep the form open */ }
+    finally { setSaving(false); }
   }
 
   const active = reminders.filter((r) => !r.completed);
@@ -100,6 +90,15 @@ export default function Reminders() {
     week: "This Week",
     upcoming: "Upcoming",
   };
+
+  if (loading) return (
+    <AppLayout>
+      <Head title="Reminders" />
+      <div className="flex h-screen items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-gold" />
+      </div>
+    </AppLayout>
+  );
 
   return (
     <AppLayout>
@@ -224,8 +223,8 @@ export default function Reminders() {
                 </div>
               </div>
               <div className="flex gap-3">
-                <Button onClick={saveReminder} className="bg-gold text-background hover:bg-gold/90">
-                  Save Reminder
+                <Button onClick={saveReminder} disabled={saving} className="bg-gold text-background hover:bg-gold/90">
+                  {saving ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Saving…</> : "Save Reminder"}
                 </Button>
                 <Button variant="outline" onClick={() => setShowForm(false)}>Cancel</Button>
               </div>

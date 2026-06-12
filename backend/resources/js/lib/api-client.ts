@@ -255,6 +255,85 @@ export const api = {
     return this.request('/settings/password', { method: 'PUT', body: JSON.stringify(data) })
   },
 
+  // ── Compliance ──
+  async getCompliance(): Promise<any[]> { return this.request('/compliance') },
+  async updateCompliance(id: number | string, data: { assignee?: string; note?: string; resolved?: boolean }): Promise<any> {
+    return this.request(`/compliance/${id}`, { method: 'PUT', body: JSON.stringify(data) })
+  },
+  async remindCompliance(id: number | string): Promise<any> {
+    return this.request(`/compliance/${id}/remind`, { method: 'POST' })
+  },
+
+  // ── Reminders ──
+  async getReminders(): Promise<any[]> { return this.request('/reminders') },
+  async createReminder(data: any): Promise<any> {
+    return this.request('/reminders', { method: 'POST', body: JSON.stringify(data) })
+  },
+  async updateReminder(id: number | string, data: { completed: boolean }): Promise<any> {
+    return this.request(`/reminders/${id}`, { method: 'PUT', body: JSON.stringify(data) })
+  },
+
+  // ── Feedback / CSAT ──
+  async getFeedback(): Promise<any[]> { return this.request('/feedback') },
+  async requestFeedback(data: { client: string; subject: string }): Promise<any> {
+    return this.request('/feedback/request', { method: 'POST', body: JSON.stringify(data) })
+  },
+
+  // ── Performance ──
+  async getPerformance(): Promise<{ reviews: any[]; goals: any[]; feedback360: any[] }> {
+    return this.request('/performance')
+  },
+  async submitPerformanceReview(id: number | string, data: { scores: Record<string, number>; comments?: string }): Promise<any> {
+    return this.request(`/performance/reviews/${id}/submit`, { method: 'POST', body: JSON.stringify(data) })
+  },
+
+  // ── Recruitment ──
+  async getRecruitment(): Promise<{ jobs: any[]; pipeline: any[] }> { return this.request('/recruitment') },
+  async createJob(data: any): Promise<any> {
+    return this.request('/recruitment/jobs', { method: 'POST', body: JSON.stringify(data) })
+  },
+  async updateJob(id: number | string, data: { status: string }): Promise<any> {
+    return this.request(`/recruitment/jobs/${id}`, { method: 'PUT', body: JSON.stringify(data) })
+  },
+
+  // ── Offboarding ──
+  async getOffboarding(): Promise<{ cases: any[]; completed: any[] }> { return this.request('/offboarding') },
+  async createOffboarding(data: any): Promise<any> {
+    return this.request('/offboarding', { method: 'POST', body: JSON.stringify(data) })
+  },
+  async updateOffboardingChecklist(id: number | string, checklist: boolean[]): Promise<any> {
+    return this.request(`/offboarding/${id}/checklist`, { method: 'PUT', body: JSON.stringify({ checklist }) })
+  },
+
+  // ── Integrations ──
+  async getIntegrations(): Promise<any[]> { return this.request('/integrations') },
+  async toggleIntegration(slug: string): Promise<any> {
+    return this.request(`/integrations/${slug}/toggle`, { method: 'POST' })
+  },
+  async saveIntegrationConfig(slug: string, apiKey: string): Promise<any> {
+    return this.request(`/integrations/${slug}/config`, { method: 'POST', body: JSON.stringify({ api_key: apiKey }) })
+  },
+  async testIntegration(slug: string): Promise<{ ok: boolean }> {
+    return this.request(`/integrations/${slug}/test`, { method: 'POST' })
+  },
+
+  // ── Client Portal ──
+  async getPortalClients(): Promise<any[]> { return this.request('/portal/clients') },
+  async togglePortal(clientId: number | string): Promise<any> {
+    return this.request(`/portal/clients/${clientId}/toggle`, { method: 'POST' })
+  },
+  async portalInviteAll(): Promise<{ ok: boolean; invited: number }> {
+    return this.request('/portal/invite-all', { method: 'POST' })
+  },
+  async createPortal(data: { client_id: number; email: string }): Promise<any> {
+    return this.request('/portal/create', { method: 'POST', body: JSON.stringify(data) })
+  },
+
+  // ── Bulk operations ──
+  async bulkExecute(data: { entity: string; ids: number[]; action: string; status?: string }): Promise<{ ok: boolean; affected: number }> {
+    return this.request('/bulk/execute', { method: 'POST', body: JSON.stringify(data) })
+  },
+
   // ── Payroll ──
   async getPayrollRuns(): Promise<{ runs: any[]; ytd_paid: number; can_manage: boolean; can_pay: boolean }> {
     return this.request('/payroll/runs')

@@ -66,6 +66,9 @@ echo "  MAIL_PASSWORD=your-password"
 echo "--- Running migrations ---"
 php artisan migrate --force
 
+echo "--- Seeding module demo data (idempotent) ---"
+php artisan db:seed --class=DemoModulesSeeder --force || true
+
 echo "--- Clearing caches ---"
 php artisan config:clear
 php artisan route:clear

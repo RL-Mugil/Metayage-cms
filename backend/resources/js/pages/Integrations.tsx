@@ -1,11 +1,12 @@
 import { Head } from "@inertiajs/react";
-import { useState } from "react";
-import { Plug, Zap, RefreshCw, Check, X, Settings, Globe, Mail, CheckCircle } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Plug, Zap, RefreshCw, X, Settings, Globe, CheckCircle, Loader2 } from "lucide-react";
 import AppLayout from "@/layouts/AppLayout";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { api } from "@/lib/api-client";
 
 interface Integration {
   id: string;
@@ -17,18 +18,8 @@ interface Integration {
   connected: boolean;
   lastSync?: string;
   syncFreq?: string;
+  hasKey?: boolean;
 }
-
-const integrations: Integration[] = [
-  { id: "gcal", name: "Google Calendar", description: "Sync IP deadlines and meetings", category: "Productivity", initials: "GC", color: "bg-blue-500", connected: true, lastSync: "5 min ago", syncFreq: "Every 15 min" },
-  { id: "slack", name: "Slack", description: "Send deadline alerts and notifications", category: "Communication", initials: "SL", color: "bg-purple-600", connected: true, lastSync: "Real-time", syncFreq: "Real-time" },
-  { id: "gmail", name: "Gmail / SMTP", description: "Send emails and client communications", category: "Email", initials: "GM", color: "bg-red-500", connected: true, lastSync: "2 hours ago", syncFreq: "On demand" },
-  { id: "qb", name: "QuickBooks", description: "Sync invoices and financial records", category: "Accounting", initials: "QB", color: "bg-green-600", connected: false },
-  { id: "uspto", name: "USPTO API", description: "Fetch patent filing and examination status", category: "IP Office", initials: "US", color: "bg-blue-800", connected: true, lastSync: "1 hour ago", syncFreq: "Hourly" },
-  { id: "epo", name: "EPO OPS", description: "European patent data and family information", category: "IP Office", initials: "EP", color: "bg-indigo-600", connected: true, lastSync: "2 hours ago", syncFreq: "Every 6 hours" },
-  { id: "docusign", name: "DocuSign", description: "E-signature for contracts and agreements", category: "Legal", initials: "DS", color: "bg-amber-600", connected: false },
-  { id: "teams", name: "Microsoft Teams", description: "Meeting scheduling and notifications", category: "Communication", initials: "MT", color: "bg-blue-700", connected: false },
-];
 
 const webhookLogs = [
   { id: 1, source: "USPTO API", event: "patent.status_update", status: 200, time: "2026-06-04 14:32:01", size: "1.2 KB" },
@@ -44,20 +35,50 @@ const webhookLogs = [
 ];
 
 export default function Integrations() {
-  const [list, setList] = useState(integrations);
+  const [list, setList] = useState<Integration[]>([]);
+  const [loading, setLoading] = useState(true);
   const [configOpen, setConfigOpen] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<Record<string, "ok" | "fail" | null>>({});
   const [apiKeys, setApiKeys] = useState<Record<string, string>>({});
+  const [keySaved, setKeySaved] = useState<Record<string, boolean>>({});
+
+  const load = () => api.getIntegrations().then(setList).catch(() => {}).finally(() => setLoading(false));
+  useEffect(() => { load(); }, []);
 
   const toggle = (id: string) => {
     setList((prev) => prev.map((i) => i.id === id ? { ...i, connected: !i.connected, lastSync: !i.connected ? "just now" : undefined } : i));
+    api.toggleIntegration(id).catch(() => load());
   };
 
   const testConnection = (id: string) => {
-    setTimeout(() => setTestResult((prev) => ({ ...prev, [id]: Math.random() > 0.2 ? "ok" : "fail" })), 800);
+    setTestResult((prev) => ({ ...prev, [id]: null }));
+    api.testIntegration(id)
+      .then((r) => setTestResult((prev) => ({ ...prev, [id]: r.ok ? "ok" : "fail" })))
+      .catch(() => setTestResult((prev) => ({ ...prev, [id]: "fail" })));
+  };
+
+  const saveKey = (id: string) => {
+    const key = apiKeys[id];
+    if (!key) return;
+    api.saveIntegrationConfig(id, key)
+      .then(() => {
+        setKeySaved((p) => ({ ...p, [id]: true }));
+        setApiKeys((p) => ({ ...p, [id]: "" }));
+        setTimeout(() => setKeySaved((p) => ({ ...p, [id]: false })), 3000);
+      })
+      .catch(() => {});
   };
 
   const connected = list.filter((i) => i.connected).length;
+
+  if (loading) return (
+    <AppLayout>
+      <Head title="Integrations" />
+      <div className="flex h-screen items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-gold" />
+      </div>
+    </AppLayout>
+  );
 
   return (
     <AppLayout>
@@ -116,11 +137,16 @@ export default function Integrations() {
                 {configOpen === intg.id && (
                   <div className="mt-4 pt-4 border-t border-border space-y-3">
                     <div>
-                      <label className="text-xs font-medium text-muted-foreground">API Key</label>
-                      <input type="password" placeholder="sk-••••••••••••••••"
-                        value={apiKeys[intg.id] || ""}
-                        onChange={(e) => setApiKeys((p) => ({ ...p, [intg.id]: e.target.value }))}
-                        className="mt-1 w-full h-8 rounded border border-border bg-background px-3 text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
+                      <label className="text-xs font-medium text-muted-foreground">API Key {intg.hasKey && <span className="text-green-600">(saved)</span>}</label>
+                      <div className="mt-1 flex items-center gap-2">
+                        <input type="password" placeholder="sk-••••••••••••••••"
+                          value={apiKeys[intg.id] || ""}
+                          onChange={(e) => setApiKeys((p) => ({ ...p, [intg.id]: e.target.value }))}
+                          className="flex-1 h-8 rounded border border-border bg-background px-3 text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
+                        <Button size="sm" variant="outline" className="h-8 text-xs" disabled={!apiKeys[intg.id]}
+                          onClick={() => saveKey(intg.id)}>Save</Button>
+                      </div>
+                      {keySaved[intg.id] && <span className="text-xs text-green-600">Key saved securely.</span>}
                     </div>
                     <div>
                       <label className="text-xs font-medium text-muted-foreground">Webhook URL</label>

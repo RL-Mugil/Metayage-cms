@@ -116,6 +116,49 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/settings/profile', [\App\Http\Controllers\SettingsController::class, 'updateProfile']);
     Route::put('/settings/password', [\App\Http\Controllers\SettingsController::class, 'updatePassword']);
 
+    // Compliance
+    Route::get('/compliance', [\App\Http\Controllers\ComplianceController::class, 'index']);
+    Route::put('/compliance/{id}', [\App\Http\Controllers\ComplianceController::class, 'update']);
+    Route::post('/compliance/{id}/remind', [\App\Http\Controllers\ComplianceController::class, 'remind']);
+
+    // Reminders
+    Route::get('/reminders', [\App\Http\Controllers\ReminderController::class, 'index']);
+    Route::post('/reminders', [\App\Http\Controllers\ReminderController::class, 'store']);
+    Route::put('/reminders/{id}', [\App\Http\Controllers\ReminderController::class, 'update']);
+
+    // Feedback / CSAT
+    Route::get('/feedback', [\App\Http\Controllers\FeedbackController::class, 'index']);
+    Route::post('/feedback/request', [\App\Http\Controllers\FeedbackController::class, 'requestFeedback']);
+
+    // Performance
+    Route::get('/performance', [\App\Http\Controllers\PerformanceController::class, 'index']);
+    Route::post('/performance/reviews/{id}/submit', [\App\Http\Controllers\PerformanceController::class, 'submitReview']);
+
+    // Recruitment
+    Route::get('/recruitment', [\App\Http\Controllers\RecruitmentController::class, 'index']);
+    Route::post('/recruitment/jobs', [\App\Http\Controllers\RecruitmentController::class, 'storeJob']);
+    Route::put('/recruitment/jobs/{id}', [\App\Http\Controllers\RecruitmentController::class, 'updateJob']);
+
+    // Offboarding
+    Route::get('/offboarding', [\App\Http\Controllers\OffboardingController::class, 'index']);
+    Route::post('/offboarding', [\App\Http\Controllers\OffboardingController::class, 'store']);
+    Route::put('/offboarding/{id}/checklist', [\App\Http\Controllers\OffboardingController::class, 'updateChecklist']);
+
+    // Integrations
+    Route::get('/integrations', [\App\Http\Controllers\IntegrationController::class, 'index']);
+    Route::post('/integrations/{slug}/toggle', [\App\Http\Controllers\IntegrationController::class, 'toggle']);
+    Route::post('/integrations/{slug}/config', [\App\Http\Controllers\IntegrationController::class, 'saveConfig']);
+    Route::post('/integrations/{slug}/test', [\App\Http\Controllers\IntegrationController::class, 'test']);
+
+    // Client Portal
+    Route::get('/portal/clients', [\App\Http\Controllers\PortalController::class, 'clients']);
+    Route::post('/portal/clients/{id}/toggle', [\App\Http\Controllers\PortalController::class, 'toggle']);
+    Route::post('/portal/invite-all', [\App\Http\Controllers\PortalController::class, 'inviteAll']);
+    Route::post('/portal/create', [\App\Http\Controllers\PortalController::class, 'create']);
+
+    // Bulk operations
+    Route::post('/bulk/execute', [\App\Http\Controllers\BulkController::class, 'execute']);
+
     // Payroll
     Route::get('/payroll/runs', [\App\Http\Controllers\PayrollController::class, 'index']);
     Route::post('/payroll/runs', [\App\Http\Controllers\PayrollController::class, 'store']);

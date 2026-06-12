@@ -1,11 +1,12 @@
 import { Head } from "@inertiajs/react";
-import { useState } from "react";
-import { UserMinus, CheckSquare, Square, Calendar, Shield, FileText, Package, Key, Plus } from "lucide-react";
+import { useEffect, useState } from "react";
+import { UserMinus, CheckSquare, Square, Calendar, Shield, FileText, Package, Key, Plus, Loader2 } from "lucide-react";
 import AppLayout from "@/layouts/AppLayout";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { api } from "@/lib/api-client";
 
 const checklistItems = [
   "Exit interview scheduled",
@@ -24,21 +25,10 @@ interface Case {
   dept: string;
   lastDay: string;
   exitType: "Resignation" | "Retirement" | "Termination";
-  completed: number;
+  checklist: boolean[];
   assignedHR: string;
   status: "In Progress" | "Completed" | "Scheduled";
 }
-
-const cases: Case[] = [
-  { id: 1, employee: "Deepak Chawla", dept: "Engineering", lastDay: "27 Jun 2026", exitType: "Resignation", completed: 5, assignedHR: "Anita Desai", status: "In Progress" },
-  { id: 2, employee: "Sunita Rao", dept: "Finance", lastDay: "30 Jun 2026", exitType: "Retirement", completed: 3, assignedHR: "Anita Desai", status: "In Progress" },
-  { id: 3, employee: "Manoj Gupta", dept: "Legal Ops", lastDay: "15 Jul 2026", exitType: "Resignation", completed: 0, assignedHR: "Ravi Shankar", status: "Scheduled" },
-];
-
-const completed_cases: { id: number; employee: string; dept: string; lastDay: string; exitType: "Resignation" | "Retirement" | "Termination"; completedDate: string }[] = [
-  { id: 101, employee: "Tarun Mehta", dept: "Sales", lastDay: "30 Apr 2026", exitType: "Resignation", completedDate: "05 May 2026" },
-  { id: 102, employee: "Geeta Joshi", dept: "Admin", lastDay: "31 Mar 2026", exitType: "Retirement", completedDate: "02 Apr 2026" },
-];
 
 const exitColors: Record<Case["exitType"], string> = {
   Resignation: "text-amber-600 bg-amber-50 border-amber-200",
@@ -50,23 +40,62 @@ const checkIcons = [UserMinus, FileText, Package, Shield, Key, FileText, FileTex
 
 export default function HRMSOffboarding() {
   const [selected, setSelected] = useState<number | null>(null);
-  const [checks, setChecks] = useState<Record<number, boolean[]>>(
-    Object.fromEntries(cases.map((c) => [c.id, checklistItems.map((_, i) => i < c.completed)]))
-  );
+  const [cases, setCases] = useState<Case[]>([]);
+  const [completedCases, setCompletedCases] = useState<any[]>([]);
+  const [checks, setChecks] = useState<Record<number, boolean[]>>({});
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [showInitiate, setShowInitiate] = useState(false);
   const [showCompleted, setShowCompleted] = useState(false);
+  const [form, setForm] = useState({ employee: "", last_day: "", exit_type: "Resignation", assigned_hr: "", dept: "" });
+
+  const load = () => api.getOffboarding()
+    .then((d) => {
+      setCases(d.cases);
+      setCompletedCases(d.completed);
+      setChecks(Object.fromEntries(d.cases.map((c: Case) => [c.id, c.checklist])));
+    })
+    .catch(() => {})
+    .finally(() => setLoading(false));
+
+  useEffect(() => { load(); }, []);
 
   const toggleCheck = (caseId: number, idx: number) => {
-    setChecks((prev) => ({
-      ...prev,
-      [caseId]: prev[caseId].map((v, i) => (i === idx ? !v : v)),
-    }));
+    const next = (checks[caseId] || []).map((v, i) => (i === idx ? !v : v));
+    setChecks((prev) => ({ ...prev, [caseId]: next }));
+    api.updateOffboardingChecklist(caseId, next)
+      .then((res) => {
+        // A finished checklist moves the case to Completed; refresh the lists.
+        if (res.status === "Completed") load();
+      })
+      .catch(() => load());
   };
+
+  async function initiateCase() {
+    if (!form.employee.trim() || !form.last_day.trim()) return;
+    setSaving(true);
+    try {
+      await api.createOffboarding(form);
+      setForm({ employee: "", last_day: "", exit_type: "Resignation", assigned_hr: "", dept: "" });
+      setShowInitiate(false);
+      load();
+    } catch { /* keep form open */ }
+    finally { setSaving(false); }
+  }
 
   const getProgress = (caseId: number) => {
     const list = checks[caseId] || [];
     return Math.round((list.filter(Boolean).length / checklistItems.length) * 100);
   };
+
+  if (loading) return (
+    <AppLayout>
+      <Head title="Offboarding" />
+      <div className="flex h-screen items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-gold" />
+      </div>
+    </AppLayout>
+  );
 
   return (
     <AppLayout>
@@ -81,20 +110,40 @@ export default function HRMSOffboarding() {
           <Card className="border-gold/30 bg-gold/5">
             <CardHeader className="pb-3"><CardTitle className="font-display text-base">Initiate Offboarding</CardTitle></CardHeader>
             <CardContent className="grid grid-cols-2 gap-4">
-              {[
-                { label: "Employee", placeholder: "Select employee" },
-                { label: "Last Working Day", placeholder: "", type: "date" },
-                { label: "Exit Type", placeholder: "" },
-                { label: "Assigned HR", placeholder: "HR person handling" },
-              ].map(({ label, placeholder, type }) => (
-                <div key={label}>
-                  <label className="block text-xs text-muted-foreground mb-1">{label}</label>
-                  <input type={type || "text"} placeholder={placeholder}
-                    className="w-full h-8 rounded border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
-                </div>
-              ))}
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1">Employee</label>
+                <input value={form.employee} onChange={(e) => setForm((p) => ({ ...p, employee: e.target.value }))}
+                  placeholder="Employee name"
+                  className="w-full h-8 rounded border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+              </div>
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1">Last Working Day</label>
+                <input type="date" value={form.last_day} onChange={(e) => setForm((p) => ({ ...p, last_day: e.target.value }))}
+                  className="w-full h-8 rounded border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+              </div>
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1">Exit Type</label>
+                <select value={form.exit_type} onChange={(e) => setForm((p) => ({ ...p, exit_type: e.target.value }))}
+                  className="w-full h-8 rounded border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold">
+                  {["Resignation", "Retirement", "Termination"].map((t) => <option key={t}>{t}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1">Assigned HR</label>
+                <input value={form.assigned_hr} onChange={(e) => setForm((p) => ({ ...p, assigned_hr: e.target.value }))}
+                  placeholder="HR person handling"
+                  className="w-full h-8 rounded border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+              </div>
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1">Department</label>
+                <input value={form.dept} onChange={(e) => setForm((p) => ({ ...p, dept: e.target.value }))}
+                  placeholder="e.g. Engineering"
+                  className="w-full h-8 rounded border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+              </div>
               <div className="col-span-2 flex gap-2">
-                <Button size="sm" className="bg-gold hover:bg-gold/90 text-black">Create Offboarding Case</Button>
+                <Button size="sm" className="bg-gold hover:bg-gold/90 text-black" disabled={saving || !form.employee.trim() || !form.last_day} onClick={initiateCase}>
+                  {saving ? <><Loader2 className="h-3 w-3 mr-1 animate-spin" />Creating…</> : "Create Offboarding Case"}
+                </Button>
                 <Button size="sm" variant="outline" onClick={() => setShowInitiate(false)}>Cancel</Button>
               </div>
             </CardContent>
@@ -167,7 +216,7 @@ export default function HRMSOffboarding() {
         <div>
           <button className="flex items-center gap-2 text-sm font-semibold text-muted-foreground hover:text-foreground mb-3"
             onClick={() => setShowCompleted(!showCompleted)}>
-            <span>{showCompleted ? "▾" : "▸"}</span> Completed Cases ({completed_cases.length})
+            <span>{showCompleted ? "▾" : "▸"}</span> Completed Cases ({completedCases.length})
           </button>
           {showCompleted && (
             <Card className="border-border">
@@ -183,12 +232,12 @@ export default function HRMSOffboarding() {
                     </tr>
                   </thead>
                   <tbody>
-                    {completed_cases.map((c) => (
+                    {completedCases.map((c) => (
                       <tr key={c.id} className="border-t border-border hover:bg-muted/30">
                         <td className="px-4 py-3 font-medium">{c.employee}</td>
                         <td className="px-4 py-3 text-muted-foreground">{c.dept}</td>
                         <td className="px-4 py-3 text-xs text-muted-foreground">{c.lastDay}</td>
-                        <td className="px-4 py-3"><span className={`px-2 py-0.5 rounded text-xs font-medium border ${exitColors[c.exitType]}`}>{c.exitType}</span></td>
+                        <td className="px-4 py-3"><span className={`px-2 py-0.5 rounded text-xs font-medium border ${exitColors[c.exitType as Case["exitType"]]}`}>{c.exitType}</span></td>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-1.5 text-green-600 text-xs">
                             <CheckSquare className="h-3.5 w-3.5" />{c.completedDate}

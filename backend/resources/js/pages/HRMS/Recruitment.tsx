@@ -1,50 +1,60 @@
 import { Head } from "@inertiajs/react";
-import { useState } from "react";
-import { Briefcase, Users, CheckCircle, Clock, Plus, ChevronRight, Building2, X, Eye } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Briefcase, Users, CheckCircle, Clock, Plus, ChevronRight, Building2, X, Eye, Loader2 } from "lucide-react";
 import AppLayout from "@/layouts/AppLayout";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { api } from "@/lib/api-client";
 
-const jobs: { id: number; title: string; dept: string; posted: string; applicants: number; status: string }[] = [
-  { id: 1, title: "Senior Patent Attorney", dept: "Legal", posted: "2026-05-12", applicants: 18, status: "Active" },
-  { id: 2, title: "Trademark Paralegal", dept: "Legal Ops", posted: "2026-05-20", applicants: 31, status: "Active" },
-  { id: 3, title: "IP Docketing Specialist", dept: "Operations", posted: "2026-04-28", applicants: 24, status: "Closed" },
-  { id: 4, title: "Business Development Manager", dept: "Growth", posted: "2026-06-02", applicants: 9, status: "Active" },
-];
-
-const pipeline: { stage: string; color: string; candidates: { id: number; name: string; role: string; date: string }[] }[] = [
-  { stage: "Applied", color: "border-border bg-background", candidates: [
-    { id: 1, name: "Ananya Krishnan", role: "Senior Patent Attorney", date: "Jun 8" },
-    { id: 2, name: "Rohit Verma", role: "Trademark Paralegal", date: "Jun 7" },
-    { id: 3, name: "Meera Pillai", role: "BD Manager", date: "Jun 6" },
-  ]},
-  { stage: "Screening", color: "border-blue-200 bg-blue-50", candidates: [
-    { id: 4, name: "Sanjay Kumar", role: "Senior Patent Attorney", date: "Jun 4" },
-    { id: 5, name: "Divya Raghavan", role: "Trademark Paralegal", date: "Jun 3" },
-  ]},
-  { stage: "Interview", color: "border-amber-200 bg-amber-50", candidates: [
-    { id: 6, name: "Aditya Rao", role: "Senior Patent Attorney", date: "May 30" },
-    { id: 7, name: "Nisha Thomas", role: "BD Manager", date: "May 28" },
-  ]},
-  { stage: "Offer", color: "border-purple-200 bg-purple-50", candidates: [
-    { id: 8, name: "Farhan Ali", role: "Trademark Paralegal", date: "May 26" },
-  ]},
-  { stage: "Hired", color: "border-green-200 bg-green-50", candidates: [
-    { id: 9, name: "Lakshmi Narayanan", role: "IP Docketing Specialist", date: "May 15" },
-  ]},
-];
+type Job = { id: number; title: string; dept: string; posted: string; applicants: number; status: string };
 
 export default function HRMSRecruitment() {
   const [showNewJob, setShowNewJob] = useState(false);
   const [newJob, setNewJob] = useState({ title: "", dept: "", description: "", type: "Full-time" });
-  const [jobsList, setJobsList] = useState(jobs);
-  const [viewApplicants, setViewApplicants] = useState<typeof jobs[0] | null>(null);
+  const [jobsList, setJobsList] = useState<Job[]>([]);
+  const [pipeline, setPipeline] = useState<any[]>([]);
+  const [viewApplicants, setViewApplicants] = useState<Job | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  const load = () => api.getRecruitment()
+    .then((d) => { setJobsList(d.jobs); setPipeline(d.pipeline); })
+    .catch(() => {})
+    .finally(() => setLoading(false));
+
+  useEffect(() => { load(); }, []);
+
+  async function publishJob() {
+    if (!newJob.title.trim()) return;
+    setSaving(true);
+    try {
+      await api.createJob({ title: newJob.title, dept: newJob.dept, description: newJob.description, employment_type: newJob.type });
+      setNewJob({ title: "", dept: "", description: "", type: "Full-time" });
+      setShowNewJob(false);
+      load();
+    } catch { /* keep form open */ }
+    finally { setSaving(false); }
+  }
+
+  async function closeJob(id: number) {
+    setJobsList((prev) => prev.map((j) => (j.id === id ? { ...j, status: "Closed" } : j)));
+    api.updateJob(id, { status: "Closed" }).catch(() => load());
+  }
 
   const totalApplicants = jobsList.reduce((s, j) => s + j.applicants, 0);
   const active = jobsList.filter((j) => j.status === "Active").length;
   const hired = pipeline.find((p) => p.stage === "Hired")?.candidates.length || 0;
+
+  if (loading) return (
+    <AppLayout>
+      <Head title="Recruitment" />
+      <div className="flex h-screen items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-gold" />
+      </div>
+    </AppLayout>
+  );
 
   return (
     <AppLayout>
@@ -104,13 +114,9 @@ export default function HRMSRecruitment() {
                   </select>
                 </div>
                 <div className="flex gap-2 mt-4">
-                  <Button size="sm" className="bg-gold hover:bg-gold/90 text-black" onClick={() => {
-                    if (!newJob.title.trim()) return;
-                    const newId = jobsList.length ? Math.max(...jobsList.map(j => j.id)) + 1 : 1;
-                    setJobsList(prev => [...prev, { id: newId, title: newJob.title, dept: newJob.dept || "General", posted: new Date().toISOString().slice(0,10), applicants: 0, status: "Active" }]);
-                    setNewJob({ title: "", dept: "", description: "", type: "Full-time" });
-                    setShowNewJob(false);
-                  }}>Publish Job</Button>
+                  <Button size="sm" className="bg-gold hover:bg-gold/90 text-black" disabled={saving} onClick={publishJob}>
+                    {saving ? <><Loader2 className="h-3 w-3 mr-1 animate-spin" />Publishing…</> : "Publish Job"}
+                  </Button>
                   <Button size="sm" variant="outline" onClick={() => setShowNewJob(false)}>Cancel</Button>
                 </div>
               </div>
@@ -180,7 +186,7 @@ export default function HRMSRecruitment() {
                         </Button>
                         {job.status === "Active" && (
                           <Button size="sm" variant="outline" className="h-7 text-xs border-red-200 text-red-600"
-                            onClick={() => setJobsList(prev => prev.map(j => j.id === job.id ? { ...j, status: "Closed" } : j))}>
+                            onClick={() => closeJob(job.id)}>
                             Close
                           </Button>
                         )}
@@ -204,7 +210,7 @@ export default function HRMSRecruitment() {
                   <span className="text-xs text-muted-foreground bg-muted rounded-full px-1.5">{candidates.length}</span>
                 </div>
                 <div className="space-y-2">
-                  {candidates.map((c) => (
+                  {candidates.map((c: any) => (
                     <div key={c.id} className={`p-3 rounded-lg border text-xs ${color}`}>
                       <div className="font-medium">{c.name}</div>
                       <div className="text-muted-foreground mt-0.5">{c.role}</div>

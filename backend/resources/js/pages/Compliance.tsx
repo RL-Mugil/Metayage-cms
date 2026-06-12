@@ -1,7 +1,7 @@
 import { Head } from "@inertiajs/react";
-import { Fragment, useState } from "react";
-import { Shield, AlertTriangle, CheckCircle, Clock, Globe, FileText, Download, X } from "lucide-react";
-import { downloadCSV } from "@/lib/api-client";
+import { Fragment, useEffect, useState } from "react";
+import { Shield, AlertTriangle, CheckCircle, Clock, Globe, Download, Loader2 } from "lucide-react";
+import { api, downloadCSV } from "@/lib/api-client";
 import { fmtDate } from "@/lib/date-utils";
 import AppLayout from "@/layouts/AppLayout";
 import { PageHeader } from "@/components/page-header";
@@ -22,26 +22,9 @@ interface ComplianceItem {
   daysLeft: number;
   status: AlertLevel;
   action: string;
-  assignee: string;
+  assignee: string | null;
+  notes: { text: string; by: string; at: string }[];
 }
-
-const items: ComplianceItem[] = [
-  { id: 1, matter: "US9876543 — Biotech Device Patent", type: "Patent", jurisdiction: "USPTO", deadline: "2026-06-18", daysLeft: 14, status: "Critical", action: "3.5-year maintenance fee", assignee: "Priya Sharma" },
-  { id: 2, matter: "CTM-2024-00891 — GlobalTech Logo", type: "Trademark", jurisdiction: "EUIPO", deadline: "2026-06-25", daysLeft: 21, status: "Critical", action: "Trademark renewal filing", assignee: "Rahul Menon" },
-  { id: 3, matter: "EP3456789 — Clean Energy System", type: "Patent", jurisdiction: "EPO", deadline: "2026-07-10", daysLeft: 36, status: "At Risk", action: "Annual renewal fee (Year 4)", assignee: "Kavya Nair" },
-  { id: 4, matter: "IN202441087 — AI Algorithm Patent", type: "Patent", jurisdiction: "IPO India", deadline: "2026-07-22", daysLeft: 48, status: "At Risk", action: "Examination request deadline", assignee: "Priya Sharma" },
-  { id: 5, matter: "PCT/US2024/12345 — Medical Device", type: "Patent", jurisdiction: "WIPO", deadline: "2026-08-05", daysLeft: 62, status: "At Risk", action: "National phase entry deadline", assignee: "Arjun Patel" },
-  { id: 6, matter: "TM-ACME-BRAND — StellarBrands", type: "Trademark", jurisdiction: "USPTO", deadline: "2026-08-30", daysLeft: 87, status: "On Track", action: "Section 8 & 15 filing", assignee: "Rahul Menon" },
-  { id: 7, matter: "US8765432 — Software Patent", type: "Patent", jurisdiction: "USPTO", deadline: "2026-09-15", daysLeft: 103, status: "On Track", action: "7.5-year maintenance fee", assignee: "Vikram Singh" },
-  { id: 8, matter: "NovaMed Pharma — Class 5 TM", type: "Trademark", jurisdiction: "IPO India", deadline: "2026-10-01", daysLeft: 119, status: "On Track", action: "Trademark renewal (10 years)", assignee: "Kavya Nair" },
-  { id: 9, matter: "EP2345678 — Semiconductor Device", type: "Patent", jurisdiction: "EPO", deadline: "2026-10-20", daysLeft: 138, status: "On Track", action: "Annual renewal fee (Year 6)", assignee: "Priya Sharma" },
-  { id: 10, matter: "US7654321 — Optical System", type: "Patent", jurisdiction: "USPTO", deadline: "2026-11-12", daysLeft: 161, status: "Compliant", action: "11.5-year maintenance fee", assignee: "Arjun Patel" },
-  { id: 11, matter: "EUIPO-TM-5678 — FutureTech Mark", type: "Trademark", jurisdiction: "EUIPO", deadline: "2026-12-01", daysLeft: 180, status: "Compliant", action: "Trademark renewal (10 years)", assignee: "Rahul Menon" },
-  { id: 12, matter: "WO2024/09876 — IoT Platform", type: "Patent", jurisdiction: "WIPO", deadline: "2027-01-15", daysLeft: 225, status: "Compliant", action: "PCT Chapter II demand", assignee: "Vikram Singh" },
-  { id: 13, matter: "US6543210 — Network Protocol", type: "Patent", jurisdiction: "USPTO", deadline: "2027-02-28", daysLeft: 269, status: "Compliant", action: "11.5-year maintenance fee", assignee: "Priya Sharma" },
-  { id: 14, matter: "IN202312456 — Agri-Tech Patent", type: "Patent", jurisdiction: "IPO India", deadline: "2027-03-10", daysLeft: 279, status: "Compliant", action: "Annual renewal fee (Year 3)", assignee: "Kavya Nair" },
-  { id: 15, matter: "CTM-2020-00234 — StrataTech Logo", type: "Trademark", jurisdiction: "EUIPO", deadline: "2027-04-22", daysLeft: 322, status: "Compliant", action: "Trademark renewal (10 years)", assignee: "Arjun Patel" },
-];
 
 const statusConfig: Record<AlertLevel, { color: string; bg: string; icon: React.ElementType }> = {
   Critical: { color: "text-red-600", bg: "bg-red-50 border-red-200", icon: AlertTriangle },
@@ -53,9 +36,57 @@ const statusConfig: Record<AlertLevel, { color: string; bg: string; icon: React.
 const daysColor = (d: number) => d <= 30 ? "text-red-600 font-bold" : d <= 90 ? "text-amber-600 font-semibold" : "text-green-600";
 
 export default function Compliance() {
+  const [items, setItems] = useState<ComplianceItem[]>([]);
+  const [users, setUsers] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState<AlertLevel | "All">("All");
   const [filterType, setFilterType] = useState<MatterType | Jurisdiction | "All">("All");
   const [actionItem, setActionItem] = useState<number | null>(null);
+  const [noteText, setNoteText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [feedback, setFeedback] = useState<Record<number, string>>({});
+
+  const load = () => api.getCompliance().then(setItems).catch(() => {}).finally(() => setLoading(false));
+
+  useEffect(() => {
+    load();
+    api.getUsers().then(setUsers).catch(() => {});
+  }, []);
+
+  const say = (id: number, msg: string) => {
+    setFeedback((p) => ({ ...p, [id]: msg }));
+    setTimeout(() => setFeedback((p) => ({ ...p, [id]: "" })), 3000);
+  };
+
+  async function setReminder(item: ComplianceItem) {
+    setBusy(true);
+    try { await api.remindCompliance(item.id); say(item.id, "Reminder created — see Reminders page."); }
+    catch (e: any) { say(item.id, e.message || "Failed."); }
+    finally { setBusy(false); }
+  }
+
+  async function assignAttorney(item: ComplianceItem, name: string) {
+    if (!name) return;
+    setBusy(true);
+    try { await api.updateCompliance(item.id, { assignee: name }); say(item.id, `Assigned to ${name}.`); load(); }
+    catch (e: any) { say(item.id, e.message || "Failed."); }
+    finally { setBusy(false); }
+  }
+
+  async function logNote(item: ComplianceItem) {
+    if (!noteText.trim()) return;
+    setBusy(true);
+    try { await api.updateCompliance(item.id, { note: noteText.trim() }); setNoteText(""); say(item.id, "Note logged."); load(); }
+    catch (e: any) { say(item.id, e.message || "Failed."); }
+    finally { setBusy(false); }
+  }
+
+  async function markResolved(item: ComplianceItem) {
+    setBusy(true);
+    try { await api.updateCompliance(item.id, { resolved: true }); setActionItem(null); load(); }
+    catch (e: any) { say(item.id, e.message || "Failed."); }
+    finally { setBusy(false); }
+  }
 
   const critical = items.filter((i) => i.status === "Critical").length;
   const atRisk = items.filter((i) => i.status === "At Risk").length;
@@ -67,6 +98,15 @@ export default function Compliance() {
     if (filterType !== "All" && i.type !== filterType && i.jurisdiction !== filterType) return false;
     return true;
   });
+
+  if (loading) return (
+    <AppLayout>
+      <Head title="Compliance" />
+      <div className="flex h-screen items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-gold" />
+      </div>
+    </AppLayout>
+  );
 
   return (
     <AppLayout>
@@ -162,17 +202,36 @@ export default function Compliance() {
                       {actionItem === item.id && (
                         <tr className="border-t border-dashed border-gold/30 bg-gold/5">
                           <td colSpan={8} className="px-6 py-4">
-                            <div className="flex flex-wrap items-center gap-3">
-                              <div className="flex flex-wrap gap-2">
-                                <Button size="sm" className="h-7 text-xs" onClick={() => alert(`Reminder set for ${item.matter} on ${item.deadline}`)}>Set Reminder</Button>
-                                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => alert(`Assigned to: ${item.assignee}`)}>Assign Attorney</Button>
-                                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => {
-                                  const note = prompt("Enter note for this matter:");
-                                  if (note) alert(`Note logged: "${note}" for ${item.matter}`);
-                                }}>Log Note</Button>
-                                <Button size="sm" variant="outline" className="h-7 text-xs border-green-200 text-green-600" onClick={() => setActionItem(null)}>Mark Resolved</Button>
+                            <div className="space-y-3">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <Button size="sm" className="h-7 text-xs" disabled={busy} onClick={() => setReminder(item)}>Set Reminder</Button>
+                                <select className="h-7 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold"
+                                  defaultValue="" disabled={busy}
+                                  onChange={(e) => { assignAttorney(item, e.target.value); e.target.value = ""; }}>
+                                  <option value="" disabled>Assign attorney…</option>
+                                  {users.map((u) => <option key={u.id} value={u.name}>{u.name} ({u.role})</option>)}
+                                </select>
+                                <Button size="sm" variant="outline" className="h-7 text-xs border-green-200 text-green-600" disabled={busy}
+                                  onClick={() => markResolved(item)}>Mark Resolved</Button>
+                                <span className="text-xs text-muted-foreground ml-auto">Deadline: <strong>{item.deadline}</strong> · {item.daysLeft} days remaining</span>
                               </div>
-                              <span className="text-xs text-muted-foreground">Deadline: <strong>{item.deadline}</strong> · {item.daysLeft} days remaining</span>
+                              <div className="flex items-center gap-2">
+                                <input value={noteText} onChange={(e) => setNoteText(e.target.value)}
+                                  placeholder="Add a note for this matter…"
+                                  className="flex-1 h-7 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
+                                <Button size="sm" variant="outline" className="h-7 text-xs" disabled={busy || !noteText.trim()}
+                                  onClick={() => logNote(item)}>Log Note</Button>
+                              </div>
+                              {item.notes.length > 0 && (
+                                <div className="space-y-1">
+                                  {item.notes.map((n, i) => (
+                                    <div key={i} className="text-xs text-muted-foreground">
+                                      <span className="font-medium text-foreground">{n.by}</span> · {n.at}: {n.text}
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                              {feedback[item.id] && <div className="text-xs font-medium text-green-600">{feedback[item.id]}</div>}
                             </div>
                           </td>
                         </tr>
