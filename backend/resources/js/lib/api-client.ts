@@ -124,12 +124,9 @@ export const api = {
   async clockOut(): Promise<any> {
     return this.request('/hrms/clock-out', { method: 'POST' })
   },
-  async getLeaves(): Promise<{ requests: any[]; balances: any }> { return this.request('/hrms/leaves') },
-  async applyLeave(data: { leave_type: string; from_date: string; to_date: string; reason: string }): Promise<any> {
-    return this.request('/hrms/leaves', { method: 'POST', body: JSON.stringify(data) })
-  },
-  async updateLeave(id: number | string, data: { status: string; comments?: string }): Promise<any> {
-    return this.request(`/hrms/leaves/${id}`, { method: 'PUT', body: JSON.stringify(data) })
+  async getLeaves(): Promise<{ requests: any[]; balances: any }> { return this.request('/leaves') },
+  async applyLeave(data: { leave_type: string; from_date: string; to_date: string; reason?: string }): Promise<any> {
+    return this.request('/leaves', { method: 'POST', body: JSON.stringify(data) })
   },
 
   // ── Financial ──

@@ -144,6 +144,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/offboarding', [\App\Http\Controllers\OffboardingController::class, 'store']);
     Route::put('/offboarding/{id}/checklist', [\App\Http\Controllers\OffboardingController::class, 'updateChecklist']);
 
+    // Leave Management
+    Route::get('/leaves', [\App\Http\Controllers\LeaveController::class, 'index']);
+    Route::post('/leaves', [\App\Http\Controllers\LeaveController::class, 'store']);
+
     // Integrations
     Route::get('/integrations', [\App\Http\Controllers\IntegrationController::class, 'index']);
     Route::post('/integrations/{slug}/toggle', [\App\Http\Controllers\IntegrationController::class, 'toggle']);

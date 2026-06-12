@@ -61,6 +61,7 @@ class Employee extends Model
         'esi_number' => EncryptedSafe::class,
         'bank_account_number' => EncryptedSafe::class,
         'bank_ifsc_code' => EncryptedSafe::class,
+        'salary' => EncryptedSafe::class,
     ];
 
     public function user(): BelongsTo

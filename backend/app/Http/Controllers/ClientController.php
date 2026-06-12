@@ -257,7 +257,16 @@ class ClientController extends Controller
         }
 
         $client = Client::findOrFail($id);
-        $name   = $client->legal_name ?? $client->company_name;
+
+        // Prevent deletion if financial records exist (data integrity)
+        $invoiceCount = \App\Models\Invoice::where('client_id', $id)->count();
+        if ($invoiceCount > 0) {
+            return response()->json([
+                'message' => "Cannot delete client with {$invoiceCount} invoice(s). Use status 'Inactive' instead.",
+            ], 422);
+        }
+
+        $name = $client->legal_name ?? $client->company_name;
         $client->delete();
 
         AuditLog::create([

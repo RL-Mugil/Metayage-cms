@@ -4,8 +4,11 @@ namespace Tests\Feature;
 
 use App\Models\Client;
 use App\Models\ComplianceItem;
+use App\Models\Employee;
 use App\Models\Integration;
 use App\Models\JobPosting;
+use App\Models\LeaveBalance;
+use App\Models\LeaveRequest;
 use App\Models\OffboardingCase;
 use App\Models\PerformanceReview;
 use App\Models\Reminder;
@@ -304,5 +307,205 @@ class ModuleActionsTest extends TestCase
         $this->postJson('/api/bulk/execute', [
             'entity' => 'clients', 'ids' => [$client->id], 'action' => 'archive',
         ])->assertForbidden();
+    }
+
+    // ── Leave Management ────────────────────────────────────────────
+
+    private function employee(string $name, string $code, User $user): \App\Models\Employee
+    {
+        return \App\Models\Employee::create([
+            'user_id' => $user->id,
+            'full_name' => $name,
+            'employee_code' => $code,
+            'work_email' => strtolower($name) . '@test.local',
+            'date_of_joining' => now()->toDateString(),
+            'employment_type' => 'Full-time',
+            'employment_status' => 'Active',
+        ]);
+    }
+
+    public function test_employee_can_apply_leave(): void
+    {
+        $user = $this->user('associate');
+        $emp = $this->employee('Kavya Nair', 'EMP001', $user);
+        Sanctum::actingAs($user);
+
+        $this->postJson('/api/leaves', [
+            'leave_type' => 'Annual',
+            'from_date' => now()->addDays(5)->toDateString(),
+            'to_date' => now()->addDays(7)->toDateString(),
+            'reason' => 'Vacation',
+        ])->assertCreated()->assertJsonFragment(['status' => 'Pending']);
+
+        $this->assertDatabaseHas('leave_requests', [
+            'employee_id' => $emp->id,
+            'leave_type' => 'Annual',
+            'total_days' => 3,
+        ]);
+    }
+
+    public function test_leave_balance_is_deducted_on_approval(): void
+    {
+        $user = $this->user('hr');
+        $emp_user = $this->user('associate');
+        $emp = $this->employee('Arjun Menon', 'EMP002', $emp_user);
+
+        // Create leave balance for current year
+        \App\Models\LeaveBalance::create([
+            'employee_id' => $emp->id,
+            'year' => date('Y'),
+            'earned_leave' => 10,
+            'casual_leave' => 5,
+            'sick_leave' => 3,
+        ]);
+
+        // Employee applies for 3 days of annual leave
+        $leave = \App\Models\LeaveRequest::create([
+            'employee_id' => $emp->id,
+            'leave_type' => 'Annual',
+            'from_date' => now()->addDays(5)->toDateString(),
+            'to_date' => now()->addDays(7)->toDateString(),
+            'total_days' => 3,
+            'status' => 'Pending',
+        ]);
+
+        Sanctum::actingAs($user);
+        $this->postJson('/api/approvals/resolve', [
+            'type' => 'Leave',
+            'id' => $leave->id,
+            'action' => 'Approved',
+        ])->assertOk();
+
+        // Balance should be deducted from earned_leave
+        $balance = \App\Models\LeaveBalance::where('employee_id', $emp->id)->first();
+        $this->assertEquals(7, $balance->earned_leave); // 10 - 3
+        $this->assertEquals(0, $balance->lop_days);
+    }
+
+    public function test_shortfall_days_accrue_as_lop(): void
+    {
+        $user = $this->user('hr');
+        $emp_user = $this->user('associate');
+        $emp = $this->employee('Priya Sharma', 'EMP003', $emp_user);
+
+        // Create balance with only 2 days of annual leave
+        \App\Models\LeaveBalance::create([
+            'employee_id' => $emp->id,
+            'year' => date('Y'),
+            'earned_leave' => 2,
+            'casual_leave' => 5,
+            'sick_leave' => 3,
+        ]);
+
+        // Apply for 5 days (only 2 available)
+        $leave = \App\Models\LeaveRequest::create([
+            'employee_id' => $emp->id,
+            'leave_type' => 'Annual',
+            'from_date' => now()->addDays(10)->toDateString(),
+            'to_date' => now()->addDays(14)->toDateString(),
+            'total_days' => 5,
+            'status' => 'Pending',
+        ]);
+
+        Sanctum::actingAs($user);
+        $this->postJson('/api/approvals/resolve', [
+            'type' => 'Leave',
+            'id' => $leave->id,
+            'action' => 'Approved',
+        ])->assertOk();
+
+        // 2 deducted from balance, 3 days become LOP
+        $balance = \App\Models\LeaveBalance::where('employee_id', $emp->id)->first();
+        $this->assertEquals(0, $balance->earned_leave);
+        $this->assertEquals(3, $balance->lop_days);
+    }
+
+    public function test_rejected_leave_does_not_deduct_balance(): void
+    {
+        $user = $this->user('hr');
+        $emp_user = $this->user('associate');
+        $emp = $this->employee('Rohan Patel', 'EMP004', $emp_user);
+
+        \App\Models\LeaveBalance::create([
+            'employee_id' => $emp->id,
+            'year' => date('Y'),
+            'earned_leave' => 10,
+            'casual_leave' => 5,
+            'sick_leave' => 3,
+        ]);
+
+        $leave = \App\Models\LeaveRequest::create([
+            'employee_id' => $emp->id,
+            'leave_type' => 'Annual',
+            'from_date' => now()->addDays(5)->toDateString(),
+            'to_date' => now()->addDays(7)->toDateString(),
+            'total_days' => 3,
+            'status' => 'Pending',
+        ]);
+
+        Sanctum::actingAs($user);
+        $this->postJson('/api/approvals/resolve', [
+            'type' => 'Leave',
+            'id' => $leave->id,
+            'action' => 'Rejected',
+        ])->assertOk();
+
+        // Balance unchanged on rejection
+        $balance = \App\Models\LeaveBalance::where('employee_id', $emp->id)->first();
+        $this->assertEquals(10, $balance->earned_leave);
+    }
+
+    // ── Data Integrity ─────────────────────────────────────────────────────────
+
+    public function test_client_with_invoices_cannot_be_deleted(): void
+    {
+        $client = $this->client('Acme Corp', 'C01M');
+        \App\Models\Invoice::create([
+            'client_id' => $client->id,
+            'invoice_code' => 'INV-001',
+            'invoice_type' => 'Standard',
+            'subtotal' => 50000,
+            'total_amount' => 50000,
+            'balance_due' => 50000,
+            'status' => 'Draft',
+            'issue_date' => now()->toDateString(),
+            'due_date' => now()->addDays(30)->toDateString(),
+        ]);
+
+        Sanctum::actingAs($this->user('partner'));
+        $response = $this->deleteJson("/api/clients/{$client->id}");
+        $response->assertStatus(422);
+        $this->assertStringContainsString('Cannot delete client', $response->json('message'));
+
+        $this->assertDatabaseHas('clients', ['id' => $client->id]);
+    }
+
+    public function test_client_without_invoices_can_be_deleted(): void
+    {
+        $empty = $this->client('Empty Corp', 'C06M');
+        Sanctum::actingAs($this->user('super_admin'));
+
+        $response = $this->deleteJson("/api/clients/{$empty->id}");
+        $response->assertOk();
+
+        // Client uses SoftDeletes, so check deleted_at is set
+        $this->assertNotNull(\App\Models\Client::withTrashed()->find($empty->id)->deleted_at);
+    }
+
+    public function test_salary_is_encrypted_in_database(): void
+    {
+        $user = $this->user('hr');
+        $emp = $this->employee('Test Employee', 'EMP005', $user);
+
+        Sanctum::actingAs($user);
+        $this->putJson('/api/hrms/employees/' . $emp->id, [
+            'salary' => 500000,
+        ])->assertOk();
+
+        // Verify salary is encrypted at rest
+        $raw = \DB::table('employees')->where('id', $emp->id)->value('salary');
+        $this->assertNotNull($raw);
+        // Encrypted values start with eyJ (base64 encoded JSON)
+        $this->assertStringStartsWith('eyJ', $raw);
     }
 }

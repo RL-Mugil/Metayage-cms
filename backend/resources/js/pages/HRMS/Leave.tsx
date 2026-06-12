@@ -72,11 +72,11 @@ export default function HRMSLeave() {
     }
   };
 
-  const handleStatusChange = async (id: any, status: string) => {
+  const handleStatusChange = async (id: any, action: 'Approved' | 'Rejected') => {
     setError("");
     try {
-      const updated = await api.updateLeave(id, { status });
-      setRequests((prev) => prev.map((r) => (r.id === id ? { ...r, status: updated.status } : r)));
+      await api.resolveApproval('Leave', id, action);
+      setRequests((prev) => prev.map((r) => (r.id === id ? { ...r, status: action } : r)));
     } catch (err: any) {
       setError(err.message || "Failed to update request.");
     }
