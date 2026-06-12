@@ -15,10 +15,6 @@ export default function Login() {
     post("/login");
   };
 
-  const quickFill = (email: string, password: string) => {
-    setData((prev) => ({ ...prev, email, password }));
-  };
-
   return (
     <>
       <Head title="Sign In" />
@@ -86,47 +82,6 @@ export default function Login() {
                 {processing ? <Loader2 className="h-4 w-4 animate-spin" /> : "Sign In to Workspace"}
               </Button>
             </form>
-
-            <div className="relative flex py-2 items-center">
-              <div className="flex-grow border-t border-zinc-800"></div>
-              <span className="flex-shrink mx-4 text-[10px] text-zinc-500 uppercase tracking-widest font-semibold">Quick Switch Roles</span>
-              <div className="flex-grow border-t border-zinc-800"></div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              <button
-                type="button"
-                onClick={() => quickFill("suresh@metayage.com", "password123")}
-                className="p-2.5 rounded-lg border border-zinc-800 bg-zinc-900/40 hover:bg-zinc-900 text-zinc-300 hover:text-white transition-colors text-left flex flex-col justify-between"
-              >
-                <span className="font-semibold text-gold">Partner</span>
-                <span className="text-[10px] text-zinc-500 truncate">suresh@metayage.com</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => quickFill("anika@metayage.com", "password123")}
-                className="p-2.5 rounded-lg border border-zinc-800 bg-zinc-900/40 hover:bg-zinc-900 text-zinc-300 hover:text-white transition-colors text-left flex flex-col justify-between"
-              >
-                <span className="font-semibold text-primary">Manager</span>
-                <span className="text-[10px] text-zinc-500 truncate">anika@metayage.com</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => quickFill("admin@ipflow.com", "admin123")}
-                className="p-2.5 rounded-lg border border-zinc-800 bg-zinc-900/40 hover:bg-zinc-900 text-zinc-300 hover:text-white transition-colors text-left flex flex-col justify-between"
-              >
-                <span className="font-semibold text-emerald-400">Super Admin</span>
-                <span className="text-[10px] text-zinc-500 truncate">admin@ipflow.com</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => quickFill("priya@helios.com", "client123")}
-                className="p-2.5 rounded-lg border border-zinc-800 bg-zinc-900/40 hover:bg-zinc-900 text-zinc-300 hover:text-white transition-colors text-left flex flex-col justify-between"
-              >
-                <span className="font-semibold text-indigo-400">Client Contact</span>
-                <span className="text-[10px] text-zinc-500 truncate">priya@helios.com</span>
-              </button>
-            </div>
           </div>
         </div>
       </div>
