@@ -55,8 +55,8 @@ class ModuleActionsTest extends TestCase
 
         $this->assertEquals(15, ComplianceItem::count());
         $this->assertEquals(8, Integration::count());
-        $this->assertEquals(7, Reminder::count());
-        // Performance, recruitment, and offboarding are no longer seeded
+        // Feedback, reminders, performance, recruitment, offboarding not seeded
+        $this->assertEquals(0, Reminder::count());
         $this->assertEquals(0, PerformanceReview::count());
         $this->assertEquals(0, JobPosting::count());
         $this->assertEquals(0, OffboardingCase::count());

@@ -3,10 +3,7 @@
 namespace Database\Seeders;
 
 use App\Models\ComplianceItem;
-use App\Models\FeedbackEntry;
 use App\Models\Integration;
-use App\Models\Reminder;
-use App\Models\User;
 use Illuminate\Database\Seeder;
 
 /**
@@ -40,45 +37,6 @@ class DemoModulesSeeder extends Seeder
                     'matter' => $matter, 'type' => $type, 'jurisdiction' => $jurisdiction,
                     'deadline' => $deadline, 'action_required' => $action, 'assignee' => $assignee,
                     'status' => 'Open',
-                ]);
-            }
-        }
-
-        if (FeedbackEntry::count() === 0) {
-            $entries = [
-                ['Acme Corporation', 5, 'Outstanding handling of our patent portfolio. The team caught a critical prior-art issue before filing that saved us months of prosecution.', '2026-06-08', 'Overall'],
-                ['Tech Solutions Ltd', 4, 'Very thorough trademark clearance search. Would appreciate slightly faster initial responses, but the quality of work is excellent.', '2026-06-05', 'Service'],
-                ['InnovateTech Inc', 5, 'PCT national phase entries were completed well ahead of deadline across all five jurisdictions. Impressive turnaround.', '2026-05-28', 'Turnaround'],
-                ['GlobalPatent Group', 3, 'Good legal work, but we had to chase for status updates on the EPO opposition. A monthly summary would help.', '2026-05-22', 'Communication'],
-                ['BioMed Research', 5, "The team's understanding of biotech claims is exceptional. Our examiner interviews went smoothly thanks to their preparation.", '2026-05-18', 'Service'],
-                ['StartupLabs', 4, 'Great value for a startup budget. The provisional-to-PCT strategy advice was practical and clear.', '2026-05-12', 'Overall'],
-                ['Enterprise Corp', 2, 'Renewal reminder came too close to the deadline for comfort. We expect at least 60 days notice for maintenance fees.', '2026-05-06', 'Turnaround'],
-                ['FutureMark LLC', 4, 'Responsive team and clear fee estimates. The trademark watch reports are detailed and actionable.', '2026-04-30', 'Communication'],
-            ];
-            foreach ($entries as [$client, $rating, $comment, $date, $category]) {
-                FeedbackEntry::create([
-                    'client_name' => $client, 'rating' => $rating, 'comment' => $comment,
-                    'entry_date' => $date, 'category' => $category,
-                ]);
-            }
-        }
-
-        $owner = User::where('role', 'super_admin')->first() ?? User::first();
-        if ($owner && Reminder::count() === 0) {
-            $reminders = [
-                ['Pay USPTO maintenance fee — US9876543', '3.5-year window closes June 18 — surcharge applies after', 'Deadline', '2026-06-11', '17:00', 'self', false],
-                ['Client call — Acme Corporation', 'Quarterly portfolio review with R&D head', 'Meeting', '2026-06-11', '15:30', 'self', false],
-                ['Follow up on EUIPO renewal documents', 'GlobalTech logo trademark — POA still pending from client', 'Renewal', '2026-06-15', null, 'team', false],
-                ['Draft FER response — IN202441087', 'First examination report response due to IPO', 'Deadline', '2026-06-17', null, 'self', false],
-                ['Send CSAT survey to BioMed Research', 'Post-filing feedback for biotech device application', 'Follow-up', '2026-06-16', null, 'team', true],
-                ['EPO renewal fee — EP3456789 (Year 4)', 'Clean energy system patent annuity', 'Renewal', '2026-07-10', null, 'team', false],
-                ['PCT national phase entry — PCT/US2024/12345', 'Medical device — confirm target jurisdictions with client', 'Deadline', '2026-08-05', null, 'self', false],
-            ];
-            foreach ($reminders as [$title, $desc, $category, $due, $time, $scope, $completed]) {
-                Reminder::create([
-                    'user_id' => $owner->id, 'title' => $title, 'description' => $desc,
-                    'category' => $category, 'due_date' => $due, 'due_time' => $time,
-                    'scope' => $scope, 'completed' => $completed,
                 ]);
             }
         }
