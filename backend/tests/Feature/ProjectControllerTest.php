@@ -49,10 +49,11 @@ class ProjectControllerTest extends TestCase
         $client = $this->createClient(['company_name' => 'Test']);
 
         $this->postJson('/api/projects', [
-            'title'       => 'Test Project',
-            'case_type'   => 'Patent',
-            'client_id'   => $client->id,
-            'status'      => 'Active',
+            'project_name' => 'Test Project',
+            'project_type' => 'Patent',
+            'case_type'    => 'Patent',
+            'client_id'    => $client->id,
+            'status'       => 'Active',
         ])->assertForbidden();
     }
 
@@ -64,11 +65,11 @@ class ProjectControllerTest extends TestCase
         $client = $this->createClient(['company_name' => 'Test']);
 
         $this->postJson('/api/projects', [
-            'title'       => 'Patent Filing',
-            'case_type'   => 'Patent',
-            'client_id'   => $client->id,
-            'status'      => 'Active',
-        ])->assertCreated()->assertJsonFragment(['title' => 'Patent Filing']);
+            'project_name' => 'Patent Filing',
+            'project_type' => 'Patent',
+            'case_type'    => 'Patent',
+            'client_id'    => $client->id,
+        ])->assertCreated()->assertJsonFragment(['project_name' => 'Patent Filing']);
     }
 
     // ──── Project Code Auto-Generation ────
@@ -80,10 +81,11 @@ class ProjectControllerTest extends TestCase
         $client = $this->createClient(['company_name' => 'Test']);
 
         $response = $this->postJson('/api/projects', [
-            'title'       => 'First Case',
-            'case_type'   => 'Patent',
-            'client_id'   => $client->id,
-            'status'      => 'Active',
+            'project_name' => 'First Case',
+            'project_type' => 'Patent',
+            'case_type'    => 'Patent',
+            'client_id'    => $client->id,
+            'status'       => 'Active',
         ])->assertCreated()->json();
 
         $this->assertNotNull($response['project_code']);
@@ -99,19 +101,21 @@ class ProjectControllerTest extends TestCase
 
         Project::create([
             'project_code' => 'PROJ-001',
+            'project_name' => 'First Case',
+            'project_type' => 'Patent',
             'docket_number' => 'DOC-2024-001',
-            'title'        => 'First Case',
             'case_type'    => 'Patent',
             'client_id'    => $client->id,
             'status'       => 'Active',
         ]);
 
         $this->postJson('/api/projects', [
-            'title'        => 'Second Case',
-            'case_type'    => 'Patent',
+            'project_name'  => 'Second Case',
+            'project_type'  => 'Patent',
+            'case_type'     => 'Patent',
             'docket_number' => 'DOC-2024-001',
-            'client_id'    => $client->id,
-            'status'       => 'Active',
+            'client_id'     => $client->id,
+            'status'        => 'Active',
         ])->assertStatus(422);
     }
 
@@ -122,7 +126,7 @@ class ProjectControllerTest extends TestCase
         Sanctum::actingAs($partner);
 
         $this->postJson('/api/projects', [])->assertStatus(422);
-        $this->postJson('/api/projects', ['title' => 'No Client'])->assertStatus(422);
+        $this->postJson('/api/projects', ['project_name' => 'No Client', 'project_type' => 'Patent'])->assertStatus(422);
     }
 
     public function test_project_with_invalid_client_id(): void
@@ -131,10 +135,11 @@ class ProjectControllerTest extends TestCase
         Sanctum::actingAs($partner);
 
         $this->postJson('/api/projects', [
-            'title'     => 'Test',
-            'case_type' => 'Patent',
-            'client_id' => 99999,
-            'status'    => 'Active',
+            'project_name' => 'Test',
+            'project_type' => 'Patent',
+            'case_type'    => 'Patent',
+            'client_id'    => 99999,
+            'status'       => 'Active',
         ])->assertStatus(422);
     }
 
@@ -146,10 +151,11 @@ class ProjectControllerTest extends TestCase
         $client = $this->createClient(['company_name' => 'Test']);
 
         $this->postJson('/api/projects', [
-            'title'       => 'Test',
-            'case_type'   => 'InvalidType',
-            'client_id'   => $client->id,
-            'status'      => 'Active',
+            'project_name' => 'Test',
+            'project_type' => 'Patent',
+            'case_type'    => 'InvalidType',
+            'client_id'    => $client->id,
+            'status'       => 'Active',
         ])->assertStatus(422);
     }
 
@@ -162,15 +168,16 @@ class ProjectControllerTest extends TestCase
         $client = $this->createClient(['company_name' => 'Test']);
         $project = Project::create([
             'project_code' => 'PROJ-001',
-            'title'        => 'Original Title',
+            'project_name' => 'Original Title',
+            'project_type' => 'Patent',
             'case_type'    => 'Patent',
             'client_id'    => $client->id,
             'status'       => 'Active',
         ]);
 
         $this->putJson("/api/projects/{$project->id}", [
-            'title' => 'Updated Title',
-        ])->assertOk()->assertJsonFragment(['title' => 'Updated Title']);
+            'project_name' => 'Updated Title',
+        ])->assertOk()->assertJsonFragment(['project_name' => 'Updated Title']);
     }
 
     public function test_project_status_transition_draft_to_active(): void
@@ -181,7 +188,8 @@ class ProjectControllerTest extends TestCase
         $client = $this->createClient(['company_name' => 'Test']);
         $project = Project::create([
             'project_code' => 'PROJ-001',
-            'title'        => 'Test',
+            'project_name' => 'Test',
+            'project_type' => 'Patent',
             'case_type'    => 'Patent',
             'client_id'    => $client->id,
             'status'       => 'Draft',
@@ -202,7 +210,8 @@ class ProjectControllerTest extends TestCase
         $client = $this->createClient(['company_name' => 'Test']);
         $project = Project::create([
             'project_code' => 'PROJ-001',
-            'title'        => 'Test',
+            'project_name' => 'Test',
+            'project_type' => 'Patent',
             'case_type'    => 'Patent',
             'client_id'    => $client->id,
             'status'       => 'Active',
@@ -223,7 +232,8 @@ class ProjectControllerTest extends TestCase
         $client = $this->createClient(['company_name' => 'Test']);
         $project = Project::create([
             'project_code' => 'PROJ-001',
-            'title'        => 'Test',
+            'project_name' => 'Test',
+            'project_type' => 'Patent',
             'case_type'    => 'Patent',
             'client_id'    => $client->id,
             'status'       => 'Closed',
@@ -234,7 +244,7 @@ class ProjectControllerTest extends TestCase
         ]);
 
         // Should be rejected or business logic should prevent it
-        $this->assertIn($response->getStatusCode(), [403, 422, 200]); // Depends on implementation
+        $this->assertTrue(in_array($response->getStatusCode(), [403, 422, 200]));
     }
 
     // ──── Deletion ────
@@ -246,7 +256,8 @@ class ProjectControllerTest extends TestCase
         $client = $this->createClient(['company_name' => 'Test']);
         $project = Project::create([
             'project_code' => 'PROJ-001',
-            'title'        => 'Test',
+            'project_name' => 'Test',
+            'project_type' => 'Patent',
             'case_type'    => 'Patent',
             'client_id'    => $client->id,
             'status'       => 'Active',
@@ -263,7 +274,8 @@ class ProjectControllerTest extends TestCase
         $client = $this->createClient(['company_name' => 'Test']);
         $project = Project::create([
             'project_code' => 'PROJ-001',
-            'title'        => 'Test',
+            'project_name' => 'Test',
+            'project_type' => 'Patent',
             'case_type'    => 'Patent',
             'client_id'    => $client->id,
             'status'       => 'Draft',
@@ -281,8 +293,8 @@ class ProjectControllerTest extends TestCase
 
         $client = $this->createClient(['company_name' => 'Test']);
 
-        Project::create(['project_code' => 'P1', 'title' => 'Active', 'case_type' => 'Patent', 'client_id' => $client->id, 'status' => 'Active']);
-        Project::create(['project_code' => 'P2', 'title' => 'Draft', 'case_type' => 'Patent', 'client_id' => $client->id, 'status' => 'Draft']);
+        Project::create(['project_code' => 'P1', 'project_name' => 'Active', 'project_type' => 'Patent', 'case_type' => 'Patent', 'client_id' => $client->id, 'status' => 'Active']);
+        Project::create(['project_code' => 'P2', 'project_name' => 'Draft', 'project_type' => 'Patent', 'case_type' => 'Patent', 'client_id' => $client->id, 'status' => 'Draft']);
 
         $response = $this->getJson('/api/projects?status=Active')->assertOk()->json();
         $this->assertGreaterThan(0, count($response['data']));
@@ -293,11 +305,11 @@ class ProjectControllerTest extends TestCase
         $partner = $this->user('partner');
         Sanctum::actingAs($partner);
 
-        $client1 = Client::create(['company_name' => 'Client 1', 'industry' => 'Tech', 'status' => 'Active']);
-        $client2 = Client::create(['company_name' => 'Client 2', 'industry' => 'Pharma', 'status' => 'Active']);
+        $client1 = Client::create(['company_name' => 'Client 1', 'client_code' => 'C01M', 'industry' => 'Tech', 'status' => 'Active']);
+        $client2 = Client::create(['company_name' => 'Client 2', 'client_code' => 'C02M', 'industry' => 'Pharma', 'status' => 'Active']);
 
-        Project::create(['project_code' => 'P1', 'title' => 'Project 1', 'case_type' => 'Patent', 'client_id' => $client1->id, 'status' => 'Active']);
-        Project::create(['project_code' => 'P2', 'title' => 'Project 2', 'case_type' => 'Patent', 'client_id' => $client2->id, 'status' => 'Active']);
+        Project::create(['project_code' => 'P1', 'project_name' => 'Project 1', 'project_type' => 'Patent', 'case_type' => 'Patent', 'client_id' => $client1->id, 'status' => 'Active']);
+        Project::create(['project_code' => 'P2', 'project_name' => 'Project 2', 'project_type' => 'Patent', 'case_type' => 'Patent', 'client_id' => $client2->id, 'status' => 'Active']);
 
         $response = $this->getJson("/api/projects?client_id={$client1->id}")->assertOk()->json();
         $this->assertGreaterThan(0, count($response['data']));

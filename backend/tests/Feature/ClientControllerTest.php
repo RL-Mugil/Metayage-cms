@@ -25,9 +25,14 @@ class ClientControllerTest extends TestCase
 
     private function validClientData(array $override = []): array
     {
+        static $counter = 0;
+        $counter++;
+        $legalName = 'Test Company Ltd.';
         return array_merge([
-            'client_code'  => 'CLI-' . rand(1000, 9999),
-            'company_name' => 'Test Company',
+            'client_code'  => 'C' . str_pad($counter, 2, '0', STR_PAD_LEFT) . 'M',
+            'legal_name'   => $legalName,
+            'company_name' => $legalName,
+            'client_type'  => 'organization',
             'entity_type'  => 'Corporation',
             'industry'     => 'Tech',
             'status'       => 'Active',
@@ -54,13 +59,9 @@ class ClientControllerTest extends TestCase
         $user = $this->user('partner');
         Sanctum::actingAs($user);
 
-        $this->postJson('/api/clients', [
-            'company_name' => 'Acme Corp',
-            'legal_name'   => 'Acme Corporation Ltd.',
-            'client_type'  => 'Organisation',
-            'industry'     => 'Tech',
-            'status'       => 'Active',
-        ])->assertCreated()->assertJsonFragment(['company_name' => 'Acme Corp']);
+        $this->postJson('/api/clients', $this->validClientData([
+            'legal_name' => 'Acme Corporation Ltd.',
+        ]))->assertCreated()->assertJsonFragment(['legal_name' => 'Acme Corporation Ltd.']);
     }
 
     public function test_super_admin_can_create_client(): void
@@ -68,13 +69,10 @@ class ClientControllerTest extends TestCase
         $user = $this->user('super_admin');
         Sanctum::actingAs($user);
 
-        $this->postJson('/api/clients', [
-            'company_name' => 'Beta Inc',
-            'legal_name'   => 'Beta Inc.',
-            'client_type'  => 'Organisation',
-            'industry'     => 'Pharma',
-            'status'       => 'Active',
-        ])->assertCreated();
+        $this->postJson('/api/clients', $this->validClientData([
+            'legal_name' => 'Beta Inc.',
+            'industry'   => 'Pharma',
+        ]))->assertCreated();
     }
 
     // ──── Input Validation ────
@@ -84,8 +82,8 @@ class ClientControllerTest extends TestCase
         Sanctum::actingAs($user);
 
         $this->postJson('/api/clients', [])->assertStatus(422);
-        $this->postJson('/api/clients', ['company_name' => 'Test'])->assertStatus(422);
-        $this->postJson('/api/clients', $this->validClientData(['company_name' => null]))->assertStatus(422);
+        $this->postJson('/api/clients', ['legal_name' => 'Test'])->assertStatus(422);
+        $this->postJson('/api/clients', $this->validClientData(['legal_name' => null]))->assertStatus(422);
     }
 
     public function test_create_client_with_optional_fields(): void
@@ -124,17 +122,17 @@ class ClientControllerTest extends TestCase
         $user = $this->user('partner');
         Sanctum::actingAs($user);
 
-        // Create 25 clients
-        for ($i = 1; $i <= 25; $i++) {
+        // Create 30 clients to ensure pagination
+        for ($i = 1; $i <= 30; $i++) {
             Client::create($this->validClientData([
-                'company_name' => "Client $i",
-                'client_code'  => "CL-" . str_pad($i, 4, '0', STR_PAD_LEFT),
+                'legal_name'  => "Client $i Ltd.",
+                'client_code' => "CL-" . str_pad($i, 4, '0', STR_PAD_LEFT),
             ]));
         }
 
         $response = $this->getJson('/api/clients')->assertOk()->json();
         $this->assertIsArray($response['data']);
-        $this->assertLessThanOrEqual(15, count($response['data'])); // Default page size
+        $this->assertLessThanOrEqual(25, count($response['data'])); // Default per_page is 25
         $this->assertGreaterThan(1, $response['last_page']);
     }
 
@@ -157,11 +155,9 @@ class ClientControllerTest extends TestCase
         $user = $this->user('partner');
         Sanctum::actingAs($user);
 
-        $client = Client::create([
-            'company_name' => 'Original Name',
-            'industry'     => 'Tech',
-            'status'       => 'Active',
-        ]);
+        $client = Client::create(array_merge($this->validClientData(), [
+            'legal_name' => 'Original Name',
+        ]));
 
         $this->putJson("/api/clients/{$client->id}", [
             'company_name' => 'Updated Name',
@@ -175,11 +171,9 @@ class ClientControllerTest extends TestCase
         $partner = $this->user('partner');
 
         Sanctum::actingAs($partner);
-        $client = Client::create([
-            'company_name' => 'Test Corp',
-            'industry'     => 'Tech',
-            'status'       => 'Active',
-        ]);
+        $client = Client::create(array_merge($this->validClientData(), [
+            'legal_name' => 'Test Corp',
+        ]));
 
         Sanctum::actingAs($associate);
         $this->putJson("/api/clients/{$client->id}", [
@@ -194,16 +188,15 @@ class ClientControllerTest extends TestCase
         $user = $this->user('super_admin');
         Sanctum::actingAs($user);
 
-        $client = Client::create([
-            'company_name' => 'Client with Projects',
-            'industry'     => 'Tech',
-            'status'       => 'Active',
-        ]);
+        $client = Client::create(array_merge($this->validClientData(), [
+            'legal_name' => 'Client with Projects',
+        ]));
 
         // Create a related project (assume hasMany relationship exists)
         $client->projects()->create([
             'project_code' => 'PROJ-001',
-            'title'        => 'Test Project',
+            'project_name' => 'Test Project',
+            'project_type' => 'Patent',
             'case_type'    => 'Patent',
             'status'       => 'Active',
         ]);
@@ -218,11 +211,9 @@ class ClientControllerTest extends TestCase
         $user = $this->user('super_admin');
         Sanctum::actingAs($user);
 
-        $client = Client::create([
-            'company_name' => 'Standalone Client',
-            'industry'     => 'Tech',
-            'status'       => 'Active',
-        ]);
+        $client = Client::create(array_merge($this->validClientData(), [
+            'legal_name' => 'Standalone Client',
+        ]));
 
         $this->deleteJson("/api/clients/{$client->id}")->assertOk();
         $this->assertNull(Client::find($client->id));
@@ -234,11 +225,9 @@ class ClientControllerTest extends TestCase
         $user = $this->user('partner');
         Sanctum::actingAs($user);
 
-        $client = Client::create([
-            'company_name' => 'Test Corp',
-            'industry'     => 'Tech',
-            'status'       => 'Active',
-        ]);
+        $client = Client::create(array_merge($this->validClientData(), [
+            'legal_name' => 'Test Corp',
+        ]));
 
         $this->postJson("/api/clients/{$client->id}/contacts", [
             'name'      => 'John Doe',
@@ -253,11 +242,9 @@ class ClientControllerTest extends TestCase
         $user = $this->user('partner');
         Sanctum::actingAs($user);
 
-        $client = Client::create([
-            'company_name' => 'Test Corp',
-            'industry'     => 'Tech',
-            'status'       => 'Active',
-        ]);
+        $client = Client::create(array_merge($this->validClientData(), [
+            'legal_name' => 'Test Corp',
+        ]));
 
         $this->postJson("/api/clients/{$client->id}/contacts", [
             'name'      => 'Jane Doe',
@@ -271,11 +258,9 @@ class ClientControllerTest extends TestCase
         $user = $this->user('partner');
         Sanctum::actingAs($user);
 
-        $client = Client::create([
-            'company_name' => 'Test Corp',
-            'industry'     => 'Tech',
-            'status'       => 'Active',
-        ]);
+        $client = Client::create(array_merge($this->validClientData(), [
+            'legal_name' => 'Test Corp',
+        ]));
 
         $this->postJson("/api/clients/{$client->id}/contacts", [
             'name'      => 'John Doe',
@@ -296,11 +281,9 @@ class ClientControllerTest extends TestCase
         $user = $this->user('partner');
         Sanctum::actingAs($user);
 
-        $client = Client::create([
-            'company_name' => 'Test Corp',
-            'industry'     => 'Tech',
-            'status'       => 'Active',
-        ]);
+        $client = Client::create(array_merge($this->validClientData(), [
+            'legal_name' => 'Test Corp',
+        ]));
 
         // Active -> Inactive
         $this->putJson("/api/clients/{$client->id}", ['status' => 'Inactive'])->assertOk();
@@ -318,8 +301,8 @@ class ClientControllerTest extends TestCase
 
         $name = "O'Reilly & Associates (Pvt.) Ltd.";
         $this->postJson('/api/clients', $this->validClientData([
-            'company_name' => $name,
-        ]))->assertCreated()->assertJsonFragment(['company_name' => $name]);
+            'legal_name' => $name,
+        ]))->assertCreated()->assertJsonFragment(['legal_name' => $name]);
     }
 
     public function test_view_nonexistent_client_returns_404(): void

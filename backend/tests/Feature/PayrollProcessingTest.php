@@ -27,9 +27,11 @@ class PayrollProcessingTest extends TestCase
 
     private function employeeWith(array $data = []): Employee
     {
+        static $counter = 0;
+        $counter++;
         $user = User::create([
-            'name'  => $data['name'] ?? 'Test Employee',
-            'email' => $data['email'] ?? 'emp@test.local',
+            'name'  => $data['name'] ?? 'Test Employee ' . $counter,
+            'email' => $data['email'] ?? 'emp' . $counter . '@test.local',
             'password' => bcrypt('password'),
             'role'  => 'associate',
             'status' => 'Active',
@@ -58,16 +60,14 @@ class PayrollProcessingTest extends TestCase
         Sanctum::actingAs($associate);
 
         $this->postJson('/api/payroll/runs', [
-            'month'  => 1,
-            'year'   => 2026,
+            'period' => '2026-01',
             'status' => 'Draft',
         ])->assertForbidden();
 
-        $finance = $this->user('finance');
-        Sanctum::actingAs($finance);
+        $hr = $this->user('hr');
+        Sanctum::actingAs($hr);
         $this->postJson('/api/payroll/runs', [
-            'month'  => 1,
-            'year'   => 2026,
+            'period' => '2026-01',
             'status' => 'Draft',
         ])->assertCreated();
     }
@@ -75,52 +75,47 @@ class PayrollProcessingTest extends TestCase
     // ──── Payroll Run Creation ────
     public function test_create_payroll_run_for_valid_month_year(): void
     {
-        $finance = $this->user('finance');
-        Sanctum::actingAs($finance);
+        $hr = $this->user('hr');
+        Sanctum::actingAs($hr);
 
-        $this->postJson('/api/payroll/runs', [
-            'month'  => 6,
-            'year'   => 2026,
-            'status' => 'Draft',
-        ])->assertCreated()->assertJsonFragment(['month' => 6, 'year' => 2026]);
+        $response = $this->postJson('/api/payroll/runs', [
+            'period' => '2026-06',
+        ])->assertCreated();
+        $this->assertStringContainsString('2026-06', $response->json()['period']);
     }
 
     public function test_cannot_create_duplicate_payroll_run(): void
     {
-        $finance = $this->user('finance');
-        Sanctum::actingAs($finance);
+        $hr = $this->user('hr');
+        Sanctum::actingAs($hr);
 
         $this->postJson('/api/payroll/runs', [
-            'month'  => 6,
-            'year'   => 2026,
+            'period' => '2026-06',
             'status' => 'Draft',
         ])->assertCreated();
 
         // Try to create for same month/year
         $this->postJson('/api/payroll/runs', [
-            'month'  => 6,
-            'year'   => 2026,
+            'period' => '2026-06',
             'status' => 'Draft',
         ])->assertStatus(422);
     }
 
     public function test_invalid_month_rejected(): void
     {
-        $finance = $this->user('finance');
-        Sanctum::actingAs($finance);
+        $hr = $this->user('hr');
+        Sanctum::actingAs($hr);
 
         $this->postJson('/api/payroll/runs', [
-            'month'  => 13,
-            'year'   => 2026,
-            'status' => 'Draft',
+            'period' => '2026-13',
         ])->assertStatus(422);
     }
 
     // ──── Payslip Generation ────
     public function test_payslips_generated_for_all_active_employees(): void
     {
-        $finance = $this->user('finance');
-        Sanctum::actingAs($finance);
+        $hr = $this->user('hr');
+        Sanctum::actingAs($hr);
 
         $emp1 = $this->employeeWith(['salary' => 60000]);
         $emp2 = $this->employeeWith(['salary' => 80000]);
@@ -129,8 +124,7 @@ class PayrollProcessingTest extends TestCase
         $emp3->save();
 
         $response = $this->postJson('/api/payroll/runs', [
-            'month'  => 6,
-            'year'   => 2026,
+            'period' => '2026-06',
             'status' => 'Draft',
         ])->assertCreated()->json();
         $runId = $response['id'];
@@ -144,14 +138,13 @@ class PayrollProcessingTest extends TestCase
     // ──── Salary Calculation ────
     public function test_basic_salary_calculation(): void
     {
-        $finance = $this->user('finance');
-        Sanctum::actingAs($finance);
+        $hr = $this->user('hr');
+        Sanctum::actingAs($hr);
 
         $emp = $this->employeeWith(['salary' => 60000]);
 
         $response = $this->postJson('/api/payroll/runs', [
-            'month'  => 6,
-            'year'   => 2026,
+            'period' => '2026-06',
             'status' => 'Draft',
         ])->assertCreated()->json();
         $runId = $response['id'];
@@ -166,15 +159,14 @@ class PayrollProcessingTest extends TestCase
 
     public function test_pf_calculation_capped_at_ceiling(): void
     {
-        $finance = $this->user('finance');
-        Sanctum::actingAs($finance);
+        $hr = $this->user('hr');
+        Sanctum::actingAs($hr);
 
         // Salary above PF ceiling (15k/month)
         $emp = $this->employeeWith(['salary' => 100000]);
 
         $response = $this->postJson('/api/payroll/runs', [
-            'month'  => 6,
-            'year'   => 2026,
+            'period' => '2026-06',
             'status' => 'Draft',
         ])->assertCreated()->json();
         $runId = $response['id'];
@@ -188,15 +180,14 @@ class PayrollProcessingTest extends TestCase
 
     public function test_esi_not_charged_above_threshold(): void
     {
-        $finance = $this->user('finance');
-        Sanctum::actingAs($finance);
+        $hr = $this->user('hr');
+        Sanctum::actingAs($hr);
 
         // Salary above ESI threshold (21k/month)
         $emp = $this->employeeWith(['salary' => 100000]);
 
         $response = $this->postJson('/api/payroll/runs', [
-            'month'  => 6,
-            'year'   => 2026,
+            'period' => '2026-06',
             'status' => 'Draft',
         ])->assertCreated()->json();
         $runId = $response['id'];
@@ -210,15 +201,14 @@ class PayrollProcessingTest extends TestCase
 
     public function test_esi_charged_below_threshold(): void
     {
-        $finance = $this->user('finance');
-        Sanctum::actingAs($finance);
+        $hr = $this->user('hr');
+        Sanctum::actingAs($hr);
 
         // Salary below ESI threshold
         $emp = $this->employeeWith(['salary' => 20000]);
 
         $response = $this->postJson('/api/payroll/runs', [
-            'month'  => 6,
-            'year'   => 2026,
+            'period' => '2026-06',
             'status' => 'Draft',
         ])->assertCreated()->json();
         $runId = $response['id'];
@@ -233,14 +223,13 @@ class PayrollProcessingTest extends TestCase
     // ──── LOP (Loss of Pay) Handling ────
     public function test_lop_deducts_from_gross_salary(): void
     {
-        $finance = $this->user('finance');
-        Sanctum::actingAs($finance);
+        $hr = $this->user('hr');
+        Sanctum::actingAs($hr);
 
         $emp = $this->employeeWith(['salary' => 60000]);
 
         $response = $this->postJson('/api/payroll/runs', [
-            'month'  => 6,
-            'year'   => 2026,
+            'period' => '2026-06',
             'status' => 'Draft',
         ])->assertCreated()->json();
         $runId = $response['id'];
@@ -259,12 +248,11 @@ class PayrollProcessingTest extends TestCase
     // ──── Status Transitions ────
     public function test_payroll_run_draft_to_finalized(): void
     {
-        $finance = $this->user('finance');
-        Sanctum::actingAs($finance);
+        $hr = $this->user('hr');
+        Sanctum::actingAs($hr);
 
         $response = $this->postJson('/api/payroll/runs', [
-            'month'  => 6,
-            'year'   => 2026,
+            'period' => '2026-06',
             'status' => 'Draft',
         ])->assertCreated()->json();
         $runId = $response['id'];
@@ -277,12 +265,11 @@ class PayrollProcessingTest extends TestCase
 
     public function test_finalized_payroll_cannot_be_modified(): void
     {
-        $finance = $this->user('finance');
-        Sanctum::actingAs($finance);
+        $hr = $this->user('hr');
+        Sanctum::actingAs($hr);
 
         $response = $this->postJson('/api/payroll/runs', [
-            'month'  => 6,
-            'year'   => 2026,
+            'period' => '2026-06',
             'status' => 'Draft',
         ])->assertCreated()->json();
         $runId = $response['id'];
@@ -304,12 +291,11 @@ class PayrollProcessingTest extends TestCase
     // ──── Payment Marking ────
     public function test_mark_payroll_as_paid(): void
     {
-        $finance = $this->user('finance');
-        Sanctum::actingAs($finance);
+        $hr = $this->user('hr');
+        Sanctum::actingAs($hr);
 
         $response = $this->postJson('/api/payroll/runs', [
-            'month'  => 6,
-            'year'   => 2026,
+            'period' => '2026-06',
             'status' => 'Draft',
         ])->assertCreated()->json();
         $runId = $response['id'];
@@ -326,12 +312,11 @@ class PayrollProcessingTest extends TestCase
         $emp = $this->employeeWith();
         Sanctum::actingAs($emp->user);
 
-        $finance = $this->user('finance');
-        Sanctum::actingAs($finance);
+        $hr = $this->user('hr');
+        Sanctum::actingAs($hr);
 
         $this->postJson('/api/payroll/runs', [
-            'month'  => 6,
-            'year'   => 2026,
+            'period' => '2026-06',
             'status' => 'Draft',
         ])->assertCreated();
 
@@ -345,12 +330,11 @@ class PayrollProcessingTest extends TestCase
         $emp1 = $this->employeeWith();
         $emp2 = $this->employeeWith();
 
-        $finance = $this->user('finance');
-        Sanctum::actingAs($finance);
+        $hr = $this->user('hr');
+        Sanctum::actingAs($hr);
 
         $response = $this->postJson('/api/payroll/runs', [
-            'month'  => 6,
-            'year'   => 2026,
+            'period' => '2026-06',
             'status' => 'Draft',
         ])->assertCreated()->json();
         $runId = $response['id'];
@@ -365,34 +349,31 @@ class PayrollProcessingTest extends TestCase
     // ──── List Payroll Runs ────
     public function test_list_payroll_runs_paginated(): void
     {
-        $finance = $this->user('finance');
-        Sanctum::actingAs($finance);
+        $hr = $this->user('hr');
+        Sanctum::actingAs($hr);
 
         for ($i = 1; $i <= 5; $i++) {
             $this->postJson('/api/payroll/runs', [
-                'month'  => $i,
-                'year'   => 2026,
-                'status' => 'Draft',
+                'period' => '2026-' . str_pad($i, 2, '0', STR_PAD_LEFT),
             ])->assertCreated();
         }
 
         $response = $this->getJson('/api/payroll/runs')->assertOk()->json();
-        $this->assertIsArray($response['data']);
-        $this->assertGreaterThan(0, count($response['data']));
+        $this->assertIsArray($response['runs']);
+        $this->assertGreaterThan(0, count($response['runs']));
     }
 
     // ──── Edge Cases ────
     public function test_zero_salary_employee_handled(): void
     {
-        $finance = $this->user('finance');
-        Sanctum::actingAs($finance);
+        $hr = $this->user('hr');
+        Sanctum::actingAs($hr);
 
         // Unpaid intern or contractor
         $emp = $this->employeeWith(['salary' => 0]);
 
         $response = $this->postJson('/api/payroll/runs', [
-            'month'  => 6,
-            'year'   => 2026,
+            'period' => '2026-06',
             'status' => 'Draft',
         ])->assertCreated()->json();
         $runId = $response['id'];
@@ -407,12 +388,11 @@ class PayrollProcessingTest extends TestCase
 
     public function test_payroll_run_deletion(): void
     {
-        $finance = $this->user('finance');
-        Sanctum::actingAs($finance);
+        $hr = $this->user('hr');
+        Sanctum::actingAs($hr);
 
         $response = $this->postJson('/api/payroll/runs', [
-            'month'  => 6,
-            'year'   => 2026,
+            'period' => '2026-06',
             'status' => 'Draft',
         ])->assertCreated()->json();
         $runId = $response['id'];
@@ -423,12 +403,11 @@ class PayrollProcessingTest extends TestCase
 
     public function test_cannot_delete_finalized_payroll(): void
     {
-        $finance = $this->user('finance');
-        Sanctum::actingAs($finance);
+        $hr = $this->user('hr');
+        Sanctum::actingAs($hr);
 
         $response = $this->postJson('/api/payroll/runs', [
-            'month'  => 6,
-            'year'   => 2026,
+            'period' => '2026-06',
             'status' => 'Draft',
         ])->assertCreated()->json();
         $runId = $response['id'];

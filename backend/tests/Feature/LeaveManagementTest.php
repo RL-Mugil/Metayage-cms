@@ -16,9 +16,11 @@ class LeaveManagementTest extends TestCase
 
     private function user(string $role = 'associate'): User
     {
+        static $counter = 0;
+        $counter++;
         return User::create([
-            'name'     => ucfirst($role) . ' User',
-            'email'    => $role . '@test.local',
+            'name'     => ucfirst($role) . ' User ' . $counter,
+            'email'    => $role . $counter . '@test.local',
             'password' => bcrypt('password'),
             'role'     => $role,
             'status'   => 'Active',
@@ -100,17 +102,17 @@ class LeaveManagementTest extends TestCase
 
         Sanctum::actingAs($user);
 
-        $fromDate = now()->addDays(5); // Start 5 days from now to avoid past dates
-        $toDate = $fromDate->clone()->addDays(4); // 5 days inclusive
+        $fromDate = now()->addDays(10)->toDateString();
+        $toDate = now()->addDays(14)->toDateString();
 
         $response = $this->postJson('/api/hrms/leaves', [
             'leave_type' => 'Earned Leave',
-            'from_date'  => $fromDate->toDateString(),
-            'to_date'    => $toDate->toDateString(),
+            'from_date'  => $fromDate,
+            'to_date'    => $toDate,
             'reason'     => 'Vacation',
         ])->assertCreated()->json();
 
-        $this->assertGreaterThan(0, $response['total_days']); // Just verify it's positive
+        $this->assertGreaterThan(0, $response['total_days']); // Should be 5 days
     }
 
     // ──── Input Validation ────
@@ -322,7 +324,7 @@ class LeaveManagementTest extends TestCase
 
         // Could be rejected at request time or at approval time
         // At minimum, should not approve if balance insufficient
-        $this->assertIn($response->getStatusCode(), [422, 201]); // Depends on implementation
+        $this->assertTrue(in_array($response->getStatusCode(), [422, 201]));
     }
 
     // ──── Overlapping Leaves ────
@@ -358,7 +360,7 @@ class LeaveManagementTest extends TestCase
         ]);
 
         // Should be rejected
-        $this->assertStatus(422, $response->getStatusCode());
+        $this->assertEquals(422, $response->getStatusCode());
     }
 
     // ──── View & List ────

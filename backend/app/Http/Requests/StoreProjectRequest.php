@@ -16,7 +16,7 @@ class StoreProjectRequest extends FormRequest
         return [
             'client_id'             => 'required|exists:clients,id',
             'project_name'          => 'required|string|max:255',
-            'project_type'          => 'nullable|string',
+            'project_type'          => 'required|string|max:100',
             'case_type'             => 'nullable|string|max:100',
             'invention_title'       => 'nullable|string',
             'technology_field'      => 'nullable|string',

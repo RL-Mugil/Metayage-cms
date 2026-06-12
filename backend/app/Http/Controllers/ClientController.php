@@ -33,10 +33,18 @@ class ClientController extends Controller
     private function generateClientCode(string $nationality): string
     {
         // Match both old (C00) and new (C00M / C00Y) formats when looking up last code
-        $last = Client::whereNotNull('client_code')
-            ->whereRaw("client_code ~ '^[C-Z][0-9]{2}[MY]?$'")
-            ->orderByRaw("LEFT(client_code, 3) DESC")
-            ->value('client_code');
+        $clients = Client::whereNotNull('client_code')
+            ->orderByRaw("LENGTH(client_code) DESC, client_code DESC")
+            ->get(['client_code']);
+
+        $last = null;
+        foreach ($clients as $client) {
+            $code = $client->client_code;
+            if (preg_match('/^[C-Z]\d{2}[MY]?$/', $code)) {
+                $last = $code;
+                break;
+            }
+        }
 
         if (!$last) {
             $base = 'C00';

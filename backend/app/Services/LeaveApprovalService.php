@@ -11,12 +11,16 @@ class LeaveApprovalService
 {
     // Frontend leave types → leave_balances column
     private const TYPE_COLUMN = [
-        'Annual'    => 'earned_leave',
-        'Earned'    => 'earned_leave',
-        'Sick'      => 'sick_leave',
-        'Personal'  => 'casual_leave',
-        'Casual'    => 'casual_leave',
-        'Emergency' => 'casual_leave',
+        'Annual'           => 'earned_leave',
+        'Earned'           => 'earned_leave',
+        'Earned Leave'     => 'earned_leave',
+        'Sick'             => 'sick_leave',
+        'Sick Leave'       => 'sick_leave',
+        'Personal'         => 'casual_leave',
+        'Casual'           => 'casual_leave',
+        'Casual Leave'     => 'casual_leave',
+        'Emergency'        => 'casual_leave',
+        'Emergency Leave'  => 'casual_leave',
     ];
 
     /**

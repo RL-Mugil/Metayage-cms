@@ -63,7 +63,7 @@ class LeaveController extends Controller
         }
 
         $validated = $request->validate([
-            'leave_type'  => 'required|in:Annual,Earned,Sick,Personal,Casual,Emergency',
+            'leave_type'  => 'required|in:Annual,Earned,Earned Leave,Sick,Sick Leave,Personal,Casual,Casual Leave,Emergency,Emergency Leave',
             'from_date'   => 'required|date_format:Y-m-d',
             'to_date'     => 'required|date_format:Y-m-d|after_or_equal:from_date',
             'reason'      => 'nullable|string|max:1000',
