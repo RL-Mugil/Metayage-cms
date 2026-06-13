@@ -57,7 +57,7 @@ class HRMSController extends Controller
         }
 
         if ($request->filled('search')) {
-            $s = $request->search;
+            $s = str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $request->search);
             $query->where(function ($q) use ($s) {
                 $q->where('full_name', 'ilike', "%{$s}%")
                   ->orWhere('work_email', 'ilike', "%{$s}%");

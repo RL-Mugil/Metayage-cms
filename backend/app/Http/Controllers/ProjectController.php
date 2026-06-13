@@ -75,7 +75,7 @@ class ProjectController extends Controller
         }
 
         if ($request->filled('search')) {
-            $search = $request->search;
+            $search = str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $request->search);
             $query->where(function ($q) use ($search) {
                 $q->where('project_name', 'ilike', "%{$search}%")
                   ->orWhere('project_code', 'ilike', "%{$search}%")

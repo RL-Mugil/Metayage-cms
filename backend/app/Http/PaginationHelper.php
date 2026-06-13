@@ -19,7 +19,7 @@ class PaginationHelper
         // Clamp per_page to reasonable bounds (1-2000)
         $perPage = max(1, min($perPage, 2000));
 
-        $total = $query->count();
+        $total = (clone $query)->count();
         $data = $query->forPage($page, $perPage)->get();
         $hasMore = ($page * $perPage) < $total;
 
@@ -44,7 +44,7 @@ class PaginationHelper
 
         $limit = max(1, min($limit, 2000));
 
-        $total = $query->count();
+        $total = (clone $query)->count();
         $data = $query->limit($limit)->offset($offset)->get();
         $hasMore = ($offset + $limit) < $total;
 

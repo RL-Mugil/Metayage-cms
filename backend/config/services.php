@@ -40,6 +40,12 @@ return [
         'model'   => env('GROQ_MODEL', 'meta-llama/llama-4-scout-17b-16e-instruct'),
     ],
 
+    // Indian GST configuration. Override per-client/per-invoice when needed.
+    'gst' => [
+        'standard_rate'  => (float) env('GST_STANDARD_RATE', 18),  // % — most IP services
+        'export_rate'    => (float) env('GST_EXPORT_RATE',   0),    // % — zero-rated exports
+    ],
+
     // Error monitoring webhook (point at a self-hosted n8n workflow, which
     // can forward to GlitchTip / email / Slack). Empty = monitoring disabled.
     'monitoring' => [

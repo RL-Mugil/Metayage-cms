@@ -43,7 +43,7 @@ class AIQueryService
 
         if ($sql) {
             $this->guardSql($sql);
-            $results = DB::select($sql);
+            $results = DB::connection('ai_readonly')->select($sql);
             // Strip the raw SQL block from the explanation shown to the user
             $explain = trim(preg_replace('/```sql[\s\S]*?```/i', '', $content));
         }

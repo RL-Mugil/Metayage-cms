@@ -104,11 +104,17 @@ class FinancialController extends Controller
             'notes'        => 'nullable|string',
         ]);
 
-        $subtotal = collect($validated['items'])->sum('amount');
-        $taxAmount = round($subtotal * 0.18, 2);
+        // Determine applicable GST rate: 0% for Export clients, standard rate otherwise.
+        $client   = Client::findOrFail($validated['client_id']);
+        $taxRate  = $client->gst_type === 'Export'
+            ? config('services.gst.export_rate', 0)
+            : config('services.gst.standard_rate', 18);
+
+        $subtotal    = collect($validated['items'])->sum('amount');
+        $taxAmount   = round($subtotal * ($taxRate / 100), 2);
         $totalAmount = $subtotal + $taxAmount;
 
-        $invoice = \DB::transaction(function () use ($validated, $subtotal, $taxAmount, $totalAmount) {
+        $invoice = \DB::transaction(function () use ($validated, $subtotal, $taxAmount, $taxRate, $totalAmount) {
             // Sequential invoice number from the highest existing code for the
             // year, row-locked so concurrent requests cannot collide.
             $year = date('Y');
@@ -141,7 +147,7 @@ class FinancialController extends Controller
                     'quantity'    => 1,
                     'unit_rate'   => $item['amount'],
                     'amount'      => $item['amount'],
-                    'tax_rate'    => 18,
+                    'tax_rate'    => $taxRate,
                 ]);
             }
 
@@ -197,8 +203,43 @@ class FinancialController extends Controller
         if (! in_array($user->role, ['super_admin', 'partner'])) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
-        $invoice = Invoice::findOrFail($id);
-        $invoice->update(['status' => 'Cancelled']);
+
+        \DB::transaction(function () use ($id, $user, $request) {
+            $invoice = Invoice::lockForUpdate()->findOrFail($id);
+
+            if ($invoice->status === 'Cancelled') {
+                return; // already cancelled, nothing to reverse
+            }
+
+            $invoice->update(['status' => 'Cancelled']);
+
+            // Reverse the ledger debit created when the invoice was raised.
+            $latestLedger = ClientLedger::where('client_id', $invoice->client_id)
+                ->orderBy('id', 'desc')->lockForUpdate()->first();
+            $runningBalance = ($latestLedger ? $latestLedger->balance : 0.00) - (float) $invoice->total_amount;
+
+            ClientLedger::create([
+                'client_id'          => $invoice->client_id,
+                'transaction_date'   => now()->toDateString(),
+                'document_type'      => 'Credit Note',
+                'document_reference' => $invoice->invoice_code,
+                'debit'              => 0,
+                'credit'             => $invoice->total_amount,
+                'balance'            => $runningBalance,
+                'notes'              => 'Invoice cancelled',
+            ]);
+
+            AuditLog::create([
+                'user_id'      => $user->id,
+                'action'       => 'cancel_invoice',
+                'subject_type' => 'Invoice',
+                'subject_id'   => $invoice->id,
+                'metadata'     => ['invoice_code' => $invoice->invoice_code],
+                'ip_address'   => $request->ip(),
+                'user_agent'   => $request->userAgent(),
+            ]);
+        });
+
         return response()->json(['message' => 'Invoice cancelled']);
     }
 
@@ -217,12 +258,12 @@ class FinancialController extends Controller
             'notes' => 'nullable|string',
         ]);
 
-        $payment = \DB::transaction(function () use ($request) {
+        $payment = \DB::transaction(function () use ($validated) {
             // Lock the invoice row so concurrent payments cannot double-apply.
-            $invoice = Invoice::lockForUpdate()->findOrFail($request->invoice_id);
+            $invoice = Invoice::lockForUpdate()->findOrFail($validated['invoice_id']);
             $client = Client::findOrFail($invoice->client_id);
 
-            if ($request->amount > (float) $invoice->balance_due) {
+            if ($validated['amount'] > (float) $invoice->balance_due) {
                 throw \Illuminate\Validation\ValidationException::withMessages([
                     'amount' => ["Payment exceeds outstanding balance of {$invoice->balance_due}."],
                 ]);
@@ -239,55 +280,54 @@ class FinancialController extends Controller
 
             // 1. Create Payment record
             $payment = Payment::create([
-                'client_id' => $client->id,
-                'invoice_id' => $invoice->id,
-                'receipt_code' => $receiptCode,
-                'payment_date' => Carbon::now()->toDateString(),
-                'amount' => $request->amount,
-                'payment_method' => $request->payment_method,
-                'transaction_reference' => $request->transaction_reference,
-                'status' => 'Completed',
-                'notes' => $request->notes,
+                'client_id'             => $client->id,
+                'invoice_id'            => $invoice->id,
+                'receipt_code'          => $receiptCode,
+                'payment_date'          => Carbon::now()->toDateString(),
+                'amount'                => $validated['amount'],
+                'payment_method'        => $validated['payment_method'],
+                'transaction_reference' => $validated['transaction_reference'] ?? null,
+                'status'                => 'Completed',
+                'notes'                 => $validated['notes'] ?? null,
             ]);
 
             // 2. Update Invoice balance
-            $newBalance = round(max(0.00, $invoice->balance_due - $request->amount), 2);
+            $newBalance = round(max(0.00, $invoice->balance_due - $validated['amount']), 2);
             $newStatus = $newBalance <= 0.00 ? 'Paid' : 'Partially Paid';
             $invoice->update([
                 'balance_due' => $newBalance,
-                'status' => $newStatus,
+                'status'      => $newStatus,
             ]);
 
             // 3. Create client ledger record (payment received)
             $latestLedger = ClientLedger::where('client_id', $client->id)
                 ->orderBy('id', 'desc')->lockForUpdate()->first();
-            $runningBalance = ($latestLedger ? $latestLedger->balance : 0.00) - $request->amount;
+            $runningBalance = ($latestLedger ? $latestLedger->balance : 0.00) - $validated['amount'];
 
             ClientLedger::create([
-                'client_id' => $client->id,
-                'transaction_date' => Carbon::now()->toDateString(),
-                'document_type' => 'Payment',
+                'client_id'          => $client->id,
+                'transaction_date'   => Carbon::now()->toDateString(),
+                'document_type'      => 'Payment',
                 'document_reference' => $receiptCode,
-                'debit' => 0.00,
-                'credit' => $request->amount,
-                'balance' => $runningBalance,
-                'notes' => $request->notes,
+                'debit'              => 0.00,
+                'credit'             => $validated['amount'],
+                'balance'            => $runningBalance,
+                'notes'              => $validated['notes'] ?? null,
             ]);
 
             return $payment;
         });
 
-        $invoice = Invoice::find($request->invoice_id);
+        $invoice = Invoice::find($validated['invoice_id']);
 
-        // Audit Log
         AuditLog::create([
-            'user_id' => $user->id,
-            'action' => 'record_payment',
+            'user_id'      => $user->id,
+            'action'       => 'record_payment',
             'subject_type' => 'Payment',
-            'subject_id' => $payment->id,
-            'metadata' => ['amount' => $payment->amount, 'invoice_code' => $invoice->invoice_code],
-            'ip_address' => $request->ip(),
-            'user_agent' => $request->userAgent(),
+            'subject_id'   => $payment->id,
+            'metadata'     => ['amount' => $payment->amount, 'invoice_code' => $invoice->invoice_code],
+            'ip_address'   => $request->ip(),
+            'user_agent'   => $request->userAgent(),
         ]);
 
         return response()->json($payment, 201);

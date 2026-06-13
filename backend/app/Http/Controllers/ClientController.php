@@ -29,23 +29,19 @@ class ClientController extends Controller
 
     /**
      * Generate next sequential client code: C00–C99, D00–D99, … Z99.
-     * Ignores legacy CLI-XXXX format codes.
+     * Must be called inside a DB::transaction() — uses lockForUpdate() to prevent
+     * duplicate codes under concurrent requests.
      */
     private function generateClientCode(string $nationality): string
     {
-        // Match both old (C00) and new (C00M / C00Y) formats when looking up last code
+        // Lock rows matching either old (C00) or new (C00M / C00Y) formats.
         $clients = Client::whereNotNull('client_code')
+            ->whereRaw("client_code ~ '^[C-Z][0-9]{2}[MY]?$'")
             ->orderByRaw("LENGTH(client_code) DESC, client_code DESC")
+            ->lockForUpdate()
             ->get(['client_code']);
 
-        $last = null;
-        foreach ($clients as $client) {
-            $code = $client->client_code;
-            if (preg_match('/^[C-Z]\d{2}[MY]?$/', $code)) {
-                $last = $code;
-                break;
-            }
-        }
+        $last = $clients->first()?->client_code;
 
         if (!$last) {
             $base = 'C00';
@@ -113,7 +109,7 @@ class ClientController extends Controller
         }
 
         if ($request->filled('search')) {
-            $s = $request->search;
+            $s = str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $request->search);
             $query->where(function ($q) use ($s) {
                 $q->where('company_name', 'like', "%{$s}%")
                   ->orWhere('client_code', 'like', "%{$s}%")
@@ -153,33 +149,36 @@ class ClientController extends Controller
     public function store(StoreClientRequest $request)
     {
         $user = $request->user();
+        $v    = $request->validated();
 
-        $v = $request->validated();
-
-        $nationality = $v['nationality']  ?? 'India';
+        $nationality = $v['nationality'] ?? 'India';
         $hasGstin    = (bool) ($v['has_gstin'] ?? false);
         $clientType  = $v['client_type'];
 
-        $v['client_code']        = $this->generateClientCode($nationality);
-        $v['nationality']        = $nationality;
-        $v['has_gstin']          = $hasGstin;
-        $v['gst_type']           = $this->computeGstType($nationality, $hasGstin, $clientType);
-        $v['company_name']       = $v['legal_name'];
-        $v['account_manager_id'] = $v['account_manager_id'] ?? $user->id;
-        $v['date_onboarded']     = now()->toDateString();
-        $v['status']             = $v['status'] ?? 'Active';
+        $client = \DB::transaction(function () use ($v, $nationality, $hasGstin, $clientType, $user, $request) {
+            $v['client_code']        = $this->generateClientCode($nationality);
+            $v['nationality']        = $nationality;
+            $v['has_gstin']          = $hasGstin;
+            $v['gst_type']           = $this->computeGstType($nationality, $hasGstin, $clientType);
+            $v['company_name']       = $v['legal_name'];
+            $v['account_manager_id'] = $v['account_manager_id'] ?? $user->id;
+            $v['date_onboarded']     = now()->toDateString();
+            $v['status']             = $v['status'] ?? 'Active';
 
-        $client = Client::create($v);
+            $client = Client::create($v);
 
-        AuditLog::create([
-            'user_id'      => $user->id,
-            'action'       => 'create',
-            'subject_type' => 'Client',
-            'subject_id'   => $client->id,
-            'metadata'     => ['legal_name' => $client->legal_name, 'client_code' => $client->client_code],
-            'ip_address'   => $request->ip(),
-            'user_agent'   => $request->userAgent(),
-        ]);
+            AuditLog::create([
+                'user_id'      => $user->id,
+                'action'       => 'create',
+                'subject_type' => 'Client',
+                'subject_id'   => $client->id,
+                'metadata'     => ['legal_name' => $client->legal_name, 'client_code' => $client->client_code],
+                'ip_address'   => $request->ip(),
+                'user_agent'   => $request->userAgent(),
+            ]);
+
+            return $client;
+        });
 
         return response()->json($client->load('accountManager'), 201);
     }

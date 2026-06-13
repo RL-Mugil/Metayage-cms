@@ -18,7 +18,7 @@ use App\Http\Controllers\ReportsController;
 Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:10,1');
 
 // Authenticated routes protected by Sanctum
-Route::middleware('auth:sanctum')->group(function () {
+Route::middleware(['auth:sanctum', 'throttle:60,1'])->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/me', [AuthController::class, 'me']);
     Route::get('/users', [AuthController::class, 'users']);
@@ -29,7 +29,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // CRM / Clients
     Route::get('/clients/stats', [ClientController::class, 'stats']);
-    Route::post('/clients/import', [ClientController::class, 'import']);
+    Route::post('/clients/import', [ClientController::class, 'import'])->middleware('throttle:5,1');
     Route::get('/clients', [ClientController::class, 'index']);
     Route::post('/clients', [ClientController::class, 'store']);
     Route::get('/clients/{id}', [ClientController::class, 'show']);
@@ -78,8 +78,8 @@ Route::middleware('auth:sanctum')->group(function () {
     // Reports
     Route::get('/reports/data', [ReportsController::class, 'getData']);
 
-    // AI Chat
-    Route::post('/ai/query', [AIController::class, 'query']);
+    // AI Chat — stricter limit: 10 requests per minute
+    Route::post('/ai/query', [AIController::class, 'query'])->middleware('throttle:10,1');
 
     // Calendar
     Route::get('/calendar/events', [ProjectTrackerController::class, 'calendarEvents']);

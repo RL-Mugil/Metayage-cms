@@ -107,15 +107,17 @@ function RootComponent() {
     }
   };
 
-  const handleQuickFill = (quickEmail: string) => {
-    setEmail(quickEmail);
-    setPassword("password123");
-    if (quickEmail === "admin@ipflow.com") {
-      setPassword("admin123");
-    } else if (quickEmail === "priya@helios.com") {
-      setPassword("client123");
-    }
-  };
+  const handleQuickFill = import.meta.env.DEV
+    ? (quickEmail: string) => {
+        setEmail(quickEmail);
+        setPassword("password123");
+        if (quickEmail === "admin@ipflow.com") {
+          setPassword("admin123");
+        } else if (quickEmail === "priya@helios.com") {
+          setPassword("client123");
+        }
+      }
+    : undefined;
 
   if (!token) {
     return (
@@ -184,42 +186,46 @@ function RootComponent() {
                 </Button>
               </form>
 
-              <div className="relative flex py-2 items-center">
-                <div className="flex-grow border-t border-zinc-800"></div>
-                <span className="flex-shrink mx-4 text-[10px] text-zinc-500 uppercase tracking-widest font-semibold">Quick Switch Roles</span>
-                <div className="flex-grow border-t border-zinc-800"></div>
-              </div>
+              {import.meta.env.DEV && handleQuickFill && (
+                <>
+                  <div className="relative flex py-2 items-center">
+                    <div className="flex-grow border-t border-zinc-800"></div>
+                    <span className="flex-shrink mx-4 text-[10px] text-zinc-500 uppercase tracking-widest font-semibold">Quick Switch Roles</span>
+                    <div className="flex-grow border-t border-zinc-800"></div>
+                  </div>
 
-              <div className="grid grid-cols-2 gap-2 text-xs">
-                <button
-                  onClick={() => handleQuickFill("suresh@metayage.com")}
-                  className="p-2.5 rounded-lg border border-zinc-800 bg-zinc-900/40 hover:bg-zinc-900 text-zinc-300 hover:text-white transition-colors text-left flex flex-col justify-between"
-                >
-                  <span className="font-semibold text-gold">Partner</span>
-                  <span className="text-[10px] text-zinc-500 truncate">suresh@metayage.com</span>
-                </button>
-                <button
-                  onClick={() => handleQuickFill("anika@metayage.com")}
-                  className="p-2.5 rounded-lg border border-zinc-800 bg-zinc-900/40 hover:bg-zinc-900 text-zinc-300 hover:text-white transition-colors text-left flex flex-col justify-between"
-                >
-                  <span className="font-semibold text-primary">Manager</span>
-                  <span className="text-[10px] text-zinc-500 truncate">anika@metayage.com</span>
-                </button>
-                <button
-                  onClick={() => handleQuickFill("admin@ipflow.com")}
-                  className="p-2.5 rounded-lg border border-zinc-800 bg-zinc-900/40 hover:bg-zinc-900 text-zinc-300 hover:text-white transition-colors text-left flex flex-col justify-between"
-                >
-                  <span className="font-semibold text-emerald-400">Super Admin</span>
-                  <span className="text-[10px] text-zinc-500 truncate">admin@ipflow.com</span>
-                </button>
-                <button
-                  onClick={() => handleQuickFill("priya@helios.com")}
-                  className="p-2.5 rounded-lg border border-zinc-800 bg-zinc-900/40 hover:bg-zinc-900 text-zinc-300 hover:text-white transition-colors text-left flex flex-col justify-between"
-                >
-                  <span className="font-semibold text-indigo-400">Client Contact</span>
-                  <span className="text-[10px] text-zinc-500 truncate">priya@helios.com</span>
-                </button>
-              </div>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <button
+                      onClick={() => handleQuickFill("suresh@metayage.com")}
+                      className="p-2.5 rounded-lg border border-zinc-800 bg-zinc-900/40 hover:bg-zinc-900 text-zinc-300 hover:text-white transition-colors text-left flex flex-col justify-between"
+                    >
+                      <span className="font-semibold text-gold">Partner</span>
+                      <span className="text-[10px] text-zinc-500 truncate">suresh@metayage.com</span>
+                    </button>
+                    <button
+                      onClick={() => handleQuickFill("anika@metayage.com")}
+                      className="p-2.5 rounded-lg border border-zinc-800 bg-zinc-900/40 hover:bg-zinc-900 text-zinc-300 hover:text-white transition-colors text-left flex flex-col justify-between"
+                    >
+                      <span className="font-semibold text-primary">Manager</span>
+                      <span className="text-[10px] text-zinc-500 truncate">anika@metayage.com</span>
+                    </button>
+                    <button
+                      onClick={() => handleQuickFill("admin@ipflow.com")}
+                      className="p-2.5 rounded-lg border border-zinc-800 bg-zinc-900/40 hover:bg-zinc-900 text-zinc-300 hover:text-white transition-colors text-left flex flex-col justify-between"
+                    >
+                      <span className="font-semibold text-emerald-400">Super Admin</span>
+                      <span className="text-[10px] text-zinc-500 truncate">admin@ipflow.com</span>
+                    </button>
+                    <button
+                      onClick={() => handleQuickFill("priya@helios.com")}
+                      className="p-2.5 rounded-lg border border-zinc-800 bg-zinc-900/40 hover:bg-zinc-900 text-zinc-300 hover:text-white transition-colors text-left flex flex-col justify-between"
+                    >
+                      <span className="font-semibold text-indigo-400">Client Contact</span>
+                      <span className="text-[10px] text-zinc-500 truncate">priya@helios.com</span>
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>
