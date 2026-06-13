@@ -14,6 +14,10 @@ return new class extends Migration
     public $withinTransaction = false;
     private function createConcurrently(string $table, string $indexName, array $columns): void
     {
+        // Skip tables that don't exist yet (will be created by a later migration)
+        if (!Schema::hasTable($table)) {
+            return;
+        }
         $cols = implode(', ', $columns);
         // CONCURRENTLY cannot run inside a transaction; each call is its own implicit txn.
         DB::unprepared("CREATE INDEX CONCURRENTLY IF NOT EXISTS {$indexName} ON {$table} ({$cols})");
@@ -68,8 +72,8 @@ return new class extends Migration
         $this->createConcurrently('payments', 'idx_payments_client_id',  ['client_id']);
         $this->createConcurrently('payments', 'idx_payments_invoice_id', ['invoice_id']);
 
-        $this->createConcurrently('client_ledgers', 'idx_client_ledgers_client_id',       ['client_id']);
-        $this->createConcurrently('client_ledgers', 'idx_client_ledgers_transaction_date', ['transaction_date']);
+        $this->createConcurrently('client_ledger', 'idx_client_ledger_client_id',       ['client_id']);
+        $this->createConcurrently('client_ledger', 'idx_client_ledger_transaction_date', ['transaction_date']);
 
         $this->createConcurrently('quotations', 'idx_quotations_client_id',  ['client_id']);
         $this->createConcurrently('quotations', 'idx_quotations_project_id', ['project_id']);
@@ -149,7 +153,7 @@ return new class extends Migration
             'idx_invoices_client_issue', 'idx_invoices_status_due',
             'idx_invoice_items_invoice_id',
             'idx_payments_client_id', 'idx_payments_invoice_id',
-            'idx_client_ledgers_client_id', 'idx_client_ledgers_transaction_date',
+            'idx_client_ledger_client_id', 'idx_client_ledger_transaction_date',
             'idx_quotations_client_id', 'idx_quotations_project_id', 'idx_quotations_status',
             'idx_employees_user_id', 'idx_employees_department_id',
             'idx_employees_designation_id', 'idx_employees_employment_status',
