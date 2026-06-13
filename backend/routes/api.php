@@ -65,6 +65,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/hrms/leaves/{id}', [HRMSController::class, 'updateLeave']);
 
     // Financial Suite
+    Route::get('/financial/stats', [FinancialController::class, 'stats']);
     Route::get('/financial/invoices', [FinancialController::class, 'invoices']);
     Route::post('/financial/invoices', [FinancialController::class, 'createInvoice']);
     Route::put('/financial/invoices/{id}', [FinancialController::class, 'updateInvoice']);

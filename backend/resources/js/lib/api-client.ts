@@ -147,6 +147,9 @@ export const api = {
   },
 
   // ── Financial ──
+  async getFinancialStats(): Promise<{ total_billed: number; total_received: number; total_outstanding: number; overdue_count: number; draft_count: number; paid_count: number }> {
+    return this.request('/financial/stats')
+  },
   async getInvoices(params?: URLSearchParams): Promise<any[]> {
     const query = params ? '?' + params.toString() : ''
     const res: any = await this.request(`/financial/invoices${query}`)

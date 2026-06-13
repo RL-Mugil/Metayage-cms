@@ -21,6 +21,29 @@ class FinancialController extends Controller
         return Inertia::render('Financial');
     }
 
+    public function stats(Request $request)
+    {
+        $user = $request->user();
+        $base = Invoice::query();
+
+        if ($user->role === 'client') {
+            $base->whereHas('client.contacts', function ($q) use ($user) {
+                $q->where('email', $user->email);
+            });
+        } elseif (! in_array($user->role, ['super_admin', 'partner', 'finance', 'manager'])) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        return response()->json([
+            'total_billed'      => (float) (clone $base)->sum('total_amount'),
+            'total_received'    => (float) (clone $base)->where('status', 'Paid')->sum('total_amount'),
+            'total_outstanding' => (float) (clone $base)->whereIn('status', ['Sent', 'Overdue', 'Partially Paid'])->sum('balance_due'),
+            'overdue_count'     => (clone $base)->where('status', 'Overdue')->count(),
+            'draft_count'       => (clone $base)->where('status', 'Draft')->count(),
+            'paid_count'        => (clone $base)->where('status', 'Paid')->count(),
+        ]);
+    }
+
     public function invoices(Request $request)
     {
         $user = $request->user();
@@ -37,6 +60,10 @@ class FinancialController extends Controller
 
         if ($request->filled('status')) {
             $query->where('status', $request->status);
+        }
+
+        if ($request->boolean('outstanding')) {
+            $query->whereIn('status', ['Sent', 'Overdue', 'Partially Paid']);
         }
 
         return response()->json(PaginationHelper::paginate($query->orderBy('issue_date', 'desc'), $request));
