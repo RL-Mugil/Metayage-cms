@@ -26,9 +26,9 @@ class PayrollService
     // Full state-dependent slab support requires adding employees.work_state column.
     private float $professionalTax;
 
-    public function __construct()
+    public function __construct(?float $professionalTax = null)
     {
-        $this->professionalTax = (float) config('payroll.pt_monthly', 200.0);
+        $this->professionalTax = $professionalTax ?? (float) config('payroll.pt_monthly', 200.0);
     }
 
     /**

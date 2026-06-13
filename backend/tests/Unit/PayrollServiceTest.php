@@ -11,7 +11,8 @@ class PayrollServiceTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->svc = new PayrollService();
+        // Pass PT directly so unit tests don't need the Laravel config system.
+        $this->svc = new PayrollService(professionalTax: 200.0);
     }
 
     public function test_standard_salary_above_esi_limit(): void
