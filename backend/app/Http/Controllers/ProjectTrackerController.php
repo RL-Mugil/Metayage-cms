@@ -211,7 +211,7 @@ class ProjectTrackerController extends Controller implements HasMiddleware
         // All aggregation done in SQL — no full table load into PHP.
         $summary = \DB::table('tracker_rows')->selectRaw("
             COUNT(*) as total,
-            COUNT(*) FILTER (WHERE delivery_due_date < CURRENT_DATE) as overdue
+            SUM(CASE WHEN delivery_due_date < CURRENT_DATE THEN 1 ELSE 0 END) as overdue
         ")->first();
 
         $total   = (int) $summary->total;

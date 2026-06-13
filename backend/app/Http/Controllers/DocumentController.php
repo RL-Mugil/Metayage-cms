@@ -2,7 +2,10 @@
 namespace App\Http\Controllers;
 
 use App\Models\AuditLog;
+use App\Models\Document;
+use App\Models\DocumentVersion;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 
 class DocumentController extends Controller
@@ -26,39 +29,31 @@ class DocumentController extends Controller
         if ($deny = $this->denyNonInternal($request)) return $deny;
 
         $perPage = max(1, min(500, (int) $request->query('per_page', 50)));
-        $page    = max(1, (int) $request->query('page', 1));
+        $folder  = $request->query('folder');
 
-        $folder = $request->query('folder');
-
-        $all = collect(Storage::disk('local')->allFiles('documents'))
-            ->map(function ($path) {
-                $parts  = explode('/', $path);
-                $folder = count($parts) > 2 ? $parts[1] : 'General';
-                return [
-                    'name'     => basename($path),
-                    'path'     => $path,
-                    'folder'   => in_array($folder, self::FOLDERS) ? $folder : 'General',
-                    'size'     => Storage::disk('local')->size($path),
-                    'modified' => Storage::disk('local')->lastModified($path),
-                ];
-            })
-            ->sortByDesc('modified')
-            ->values();
+        $query = Document::with('uploader:id,name')->orderBy('updated_at', 'desc');
 
         if ($folder && in_array($folder, self::FOLDERS)) {
-            $all = $all->where('folder', $folder)->values();
+            $query->where('category', $folder);
         }
 
-        $total = $all->count();
-        $data  = $all->slice(($page - 1) * $perPage, $perPage)->values();
+        $paginated = $query->paginate($perPage, ['*'], 'page', max(1, (int) $request->query('page', 1)));
 
         return response()->json([
-            'data'         => $data,
-            'total'        => $total,
-            'per_page'     => $perPage,
-            'current_page' => $page,
-            'last_page'    => max(1, (int) ceil($total / $perPage)),
-            'has_more'     => ($page * $perPage) < $total,
+            'data' => collect($paginated->items())->map(fn($doc) => [
+                'id'       => $doc->id,
+                'name'     => $doc->file_name,
+                'path'     => $doc->storage_path,
+                'folder'   => $doc->category,
+                'size'     => $doc->file_size,
+                'uploader' => $doc->uploader?->name,
+                'modified' => $doc->updated_at->toDateTimeString(),
+            ]),
+            'total'        => $paginated->total(),
+            'per_page'     => $paginated->perPage(),
+            'current_page' => $paginated->currentPage(),
+            'last_page'    => $paginated->lastPage(),
+            'has_more'     => $paginated->hasMorePages(),
         ]);
     }
 
@@ -67,13 +62,17 @@ class DocumentController extends Controller
         if ($deny = $this->denyNonInternal($request)) return $deny;
 
         $request->validate([
-            'file'   => 'required|file|max:51200|mimes:pdf,doc,docx,xls,xlsx,ppt,pptx,txt,csv,png,jpg,jpeg,gif,zip',
-            'folder' => 'nullable|in:' . implode(',', self::FOLDERS),
+            'file'       => 'required|file|max:51200|mimes:pdf,doc,docx,xls,xlsx,ppt,pptx,txt,csv,png,jpg,jpeg,gif,zip',
+            'folder'     => 'nullable|in:' . implode(',', self::FOLDERS),
+            'project_id' => 'nullable|exists:projects,id',
+            'client_id'  => 'nullable|exists:clients,id',
         ]);
+
+        $file   = $request->file('file');
         $folder = $request->input('folder', 'General');
 
-        // Keep the original name, but never overwrite an existing file.
-        $original = preg_replace('/[^\w.\- ()]/', '_', $request->file('file')->getClientOriginalName());
+        // Preserve original filename; avoid overwriting existing files
+        $original = preg_replace('/[^\w.\- ()]/', '_', $file->getClientOriginalName());
         $name = $original;
         $i = 1;
         while (Storage::disk('local')->exists("documents/{$folder}/{$name}")) {
@@ -82,15 +81,50 @@ class DocumentController extends Controller
             $i++;
         }
 
-        $path = $request->file('file')->storeAs("documents/{$folder}", $name, 'local');
+        $path = $file->storeAs("documents/{$folder}", $name, 'local');
 
-        AuditLog::create([
-            'user_id' => $request->user()->id, 'action' => 'upload_document',
-            'metadata' => ['path' => $path],
-            'ip_address' => $request->ip(), 'user_agent' => $request->userAgent(),
-        ]);
+        $document = DB::transaction(function () use ($request, $file, $original, $path, $folder) {
+            $doc = Document::create([
+                'project_id'      => $request->project_id,
+                'client_id'       => $request->client_id,
+                'file_name'       => $original,
+                'file_type'       => $file->getClientMimeType(),
+                'file_size'       => $file->getSize(),
+                'category'        => $folder,
+                'storage_path'    => $path,
+                'current_version' => 1,
+                'uploaded_by_id'  => $request->user()->id,
+                'status'          => 'Draft',
+            ]);
 
-        return response()->json(['path' => $path, 'name' => basename($path), 'folder' => $folder], 201);
+            DocumentVersion::create([
+                'document_id'    => $doc->id,
+                'version_number' => 1,
+                'file_name'      => $original,
+                'file_size'      => $file->getSize(),
+                'storage_path'   => $path,
+                'uploaded_by_id' => $request->user()->id,
+            ]);
+
+            AuditLog::create([
+                'user_id'      => $request->user()->id,
+                'action'       => 'upload_document',
+                'subject_type' => 'Document',
+                'subject_id'   => $doc->id,
+                'metadata'     => ['path' => $path, 'file_name' => $original],
+                'ip_address'   => $request->ip(),
+                'user_agent'   => $request->userAgent(),
+            ]);
+
+            return $doc;
+        });
+
+        return response()->json([
+            'id'     => $document->id,
+            'path'   => $path,
+            'name'   => $original,
+            'folder' => $folder,
+        ], 201);
     }
 
     public function download(Request $request)
@@ -117,19 +151,28 @@ class DocumentController extends Controller
         }
 
         $request->validate(['path' => 'required|string']);
-
-        // Only files inside the documents/ folder may be deleted.
         $path = $request->path;
+
         if (str_contains($path, '..') || ! str_starts_with($path, 'documents/')) {
             return response()->json(['message' => 'Invalid path'], 422);
         }
 
         Storage::disk('local')->delete($path);
 
+        // Soft-delete the DB record if it exists
+        $doc = Document::where('storage_path', $path)->first();
+        if ($doc) {
+            $doc->delete();
+        }
+
         AuditLog::create([
-            'user_id' => $user->id, 'action' => 'delete_document',
-            'metadata' => ['path' => $path],
-            'ip_address' => $request->ip(), 'user_agent' => $request->userAgent(),
+            'user_id'      => $user->id,
+            'action'       => 'delete_document',
+            'subject_type' => 'Document',
+            'subject_id'   => $doc?->id,
+            'metadata'     => ['path' => $path],
+            'ip_address'   => $request->ip(),
+            'user_agent'   => $request->userAgent(),
         ]);
 
         return response()->json(['ok' => true]);

@@ -43,8 +43,8 @@ class SendDeadlineRemindersCommand extends Command
                         ->where('user_id', $user->id)
                         ->where('type', 'deadline')
                         ->whereDate('created_at', today())
-                        ->whereRaw("meta->>'tracker_row_id' = ?", [(string) $row->id])
-                        ->whereRaw("meta->>'days_remaining' = ?", [(string) $days])
+                        ->where('meta->tracker_row_id', (string) $row->id)
+                        ->where('meta->days_remaining', (string) $days)
                         ->exists();
 
                     if ($alreadySent) continue;
@@ -96,8 +96,8 @@ class SendDeadlineRemindersCommand extends Command
                     ->where('user_id', $user->id)
                     ->where('type', 'deadline')
                     ->where('created_at', '>=', now()->subDays(3))
-                    ->whereRaw("meta->>'tracker_row_id' = ?", [(string) $row->id])
-                    ->whereRaw("meta->>'days_remaining' = ?", ['0'])
+                    ->where('meta->tracker_row_id', (string) $row->id)
+                    ->where('meta->days_remaining', '0')
                     ->exists();
 
                 if ($alreadySent) continue;

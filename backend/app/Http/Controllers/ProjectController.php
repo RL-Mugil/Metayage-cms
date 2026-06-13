@@ -49,10 +49,10 @@ class ProjectController extends Controller
         $stats = Cache::remember($cacheKey, 300, function () use ($base, $today) {
             return (clone $base)->selectRaw("
                 COUNT(*) as total,
-                COUNT(*) FILTER (WHERE status = 'Open') as open,
-                COUNT(*) FILTER (WHERE status = 'In Progress') as in_progress,
-                COUNT(*) FILTER (WHERE status = 'On Hold') as on_hold,
-                COUNT(*) FILTER (WHERE hard_deadline IS NOT NULL AND hard_deadline < ? AND status NOT IN ('Closed', 'Completed')) as overdue
+                SUM(CASE WHEN status = 'Open' THEN 1 ELSE 0 END) as open,
+                SUM(CASE WHEN status = 'In Progress' THEN 1 ELSE 0 END) as in_progress,
+                SUM(CASE WHEN status = 'On Hold' THEN 1 ELSE 0 END) as on_hold,
+                SUM(CASE WHEN hard_deadline IS NOT NULL AND hard_deadline < ? AND status NOT IN ('Closed', 'Completed') THEN 1 ELSE 0 END) as overdue
             ", [$today])->first();
         });
 

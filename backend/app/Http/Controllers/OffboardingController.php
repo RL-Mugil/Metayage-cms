@@ -2,7 +2,9 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Employee;
 use App\Models\OffboardingCase;
+use App\Models\User;
 use Illuminate\Http\Request;
 
 class OffboardingController extends Controller
@@ -59,14 +61,20 @@ class OffboardingController extends Controller
             'assigned_hr' => 'nullable|string|max:255',
         ]);
 
+        $assignedHrName = ($validated['assigned_hr'] ?? null) ?: $request->user()->name;
+        $employee = Employee::where('full_name', $validated['employee'])->first();
+        $hrUser   = User::where('name', $assignedHrName)->first();
+
         $case = OffboardingCase::create([
-            'employee' => $validated['employee'],
-            'dept' => ($validated['dept'] ?? null) ?: 'General',
-            'last_day' => $validated['last_day'],
-            'exit_type' => $validated['exit_type'],
-            'assigned_hr' => ($validated['assigned_hr'] ?? null) ?: $request->user()->name,
-            'status' => 'Scheduled',
-            'checklist' => array_fill(0, self::CHECKLIST_SIZE, false),
+            'employee'       => $validated['employee'],
+            'employee_id'    => $employee?->id,
+            'dept'           => ($validated['dept'] ?? null) ?: 'General',
+            'last_day'       => $validated['last_day'],
+            'exit_type'      => $validated['exit_type'],
+            'assigned_hr'    => $assignedHrName,
+            'assigned_hr_id' => $hrUser?->id,
+            'status'         => 'Scheduled',
+            'checklist'      => array_fill(0, self::CHECKLIST_SIZE, false),
         ]);
 
         return response()->json(['ok' => true, 'id' => $case->id], 201);

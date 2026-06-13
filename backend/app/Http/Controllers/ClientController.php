@@ -35,14 +35,20 @@ class ClientController extends Controller
      */
     private function generateClientCode(string $nationality): string
     {
-        // Lock rows matching either old (C00) or new (C00M / C00Y) formats.
+        // Lock all client_code rows; filter in PHP to stay database-agnostic.
         $clients = Client::whereNotNull('client_code')
-            ->whereRaw("client_code ~ '^[C-Z][0-9]{2}[MY]?$'")
-            ->orderByRaw("LENGTH(client_code) DESC, client_code DESC")
             ->lockForUpdate()
             ->get(['client_code']);
 
-        $last = $clients->first()?->client_code;
+        $last = $clients
+            ->filter(fn($c) => preg_match('/^[C-Z][0-9]{2}[MY]?$/', $c->client_code))
+            ->sort(function ($a, $b) {
+                if (strlen($a->client_code) !== strlen($b->client_code)) {
+                    return strlen($b->client_code) - strlen($a->client_code);
+                }
+                return strcmp($b->client_code, $a->client_code);
+            })
+            ->first()?->client_code;
 
         if (!$last) {
             $base = 'C00';
@@ -92,13 +98,13 @@ class ClientController extends Controller
         $stats = Cache::remember($cacheKey, 300, function () use ($base) {
             return (clone $base)->selectRaw("
                 COUNT(*) as total,
-                COUNT(*) FILTER (WHERE status = 'Active') as active,
-                COUNT(*) FILTER (WHERE status = 'Inactive') as inactive,
-                COUNT(*) FILTER (WHERE status = 'Prospect') as prospect,
-                COUNT(*) FILTER (WHERE gst_type = 'B2B') as b2b,
-                COUNT(*) FILTER (WHERE gst_type = 'B2C') as b2c,
-                COUNT(*) FILTER (WHERE gst_type = 'Export') as export,
-                COUNT(*) FILTER (WHERE gst_type = 'Unregistered') as unregistered
+                SUM(CASE WHEN status = 'Active' THEN 1 ELSE 0 END) as active,
+                SUM(CASE WHEN status = 'Inactive' THEN 1 ELSE 0 END) as inactive,
+                SUM(CASE WHEN status = 'Prospect' THEN 1 ELSE 0 END) as prospect,
+                SUM(CASE WHEN gst_type = 'B2B' THEN 1 ELSE 0 END) as b2b,
+                SUM(CASE WHEN gst_type = 'B2C' THEN 1 ELSE 0 END) as b2c,
+                SUM(CASE WHEN gst_type = 'Export' THEN 1 ELSE 0 END) as export,
+                SUM(CASE WHEN gst_type = 'Unregistered' THEN 1 ELSE 0 END) as unregistered
             ")->first();
         });
 
@@ -288,56 +294,58 @@ class ClientController extends Controller
         $skipped  = 0;
         $errors   = [];
 
-        foreach ($rows as $index => $row) {
-            $legalName = trim((string) ($row['legal_name'] ?? $row['company_name'] ?? $row['full_name'] ?? ''));
-            if (!$legalName) {
-                $skipped++;
-                continue;
+        \DB::transaction(function () use ($rows, $user, &$imported, &$skipped, &$errors) {
+            foreach ($rows as $index => $row) {
+                $legalName = trim((string) ($row['legal_name'] ?? $row['company_name'] ?? $row['full_name'] ?? ''));
+                if (!$legalName) {
+                    $skipped++;
+                    continue;
+                }
+
+                try {
+                    $nationality = trim((string) ($row['nationality'] ?? 'India')) ?: 'India';
+                    $hasGstin    = filter_var($row['has_gstin'] ?? false, FILTER_VALIDATE_BOOLEAN);
+                    $clientType  = in_array($row['client_type'] ?? '', ['individual', 'organization'])
+                                   ? (string) $row['client_type'] : 'organization';
+
+                    $email = isset($row['contact_email']) && filter_var($row['contact_email'], FILTER_VALIDATE_EMAIL)
+                             ? (string) $row['contact_email'] : null;
+
+                    $validStatuses = ['Active', 'Inactive', 'Prospect', 'On Hold'];
+                    $status = in_array($row['status'] ?? '', $validStatuses) ? (string) $row['status'] : 'Active';
+
+                    Client::create([
+                        'client_code'    => $this->generateClientCode($nationality),
+                        'legal_name'     => $legalName,
+                        'company_name'   => $legalName,
+                        'client_type'    => $clientType,
+                        'nationality'    => $nationality,
+                        'has_gstin'      => $hasGstin,
+                        'gst_type'       => $this->computeGstType($nationality, $hasGstin, $clientType),
+                        'pan_number'     => isset($row['pan_number'])     ? strtoupper(trim((string) $row['pan_number'])) : null,
+                        'cin_number'     => isset($row['cin_number'])     ? strtoupper(trim((string) $row['cin_number'])) : null,
+                        'entity_subtype' => $row['entity_subtype'] ?? null,
+                        'trade_name'     => $row['trade_name']    ?? null,
+                        'website'        => $row['website']       ?? null,
+                        'contact_name'   => $row['contact_name']  ?? null,
+                        'contact_email'  => $email,
+                        'phone'          => $row['phone']         ?? null,
+                        'address'        => $row['address']       ?? null,
+                        'state'          => $row['state']         ?? null,
+                        'industry'       => $row['industry']      ?? null,
+                        'payment_terms'  => $row['payment_terms'] ?? 'Net 30',
+                        'account_manager_id' => $user->id,
+                        'date_onboarded' => now()->toDateString(),
+                        'status'         => $status,
+                        'remarks'        => $row['remarks']       ?? null,
+                    ]);
+                    $imported++;
+                } catch (\Exception $e) {
+                    $errors[] = 'Row ' . ($index + 2) . ': ' . $e->getMessage();
+                    $skipped++;
+                }
             }
-
-            try {
-                $nationality = trim((string) ($row['nationality'] ?? 'India')) ?: 'India';
-                $hasGstin    = filter_var($row['has_gstin'] ?? false, FILTER_VALIDATE_BOOLEAN);
-                $clientType  = in_array($row['client_type'] ?? '', ['individual', 'organization'])
-                               ? (string) $row['client_type'] : 'organization';
-
-                $email = isset($row['contact_email']) && filter_var($row['contact_email'], FILTER_VALIDATE_EMAIL)
-                         ? (string) $row['contact_email'] : null;
-
-                $validStatuses = ['Active', 'Inactive', 'Prospect', 'On Hold'];
-                $status = in_array($row['status'] ?? '', $validStatuses) ? (string) $row['status'] : 'Active';
-
-                Client::create([
-                    'client_code'    => $this->generateClientCode($nationality),
-                    'legal_name'     => $legalName,
-                    'company_name'   => $legalName,
-                    'client_type'    => $clientType,
-                    'nationality'    => $nationality,
-                    'has_gstin'      => $hasGstin,
-                    'gst_type'       => $this->computeGstType($nationality, $hasGstin, $clientType),
-                    'pan_number'     => isset($row['pan_number'])     ? strtoupper(trim((string) $row['pan_number'])) : null,
-                    'cin_number'     => isset($row['cin_number'])     ? strtoupper(trim((string) $row['cin_number'])) : null,
-                    'entity_subtype' => $row['entity_subtype'] ?? null,
-                    'trade_name'     => $row['trade_name']    ?? null,
-                    'website'        => $row['website']       ?? null,
-                    'contact_name'   => $row['contact_name']  ?? null,
-                    'contact_email'  => $email,
-                    'phone'          => $row['phone']         ?? null,
-                    'address'        => $row['address']       ?? null,
-                    'state'          => $row['state']         ?? null,
-                    'industry'       => $row['industry']      ?? null,
-                    'payment_terms'  => $row['payment_terms'] ?? 'Net 30',
-                    'account_manager_id' => $user->id,
-                    'date_onboarded' => now()->toDateString(),
-                    'status'         => $status,
-                    'remarks'        => $row['remarks']       ?? null,
-                ]);
-                $imported++;
-            } catch (\Exception $e) {
-                $errors[] = 'Row ' . ($index + 2) . ': ' . $e->getMessage();
-                $skipped++;
-            }
-        }
+        });
 
         return response()->json([
             'imported' => $imported,

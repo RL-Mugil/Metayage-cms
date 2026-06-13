@@ -40,9 +40,9 @@ class FinancialController extends Controller
                 COALESCE(SUM(total_amount), 0) as total_billed,
                 COALESCE(SUM(CASE WHEN status = 'Paid' THEN total_amount ELSE 0 END), 0) as total_received,
                 COALESCE(SUM(CASE WHEN status IN ('Sent', 'Overdue', 'Partially Paid') THEN balance_due ELSE 0 END), 0) as total_outstanding,
-                COUNT(*) FILTER (WHERE status = 'Overdue') as overdue_count,
-                COUNT(*) FILTER (WHERE status = 'Draft') as draft_count,
-                COUNT(*) FILTER (WHERE status = 'Paid') as paid_count
+                SUM(CASE WHEN status = 'Overdue' THEN 1 ELSE 0 END) as overdue_count,
+                SUM(CASE WHEN status = 'Draft' THEN 1 ELSE 0 END) as draft_count,
+                SUM(CASE WHEN status = 'Paid' THEN 1 ELSE 0 END) as paid_count
             ")->first();
         });
 

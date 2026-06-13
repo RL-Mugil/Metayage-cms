@@ -173,7 +173,8 @@ class ReportsController extends Controller
 
             case 'overdue-cases':
                 $today = now()->startOfDay();
-                $paginator = TrackerRow::whereNotNull('delivery_due_date')
+                $paginator = TrackerRow::with(['pcmUser:id,name', 'scmUser:id,name', 'prUser:id,name'])
+                    ->whereNotNull('delivery_due_date')
                     ->whereDate('delivery_due_date', '<', $today)
                     ->orderBy('delivery_due_date')
                     ->paginate($perPage, ['*'], 'page', $page);
@@ -181,9 +182,9 @@ class ReportsController extends Controller
                     'Docket #'       => $r->docket_number ?? '—',
                     'Client'         => $r->client_name ?? '—',
                     'Record Type'    => $r->record_type ?? '—',
-                    'PCM'            => $r->pcm ?? '—',
-                    'SCM'            => $r->scm ?? '—',
-                    'PR'             => $r->pr ?? '—',
+                    'PCM'            => $r->pcmUser?->name ?? '—',
+                    'SCM'            => $r->scmUser?->name ?? '—',
+                    'PR'             => $r->prUser?->name ?? '—',
                     'Due Date'       => $r->delivery_due_date?->toDateString() ?? '—',
                     'Days Overdue'   => $r->delivery_due_date ? (int) Carbon::parse($r->delivery_due_date)->diffInDays(now()) : 0,
                     'Status'         => $r->status ?? '—',
@@ -192,7 +193,8 @@ class ReportsController extends Controller
                 return $this->paginatedResponse($type, $rows, $paginator, $perPage);
 
             case 'deadline-forecast':
-                $paginator = TrackerRow::whereNotNull('delivery_due_date')
+                $paginator = TrackerRow::with(['pcmUser:id,name'])
+                    ->whereNotNull('delivery_due_date')
                     ->whereDate('delivery_due_date', '>=', now()->toDateString())
                     ->orderBy('delivery_due_date')
                     ->paginate($perPage, ['*'], 'page', $page);
@@ -200,7 +202,7 @@ class ReportsController extends Controller
                     'Docket #'      => $r->docket_number ?? '—',
                     'Client'        => $r->client_name ?? '—',
                     'Record Type'   => $r->record_type ?? '—',
-                    'PCM'           => $r->pcm ?? '—',
+                    'PCM'           => $r->pcmUser?->name ?? '—',
                     'Due Date'      => $r->delivery_due_date?->toDateString() ?? '—',
                     'Days Left'     => $r->delivery_due_date ? (int) Carbon::parse($r->delivery_due_date)->diffInDays(now()) : '—',
                     'Status'        => $r->status ?? '—',
@@ -216,10 +218,10 @@ class ReportsController extends Controller
                     ->selectRaw("
                         client_name as client,
                         COUNT(*) as total_cases,
-                        COUNT(*) FILTER (WHERE payment_status = 'Paid')    as paid,
-                        COUNT(*) FILTER (WHERE payment_status = 'Partial') as partial,
-                        COUNT(*) FILTER (WHERE payment_status = 'Pending') as pending,
-                        COUNT(*) FILTER (WHERE payment_status NOT IN ('Paid','Partial','Pending') OR payment_status IS NULL) as not_set
+                        SUM(CASE WHEN payment_status = 'Paid' THEN 1 ELSE 0 END) as paid,
+                        SUM(CASE WHEN payment_status = 'Partial' THEN 1 ELSE 0 END) as partial,
+                        SUM(CASE WHEN payment_status = 'Pending' THEN 1 ELSE 0 END) as pending,
+                        SUM(CASE WHEN payment_status NOT IN ('Paid','Partial','Pending') OR payment_status IS NULL THEN 1 ELSE 0 END) as not_set
                     ")
                     ->groupBy('client_name')
                     ->orderByDesc('total_cases')

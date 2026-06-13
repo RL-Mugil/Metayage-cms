@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Http\PaginationHelper;
 use App\Models\ComplianceItem;
 use App\Models\Reminder;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 
@@ -40,10 +41,10 @@ class ComplianceController extends Controller
 
         $row = ComplianceItem::where('status', '!=', 'Resolved')
             ->selectRaw("
-                COUNT(*) FILTER (WHERE deadline <= ?) as critical,
-                COUNT(*) FILTER (WHERE deadline BETWEEN ? AND ?) as at_risk,
-                COUNT(*) FILTER (WHERE deadline BETWEEN ? AND ?) as on_track,
-                COUNT(*) FILTER (WHERE deadline > ?) as compliant
+                SUM(CASE WHEN deadline <= ? THEN 1 ELSE 0 END) as critical,
+                SUM(CASE WHEN deadline BETWEEN ? AND ? THEN 1 ELSE 0 END) as at_risk,
+                SUM(CASE WHEN deadline BETWEEN ? AND ? THEN 1 ELSE 0 END) as on_track,
+                SUM(CASE WHEN deadline > ? THEN 1 ELSE 0 END) as compliant
             ", [$d30, $d31, $d75, $d76, $d150, $d150])
             ->first();
 
@@ -106,7 +107,8 @@ class ComplianceController extends Controller
         ]);
 
         if (array_key_exists('assignee', $validated)) {
-            $item->assignee = $validated['assignee'];
+            $item->assignee    = $validated['assignee'];
+            $item->assignee_id = User::where('name', $validated['assignee'])->value('id');
         }
         if (! empty($validated['note'])) {
             $notes = $item->notes ?? [];
