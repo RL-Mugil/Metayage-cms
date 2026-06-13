@@ -1,8 +1,9 @@
 import { Head } from "@inertiajs/react";
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import {
   Plus, Search, LayoutGrid, List, Pencil, Trash2, X, ChevronDown, ChevronUp,
-  Building2, User, AlertCircle, Globe, Loader2, Download,
+  Building2, User, AlertCircle, Globe, Loader2, Download, ChevronLeft, ChevronRight,
+  ArrowUpDown, ArrowUp, ArrowDown,
 } from "lucide-react";
 import AppLayout from "@/layouts/AppLayout";
 import { PageHeader } from "@/components/page-header";
@@ -136,15 +137,187 @@ const BLANK: CF = {
   referred_by_code:"", accounts_person:"", remarks:"", status:"Active",
 };
 
+// ── KPI Drill-down Modal ─────────────────────────────────────────────────────
+
+type KpiKey = "total" | "active" | "b2b" | "export";
+
+interface KpiDef {
+  label: string; key: KpiKey; color: string;
+  filterParams: Record<string, string>;
+}
+
+const KPI_DEFS: KpiDef[] = [
+  { label: "Total Clients", key: "total",  color: "text-gold",        filterParams: {}                     },
+  { label: "Active",        key: "active", color: "text-green-500",   filterParams: { status: "Active" }   },
+  { label: "B2B (GST Reg)", key: "b2b",   color: "text-blue-500",    filterParams: { gst_type: "B2B" }    },
+  { label: "Export",        key: "export", color: "text-purple-500",  filterParams: { gst_type: "Export" } },
+];
+
+type SortField = "company_name" | "client_code" | "status" | "gst_type" | "date_onboarded";
+
+function KpiModal({ kpi, onClose }: { kpi: KpiDef; onClose: () => void }) {
+  const [result, setResult]   = useState<any>({ data: [], total: 0, per_page: 25, current_page: 1, last_page: 1 });
+  const [search, setSearch]   = useState("");
+  const [loading, setLoading] = useState(true);
+  const [page, setPage]       = useState(1);
+  const [sortBy, setSortBy]   = useState<SortField>("company_name");
+  const [sortDir, setSortDir] = useState<"asc"|"desc">("asc");
+
+  const fetchPage = useCallback((p: number, sq: string, sb: SortField, sd: "asc"|"desc") => {
+    setLoading(true);
+    const params = new URLSearchParams({ page: String(p), per_page: "25", sort_by: sb, sort_dir: sd });
+    if (sq) params.set("search", sq);
+    Object.entries(kpi.filterParams).forEach(([k, v]) => params.set(k, v));
+    api.getClients(params)
+      .then(setResult)
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [kpi]);
+
+  useEffect(() => { fetchPage(1, "", "company_name", "asc"); }, [fetchPage]);
+
+  const handleSearch = (v: string) => { setSearch(v); setPage(1); fetchPage(1, v, sortBy, sortDir); };
+  const handleSort = (field: SortField) => {
+    const nd = sortBy === field && sortDir === "asc" ? "desc" : "asc";
+    setSortBy(field); setSortDir(nd); setPage(1); fetchPage(1, search, field, nd);
+  };
+  const handlePage = (p: number) => { setPage(p); fetchPage(p, search, sortBy, sortDir); };
+
+  const SortIcon = ({ field }: { field: SortField }) => {
+    if (sortBy !== field) return <ArrowUpDown className="h-3 w-3 ml-1 opacity-40" />;
+    return sortDir === "asc" ? <ArrowUp className="h-3 w-3 ml-1 text-gold" /> : <ArrowDown className="h-3 w-3 ml-1 text-gold" />;
+  };
+
+  const th = "px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider text-muted-foreground cursor-pointer hover:text-foreground select-none";
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-5xl max-h-[88vh] flex flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border flex-shrink-0">
+          <div>
+            <h2 className="font-display text-base font-semibold">{kpi.label}</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">{result.total} clients</p>
+          </div>
+          <button onClick={onClose} className="p-1 rounded hover:bg-muted/40"><X className="h-5 w-5 text-muted-foreground" /></button>
+        </div>
+
+        {/* Search */}
+        <div className="px-5 py-3 border-b border-border flex-shrink-0">
+          <div className="relative max-w-sm">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+            <input
+              value={search}
+              onChange={(e) => handleSearch(e.target.value)}
+              placeholder="Search name, code, PAN…"
+              className="w-full h-8 rounded-md border border-border bg-background pl-8 pr-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold"
+            />
+          </div>
+        </div>
+
+        {/* Table */}
+        <div className="flex-1 overflow-auto">
+          {loading ? (
+            <div className="flex items-center justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-gold" /></div>
+          ) : (
+            <table className="w-full text-sm">
+              <thead className="bg-muted/40 sticky top-0">
+                <tr>
+                  <th className={th} onClick={() => handleSort("client_code")}>
+                    <span className="flex items-center">Code<SortIcon field="client_code" /></span>
+                  </th>
+                  <th className={th} onClick={() => handleSort("company_name")}>
+                    <span className="flex items-center">Legal Name<SortIcon field="company_name" /></span>
+                  </th>
+                  <th className="px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Type</th>
+                  <th className={th} onClick={() => handleSort("gst_type")}>
+                    <span className="flex items-center">GST<SortIcon field="gst_type" /></span>
+                  </th>
+                  <th className="px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Contact</th>
+                  <th className="px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">State</th>
+                  <th className={th} onClick={() => handleSort("date_onboarded")}>
+                    <span className="flex items-center">Onboarded<SortIcon field="date_onboarded" /></span>
+                  </th>
+                  <th className={th} onClick={() => handleSort("status")}>
+                    <span className="flex items-center">Status<SortIcon field="status" /></span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {result.data.map((c: any) => {
+                  const gm = GST_META[c.gst_type ?? ""] ?? null;
+                  const name = c.legal_name ?? c.company_name ?? "—";
+                  return (
+                    <tr key={c.id} className="border-t border-border hover:bg-muted/20">
+                      <td className="px-3 py-2.5 font-mono text-xs font-semibold text-gold">{c.client_code ?? "—"}</td>
+                      <td className="px-3 py-2.5">
+                        <div className="font-medium text-sm">{name}</div>
+                        {c.pan_number && <div className="text-[10px] text-muted-foreground font-mono">PAN: {c.pan_number}</div>}
+                      </td>
+                      <td className="px-3 py-2.5 text-xs text-muted-foreground">
+                        <span className="flex items-center gap-1">
+                          {c.client_type === "individual" ? <User className="h-3 w-3" /> : <Building2 className="h-3 w-3" />}
+                          {c.entity_subtype ?? (c.client_type === "individual" ? "Individual" : "Org")}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2.5">
+                        {gm ? <Badge variant="outline" className={`text-[10px] ${gm.color}`}>{gm.label}</Badge> : "—"}
+                      </td>
+                      <td className="px-3 py-2.5 text-xs text-muted-foreground">
+                        <div>{c.contact_name ?? c.contact_email ?? "—"}</div>
+                        {c.phone && <div className="text-[10px]">{c.phone}</div>}
+                      </td>
+                      <td className="px-3 py-2.5 text-xs text-muted-foreground">{c.state ?? "—"}</td>
+                      <td className="px-3 py-2.5 text-xs text-muted-foreground font-mono">{fmtDate(c.date_onboarded)}</td>
+                      <td className="px-3 py-2.5">
+                        <Badge variant="outline" className={c.status === "Active" ? "text-green-600 border-green-200 bg-green-50 text-[10px]" : "text-[10px]"}>
+                          {c.status ?? "Active"}
+                        </Badge>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {result.data.length === 0 && (
+                  <tr><td colSpan={8} className="px-4 py-10 text-center text-sm text-muted-foreground">No clients found.</td></tr>
+                )}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        {/* Pagination */}
+        {result.total > 0 && (
+          <div className="flex items-center justify-between px-5 py-3 border-t border-border flex-shrink-0 text-xs text-muted-foreground">
+            <span>
+              Showing {((result.current_page - 1) * result.per_page) + 1}–{Math.min(result.current_page * result.per_page, result.total)} of {result.total}
+            </span>
+            <div className="flex items-center gap-1">
+              <Button size="sm" variant="outline" className="h-7 w-7 p-0" disabled={result.current_page === 1} onClick={() => handlePage(result.current_page - 1)}>
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <span className="px-2">Page {result.current_page} of {result.last_page}</span>
+              <Button size="sm" variant="outline" className="h-7 w-7 p-0" disabled={!result.has_more} onClick={() => handlePage(result.current_page + 1)}>
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 export default function Clients() {
   const [paginatedResult, setPaginatedResult] = useState<any>({ data: [], total: 0, per_page: 25, current_page: 1, last_page: 1, has_more: false });
+  const [stats, setStats]       = useState<Record<string, number>>({ total: 0, active: 0, b2b: 0, export: 0 });
   const [users, setUsers]       = useState<any[]>([]);
   const [loading, setLoading]   = useState(true);
   const [search, setSearch]     = useState("");
   const [view, setView]         = useState<"list"|"grid">("list");
   const [statusF, setStatusF]   = useState("All");
+  const [kpiModal, setKpiModal] = useState<KpiDef | null>(null);
 
   const [showForm, setShowForm] = useState(false);
   const [editC, setEditC]       = useState<any>(null);
@@ -169,6 +342,7 @@ export default function Clients() {
     setLoading(true);
     fetchClients(1);
     api.getUsers().then(setUsers).catch(() => {});
+    api.getClientStats().then(setStats).catch(() => {});
   }, [search]);
 
   const isOrg    = form.client_type === "organization";
@@ -287,18 +461,18 @@ export default function Clients() {
       />
 
       <div className="px-8 py-6 space-y-4">
-        {/* Stats */}
+        {/* Stats — click any card to drill down */}
         <div className="grid grid-cols-4 gap-3">
-          {[
-            { l:"Total Clients", v:clients.length,                                      c:"text-gold"        },
-            { l:"Active",        v:clients.filter((c: any)=>c.status==="Active").length,  c:"text-green-500"   },
-            { l:"B2B (GST Reg)", v:clients.filter((c: any)=>c.gst_type==="B2B").length,  c:"text-blue-500"    },
-            { l:"Export",        v:clients.filter((c: any)=>c.gst_type==="Export").length,c:"text-purple-500" },
-          ].map(({l,v,c}) => (
-            <Card key={l} className="border-border">
+          {KPI_DEFS.map((kpi) => (
+            <Card
+              key={kpi.key}
+              className="border-border cursor-pointer hover:border-gold/40 hover:shadow-md transition-all group"
+              onClick={() => setKpiModal(kpi)}
+            >
               <CardContent className="p-3 text-center">
-                <div className={`text-2xl font-bold ${c}`}>{v}</div>
-                <div className="text-xs text-muted-foreground mt-0.5">{l}</div>
+                <div className={`text-2xl font-bold ${kpi.color}`}>{stats[kpi.key] ?? 0}</div>
+                <div className="text-xs text-muted-foreground mt-0.5">{kpi.label}</div>
+                <div className="text-[10px] text-muted-foreground/50 mt-1 group-hover:text-gold/60 transition-colors">Click to view →</div>
               </CardContent>
             </Card>
           ))}
@@ -723,6 +897,9 @@ export default function Clients() {
           </div>
         </div>
       )}
+
+      {/* ── KPI Drill-down Modal ─────────────────────────────────────────────── */}
+      {kpiModal && <KpiModal kpi={kpiModal} onClose={() => setKpiModal(null)} />}
 
       {/* ── Delete Confirm ────────────────────────────────────────────────────── */}
       {delTarget && (

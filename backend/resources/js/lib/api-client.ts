@@ -45,6 +45,9 @@ export const api = {
   },
 
   // ── Clients ──
+  async getClientStats(): Promise<{ total: number; active: number; inactive: number; prospect: number; b2b: number; b2c: number; export: number; unregistered: number }> {
+    return this.request('/clients/stats')
+  },
   async getClients(params?: string | URLSearchParams): Promise<any> {
     let query = '';
     if (params instanceof URLSearchParams) {

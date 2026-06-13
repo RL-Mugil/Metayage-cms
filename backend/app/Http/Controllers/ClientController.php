@@ -81,6 +81,27 @@ class ClientController extends Controller
 
     // ── API CRUD ──────────────────────────────────────────────────────────────
 
+    public function stats(Request $request)
+    {
+        $user = $request->user();
+        $base = Client::query();
+
+        if ($user->role === 'client') {
+            $base->whereHas('contacts', fn($q) => $q->where('email', $user->email));
+        }
+
+        return response()->json([
+            'total'        => (clone $base)->count(),
+            'active'       => (clone $base)->where('status', 'Active')->count(),
+            'inactive'     => (clone $base)->where('status', 'Inactive')->count(),
+            'prospect'     => (clone $base)->where('status', 'Prospect')->count(),
+            'b2b'          => (clone $base)->where('gst_type', 'B2B')->count(),
+            'b2c'          => (clone $base)->where('gst_type', 'B2C')->count(),
+            'export'       => (clone $base)->where('gst_type', 'Export')->count(),
+            'unregistered' => (clone $base)->where('gst_type', 'Unregistered')->count(),
+        ]);
+    }
+
     public function index(Request $request)
     {
         $user  = $request->user();
@@ -100,7 +121,19 @@ class ClientController extends Controller
             });
         }
 
-        $query->orderBy('company_name');
+        if ($request->filled('status') && $request->status !== 'All') {
+            $query->where('status', $request->status);
+        }
+
+        if ($request->filled('gst_type')) {
+            $query->where('gst_type', $request->gst_type);
+        }
+
+        $sortBy  = in_array($request->sort_by, ['company_name', 'legal_name', 'client_code', 'status', 'gst_type', 'date_onboarded'])
+            ? $request->sort_by : 'company_name';
+        $sortDir = $request->sort_dir === 'desc' ? 'desc' : 'asc';
+        $query->orderBy($sortBy, $sortDir);
+
         return response()->json(PaginationHelper::paginate($query, $request));
     }
 
