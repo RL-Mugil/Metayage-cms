@@ -62,9 +62,5 @@ export const invoices = [
 
 export const teamMembers = ["Anika Mehra", "Ravi Nair", "K. Suresh", "Maya Bhat", "Aarav Khanna"];
 
-export const statusColor = (s: string): "default" | "secondary" | "destructive" | "outline" => {
-  if (["Paid", "Active", "Done", "Registered", "Approved"].includes(s)) return "default";
-  if (["Overdue", "Blocked", "Rejected"].includes(s)) return "destructive";
-  if (["Draft", "Todo", "Onboarding", "Probation"].includes(s)) return "outline";
-  return "secondary";
-};
+// Re-exported from utils so routes can be migrated to import from "@/lib/utils" incrementally.
+export { statusColor } from "@/lib/utils";

@@ -296,11 +296,8 @@ class ProjectController extends Controller
 
     public function destroy(Request $request, $id)
     {
-        $user = $request->user();
-        if (! in_array($user->role, ['super_admin', 'partner'])) {
-            return response()->json(['message' => 'Forbidden'], 403);
-        }
         $project = Project::findOrFail($id);
+        $this->authorize('delete', $project);
 
         if (in_array($project->status, ['Active', 'In Progress', 'Open'])) {
             return response()->json(['message' => 'Cannot delete an active project. Close or archive it first.'], 403);

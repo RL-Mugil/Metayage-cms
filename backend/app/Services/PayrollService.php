@@ -20,7 +20,16 @@ class PayrollService
     private const PF_BASIC_CEILING = 15000.0;
     private const ESI_RATE = 0.0075;
     private const ESI_GROSS_LIMIT = 21000.0;
-    private const PROFESSIONAL_TAX = 200.0;
+
+    // Professional Tax: flat simplification valid for Karnataka/Maharashtra slabs at
+    // gross ≥ ₹15,001. Configurable via PAYROLL_PT_MONTHLY env var.
+    // Full state-dependent slab support requires adding employees.work_state column.
+    private float $professionalTax;
+
+    public function __construct()
+    {
+        $this->professionalTax = (float) env('PAYROLL_PT_MONTHLY', 200.0);
+    }
 
     /**
      * @return array<string, float> all payslip money fields
@@ -37,7 +46,7 @@ class PayrollService
 
         $pf = round(min($basic, self::PF_BASIC_CEILING) * self::PF_RATE, 2);
         $esi = $payableGross <= self::ESI_GROSS_LIMIT ? round($payableGross * self::ESI_RATE, 2) : 0.0;
-        $pt = $payableGross > 0 ? self::PROFESSIONAL_TAX : 0.0;
+        $pt = $payableGross > 0 ? $this->professionalTax : 0.0;
         $tds = round(max(0.0, $tds), 2);
 
         $totalDeductions = round($pf + $esi + $pt + $tds, 2);

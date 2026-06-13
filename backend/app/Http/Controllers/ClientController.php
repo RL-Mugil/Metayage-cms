@@ -217,12 +217,8 @@ class ClientController extends Controller
 
     public function destroy(Request $request, $id)
     {
-        $user = $request->user();
-        if (!in_array($user->role, ['super_admin', 'partner'])) {
-            return response()->json(['message' => 'Forbidden'], 403);
-        }
-
         $client = Client::findOrFail($id);
+        $this->authorize('delete', $client);
 
         // Prevent deletion if financial records exist (data integrity)
         $invoiceCount = \App\Models\Invoice::where('client_id', $id)->count();

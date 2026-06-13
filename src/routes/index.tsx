@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Briefcase, Users, Wallet, Clock, ArrowUpRight, TrendingUp, Loader2 } from "lucide-react";
-import { projects, tasks, invoices, statusColor } from "@/lib/mock-data";
+import { statusColor } from "@/lib/utils";
 
 export const Route = createFileRoute("/")({
   head: () => ({ meta: [{ title: "Dashboard — IPFlow" }] }),
@@ -24,29 +24,22 @@ function Dashboard() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const u = api.getUser();
-        setUser(u);
-        
-        const data = await api.getDashboardMetrics();
-        setMetrics(data.metrics);
+    setUser(api.getUser());
 
-        const projs = await api.getProjects();
+    Promise.all([
+      api.getDashboardMetrics(),
+      api.getProjects(),
+      api.getTasks(),
+      api.getInvoices(),
+    ])
+      .then(([metricsData, projs, tsks, invs]) => {
+        setMetrics(metricsData.metrics);
         setLiveProjects(projs);
-
-        const tsks = await api.getTasks();
         setLiveTasks(tsks);
-
-        const invs = await api.getInvoices();
         setLiveInvoices(invs);
-      } catch (err) {
-        console.error("Error loading dashboard data:", err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchData();
+      })
+      .catch((err) => console.error("Error loading dashboard data:", err))
+      .finally(() => setLoading(false));
   }, []);
 
   const formatCurrency = (val: number) => {

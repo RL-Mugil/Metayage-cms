@@ -8,7 +8,7 @@ class StoreProjectRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return in_array($this->user()->role, ['super_admin', 'partner', 'manager']);
+        return $this->user()->can('create', \App\Models\Project::class);
     }
 
     public function rules(): array
