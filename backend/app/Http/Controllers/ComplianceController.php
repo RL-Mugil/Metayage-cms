@@ -31,14 +31,27 @@ class ComplianceController extends Controller
     {
         if ($deny = $this->denyClients($request)) return $deny;
 
-        $today = Carbon::today();
-        $base  = ComplianceItem::where('status', '!=', 'Resolved');
+        $today = Carbon::today()->toDateString();
+        $d30   = Carbon::today()->addDays(30)->toDateString();
+        $d31   = Carbon::today()->addDays(31)->toDateString();
+        $d75   = Carbon::today()->addDays(75)->toDateString();
+        $d76   = Carbon::today()->addDays(76)->toDateString();
+        $d150  = Carbon::today()->addDays(150)->toDateString();
+
+        $row = ComplianceItem::where('status', '!=', 'Resolved')
+            ->selectRaw("
+                COUNT(*) FILTER (WHERE deadline <= ?) as critical,
+                COUNT(*) FILTER (WHERE deadline BETWEEN ? AND ?) as at_risk,
+                COUNT(*) FILTER (WHERE deadline BETWEEN ? AND ?) as on_track,
+                COUNT(*) FILTER (WHERE deadline > ?) as compliant
+            ", [$d30, $d31, $d75, $d76, $d150, $d150])
+            ->first();
 
         return response()->json([
-            'critical' => (clone $base)->where('deadline', '<=', $today->copy()->addDays(30))->count(),
-            'at_risk'  => (clone $base)->whereBetween('deadline', [$today->copy()->addDays(31)->toDateString(), $today->copy()->addDays(75)->toDateString()])->count(),
-            'on_track' => (clone $base)->whereBetween('deadline', [$today->copy()->addDays(76)->toDateString(), $today->copy()->addDays(150)->toDateString()])->count(),
-            'compliant'=> (clone $base)->where('deadline', '>', $today->copy()->addDays(150))->count(),
+            'critical' => (int) $row->critical,
+            'at_risk'  => (int) $row->at_risk,
+            'on_track' => (int) $row->on_track,
+            'compliant'=> (int) $row->compliant,
         ]);
     }
 
