@@ -8,9 +8,10 @@ interface Props {
   trend?: "up" | "down" | "flat";
   icon?: LucideIcon;
   accent?: "primary" | "gold" | "info" | "success";
+  onClick?: () => void;
 }
 
-export function StatCard({ label, value, delta, trend = "flat", icon: Icon, accent = "primary" }: Props) {
+export function StatCard({ label, value, delta, trend = "flat", icon: Icon, accent = "primary", onClick }: Props) {
   const accents: Record<string, string> = {
     primary: "bg-primary/5 text-primary",
     gold: "bg-gold/10 text-gold",
@@ -18,7 +19,13 @@ export function StatCard({ label, value, delta, trend = "flat", icon: Icon, acce
     success: "bg-success/10 text-success",
   };
   return (
-    <div className="group rounded-xl border border-border bg-card p-5 transition-shadow hover:shadow-sm">
+    <div
+      onClick={onClick}
+      role={onClick ? "button" : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={onClick ? (e) => { if (e.key === "Enter" || e.key === " ") onClick(); } : undefined}
+      className={cn("group rounded-xl border border-border bg-card p-5 transition-shadow hover:shadow-sm", onClick && "cursor-pointer hover:shadow-md hover:border-gold/40")}
+    >
       <div className="flex items-start justify-between">
         <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">{label}</div>
         {Icon && (

@@ -1,9 +1,9 @@
 import { Head, Link } from "@inertiajs/react";
-import { useEffect, useState, useMemo, useRef } from "react";
+import { useEffect, useState, useMemo, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import {
   Plus, Search, Loader2, X, Download, Pencil, Trash2, AlertCircle,
-  ChevronDown, ChevronUp, Eye,
+  ChevronDown, ChevronUp, Eye, ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown,
 } from "lucide-react";
 import AppLayout from "@/layouts/AppLayout";
 import { PageHeader } from "@/components/page-header";
@@ -318,6 +318,166 @@ const BLANK: PF = {
   notes: "",
 };
 
+// ── KPI ───────────────────────────────────────────────────────────────────────
+
+interface KpiDef {
+  label: string;
+  key: string;
+  color: string;
+  filterParams: Record<string, string>;
+}
+
+const KPI_DEFS: KpiDef[] = [
+  { label: "Total Cases",  key: "total",       color: "text-gold",          filterParams: {} },
+  { label: "Open",         key: "open",        color: "text-blue-500",      filterParams: { status: "Open" } },
+  { label: "On Hold",      key: "on_hold",     color: "text-yellow-500",    filterParams: { status: "On Hold" } },
+  { label: "Overdue",      key: "overdue",     color: "text-destructive",   filterParams: { overdue: "1" } },
+];
+
+function ProjectKpiModal({ kpi, onClose }: { kpi: KpiDef; onClose: () => void }) {
+  const [result, setResult]   = useState<{ data: any[]; total: number }>({ data: [], total: 0 });
+  const [search, setSearch]   = useState("");
+  const [loading, setLoading] = useState(false);
+  const [page, setPage]       = useState(1);
+  const [sortBy, setSortBy]   = useState("hard_deadline");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const PER_PAGE = 15;
+
+  const fetchPage = useCallback(
+    async (pg: number, q: string, sb: string, sd: string) => {
+      setLoading(true);
+      try {
+        const params = new URLSearchParams({
+          per_page: String(PER_PAGE),
+          page: String(pg),
+          sort_by: sb,
+          sort_dir: sd,
+          ...kpi.filterParams,
+        });
+        if (q) params.set("search", q);
+        const res: any = await api.getProjectsPaged(params);
+        setResult({ data: Array.isArray(res) ? res : (res?.data ?? []), total: res?.total ?? 0 });
+      } finally {
+        setLoading(false);
+      }
+    },
+    [kpi]
+  );
+
+  useEffect(() => { fetchPage(1, "", "hard_deadline", "asc"); }, [fetchPage]);
+
+  function handleSearch(q: string) { setSearch(q); setPage(1); fetchPage(1, q, sortBy, sortDir); }
+  function handleSort(col: string) {
+    const nd = col === sortBy && sortDir === "asc" ? "desc" : "asc";
+    setSortBy(col); setSortDir(nd); fetchPage(page, search, col, nd);
+  }
+  function goPage(pg: number) { setPage(pg); fetchPage(pg, search, sortBy, sortDir); }
+
+  const totalPages = Math.max(1, Math.ceil(result.total / PER_PAGE));
+  const SortIcon = ({ col }: { col: string }) =>
+    col !== sortBy ? <ArrowUpDown className="h-3 w-3 ml-1 opacity-40" /> :
+    sortDir === "asc" ? <ArrowUp className="h-3 w-3 ml-1" /> : <ArrowDown className="h-3 w-3 ml-1" />;
+
+  function fmtD(d: string | null | undefined) {
+    if (!d) return "—";
+    const p = d.split("T")[0]; const [y, m, day] = p.split("-");
+    return (!y || !m || !day) ? d : `${day}-${m}-${y}`;
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+      <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-4xl max-h-[88vh] flex flex-col">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border flex-shrink-0">
+          <div>
+            <h2 className="font-display text-lg font-semibold">{kpi.label}</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">{result.total} case{result.total !== 1 ? "s" : ""}</p>
+          </div>
+          <button onClick={onClose}><X className="h-5 w-5 text-muted-foreground" /></button>
+        </div>
+        <div className="px-6 py-3 border-b border-border flex-shrink-0">
+          <div className="relative max-w-sm">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <input
+              className="w-full h-9 pl-9 pr-3 rounded-md border border-border bg-background text-sm focus:outline-none focus:ring-1 focus:ring-gold"
+              placeholder="Search docket, title…"
+              value={search}
+              onChange={(e) => handleSearch(e.target.value)}
+            />
+          </div>
+        </div>
+        <div className="flex-1 overflow-auto">
+          {loading ? (
+            <div className="flex items-center justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-gold" /></div>
+          ) : (
+            <table className="w-full text-sm min-w-[700px]">
+              <thead className="sticky top-0 bg-muted/60 backdrop-blur text-xs uppercase tracking-wider text-muted-foreground">
+                <tr>
+                  <th className="px-4 py-3 text-left">
+                    <button className="flex items-center" onClick={() => handleSort("docket_number")}>
+                      Docket <SortIcon col="docket_number" />
+                    </button>
+                  </th>
+                  <th className="px-4 py-3 text-left">
+                    <button className="flex items-center" onClick={() => handleSort("project_name")}>
+                      Patent Title <SortIcon col="project_name" />
+                    </button>
+                  </th>
+                  <th className="px-4 py-3 text-left">Country</th>
+                  <th className="px-4 py-3 text-left">
+                    <button className="flex items-center" onClick={() => handleSort("status")}>
+                      Status <SortIcon col="status" />
+                    </button>
+                  </th>
+                  <th className="px-4 py-3 text-left">
+                    <button className="flex items-center" onClick={() => handleSort("hard_deadline")}>
+                      Deadline <SortIcon col="hard_deadline" />
+                    </button>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {result.data.map((p) => {
+                  const isOverdue = p.hard_deadline && new Date(p.hard_deadline) < new Date();
+                  return (
+                    <tr key={p.id} className="border-t border-border hover:bg-muted/30">
+                      <td className="px-4 py-2.5 font-mono text-xs text-gold font-semibold whitespace-nowrap">
+                        {p.docket_number ?? p.project_code ?? "—"}
+                      </td>
+                      <td className="px-4 py-2.5 max-w-[240px] truncate font-medium">{p.project_name}</td>
+                      <td className="px-4 py-2.5 text-xs text-muted-foreground">{p.patent_office_code ?? "—"}</td>
+                      <td className="px-4 py-2.5 text-xs">{p.status}</td>
+                      <td className={`px-4 py-2.5 text-xs font-mono whitespace-nowrap ${isOverdue ? "text-destructive font-semibold" : "text-muted-foreground"}`}>
+                        {fmtD(p.hard_deadline)}
+                      </td>
+                    </tr>
+                  );
+                })}
+                {result.data.length === 0 && (
+                  <tr><td colSpan={5} className="px-4 py-10 text-center text-muted-foreground">No cases found.</td></tr>
+                )}
+              </tbody>
+            </table>
+          )}
+        </div>
+        <div className="flex items-center justify-between px-6 py-3 border-t border-border flex-shrink-0 text-xs text-muted-foreground">
+          <span>Showing {result.data.length} of {result.total}</span>
+          <div className="flex items-center gap-1">
+            <button onClick={() => goPage(page - 1)} disabled={page === 1}
+              className="p-1 rounded border border-border disabled:opacity-40 hover:bg-muted/40">
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            <span className="px-2">{page} / {totalPages}</span>
+            <button onClick={() => goPage(page + 1)} disabled={page >= totalPages}
+              className="p-1 rounded border border-border disabled:opacity-40 hover:bg-muted/40">
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 export default function Projects() {
@@ -329,6 +489,8 @@ export default function Projects() {
   const [filterStatus, setFilter] = useState("All");
   const [page, setPage]           = useState(1);
   const [perPage, setPerPage]     = useState(25);
+  const [stats, setStats]         = useState<Record<string, number>>({ total: 0, open: 0, on_hold: 0, overdue: 0 });
+  const [kpiModal, setKpiModal]   = useState<KpiDef | null>(null);
 
   const [showModal, setShowModal] = useState(false);
   const [editProj, setEditProj]  = useState<any>(null);
@@ -349,6 +511,7 @@ export default function Projects() {
   }, [stageMenu]);
 
   useEffect(() => {
+    api.getProjectStats().then(setStats).catch(() => {});
     Promise.all([api.getProjects(), api.getClients(), api.getUsers()])
       .then(([p, c, u]) => {
         setProjects(Array.isArray(p) ? p : (p as any).data || []);
@@ -793,6 +956,25 @@ export default function Projects() {
           </div>
         </div>
       )}
+
+      {/* ── KPI Cards ─────────────────────────────────────────────────────── */}
+      <div className="px-8 pt-6 grid gap-4 grid-cols-2 md:grid-cols-4">
+        {KPI_DEFS.map((kpi) => (
+          <button
+            key={kpi.key}
+            onClick={() => setKpiModal(kpi)}
+            className="rounded-xl border border-border bg-card p-5 text-left transition-all hover:shadow-md hover:border-gold/40 cursor-pointer"
+          >
+            <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">{kpi.label}</div>
+            <div className={`mt-3 font-display text-3xl font-semibold tracking-tight ${kpi.color}`}>
+              {stats[kpi.key] ?? 0}
+            </div>
+            <div className="mt-1 text-xs text-muted-foreground">Click to view</div>
+          </button>
+        ))}
+      </div>
+
+      {kpiModal && <ProjectKpiModal kpi={kpiModal} onClose={() => setKpiModal(null)} />}
 
       {/* ── Table ─────────────────────────────────────────────────────────── */}
       <div className="px-8 py-6 space-y-4">

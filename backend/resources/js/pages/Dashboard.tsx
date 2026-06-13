@@ -1,6 +1,6 @@
 import { Head, Link } from "@inertiajs/react";
-import { useEffect, useState } from "react";
-import { Briefcase, Users, Wallet, Clock, ArrowUpRight, TrendingUp, Loader2, Plus, Download, X } from "lucide-react";
+import { useEffect, useState, useCallback } from "react";
+import { Briefcase, Users, Wallet, Clock, ArrowUpRight, TrendingUp, Loader2, Plus, Download, X, Search, ChevronLeft, ChevronRight } from "lucide-react";
 import AppLayout from "@/layouts/AppLayout";
 import { PageHeader } from "@/components/page-header";
 import { StatCard } from "@/components/stat-card";
@@ -23,6 +23,105 @@ const PROJECT_TYPES = [
   "IP Litigation", "IP Audit", "Technology Transfer",
 ];
 
+type DrillKey = "active_cases" | "active_clients" | "wip" | "revenue";
+
+interface DrillConfig {
+  title: string;
+  subtitle: string;
+  fetchFn: (params: URLSearchParams) => Promise<any>;
+  columns: { label: string; render: (row: any) => React.ReactNode }[];
+}
+
+function DashboardDrillModal({ config, onClose }: { config: DrillConfig; onClose: () => void }) {
+  const [result, setResult]   = useState<{ data: any[]; total: number }>({ data: [], total: 0 });
+  const [search, setSearch]   = useState("");
+  const [loading, setLoading] = useState(false);
+  const [page, setPage]       = useState(1);
+  const PER_PAGE = 15;
+
+  const fetchPage = useCallback(async (pg: number, q: string) => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({ per_page: String(PER_PAGE), page: String(pg) });
+      if (q) params.set("search", q);
+      const res: any = await config.fetchFn(params);
+      setResult({ data: Array.isArray(res) ? res : (res?.data ?? []), total: res?.total ?? 0 });
+    } finally { setLoading(false); }
+  }, [config]);
+
+  useEffect(() => { fetchPage(1, ""); }, [fetchPage]);
+
+  function handleSearch(q: string) { setSearch(q); setPage(1); fetchPage(1, q); }
+  function goPage(pg: number) { setPage(pg); fetchPage(pg, search); }
+  const totalPages = Math.max(1, Math.ceil(result.total / PER_PAGE));
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+      <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-3xl max-h-[88vh] flex flex-col">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border flex-shrink-0">
+          <div>
+            <h2 className="font-display text-lg font-semibold">{config.title}</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">{config.subtitle} · {result.total} records</p>
+          </div>
+          <button onClick={onClose}><X className="h-5 w-5 text-muted-foreground" /></button>
+        </div>
+        <div className="px-6 py-3 border-b border-border flex-shrink-0">
+          <div className="relative max-w-sm">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <input
+              className="w-full h-9 pl-9 pr-3 rounded-md border border-border bg-background text-sm focus:outline-none focus:ring-1 focus:ring-gold"
+              placeholder="Search…"
+              value={search}
+              onChange={(e) => handleSearch(e.target.value)}
+            />
+          </div>
+        </div>
+        <div className="flex-1 overflow-auto">
+          {loading ? (
+            <div className="flex items-center justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-gold" /></div>
+          ) : (
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 bg-muted/60 backdrop-blur text-xs uppercase tracking-wider text-muted-foreground">
+                <tr>
+                  {config.columns.map((col) => (
+                    <th key={col.label} className="px-4 py-3 text-left">{col.label}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {result.data.map((row, i) => (
+                  <tr key={row.id ?? i} className="border-t border-border hover:bg-muted/30">
+                    {config.columns.map((col) => (
+                      <td key={col.label} className="px-4 py-2.5">{col.render(row)}</td>
+                    ))}
+                  </tr>
+                ))}
+                {result.data.length === 0 && (
+                  <tr><td colSpan={config.columns.length} className="px-4 py-10 text-center text-muted-foreground">No records found.</td></tr>
+                )}
+              </tbody>
+            </table>
+          )}
+        </div>
+        <div className="flex items-center justify-between px-6 py-3 border-t border-border flex-shrink-0 text-xs text-muted-foreground">
+          <span>Showing {result.data.length} of {result.total}</span>
+          <div className="flex items-center gap-1">
+            <button onClick={() => goPage(page - 1)} disabled={page === 1}
+              className="p-1 rounded border border-border disabled:opacity-40 hover:bg-muted/40">
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            <span className="px-2">{page} / {totalPages}</span>
+            <button onClick={() => goPage(page + 1)} disabled={page >= totalPages}
+              className="p-1 rounded border border-border disabled:opacity-40 hover:bg-muted/40">
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const { props } = usePage() as any;
   const user = props.auth?.user;
@@ -33,6 +132,7 @@ export default function Dashboard() {
   const [invoices, setInvoices] = useState<any[]>([]);
   const [clients, setClients]   = useState<any[]>([]);
   const [loading, setLoading]   = useState(true);
+  const [drillKey, setDrillKey] = useState<DrillKey | null>(null);
 
   // New Case modal
   const [showNewCase, setShowNewCase] = useState(false);
@@ -96,6 +196,75 @@ export default function Dashboard() {
   }
 
   const welcomeName = user?.name?.split(" ")[0] ?? "User";
+
+  function fmtD(d: string | null | undefined) {
+    if (!d) return "—";
+    const p = d.split("T")[0]; const [y, m, day] = p.split("-");
+    return (!y || !m || !day) ? d : `${day}-${m}-${y}`;
+  }
+
+  const DRILL_CONFIGS: Record<DrillKey, DrillConfig> = {
+    active_cases: {
+      title: "Active Cases",
+      subtitle: "Open & In Progress",
+      fetchFn: (params) => {
+        params.set("status", "Open");
+        return api.getProjectsPaged(params);
+      },
+      columns: [
+        { label: "Docket", render: (r) => <span className="font-mono text-xs text-gold font-semibold">{r.docket_number ?? r.project_code ?? "—"}</span> },
+        { label: "Patent Title", render: (r) => <span className="max-w-[200px] truncate block font-medium">{r.project_name}</span> },
+        { label: "Client", render: (r) => <span className="text-xs text-muted-foreground">{r.client?.company_name ?? "—"}</span> },
+        { label: "Status", render: (r) => <span className="text-xs">{r.status}</span> },
+        { label: "Deadline", render: (r) => { const od = r.hard_deadline && new Date(r.hard_deadline) < new Date(); return <span className={`text-xs font-mono ${od ? "text-destructive font-semibold" : "text-muted-foreground"}`}>{fmtD(r.hard_deadline)}</span>; } },
+      ],
+    },
+    active_clients: {
+      title: "Active Clients",
+      subtitle: "Status = Active",
+      fetchFn: (params) => {
+        params.set("status", "Active");
+        return api.getClients(params);
+      },
+      columns: [
+        { label: "Code", render: (r) => <span className="font-mono text-xs text-gold font-semibold">{r.client_code ?? "—"}</span> },
+        { label: "Name", render: (r) => <span className="font-medium">{r.legal_name ?? r.company_name}</span> },
+        { label: "Type", render: (r) => <span className="text-xs text-muted-foreground">{r.client_type}</span> },
+        { label: "GST Type", render: (r) => <span className="text-xs">{r.gst_type}</span> },
+        { label: "Onboarded", render: (r) => <span className="text-xs font-mono text-muted-foreground">{fmtD(r.date_onboarded)}</span> },
+      ],
+    },
+    wip: {
+      title: "WIP (Unbilled)",
+      subtitle: "Draft & Sent invoices",
+      fetchFn: (params) => {
+        params.set("status", "Draft");
+        return api.getInvoicesPaged(params);
+      },
+      columns: [
+        { label: "Invoice #", render: (r) => <span className="font-mono text-xs text-gold font-semibold">{r.invoice_code ?? "—"}</span> },
+        { label: "Client", render: (r) => <span className="text-sm">{r.client?.company_name ?? "—"}</span> },
+        { label: "Amount", render: (r) => <span className="text-sm font-medium">{formatCurrency(parseFloat(r.total_amount ?? 0))}</span> },
+        { label: "Status", render: (r) => <span className="text-xs">{r.status}</span> },
+        { label: "Due", render: (r) => <span className="text-xs font-mono text-muted-foreground">{fmtD(r.due_date)}</span> },
+      ],
+    },
+    revenue: {
+      title: "MTD Revenue",
+      subtitle: "Paid invoices",
+      fetchFn: (params) => {
+        params.set("status", "Paid");
+        return api.getInvoicesPaged(params);
+      },
+      columns: [
+        { label: "Invoice #", render: (r) => <span className="font-mono text-xs text-gold font-semibold">{r.invoice_code ?? "—"}</span> },
+        { label: "Client", render: (r) => <span className="text-sm">{r.client?.company_name ?? "—"}</span> },
+        { label: "Amount", render: (r) => <span className="text-sm font-medium text-success">{formatCurrency(parseFloat(r.total_amount ?? 0))}</span> },
+        { label: "Issue Date", render: (r) => <span className="text-xs font-mono text-muted-foreground">{fmtD(r.issue_date)}</span> },
+        { label: "Project", render: (r) => <span className="text-xs font-mono text-muted-foreground">{r.project?.project_code ?? "—"}</span> },
+      ],
+    },
+  };
 
   return (
     <AppLayout>
@@ -171,11 +340,15 @@ export default function Dashboard() {
       )}
 
       <div className="px-8 py-6 space-y-6">
+        {drillKey && (
+          <DashboardDrillModal config={DRILL_CONFIGS[drillKey]} onClose={() => setDrillKey(null)} />
+        )}
+
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <StatCard label="Active Cases" value={metrics.active_matters.toString()} delta="+2 this month" trend="up" icon={Briefcase} accent="primary" />
-          <StatCard label="Active Clients" value={metrics.clients.toString()} delta="+1 this month" trend="up" icon={Users} accent="gold" />
-          <StatCard label="WIP (unbilled)" value={formatCurrency(metrics.wip_balance)} delta="-3.1% vs last week" trend="down" icon={Clock} accent="info" />
-          <StatCard label="MTD Revenue" value={formatCurrency(metrics.received_payments)} delta="+12.6% YoY" trend="up" icon={Wallet} accent="success" />
+          <StatCard label="Active Cases" value={metrics.active_matters.toString()} delta="+2 this month" trend="up" icon={Briefcase} accent="primary" onClick={() => setDrillKey("active_cases")} />
+          <StatCard label="Active Clients" value={metrics.clients.toString()} delta="+1 this month" trend="up" icon={Users} accent="gold" onClick={() => setDrillKey("active_clients")} />
+          <StatCard label="WIP (unbilled)" value={formatCurrency(metrics.wip_balance)} delta="-3.1% vs last week" trend="down" icon={Clock} accent="info" onClick={() => setDrillKey("wip")} />
+          <StatCard label="MTD Revenue" value={formatCurrency(metrics.received_payments)} delta="+12.6% YoY" trend="up" icon={Wallet} accent="success" onClick={() => setDrillKey("revenue")} />
         </div>
 
         <div className="grid gap-6 lg:grid-cols-3">

@@ -26,6 +26,35 @@ class ProjectController extends Controller
         return Inertia::render('ProjectShow', ['projectId' => (int) $id]);
     }
 
+    public function stats(Request $request)
+    {
+        $user = $request->user();
+        $base = Project::query();
+
+        if ($user->role === 'client') {
+            $base->whereHas('client.contacts', function ($q) use ($user) {
+                $q->where('email', $user->email);
+            });
+        } elseif (in_array($user->role, ['associate', 'paralegal'])) {
+            $base->where(function ($q) use ($user) {
+                $q->where('assigned_manager_id', $user->id)
+                  ->orWhere('assigned_partner_id', $user->id);
+            });
+        }
+
+        $today = now()->toDateString();
+
+        return response()->json([
+            'total'       => (clone $base)->count(),
+            'open'        => (clone $base)->where('status', 'Open')->count(),
+            'in_progress' => (clone $base)->where('status', 'In Progress')->count(),
+            'on_hold'     => (clone $base)->where('status', 'On Hold')->count(),
+            'overdue'     => (clone $base)->whereNotNull('hard_deadline')
+                                ->where('hard_deadline', '<', $today)
+                                ->whereNotIn('status', ['Closed', 'Completed'])->count(),
+        ]);
+    }
+
     public function index(Request $request)
     {
         $user = $request->user();
@@ -54,7 +83,22 @@ class ProjectController extends Controller
             });
         }
 
-        $query->orderBy('hard_deadline');
+        if ($request->filled('status') && $request->status !== 'All') {
+            $query->where('status', $request->status);
+        }
+
+        if ($request->boolean('overdue')) {
+            $today = now()->toDateString();
+            $query->whereNotNull('hard_deadline')
+                  ->where('hard_deadline', '<', $today)
+                  ->whereNotIn('status', ['Closed', 'Completed']);
+        }
+
+        $sortBy  = in_array($request->sort_by, ['project_name', 'docket_number', 'status', 'hard_deadline', 'filing_date'])
+            ? $request->sort_by : 'hard_deadline';
+        $sortDir = $request->sort_dir === 'desc' ? 'desc' : 'asc';
+        $query->orderBy($sortBy, $sortDir);
+
         return response()->json(PaginationHelper::paginate($query, $request));
     }
 

@@ -37,6 +37,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/clients/{id}/contacts', [ClientController::class, 'addContact']);
 
     // Cases / Projects
+    Route::get('/projects/stats', [ProjectController::class, 'stats']);
     Route::get('/projects', [ProjectController::class, 'index']);
     Route::post('/projects', [ProjectController::class, 'store']);
     Route::get('/projects/{id}', [ProjectController::class, 'show']);

@@ -35,6 +35,10 @@ class FinancialController extends Controller
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
+        if ($request->filled('status')) {
+            $query->where('status', $request->status);
+        }
+
         return response()->json(PaginationHelper::paginate($query->orderBy('issue_date', 'desc'), $request));
     }
 

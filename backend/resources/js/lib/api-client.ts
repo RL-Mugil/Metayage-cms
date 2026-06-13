@@ -48,6 +48,9 @@ export const api = {
   async getClientStats(): Promise<{ total: number; active: number; inactive: number; prospect: number; b2b: number; b2c: number; export: number; unregistered: number }> {
     return this.request('/clients/stats')
   },
+  async getProjectStats(): Promise<{ total: number; open: number; in_progress: number; on_hold: number; overdue: number }> {
+    return this.request('/projects/stats')
+  },
   async getClients(params?: string | URLSearchParams): Promise<any> {
     let query = '';
     if (params instanceof URLSearchParams) {
@@ -77,6 +80,10 @@ export const api = {
     if (search) params.set('search', search)
     const res: any = await this.request(`/projects?${params.toString()}`)
     return Array.isArray(res) ? res : (res?.data ?? [])
+  },
+  async getProjectsPaged(params?: URLSearchParams): Promise<any> {
+    const query = params ? '?' + params.toString() : ''
+    return this.request(`/projects${query}`)
   },
   async getProject(id: number | string): Promise<any> { return this.request(`/projects/${id}`) },
   async createProject(data: any): Promise<any> {
@@ -140,9 +147,14 @@ export const api = {
   },
 
   // ── Financial ──
-  async getInvoices(): Promise<any[]> {
-    const res: any = await this.request('/financial/invoices')
+  async getInvoices(params?: URLSearchParams): Promise<any[]> {
+    const query = params ? '?' + params.toString() : ''
+    const res: any = await this.request(`/financial/invoices${query}`)
     return Array.isArray(res) ? res : (res?.data ?? [])
+  },
+  async getInvoicesPaged(params?: URLSearchParams): Promise<any> {
+    const query = params ? '?' + params.toString() : ''
+    return this.request(`/financial/invoices${query}`)
   },
   async createInvoice(data: any): Promise<any> {
     return this.request('/financial/invoices', { method: 'POST', body: JSON.stringify(data) })
