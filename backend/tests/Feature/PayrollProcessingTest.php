@@ -54,7 +54,7 @@ class PayrollProcessingTest extends TestCase
     private function createRun(User $hr, string $period = '2026-06'): int
     {
         $response = $this->postJson('/api/payroll/runs', ['period' => $period])
-            ->assertCreated()
+            ->assertStatus(202)
             ->json();
         return $response['run']['id'];
     }
@@ -81,7 +81,7 @@ class PayrollProcessingTest extends TestCase
 
         $hr = $this->user('hr');
         Sanctum::actingAs($hr);
-        $this->postJson('/api/payroll/runs', ['period' => '2026-01'])->assertCreated();
+        $this->postJson('/api/payroll/runs', ['period' => '2026-01'])->assertStatus(202);
     }
 
     // ──── Payroll Run Creation ────
@@ -90,7 +90,7 @@ class PayrollProcessingTest extends TestCase
         $hr = $this->user('hr');
         Sanctum::actingAs($hr);
 
-        $response = $this->postJson('/api/payroll/runs', ['period' => '2026-06'])->assertCreated()->json();
+        $response = $this->postJson('/api/payroll/runs', ['period' => '2026-06'])->assertStatus(202)->json();
         $this->assertStringContainsString('2026-06', $response['run']['period']);
     }
 
@@ -99,7 +99,7 @@ class PayrollProcessingTest extends TestCase
         $hr = $this->user('hr');
         Sanctum::actingAs($hr);
 
-        $this->postJson('/api/payroll/runs', ['period' => '2026-06'])->assertCreated();
+        $this->postJson('/api/payroll/runs', ['period' => '2026-06'])->assertStatus(202);
         $this->postJson('/api/payroll/runs', ['period' => '2026-06'])->assertStatus(422);
     }
 
@@ -143,7 +143,7 @@ class PayrollProcessingTest extends TestCase
         $slip = $run->payslips()->where('employee_id', $emp->id)->first();
 
         $this->assertNotNull($slip);
-        $this->assertGreaterThan(0, $slip->basic_pay);
+        $this->assertGreaterThan(0, $slip->basic);
     }
 
     public function test_pf_calculation_capped_at_ceiling(): void
@@ -241,8 +241,11 @@ class PayrollProcessingTest extends TestCase
         Sanctum::actingAs($hr);
 
         $runId = $this->createRun($hr);
-        // Must finalize before marking paid
         $this->postJson("/api/payroll/runs/{$runId}/finalize", [])->assertOk();
+
+        // markPaid requires finance or super_admin role
+        $finance = $this->user('finance');
+        Sanctum::actingAs($finance);
         $this->postJson("/api/payroll/runs/{$runId}/pay", [])->assertOk();
 
         $this->assertEquals('Paid', PayrollRun::find($runId)->status);
@@ -293,7 +296,7 @@ class PayrollProcessingTest extends TestCase
         for ($i = 1; $i <= 3; $i++) {
             $this->postJson('/api/payroll/runs', [
                 'period' => '2026-' . str_pad($i, 2, '0', STR_PAD_LEFT),
-            ])->assertCreated();
+            ])->assertStatus(202);
         }
 
         $response = $this->getJson('/api/payroll/runs')->assertOk()->json();

@@ -38,10 +38,11 @@ class GeneratePayrollJob implements ShouldQueue
 
         $period = Carbon::parse($run->period);
 
+        // Salary is encrypted — CAST in SQL fails; filter in PHP after decryption.
         $eligible = Employee::with('designation:id,title')
             ->where('employment_status', 'Active')
-            ->whereRaw('CAST(salary AS FLOAT) > 0')
-            ->get();
+            ->get()
+            ->filter(fn ($e) => (float) $e->salary > 0);
 
         DB::transaction(function () use ($run, $eligible, $payroll) {
             // Delete any partial payslips if this is a retry

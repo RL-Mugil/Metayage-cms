@@ -75,14 +75,11 @@ class PayrollController extends Controller
             return response()->json(['message' => 'A payroll run for this month already exists.'], 422);
         }
 
-        // Quick feasibility check: are there any employees with salaries?
-        $hasEligible = Employee::where('employment_status', 'Active')
-            ->whereRaw('CAST(salary AS FLOAT) > 0')
-            ->exists();
-
-        if (! $hasEligible) {
+        // Quick feasibility check: any active employees?
+        // Salary is encrypted — can't cast in SQL; just check employment status.
+        if (! Employee::where('employment_status', 'Active')->exists()) {
             return response()->json([
-                'message' => 'No active employees with a salary set. Add salaries in HRMS → Employees first.',
+                'message' => 'No active employees found. Add employees in HRMS → Employees first.',
             ], 422);
         }
 

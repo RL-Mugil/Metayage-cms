@@ -32,19 +32,16 @@ class AIControllerTest extends TestCase
         ]);
     }
 
-    protected function setUp(): void
+    private function fakeGroq(string $content = 'Here is a general answer about IP law.', int $status = 200): void
     {
-        parent::setUp();
-        // Default: Groq returns a plain-text answer (no SQL block)
-        Http::fake([
-            'api.groq.com/*' => Http::response($this->groqResponse(), 200),
-        ]);
+        Http::fake(['api.groq.com/*' => Http::response($this->groqResponse($content), $status)]);
     }
 
     // ──── Authorization ────
 
     public function test_unauthenticated_user_cannot_query_ai(): void
     {
+        // No HTTP call reaches Groq for unauthenticated requests.
         $this->postJson('/api/ai/query', ['query' => 'Show overdue matters'])
             ->assertUnauthorized();
     }
@@ -87,6 +84,7 @@ class AIControllerTest extends TestCase
 
     public function test_plain_text_response_has_correct_shape(): void
     {
+        $this->fakeGroq();
         Sanctum::actingAs($this->user());
         $response = $this->postJson('/api/ai/query', ['query' => 'What is a patent?'])
             ->assertOk();
@@ -149,6 +147,7 @@ class AIControllerTest extends TestCase
 
     public function test_query_with_special_characters_accepted(): void
     {
+        $this->fakeGroq();
         Sanctum::actingAs($this->user());
         $this->postJson('/api/ai/query', [
             'query' => "What's the status of matter #123-ABC & trademark™ cases?",
@@ -157,6 +156,7 @@ class AIControllerTest extends TestCase
 
     public function test_query_with_unicode_accepted(): void
     {
+        $this->fakeGroq();
         Sanctum::actingAs($this->user());
         $this->postJson('/api/ai/query', [
             'query' => '¿Qué es una patente? العلامة التجارية 商标',
@@ -165,6 +165,7 @@ class AIControllerTest extends TestCase
 
     public function test_query_with_newlines_accepted(): void
     {
+        $this->fakeGroq();
         Sanctum::actingAs($this->user());
         $this->postJson('/api/ai/query', [
             'query' => "Show cases\nwhere status is active\nand due date is past",
