@@ -208,40 +208,59 @@ class ProjectTrackerController extends Controller implements HasMiddleware
 
     public function trackerAnalytics(Request $request)
     {
-        $rows = TrackerRow::all();
-        $today = now()->startOfDay();
+        // All aggregation done in SQL — no full table load into PHP.
+        $summary = \DB::table('tracker_rows')->selectRaw("
+            COUNT(*) as total,
+            COUNT(*) FILTER (WHERE delivery_due_date < CURRENT_DATE) as overdue
+        ")->first();
 
-        $total   = $rows->count();
-        $overdue = $rows->filter(fn($r) => $r->delivery_due_date && $r->delivery_due_date->lt($today))->count();
+        $total   = (int) $summary->total;
+        $overdue = (int) $summary->overdue;
 
-        // Payment status breakdown
-        $payment = ['Paid' => 0, 'Partial' => 0, 'Pending' => 0, 'Not Set' => 0];
-        foreach ($rows as $r) {
-            $k = $r->payment_status ?? 'Not Set';
-            $payment[$k] = ($payment[$k] ?? 0) + 1;
-        }
+        $byPayment = \DB::table('tracker_rows')
+            ->selectRaw("COALESCE(payment_status, 'Not Set') as label, COUNT(*) as value")
+            ->groupBy('payment_status')
+            ->get()
+            ->map(fn($r) => ['label' => $r->label, 'value' => (int) $r->value]);
 
-        // By record type
-        $byType = $rows->groupBy('record_type')->map->count()->sortDesc()
-            ->map(fn($c, $t) => ['type' => $t ?? 'Unknown', 'count' => $c])->values();
+        $byType = \DB::table('tracker_rows')
+            ->selectRaw("COALESCE(record_type, 'Unknown') as type, COUNT(*) as count")
+            ->groupBy('record_type')
+            ->orderByDesc('count')
+            ->get()
+            ->map(fn($r) => ['type' => $r->type, 'count' => (int) $r->count]);
 
-        // By status (top 10)
-        $byStatus = $rows->filter(fn($r) => $r->status)
-            ->groupBy('status')->map->count()->sortDesc()->take(10)
-            ->map(fn($c, $s) => ['status' => $s, 'count' => $c])->values();
+        $byStatus = \DB::table('tracker_rows')
+            ->whereNotNull('status')
+            ->selectRaw('status, COUNT(*) as count')
+            ->groupBy('status')
+            ->orderByDesc('count')
+            ->limit(10)
+            ->get()
+            ->map(fn($r) => ['status' => $r->status, 'count' => (int) $r->count]);
 
-        // Workload per team member (from PCM/SCM/PR user IDs)
-        $rows->load(['pcmUser:id,name', 'scmUser:id,name', 'prUser:id,name']);
+        // Workload per team member via UNION — returns one row per (user, role) pair
+        $workloadRaw = \DB::select("
+            SELECT u.id, u.name, role_col as role, COUNT(*) as cnt
+            FROM (
+                SELECT pcm_id as uid, 'PCM' as role_col FROM tracker_rows WHERE pcm_id IS NOT NULL
+                UNION ALL
+                SELECT scm_id,        'SCM'             FROM tracker_rows WHERE scm_id IS NOT NULL
+                UNION ALL
+                SELECT pr_id,         'PR'              FROM tracker_rows WHERE pr_id  IS NOT NULL
+            ) t
+            JOIN users u ON u.id = t.uid
+            GROUP BY u.id, u.name, role_col
+        ");
+
         $workload = [];
-        foreach ($rows as $r) {
-            foreach (['pcmUser' => 'PCM', 'scmUser' => 'SCM', 'prUser' => 'PR'] as $rel => $role) {
-                $user = $r->$rel;
-                if (!$user) continue;
-                $key = $user->id;
-                if (!isset($workload[$key])) $workload[$key] = ['name' => $user->name, 'PCM' => 0, 'SCM' => 0, 'PR' => 0, 'total' => 0];
-                $workload[$key][$role]++;
-                $workload[$key]['total']++;
+        foreach ($workloadRaw as $row) {
+            $key = $row->id;
+            if (!isset($workload[$key])) {
+                $workload[$key] = ['name' => $row->name, 'PCM' => 0, 'SCM' => 0, 'PR' => 0, 'total' => 0];
             }
+            $workload[$key][$row->role] = (int) $row->cnt;
+            $workload[$key]['total']    += (int) $row->cnt;
         }
         usort($workload, fn($a, $b) => $b['total'] - $a['total']);
 
@@ -249,7 +268,7 @@ class ProjectTrackerController extends Controller implements HasMiddleware
             'total_cases'    => $total,
             'overdue'        => $overdue,
             'on_time_rate'   => $total > 0 ? round((($total - $overdue) / $total) * 100) : 100,
-            'payment'        => array_map(fn($k, $v) => ['label' => $k, 'value' => $v], array_keys($payment), array_values($payment)),
+            'payment'        => $byPayment,
             'by_record_type' => $byType,
             'by_status'      => $byStatus,
             'workload'       => array_values($workload),

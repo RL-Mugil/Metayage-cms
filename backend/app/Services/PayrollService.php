@@ -28,7 +28,7 @@ class PayrollService
 
     public function __construct()
     {
-        $this->professionalTax = (float) env('PAYROLL_PT_MONTHLY', 200.0);
+        $this->professionalTax = (float) config('payroll.pt_monthly', 200.0);
     }
 
     /**

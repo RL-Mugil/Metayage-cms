@@ -135,24 +135,40 @@ class ReportsController extends Controller
                 return $this->paginatedResponse($type, $rows, $paginator, $perPage);
 
             case 'tracker-workload':
-                // Aggregate over all rows — bounded at 5000 to cap memory
-                $trackerRows = TrackerRow::limit(5000)->get();
-                $today = now()->startOfDay();
-                $workload = [];
-                foreach ($trackerRows as $r) {
-                    foreach (['pcm', 'scm', 'pr'] as $field) {
-                        $name = trim($r->$field ?? '');
-                        if (!$name) continue;
-                        if (!isset($workload[$name])) $workload[$name] = ['Team Member' => $name, 'Total Cases' => 0, 'PCM Cases' => 0, 'SCM Cases' => 0, 'PR Cases' => 0, 'Overdue' => 0];
-                        $workload[$name]['Total Cases']++;
-                        $workload[$name][strtoupper($field) . ' Cases']++;
-                        if ($r->delivery_due_date && Carbon::parse($r->delivery_due_date)->lt($today)) {
-                            $workload[$name]['Overdue']++;
-                        }
-                    }
-                }
-                usort($workload, fn($a, $b) => $b['Total Cases'] - $a['Total Cases']);
-                $data = collect(array_values($workload));
+                // SQL aggregation via UNION — returns one row per (user, role) pair, no PHP loop
+                $rawWorkload = \DB::select("
+                    SELECT u.name as team_member,
+                           SUM(is_pcm) as pcm_cases,
+                           SUM(is_scm) as scm_cases,
+                           SUM(is_pr)  as pr_cases,
+                           SUM(is_pcm + is_scm + is_pr) as total_cases,
+                           SUM(is_overdue) as overdue
+                    FROM (
+                        SELECT pcm_id as uid,
+                               1 as is_pcm, 0 as is_scm, 0 as is_pr,
+                               (CASE WHEN delivery_due_date < CURRENT_DATE THEN 1 ELSE 0 END) as is_overdue
+                        FROM tracker_rows WHERE pcm_id IS NOT NULL
+                        UNION ALL
+                        SELECT scm_id, 0, 1, 0,
+                               (CASE WHEN delivery_due_date < CURRENT_DATE THEN 1 ELSE 0 END)
+                        FROM tracker_rows WHERE scm_id IS NOT NULL
+                        UNION ALL
+                        SELECT pr_id, 0, 0, 1,
+                               (CASE WHEN delivery_due_date < CURRENT_DATE THEN 1 ELSE 0 END)
+                        FROM tracker_rows WHERE pr_id IS NOT NULL
+                    ) t
+                    JOIN users u ON u.id = t.uid
+                    GROUP BY u.id, u.name
+                    ORDER BY total_cases DESC
+                ");
+                $data = collect($rawWorkload)->map(fn($r) => [
+                    'Team Member' => $r->team_member,
+                    'Total Cases' => (int) $r->total_cases,
+                    'PCM Cases'   => (int) $r->pcm_cases,
+                    'SCM Cases'   => (int) $r->scm_cases,
+                    'PR Cases'    => (int) $r->pr_cases,
+                    'Overdue'     => (int) $r->overdue,
+                ]);
                 return $this->collectionPaginatedResponse($type, $data, $perPage, $page);
 
             case 'overdue-cases':
@@ -194,28 +210,30 @@ class ReportsController extends Controller
                 return $this->paginatedResponse($type, $rows, $paginator, $perPage);
 
             case 'payment-collection':
-                // Aggregate over all tracker rows — bounded at 5000 to cap memory
-                $data = TrackerRow::whereNotNull('client_name')
-                    ->limit(5000)
-                    ->get()
+                // Pure SQL GROUP BY — no PHP aggregation loop
+                $payCol = \DB::table('tracker_rows')
+                    ->whereNotNull('client_name')
+                    ->selectRaw("
+                        client_name as client,
+                        COUNT(*) as total_cases,
+                        COUNT(*) FILTER (WHERE payment_status = 'Paid')    as paid,
+                        COUNT(*) FILTER (WHERE payment_status = 'Partial') as partial,
+                        COUNT(*) FILTER (WHERE payment_status = 'Pending') as pending,
+                        COUNT(*) FILTER (WHERE payment_status NOT IN ('Paid','Partial','Pending') OR payment_status IS NULL) as not_set
+                    ")
                     ->groupBy('client_name')
-                    ->map(function ($clientRows, $client) {
-                        $paid    = $clientRows->where('payment_status', 'Paid')->count();
-                        $partial = $clientRows->where('payment_status', 'Partial')->count();
-                        $pending = $clientRows->where('payment_status', 'Pending')->count();
-                        $total   = $clientRows->count();
-                        return [
-                            'Client'       => $client,
-                            'Total Cases'  => $total,
-                            'Paid'         => $paid,
-                            'Partial'      => $partial,
-                            'Pending'      => $pending,
-                            'Not Set'      => $total - $paid - $partial - $pending,
-                        ];
-                    })
-                    ->sortByDesc('Total Cases')
-                    ->values();
-                return $this->collectionPaginatedResponse($type, $data, $perPage, $page);
+                    ->orderByDesc('total_cases')
+                    ->paginate($perPage, ['*'], 'page', $page);
+
+                $data = collect($payCol->items())->map(fn($r) => [
+                    'Client'      => $r->client,
+                    'Total Cases' => (int) $r->total_cases,
+                    'Paid'        => (int) $r->paid,
+                    'Partial'     => (int) $r->partial,
+                    'Pending'     => (int) $r->pending,
+                    'Not Set'     => (int) $r->not_set,
+                ]);
+                return $this->paginatedResponse($type, $data, $payCol, $perPage);
 
             default:
                 return response()->json([
