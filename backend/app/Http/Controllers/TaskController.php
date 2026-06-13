@@ -44,6 +44,7 @@ class TaskController extends Controller
     public function store(StoreTaskRequest $request)
     {
         $user = $request->user();
+        $this->authorize('create', \App\Models\Task::class);
         $validated = $request->validated();
 
         $validated['assignee_id'] = $validated['assignee_id'] ?? $user->id;
@@ -70,6 +71,7 @@ class TaskController extends Controller
     {
         $user = $request->user();
         $task = Task::findOrFail($id);
+        $this->authorize('update', $task);
         $validated = $request->validated();
 
         $task->update($validated);
@@ -130,12 +132,8 @@ class TaskController extends Controller
 
     public function destroy(Request $request, $id)
     {
-        $user = $request->user();
         $task = Task::findOrFail($id);
-
-        if (! in_array($user->role, ['super_admin', 'partner', 'manager']) && $task->assignee_id !== $user->id) {
-            return response()->json(['message' => 'Forbidden'], 403);
-        }
+        $this->authorize('delete', $task);
 
         $task->delete();
         return response()->json(['message' => 'Task deleted']);

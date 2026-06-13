@@ -28,10 +28,7 @@ class HRMSController extends Controller
 
     public function stats(Request $request)
     {
-        $user = $request->user();
-        if (! in_array($user->role, ['super_admin', 'partner', 'manager', 'hr'])) {
-            return response()->json(['message' => 'Forbidden'], 403);
-        }
+        $this->authorize('viewAny', \App\Models\Employee::class);
 
         return response()->json([
             'total'       => Employee::count(),
@@ -46,9 +43,7 @@ class HRMSController extends Controller
     public function employees(Request $request)
     {
         $user = $request->user();
-        if (! in_array($user->role, ['super_admin', 'partner', 'manager', 'hr'])) {
-            return response()->json(['message' => 'Forbidden'], 403);
-        }
+        $this->authorize('viewAny', \App\Models\Employee::class);
 
         $query = Employee::with('department', 'designation', 'user');
 
@@ -185,12 +180,8 @@ class HRMSController extends Controller
 
     public function deleteEmployee(Request $request, $id)
     {
-        $user = $request->user();
-        if (! in_array($user->role, ['super_admin'])) {
-            return response()->json(['message' => 'Forbidden'], 403);
-        }
-
         $employee = Employee::findOrFail($id);
+        $this->authorize('delete', $employee);
         $employee->update(['employment_status' => 'Terminated']);
 
         return response()->json(['message' => 'Employee deactivated']);
@@ -345,7 +336,14 @@ class HRMSController extends Controller
             return response()->json(['message' => 'Leave dates overlap with an existing request.'], 422);
         }
 
-        $totalDays = Carbon::parse($request->to_date)->diffInDays(Carbon::parse($request->from_date)) + 1;
+        $totalDays = $this->countBusinessDays(
+            Carbon::parse($request->from_date),
+            Carbon::parse($request->to_date)
+        );
+
+        if ($totalDays === 0) {
+            return response()->json(['message' => 'Selected dates fall entirely on weekends or public holidays.'], 422);
+        }
 
         $leaveReq = LeaveRequest::create([
             'employee_id' => $employee->id,
@@ -369,9 +367,7 @@ class HRMSController extends Controller
     public function updateLeave(Request $request, $id)
     {
         $user = $request->user();
-        if (! in_array($user->role, ['super_admin', 'hr', 'manager', 'partner'])) {
-            return response()->json(['message' => 'Forbidden'], 403);
-        }
+        $this->authorize('approveLeave', \App\Models\Employee::class);
 
         $leave = LeaveRequest::findOrFail($id);
         $request->validate(['status' => 'required|in:Approved,Rejected,Cancelled']);
@@ -387,5 +383,30 @@ class HRMSController extends Controller
         ]);
 
         return response()->json($leave);
+    }
+
+    /* ──────────────────────────── HELPERS ──────────────────────────── */
+
+    private function countBusinessDays(Carbon $from, Carbon $to): int
+    {
+        $holidays = \DB::table('public_holidays')
+            ->where('country', 'IN')
+            ->whereBetween('date', [$from->toDateString(), $to->toDateString()])
+            ->pluck('date')
+            ->map(fn ($d) => Carbon::parse($d)->toDateString())
+            ->toArray();
+
+        $days    = 0;
+        $current = $from->copy()->startOfDay();
+        $end     = $to->copy()->startOfDay();
+
+        while ($current->lte($end)) {
+            if (! $current->isWeekend() && ! in_array($current->toDateString(), $holidays)) {
+                $days++;
+            }
+            $current->addDay();
+        }
+
+        return $days;
     }
 }

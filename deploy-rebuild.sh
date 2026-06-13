@@ -75,6 +75,8 @@ php artisan migrate --force
 
 echo "--- Seeding module demo data (idempotent) ---"
 php artisan db:seed --class=DemoModulesSeeder --force || true
+echo "--- Seeding public holidays (idempotent) ---"
+php artisan db:seed --class=PublicHolidaysSeeder --force || true
 
 echo "--- Clearing caches ---"
 php artisan config:clear

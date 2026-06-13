@@ -24,14 +24,13 @@ class FinancialController extends Controller
     public function stats(Request $request)
     {
         $user = $request->user();
+        $this->authorize('viewAny', \App\Models\Invoice::class);
         $base = Invoice::query();
 
         if ($user->role === 'client') {
             $base->whereHas('client.contacts', function ($q) use ($user) {
                 $q->where('email', $user->email);
             });
-        } elseif (! in_array($user->role, ['super_admin', 'partner', 'finance', 'manager'])) {
-            return response()->json(['message' => 'Forbidden'], 403);
         }
 
         return response()->json([
@@ -47,15 +46,13 @@ class FinancialController extends Controller
     public function invoices(Request $request)
     {
         $user = $request->user();
+        $this->authorize('viewAny', \App\Models\Invoice::class);
         $query = Invoice::with('client', 'project');
 
-        // RBAC validation
         if ($user->role === 'client') {
             $query->whereHas('client.contacts', function ($q) use ($user) {
                 $q->where('email', $user->email);
             });
-        } elseif (! in_array($user->role, ['super_admin', 'partner', 'finance', 'manager'])) {
-            return response()->json(['message' => 'Forbidden'], 403);
         }
 
         if ($request->filled('status')) {
@@ -72,14 +69,13 @@ class FinancialController extends Controller
     public function quotations(Request $request)
     {
         $user = $request->user();
+        $this->authorize('viewAny', \App\Models\Invoice::class);
         $query = Quotation::with('client', 'project');
 
         if ($user->role === 'client') {
             $query->whereHas('client.contacts', function ($q) use ($user) {
                 $q->where('email', $user->email);
             });
-        } elseif (! in_array($user->role, ['super_admin', 'partner', 'finance', 'manager'])) {
-            return response()->json(['message' => 'Forbidden'], 403);
         }
 
         return response()->json(PaginationHelper::paginate($query->orderBy('created_at', 'desc'), $request));
@@ -88,9 +84,7 @@ class FinancialController extends Controller
     public function createInvoice(Request $request)
     {
         $user = $request->user();
-        if (! in_array($user->role, ['super_admin', 'partner', 'finance', 'manager'])) {
-            return response()->json(['message' => 'Forbidden'], 403);
-        }
+        $this->authorize('create', \App\Models\Invoice::class);
 
         $validated = $request->validate([
             'client_id'    => 'required|exists:clients,id',
@@ -183,11 +177,8 @@ class FinancialController extends Controller
     public function updateInvoice(Request $request, $id)
     {
         $user = $request->user();
-        if (! in_array($user->role, ['super_admin', 'partner', 'finance', 'manager'])) {
-            return response()->json(['message' => 'Forbidden'], 403);
-        }
-
         $invoice = Invoice::findOrFail($id);
+        $this->authorize('update', $invoice);
         $validated = $request->validate([
             'status'       => 'sometimes|in:Draft,Pending Approval,Sent,Viewed,Partially Paid,Paid,Overdue,Cancelled',
             'due_date'     => 'sometimes|date',
@@ -200,9 +191,8 @@ class FinancialController extends Controller
     public function deleteInvoice(Request $request, $id)
     {
         $user = $request->user();
-        if (! in_array($user->role, ['super_admin', 'partner'])) {
-            return response()->json(['message' => 'Forbidden'], 403);
-        }
+        $invoiceCheck = Invoice::findOrFail($id);
+        $this->authorize('delete', $invoiceCheck);
 
         \DB::transaction(function () use ($id, $user, $request) {
             $invoice = Invoice::lockForUpdate()->findOrFail($id);
@@ -246,9 +236,6 @@ class FinancialController extends Controller
     public function recordPayment(Request $request)
     {
         $user = $request->user();
-        if (! in_array($user->role, ['super_admin', 'partner', 'finance'])) {
-            return response()->json(['message' => 'Forbidden'], 403);
-        }
 
         $validated = $request->validate([
             'invoice_id' => 'required|exists:invoices,id',
@@ -257,6 +244,9 @@ class FinancialController extends Controller
             'transaction_reference' => 'nullable|string',
             'notes' => 'nullable|string',
         ]);
+
+        $invoiceForAuth = Invoice::findOrFail($validated['invoice_id']);
+        $this->authorize('pay', $invoiceForAuth);
 
         $payment = \DB::transaction(function () use ($validated) {
             // Lock the invoice row so concurrent payments cannot double-apply.
