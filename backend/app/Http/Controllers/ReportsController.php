@@ -32,8 +32,10 @@ class ReportsController extends Controller
 
     public function getData(Request $request)
     {
-        $user = $request->user();
-        $type = $request->get('type', 'matter-status');
+        $user    = $request->user();
+        $type    = $request->get('type', 'matter-status');
+        $perPage = max(1, min((int) $request->get('per_page', 100), 1000));
+        $page    = max(1, (int) $request->get('page', 1));
 
         $allowedRoles = self::REPORT_ACCESS[$type] ?? ['super_admin'];
         if (! in_array($user->role, $allowedRoles)) {
@@ -178,7 +180,6 @@ class ReportsController extends Controller
                 $data = TrackerRow::whereNotNull('delivery_due_date')
                     ->whereDate('delivery_due_date', '>=', now()->toDateString())
                     ->orderBy('delivery_due_date')
-                    ->limit(100)
                     ->get()
                     ->map(fn($r) => [
                         'Docket #'      => $r->docket_number ?? '—',
@@ -219,6 +220,17 @@ class ReportsController extends Controller
                 $data = [];
         }
 
-        return response()->json(['type' => $type, 'rows' => $data, 'generated_at' => now()->toDateTimeString()]);
+        $total  = $data->count();
+        $paged  = $data->forPage($page, $perPage)->values();
+
+        return response()->json([
+            'type'         => $type,
+            'rows'         => $paged,
+            'total'        => $total,
+            'per_page'     => $perPage,
+            'current_page' => $page,
+            'last_page'    => (int) ceil($total / $perPage),
+            'generated_at' => now()->toDateTimeString(),
+        ]);
     }
 }
