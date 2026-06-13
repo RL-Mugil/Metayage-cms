@@ -29,12 +29,14 @@ class SendDeadlineRemindersCommand extends Command
                 ->get();
 
             foreach ($rows as $row) {
-                foreach (['pcm', 'scm', 'pr'] as $role) {
-                    $name = trim($row->$role ?? '');
-                    if (!$name) continue;
+                foreach (['pcm_id' => 'PCM', 'scm_id' => 'SCM', 'pr_id' => 'PR'] as $fkCol => $roleLabel) {
+                    $userId = $row->$fkCol;
+                    if (!$userId) continue;
 
-                    $user = $this->resolveUser($name);
+                    $user = User::find($userId);
                     if (!$user) continue;
+
+                    $role = strtolower($roleLabel);
 
                     // Skip if we already sent this reminder today
                     $alreadySent = DB::table('ip_notifications')
@@ -58,7 +60,7 @@ class SendDeadlineRemindersCommand extends Command
                             : "Due in {$days} Days: {$docket}",
                         'description' => "Delivery deadline for {$row->client_name}"
                             . ($row->docket_number ? " ({$row->docket_number})" : '')
-                            . " is on {$dueStr}. You are assigned as " . strtoupper($role) . ".",
+                            . " is on {$dueStr}. You are assigned as " . strtoupper($roleLabel) . ".",
                         'meta'        => json_encode([
                             'tracker_row_id'   => $row->id,
                             'docket_number'    => $row->docket_number,
@@ -66,7 +68,7 @@ class SendDeadlineRemindersCommand extends Command
                             'record_type'      => $row->record_type,
                             'delivery_due_date'=> $row->delivery_due_date?->toDateString(),
                             'days_remaining'   => $days,
-                            'role'             => strtoupper($role),
+                            'role'             => $roleLabel,
                         ]),
                         'read_at'     => null,
                         'created_at'  => now(),
@@ -83,11 +85,11 @@ class SendDeadlineRemindersCommand extends Command
             ->get();
 
         foreach ($overdueRows as $row) {
-            foreach (['pcm', 'scm', 'pr'] as $role) {
-                $name = trim($row->$role ?? '');
-                if (!$name) continue;
+            foreach (['pcm_id' => 'PCM', 'scm_id' => 'SCM', 'pr_id' => 'PR'] as $fkCol => $roleLabel) {
+                $userId = $row->$fkCol;
+                if (!$userId) continue;
 
-                $user = $this->resolveUser($name);
+                $user = User::find($userId);
                 if (!$user) continue;
 
                 $alreadySent = DB::table('ip_notifications')
@@ -109,7 +111,7 @@ class SendDeadlineRemindersCommand extends Command
                     'title'       => "OVERDUE: {$docket}",
                     'description' => "Delivery for {$row->client_name}"
                         . ($row->docket_number ? " ({$row->docket_number})" : '')
-                        . " was due {$daysLate} day(s) ago. You are assigned as " . strtoupper($role) . ".",
+                        . " was due {$daysLate} day(s) ago. You are assigned as {$roleLabel}.",
                     'meta'        => json_encode([
                         'tracker_row_id'   => $row->id,
                         'docket_number'    => $row->docket_number,
@@ -117,7 +119,7 @@ class SendDeadlineRemindersCommand extends Command
                         'delivery_due_date'=> $row->delivery_due_date?->toDateString(),
                         'days_remaining'   => 0,
                         'days_overdue'     => $daysLate,
-                        'role'             => strtoupper($role),
+                        'role'             => $roleLabel,
                     ]),
                     'read_at'     => null,
                     'created_at'  => now(),
@@ -131,9 +133,4 @@ class SendDeadlineRemindersCommand extends Command
         return 0;
     }
 
-    private function resolveUser(string $name): ?User
-    {
-        $first = strtolower(explode(' ', trim($name))[0]);
-        return User::whereRaw('LOWER(name) LIKE ?', ["%{$first}%"])->first();
-    }
 }

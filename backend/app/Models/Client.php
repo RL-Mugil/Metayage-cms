@@ -45,6 +45,8 @@ class Client extends Model
         'date_onboarded'           => 'date',
         'credit_limit'             => 'decimal:2',
         'has_gstin'                => 'boolean',
+        'portal_enabled'           => 'boolean',
+        'portal_invited_at'        => 'datetime',
         // Banking details encrypted at rest (tolerant of legacy plaintext)
         'bank_account'             => EncryptedSafe::class,
         'bank_ifsc'                => EncryptedSafe::class,

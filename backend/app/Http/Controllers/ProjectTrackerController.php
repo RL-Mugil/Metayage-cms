@@ -278,7 +278,7 @@ class ProjectTrackerController extends Controller implements HasMiddleware
     public function calendarEvents(Request $request)
     {
         $user = $request->user();
-        $isAdmin = in_array($user->role, ['super_admin', 'admin']);
+        $isAdmin = $user->role === 'super_admin';
 
         $query = TrackerRow::with(['pcmUser:id,name', 'scmUser:id,name', 'prUser:id,name'])
             ->whereNotNull('delivery_due_date');

@@ -6,7 +6,7 @@ use App\Models\Client;
 use App\Models\Project;
 use App\Models\ProjectStage;
 use App\Models\AuditLog;
-use App\Models\Notification;
+use Illuminate\Support\Facades\DB;
 use App\Http\PaginationHelper;
 use App\Http\Requests\StoreProjectRequest;
 use App\Http\Requests\UpdateProjectRequest;
@@ -289,14 +289,20 @@ class ProjectController extends Controller
             'user_agent' => $request->userAgent(),
         ]);
 
-        // Generate notification
-        Notification::create([
-            'user_id' => $project->assigned_manager_id,
-            'title' => 'Case Stage Updated',
-            'message' => "Case '{$project->project_name}' has been moved to '{$stageName}' stage.",
-            'is_read' => false,
-            'action_url' => "/projects/{$project->id}"
-        ]);
+        // Notify assigned manager via ip_notifications (the table the UI reads from)
+        if ($project->assigned_manager_id) {
+            DB::table('ip_notifications')->insert([
+                'user_id'     => $project->assigned_manager_id,
+                'type'        => 'system',
+                'title'       => 'Case Stage Updated',
+                'description' => "Case '{$project->project_name}' has been moved to '{$stageName}' stage.",
+                'meta'        => json_encode(['project_id' => $project->id, 'stage' => $stageName]),
+                'action_url'  => "/projects/{$project->id}",
+                'read_at'     => null,
+                'created_at'  => now(),
+                'updated_at'  => now(),
+            ]);
+        }
 
         return response()->json([
             'message' => "Project stage updated to {$stageName}",

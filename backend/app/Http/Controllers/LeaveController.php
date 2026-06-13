@@ -6,6 +6,7 @@ use App\Models\AuditLog;
 use App\Models\Employee;
 use App\Models\LeaveBalance;
 use App\Models\LeaveRequest;
+use App\Http\PaginationHelper;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -26,7 +27,10 @@ class LeaveController extends Controller
             $query->where('employee_id', $employee->id);
         }
 
-        $requests = $query->get()->map(fn ($r) => [
+        $perPage = min((int) $request->query('per_page', 200), 500);
+        $page    = max(1, (int) $request->query('page', 1));
+        $total   = $query->count();
+        $items   = $query->forPage($page, $perPage)->get()->map(fn ($r) => [
             'id'            => $r->id,
             'employee_id'   => $r->employee_id,
             'employee_name' => $r->employee?->full_name,
@@ -45,9 +49,13 @@ class LeaveController extends Controller
             : null;
 
         return response()->json([
-            'requests'    => $requests,
-            'balances'    => $balances,
-            'is_approver' => $isApprover,
+            'requests'       => $items,
+            'total'          => $total,
+            'per_page'       => $perPage,
+            'current_page'   => $page,
+            'last_page'      => (int) ceil($total / $perPage),
+            'balances'       => $balances,
+            'is_approver'    => $isApprover,
         ]);
     }
 
