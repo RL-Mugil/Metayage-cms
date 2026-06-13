@@ -7,8 +7,11 @@ use Illuminate\Support\Facades\Schema;
 
 // Uses CREATE INDEX CONCURRENTLY via raw SQL to avoid write-locking tables in production.
 // Laravel's Schema::table index methods lock the table briefly; CONCURRENTLY does not.
+// $withinTransaction = false prevents Laravel from wrapping this in a transaction —
+// CONCURRENTLY cannot run inside any transaction block (PostgreSQL restriction).
 return new class extends Migration
 {
+    public bool $withinTransaction = false;
     private function createConcurrently(string $table, string $indexName, array $columns): void
     {
         $cols = implode(', ', $columns);
