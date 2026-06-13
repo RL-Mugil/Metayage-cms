@@ -31,7 +31,7 @@ class StoreProjectRequest extends FormRequest
             'assigned_team'         => 'nullable|array',
             'start_date'            => 'nullable|date',
             'target_filing_date'    => 'nullable|date',
-            'hard_deadline'         => 'nullable|date',
+            'hard_deadline'         => 'nullable|date|after_or_equal:today',
             'fee_arrangement'       => 'nullable|string',
             'urgency'               => 'nullable|string',
             'confidentiality_level' => 'nullable|string',

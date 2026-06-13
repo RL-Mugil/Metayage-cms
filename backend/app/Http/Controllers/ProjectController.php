@@ -216,6 +216,27 @@ class ProjectController extends Controller
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
+        // Status-only update (no pipeline stage change): update the project's top-level status field.
+        if ($request->filled('status') && ! $request->filled('stage_name')) {
+            $request->validate(['status' => 'required|string|in:Draft,Open,Active,In Progress,On Hold,Closed,Completed']);
+            $project->update(['status' => $request->status]);
+
+            AuditLog::create([
+                'user_id' => $user->id,
+                'action' => 'status_change',
+                'subject_type' => 'Project',
+                'subject_id' => $project->id,
+                'metadata' => ['new_status' => $request->status],
+                'ip_address' => $request->ip(),
+                'user_agent' => $request->userAgent(),
+            ]);
+
+            return response()->json([
+                'message' => "Project status updated to {$request->status}",
+                'project' => $project->fresh(),
+            ]);
+        }
+
         $request->validate([
             'stage_name' => 'required|string',
             'status' => 'nullable|string', // Pending, In Progress, Completed
@@ -280,6 +301,11 @@ class ProjectController extends Controller
             return response()->json(['message' => 'Forbidden'], 403);
         }
         $project = Project::findOrFail($id);
+
+        if (in_array($project->status, ['Active', 'In Progress', 'Open'])) {
+            return response()->json(['message' => 'Cannot delete an active project. Close or archive it first.'], 403);
+        }
+
         $project->delete();
         return response()->json(['message' => 'Case deleted']);
     }

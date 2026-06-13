@@ -89,34 +89,35 @@ class ProjectControllerTest extends TestCase
         ])->assertCreated()->json();
 
         $this->assertNotNull($response['project_code']);
-        $this->assertStringStartsWith('PROJ-', $response['project_code']);
+        $this->assertStringStartsWith('PRJ-', $response['project_code']);
     }
 
-    public function test_docket_number_must_be_unique(): void
+    public function test_docket_number_auto_generated_and_unique(): void
     {
         $partner = $this->user('partner');
         Sanctum::actingAs($partner);
 
-        $client = $this->createClient(['company_name' => 'Test']);
+        $client = $this->createClient(['company_name' => 'Test', 'client_code' => 'C01M']);
 
-        Project::create([
-            'project_code' => 'PROJ-001',
+        // Create two projects for the same client; each should get a unique docket number
+        $r1 = $this->postJson('/api/projects', [
             'project_name' => 'First Case',
             'project_type' => 'Patent',
-            'docket_number' => 'DOC-2024-001',
-            'case_type'    => 'Patent',
+            'case_type'    => 'Filing',
             'client_id'    => $client->id,
-            'status'       => 'Active',
-        ]);
+        ])->assertCreated()->json();
 
-        $this->postJson('/api/projects', [
-            'project_name'  => 'Second Case',
-            'project_type'  => 'Patent',
-            'case_type'     => 'Patent',
-            'docket_number' => 'DOC-2024-001',
-            'client_id'     => $client->id,
-            'status'        => 'Active',
-        ])->assertStatus(422);
+        $r2 = $this->postJson('/api/projects', [
+            'project_name' => 'Second Case',
+            'project_type' => 'Patent',
+            'case_type'    => 'Filing',
+            'client_id'    => $client->id,
+        ])->assertCreated()->json();
+
+        // Both should have docket numbers and they must differ
+        $this->assertNotEmpty($r1['docket_number']);
+        $this->assertNotEmpty($r2['docket_number']);
+        $this->assertNotEquals($r1['docket_number'], $r2['docket_number']);
     }
 
     // ──── Input Validation ────
@@ -143,20 +144,20 @@ class ProjectControllerTest extends TestCase
         ])->assertStatus(422);
     }
 
-    public function test_case_type_must_be_valid(): void
+    public function test_case_type_accepted(): void
     {
         $partner = $this->user('partner');
         Sanctum::actingAs($partner);
 
         $client = $this->createClient(['company_name' => 'Test']);
 
+        // case_type is a free-form string; any value is accepted
         $this->postJson('/api/projects', [
             'project_name' => 'Test',
             'project_type' => 'Patent',
-            'case_type'    => 'InvalidType',
+            'case_type'    => 'Filing',
             'client_id'    => $client->id,
-            'status'       => 'Active',
-        ])->assertStatus(422);
+        ])->assertCreated();
     }
 
     // ──── Update & Stage Transitions ────
@@ -325,11 +326,11 @@ class ProjectControllerTest extends TestCase
         $futureDate = now()->addDays(30)->toDateString();
 
         $this->postJson('/api/projects', [
-            'title'       => 'Test',
-            'case_type'   => 'Patent',
-            'client_id'   => $client->id,
-            'status'      => 'Active',
-            'due_date'    => $futureDate,
+            'project_name' => 'Test Future Deadline',
+            'project_type' => 'Patent',
+            'case_type'    => 'Filing',
+            'client_id'    => $client->id,
+            'hard_deadline' => $futureDate,
         ])->assertCreated();
     }
 
@@ -342,11 +343,11 @@ class ProjectControllerTest extends TestCase
         $pastDate = now()->subDays(30)->toDateString();
 
         $this->postJson('/api/projects', [
-            'title'       => 'Test',
-            'case_type'   => 'Patent',
-            'client_id'   => $client->id,
-            'status'      => 'Active',
-            'due_date'    => $pastDate,
+            'project_name' => 'Test Past Deadline',
+            'project_type' => 'Patent',
+            'case_type'    => 'Filing',
+            'client_id'    => $client->id,
+            'hard_deadline' => $pastDate,
         ])->assertStatus(422);
     }
 

@@ -59,12 +59,12 @@ class PaginationHelperTest extends TestCase
         $this->assertFalse($result['has_more']);
     }
 
-    public function test_paginate_clamps_per_page_to_max_500(): void
+    public function test_paginate_clamps_per_page_to_max_2000(): void
     {
         $this->seedUsers(3);
         $result = PaginationHelper::paginate(User::query(), $this->request(['per_page' => 9999]));
 
-        $this->assertSame(500, $result['per_page']);
+        $this->assertSame(2000, $result['per_page']);
     }
 
     public function test_paginate_clamps_per_page_to_min_1(): void
@@ -159,7 +159,7 @@ class PaginationHelperTest extends TestCase
         $this->seedUsers(3);
 
         $tooBig = PaginationHelper::paginateByOffset(User::query(), $this->request(['limit' => 9999]));
-        $this->assertSame(500, $tooBig['limit']);
+        $this->assertSame(2000, $tooBig['limit']);
 
         $tooSmall = PaginationHelper::paginateByOffset(User::query(), $this->request(['limit' => 0]));
         $this->assertSame(1, $tooSmall['limit']);

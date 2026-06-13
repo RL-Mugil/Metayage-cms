@@ -37,7 +37,7 @@ class AIControllerTest extends TestCase
             // Endpoint should be accessible
             $response = $this->postJson('/api/ai/query', ['query' => 'Test query']);
             // May be 200 or 500 depending on Groq API availability
-            $this->assertIn($response->getStatusCode(), [200, 500]);
+            $this->assertTrue(in_array($response->getStatusCode(), [200, 500]));
         }
     }
 

@@ -328,6 +328,23 @@ class HRMSController extends Controller
             'reason'     => 'required|string',
         ]);
 
+        // Reject overlapping leave requests (Pending or Approved)
+        $overlap = LeaveRequest::where('employee_id', $employee->id)
+            ->whereNotIn('status', ['Rejected', 'Cancelled'])
+            ->where(function ($q) use ($request) {
+                $q->whereBetween('from_date', [$request->from_date, $request->to_date])
+                  ->orWhereBetween('to_date', [$request->from_date, $request->to_date])
+                  ->orWhere(function ($q2) use ($request) {
+                      $q2->where('from_date', '<=', $request->from_date)
+                         ->where('to_date', '>=', $request->to_date);
+                  });
+            })
+            ->exists();
+
+        if ($overlap) {
+            return response()->json(['message' => 'Leave dates overlap with an existing request.'], 422);
+        }
+
         $totalDays = Carbon::parse($request->to_date)->diffInDays(Carbon::parse($request->from_date)) + 1;
 
         $leaveReq = LeaveRequest::create([

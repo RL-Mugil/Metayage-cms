@@ -34,8 +34,6 @@ class AIController extends Controller
 
             return response()->json($result);
 
-        } catch (\RuntimeException $e) {
-            return response()->json(['message' => $e->getMessage()], 422);
         } catch (\Exception $e) {
             return response()->json(['message' => 'AI service error. Please try again.'], 500);
         }
