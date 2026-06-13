@@ -12,6 +12,7 @@ use App\Models\AuditLog;
 use App\Http\PaginationHelper;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Inertia\Inertia;
 
 class FinancialController extends Controller
@@ -33,13 +34,25 @@ class FinancialController extends Controller
             });
         }
 
+        $cacheKey = "financial_stats_{$user->id}_{$user->role}";
+        $stats = Cache::remember($cacheKey, 300, function () use ($base) {
+            return (clone $base)->selectRaw("
+                COALESCE(SUM(total_amount), 0) as total_billed,
+                COALESCE(SUM(CASE WHEN status = 'Paid' THEN total_amount ELSE 0 END), 0) as total_received,
+                COALESCE(SUM(CASE WHEN status IN ('Sent', 'Overdue', 'Partially Paid') THEN balance_due ELSE 0 END), 0) as total_outstanding,
+                COUNT(*) FILTER (WHERE status = 'Overdue') as overdue_count,
+                COUNT(*) FILTER (WHERE status = 'Draft') as draft_count,
+                COUNT(*) FILTER (WHERE status = 'Paid') as paid_count
+            ")->first();
+        });
+
         return response()->json([
-            'total_billed'      => (float) (clone $base)->sum('total_amount'),
-            'total_received'    => (float) (clone $base)->where('status', 'Paid')->sum('total_amount'),
-            'total_outstanding' => (float) (clone $base)->whereIn('status', ['Sent', 'Overdue', 'Partially Paid'])->sum('balance_due'),
-            'overdue_count'     => (clone $base)->where('status', 'Overdue')->count(),
-            'draft_count'       => (clone $base)->where('status', 'Draft')->count(),
-            'paid_count'        => (clone $base)->where('status', 'Paid')->count(),
+            'total_billed'      => (float) $stats->total_billed,
+            'total_received'    => (float) $stats->total_received,
+            'total_outstanding' => (float) $stats->total_outstanding,
+            'overdue_count'     => (int)   $stats->overdue_count,
+            'draft_count'       => (int)   $stats->draft_count,
+            'paid_count'        => (int)   $stats->paid_count,
         ]);
     }
 

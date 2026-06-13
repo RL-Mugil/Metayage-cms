@@ -9,6 +9,7 @@ use App\Http\PaginationHelper;
 use App\Http\Requests\StoreClientRequest;
 use App\Http\Requests\UpdateClientRequest;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Inertia\Inertia;
 
@@ -87,15 +88,29 @@ class ClientController extends Controller
             $base->whereHas('contacts', fn($q) => $q->where('email', $user->email));
         }
 
+        $cacheKey = "client_stats_{$user->id}_{$user->role}";
+        $stats = Cache::remember($cacheKey, 300, function () use ($base) {
+            return (clone $base)->selectRaw("
+                COUNT(*) as total,
+                COUNT(*) FILTER (WHERE status = 'Active') as active,
+                COUNT(*) FILTER (WHERE status = 'Inactive') as inactive,
+                COUNT(*) FILTER (WHERE status = 'Prospect') as prospect,
+                COUNT(*) FILTER (WHERE gst_type = 'B2B') as b2b,
+                COUNT(*) FILTER (WHERE gst_type = 'B2C') as b2c,
+                COUNT(*) FILTER (WHERE gst_type = 'Export') as export,
+                COUNT(*) FILTER (WHERE gst_type = 'Unregistered') as unregistered
+            ")->first();
+        });
+
         return response()->json([
-            'total'        => (clone $base)->count(),
-            'active'       => (clone $base)->where('status', 'Active')->count(),
-            'inactive'     => (clone $base)->where('status', 'Inactive')->count(),
-            'prospect'     => (clone $base)->where('status', 'Prospect')->count(),
-            'b2b'          => (clone $base)->where('gst_type', 'B2B')->count(),
-            'b2c'          => (clone $base)->where('gst_type', 'B2C')->count(),
-            'export'       => (clone $base)->where('gst_type', 'Export')->count(),
-            'unregistered' => (clone $base)->where('gst_type', 'Unregistered')->count(),
+            'total'        => (int) $stats->total,
+            'active'       => (int) $stats->active,
+            'inactive'     => (int) $stats->inactive,
+            'prospect'     => (int) $stats->prospect,
+            'b2b'          => (int) $stats->b2b,
+            'b2c'          => (int) $stats->b2c,
+            'export'       => (int) $stats->export,
+            'unregistered' => (int) $stats->unregistered,
         ]);
     }
 
@@ -217,6 +232,7 @@ class ClientController extends Controller
 
     public function destroy(Request $request, $id)
     {
+        $user   = $request->user();
         $client = Client::findOrFail($id);
         $this->authorize('delete', $client);
 

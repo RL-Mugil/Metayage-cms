@@ -12,6 +12,7 @@ use App\Http\Requests\StoreProjectRequest;
 use App\Http\Requests\UpdateProjectRequest;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Inertia\Inertia;
 
 class ProjectController extends Controller
@@ -44,14 +45,23 @@ class ProjectController extends Controller
 
         $today = now()->toDateString();
 
+        $cacheKey = "project_stats_{$user->id}_{$user->role}";
+        $stats = Cache::remember($cacheKey, 300, function () use ($base, $today) {
+            return (clone $base)->selectRaw("
+                COUNT(*) as total,
+                COUNT(*) FILTER (WHERE status = 'Open') as open,
+                COUNT(*) FILTER (WHERE status = 'In Progress') as in_progress,
+                COUNT(*) FILTER (WHERE status = 'On Hold') as on_hold,
+                COUNT(*) FILTER (WHERE hard_deadline IS NOT NULL AND hard_deadline < ? AND status NOT IN ('Closed', 'Completed')) as overdue
+            ", [$today])->first();
+        });
+
         return response()->json([
-            'total'       => (clone $base)->count(),
-            'open'        => (clone $base)->where('status', 'Open')->count(),
-            'in_progress' => (clone $base)->where('status', 'In Progress')->count(),
-            'on_hold'     => (clone $base)->where('status', 'On Hold')->count(),
-            'overdue'     => (clone $base)->whereNotNull('hard_deadline')
-                                ->where('hard_deadline', '<', $today)
-                                ->whereNotIn('status', ['Closed', 'Completed'])->count(),
+            'total'       => (int) $stats->total,
+            'open'        => (int) $stats->open,
+            'in_progress' => (int) $stats->in_progress,
+            'on_hold'     => (int) $stats->on_hold,
+            'overdue'     => (int) $stats->overdue,
         ]);
     }
 

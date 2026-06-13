@@ -333,8 +333,8 @@ class ModuleActionsTest extends TestCase
 
         $this->postJson('/api/leaves', [
             'leave_type' => 'Annual',
-            'from_date' => now()->addDays(5)->toDateString(),
-            'to_date' => now()->addDays(7)->toDateString(),
+            'from_date' => now()->addWeekdays(5)->toDateString(),
+            'to_date' => now()->addWeekdays(7)->toDateString(),
             'reason' => 'Vacation',
         ])->assertCreated()->assertJsonFragment(['status' => 'Pending']);
 
@@ -364,8 +364,8 @@ class ModuleActionsTest extends TestCase
         $leave = \App\Models\LeaveRequest::create([
             'employee_id' => $emp->id,
             'leave_type' => 'Annual',
-            'from_date' => now()->addDays(5)->toDateString(),
-            'to_date' => now()->addDays(7)->toDateString(),
+            'from_date' => now()->addWeekdays(5)->toDateString(),
+            'to_date' => now()->addWeekdays(7)->toDateString(),
             'total_days' => 3,
             'status' => 'Pending',
         ]);
@@ -438,8 +438,8 @@ class ModuleActionsTest extends TestCase
         $leave = \App\Models\LeaveRequest::create([
             'employee_id' => $emp->id,
             'leave_type' => 'Annual',
-            'from_date' => now()->addDays(5)->toDateString(),
-            'to_date' => now()->addDays(7)->toDateString(),
+            'from_date' => now()->addWeekdays(5)->toDateString(),
+            'to_date' => now()->addWeekdays(7)->toDateString(),
             'total_days' => 3,
             'status' => 'Pending',
         ]);

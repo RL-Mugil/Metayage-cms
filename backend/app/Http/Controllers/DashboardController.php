@@ -9,6 +9,7 @@ use App\Models\Task;
 use App\Models\TimeEntry;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Inertia\Inertia;
 
 class DashboardController extends Controller
@@ -51,19 +52,29 @@ class DashboardController extends Controller
             $tasksQuery->where('assignee_id', $user->id);
         }
 
-        // Calculations
-        $activeMattersCount = $activeMattersQuery->count();
-        $clientsCount = $clientsQuery->count();
-        $tasksCount = $tasksQuery->count();
+        // Calculations — cached per user to avoid N queries on every page load
+        $cacheKey = "dashboard_metrics_{$user->id}_{$user->role}";
+        [$activeMattersCount, $clientsCount, $tasksCount] = Cache::remember($cacheKey, 300, function () use ($activeMattersQuery, $clientsQuery, $tasksQuery) {
+            return [
+                $activeMattersQuery->count(),
+                $clientsQuery->count(),
+                $tasksQuery->count(),
+            ];
+        });
 
         // Financial aggregates (WIP & Receipts)
         $wipAmount = TimeEntry::where('status', 'Approved')
             ->where('billable', true)
             ->sum(\DB::raw('duration_hours * 150')); // Assumed standard rate of $150/hr for WIP
 
-        $invoicedAmount = $invoicesQuery->where('status', '!=', 'Draft')->sum('total_amount');
-        $receivedAmount = $invoicesQuery->where('status', 'Paid')->sum('total_amount') 
-            + $invoicesQuery->where('status', 'Partially Paid')->sum(\DB::raw('total_amount - balance_due'));
+        $invoiceAgg = (clone $invoicesQuery)->selectRaw("
+            COALESCE(SUM(CASE WHEN status != 'Draft' THEN total_amount ELSE 0 END), 0) as invoiced,
+            COALESCE(SUM(CASE WHEN status = 'Paid' THEN total_amount ELSE 0 END), 0) as paid,
+            COALESCE(SUM(CASE WHEN status = 'Partially Paid' THEN total_amount - balance_due ELSE 0 END), 0) as partial_paid
+        ")->first();
+
+        $invoicedAmount = (float) $invoiceAgg->invoiced;
+        $receivedAmount = (float) $invoiceAgg->paid + (float) $invoiceAgg->partial_paid;
 
         // Stage distribution for charts
         $stagesDist = \DB::table('project_stages')
