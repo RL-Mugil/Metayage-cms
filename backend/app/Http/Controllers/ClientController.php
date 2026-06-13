@@ -9,6 +9,7 @@ use App\Http\PaginationHelper;
 use App\Http\Requests\StoreClientRequest;
 use App\Http\Requests\UpdateClientRequest;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Http;
 use Inertia\Inertia;
 
 class ClientController extends Controller
@@ -114,10 +115,10 @@ class ClientController extends Controller
         if ($request->filled('search')) {
             $s = $request->search;
             $query->where(function ($q) use ($s) {
-                $q->where('company_name', 'ilike', "%{$s}%")
-                  ->orWhere('client_code', 'ilike', "%{$s}%")
-                  ->orWhere('legal_name',  'ilike', "%{$s}%")
-                  ->orWhere('pan_number',  'ilike', "%{$s}%");
+                $q->where('company_name', 'like', "%{$s}%")
+                  ->orWhere('client_code', 'like', "%{$s}%")
+                  ->orWhere('legal_name',  'like', "%{$s}%")
+                  ->orWhere('pan_number',  'like', "%{$s}%");
             });
         }
 
@@ -247,6 +248,180 @@ class ClientController extends Controller
 
         return response()->json(['message' => 'Client deleted']);
     }
+
+    // ── Import ────────────────────────────────────────────────────────────────
+
+    public function import(Request $request)
+    {
+        $user = $request->user();
+        if (!in_array($user->role, ['super_admin', 'partner', 'manager'])) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        $request->validate([
+            'file'             => 'required_without:google_sheet_url|nullable|file|mimes:csv,xlsx,xls|max:5120',
+            'google_sheet_url' => 'required_without:file|nullable|string',
+        ]);
+
+        try {
+            if ($request->hasFile('file')) {
+                $rows = $this->parseUploadedFile($request->file('file'));
+            } else {
+                $rows = $this->parseGoogleSheet($request->input('google_sheet_url'));
+            }
+        } catch (\Exception $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        $imported = 0;
+        $skipped  = 0;
+        $errors   = [];
+
+        foreach ($rows as $index => $row) {
+            $legalName = trim((string) ($row['legal_name'] ?? $row['company_name'] ?? $row['full_name'] ?? ''));
+            if (!$legalName) {
+                $skipped++;
+                continue;
+            }
+
+            try {
+                $nationality = trim((string) ($row['nationality'] ?? 'India')) ?: 'India';
+                $hasGstin    = filter_var($row['has_gstin'] ?? false, FILTER_VALIDATE_BOOLEAN);
+                $clientType  = in_array($row['client_type'] ?? '', ['individual', 'organization'])
+                               ? (string) $row['client_type'] : 'organization';
+
+                $email = isset($row['contact_email']) && filter_var($row['contact_email'], FILTER_VALIDATE_EMAIL)
+                         ? (string) $row['contact_email'] : null;
+
+                $validStatuses = ['Active', 'Inactive', 'Prospect', 'On Hold'];
+                $status = in_array($row['status'] ?? '', $validStatuses) ? (string) $row['status'] : 'Active';
+
+                Client::create([
+                    'client_code'    => $this->generateClientCode($nationality),
+                    'legal_name'     => $legalName,
+                    'company_name'   => $legalName,
+                    'client_type'    => $clientType,
+                    'nationality'    => $nationality,
+                    'has_gstin'      => $hasGstin,
+                    'gst_type'       => $this->computeGstType($nationality, $hasGstin, $clientType),
+                    'pan_number'     => isset($row['pan_number'])     ? strtoupper(trim((string) $row['pan_number'])) : null,
+                    'cin_number'     => isset($row['cin_number'])     ? strtoupper(trim((string) $row['cin_number'])) : null,
+                    'entity_subtype' => $row['entity_subtype'] ?? null,
+                    'trade_name'     => $row['trade_name']    ?? null,
+                    'website'        => $row['website']       ?? null,
+                    'contact_name'   => $row['contact_name']  ?? null,
+                    'contact_email'  => $email,
+                    'phone'          => $row['phone']         ?? null,
+                    'address'        => $row['address']       ?? null,
+                    'state'          => $row['state']         ?? null,
+                    'industry'       => $row['industry']      ?? null,
+                    'payment_terms'  => $row['payment_terms'] ?? 'Net 30',
+                    'account_manager_id' => $user->id,
+                    'date_onboarded' => now()->toDateString(),
+                    'status'         => $status,
+                    'remarks'        => $row['remarks']       ?? null,
+                ]);
+                $imported++;
+            } catch (\Exception $e) {
+                $errors[] = 'Row ' . ($index + 2) . ': ' . $e->getMessage();
+                $skipped++;
+            }
+        }
+
+        return response()->json([
+            'imported' => $imported,
+            'skipped'  => $skipped,
+            'errors'   => $errors,
+        ]);
+    }
+
+    private function parseUploadedFile(\Illuminate\Http\UploadedFile $file): array
+    {
+        $ext = strtolower($file->getClientOriginalExtension());
+        if (in_array($ext, ['xlsx', 'xls'])) {
+            return $this->parseXlsx($file->getRealPath());
+        }
+        return $this->parseCsvFile($file->getRealPath());
+    }
+
+    private function parseCsvFile(string $path): array
+    {
+        $rows    = [];
+        $headers = null;
+
+        if (($handle = fopen($path, 'r')) !== false) {
+            while (($line = fgetcsv($handle)) !== false) {
+                if ($headers === null) {
+                    $headers = array_map(
+                        fn($h) => strtolower(str_replace([' ', '-'], '_', trim((string) ($h ?? '')))),
+                        $line
+                    );
+                    continue;
+                }
+                if (count($line) >= count($headers)) {
+                    $rows[] = array_combine($headers, array_slice($line, 0, count($headers)));
+                }
+            }
+            fclose($handle);
+        }
+
+        return $rows;
+    }
+
+    private function parseXlsx(string $path): array
+    {
+        $spreadsheet = \PhpOffice\PhpSpreadsheet\IOFactory::load($path);
+        $sheet       = $spreadsheet->getActiveSheet();
+        $rawRows     = $sheet->toArray(null, true, true, false);
+
+        if (empty($rawRows)) return [];
+
+        $headers = array_map(
+            fn($h) => strtolower(str_replace([' ', '-'], '_', trim((string) ($h ?? '')))),
+            $rawRows[0]
+        );
+        $headers = array_filter($headers, fn($h) => $h !== '');
+
+        $result = [];
+        for ($i = 1; $i < count($rawRows); $i++) {
+            $row = array_slice($rawRows[$i], 0, count($headers));
+            while (count($row) < count($headers)) {
+                $row[] = null;
+            }
+            $result[] = array_combine($headers, $row);
+        }
+
+        return $result;
+    }
+
+    private function parseGoogleSheet(string $url): array
+    {
+        if (!preg_match('/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/', $url, $m)) {
+            throw new \Exception('Invalid Google Sheet URL. Expected: https://docs.google.com/spreadsheets/d/{ID}/...');
+        }
+
+        $sheetId = $m[1];
+        $gid     = '0';
+        if (preg_match('/[?&]gid=(\d+)/', $url, $gm)) {
+            $gid = $gm[1];
+        }
+
+        $csvUrl   = "https://docs.google.com/spreadsheets/d/{$sheetId}/export?format=csv&gid={$gid}";
+        $response = Http::timeout(15)->get($csvUrl);
+
+        if (!$response->ok()) {
+            throw new \Exception('Could not fetch Google Sheet. Make sure it is set to "Anyone with link can view".');
+        }
+
+        $tmpFile = tempnam(sys_get_temp_dir(), 'gsheet_');
+        file_put_contents($tmpFile, $response->body());
+        $rows = $this->parseCsvFile($tmpFile);
+        @unlink($tmpFile);
+
+        return $rows;
+    }
+
+    // ── Contacts ──────────────────────────────────────────────────────────────
 
     public function addContact(Request $request, $id)
     {

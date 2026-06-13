@@ -70,6 +70,20 @@ export const api = {
   async deleteClient(id: number | string): Promise<any> {
     return this.request(`/clients/${id}`, { method: 'DELETE' })
   },
+  async importClients(formData: FormData): Promise<{ imported: number; skipped: number; errors: string[] }> {
+    const response = await fetch('/api/clients/import', {
+      method: 'POST',
+      headers: { 'Accept': 'application/json', 'X-XSRF-TOKEN': getCsrfToken() },
+      body: formData,
+      credentials: 'same-origin',
+    })
+    if (!response.ok) {
+      if (response.status === 401) { window.location.href = '/login'; return null as any }
+      const errData = await response.json().catch(() => ({}))
+      throw new Error((errData as any).message || `Import failed: ${response.status}`)
+    }
+    return response.json()
+  },
   async addClientContact(id: number | string, data: any): Promise<any> {
     return this.request(`/clients/${id}/contacts`, { method: 'POST', body: JSON.stringify(data) })
   },

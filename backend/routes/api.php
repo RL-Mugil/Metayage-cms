@@ -29,6 +29,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // CRM / Clients
     Route::get('/clients/stats', [ClientController::class, 'stats']);
+    Route::post('/clients/import', [ClientController::class, 'import']);
     Route::get('/clients', [ClientController::class, 'index']);
     Route::post('/clients', [ClientController::class, 'store']);
     Route::get('/clients/{id}', [ClientController::class, 'show']);

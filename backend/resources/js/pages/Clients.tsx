@@ -3,7 +3,7 @@ import { useEffect, useState, useMemo, useCallback } from "react";
 import {
   Plus, Search, LayoutGrid, List, Pencil, Trash2, X, ChevronDown, ChevronUp,
   Building2, User, AlertCircle, Globe, Loader2, Download, ChevronLeft, ChevronRight,
-  ArrowUpDown, ArrowUp, ArrowDown,
+  ArrowUpDown, ArrowUp, ArrowDown, Upload, FileSpreadsheet, Link, CheckCircle2,
 } from "lucide-react";
 import AppLayout from "@/layouts/AppLayout";
 import { PageHeader } from "@/components/page-header";
@@ -307,6 +307,174 @@ function KpiModal({ kpi, onClose }: { kpi: KpiDef; onClose: () => void }) {
   );
 }
 
+// ── Import ────────────────────────────────────────────────────────────────────
+
+const IMPORT_HEADERS = [
+  "legal_name","client_type","nationality","has_gstin","gstin","pan_number","cin_number",
+  "entity_subtype","trade_name","website","contact_name","contact_email","phone",
+  "address","state","industry","payment_terms","bank_name","status","remarks",
+];
+const IMPORT_EXAMPLE = [
+  "Acme Corp Pvt Ltd","organization","India","true","27AAPFU0939F1ZV","AAPFU0939F",
+  "U12345MH2020PTC123456","Private Limited (Pvt Ltd)","Acme","https://acme.com",
+  "John Doe","john@acme.com","+91 98765 43210","123 Main St Mumbai 400001",
+  "Maharashtra","Information Technology","Net 30","HDFC Bank","Active","Optional notes",
+];
+
+function downloadImportTemplate() {
+  const csv = [IMPORT_HEADERS.join(","), IMPORT_EXAMPLE.join(",")].join("\n");
+  const blob = new Blob([csv], { type: "text/csv" });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement("a");
+  a.href = url; a.download = "clients-import-template.csv"; a.click();
+  URL.revokeObjectURL(url);
+}
+
+type ImportTab = "file" | "sheet";
+interface ImportResult { imported: number; skipped: number; errors: string[] }
+
+function ImportModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+  const [tab, setTab]         = useState<ImportTab>("file");
+  const [file, setFile]       = useState<File | null>(null);
+  const [sheetUrl, setSheetUrl] = useState("");
+  const [busy, setBusy]       = useState(false);
+  const [result, setResult]   = useState<ImportResult | null>(null);
+  const [err, setErr]         = useState("");
+
+  async function handleImport() {
+    setErr(""); setBusy(true);
+    try {
+      const fd = new FormData();
+      if (tab === "file") {
+        if (!file) { setErr("Please select a file."); setBusy(false); return; }
+        fd.append("file", file);
+      } else {
+        if (!sheetUrl.trim()) { setErr("Please enter a Google Sheet URL."); setBusy(false); return; }
+        fd.append("google_sheet_url", sheetUrl.trim());
+      }
+      const res = await api.importClients(fd);
+      setResult(res);
+      onDone();
+    } catch (e: any) {
+      setErr(e.message || "Import failed.");
+    } finally { setBusy(false); }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+      <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-lg flex flex-col">
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+          <div>
+            <h2 className="font-display text-lg font-semibold">Import Clients</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">Add multiple clients at once from a file or Google Sheet</p>
+          </div>
+          <button onClick={onClose}><X className="h-5 w-5 text-muted-foreground" /></button>
+        </div>
+
+        {result ? (
+          /* ── Result screen ── */
+          <div className="px-6 py-6 space-y-4">
+            <div className="flex items-center gap-3 p-4 rounded-lg bg-green-50 border border-green-200">
+              <CheckCircle2 className="h-6 w-6 text-green-600 flex-shrink-0" />
+              <div>
+                <div className="font-semibold text-green-800">Import Complete</div>
+                <div className="text-sm text-green-700 mt-0.5">
+                  {result.imported} client{result.imported !== 1 ? "s" : ""} imported
+                  {result.skipped > 0 && <>, {result.skipped} row{result.skipped !== 1 ? "s" : ""} skipped</>}
+                </div>
+              </div>
+            </div>
+            {result.errors.length > 0 && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 max-h-36 overflow-y-auto">
+                <div className="text-xs font-semibold text-amber-800 mb-1">Row errors:</div>
+                {result.errors.map((e, i) => <div key={i} className="text-xs text-amber-700">{e}</div>)}
+              </div>
+            )}
+            <Button className="w-full" variant="outline" onClick={onClose}>Close</Button>
+          </div>
+        ) : (
+          /* ── Import form ── */
+          <div className="px-6 py-4 space-y-4">
+            {/* Tab toggle */}
+            <div className="flex gap-1 p-1 bg-muted/30 rounded-lg border border-border">
+              {([["file", "Upload File", FileSpreadsheet], ["sheet", "Google Sheet", Link]] as [ImportTab, string, any][]).map(([key, label, Icon]) => (
+                <button key={key} onClick={() => { setTab(key); setErr(""); }}
+                  className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-md text-sm font-medium transition-all
+                    ${tab === key ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+                  <Icon className="h-4 w-4" />{label}
+                </button>
+              ))}
+            </div>
+
+            {tab === "file" ? (
+              <div className="space-y-3">
+                <div className={`border-2 border-dashed rounded-lg p-6 text-center transition-colors ${file ? "border-gold/60 bg-gold/5" : "border-border hover:border-gold/40"}`}>
+                  <Upload className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+                  <p className="text-sm text-muted-foreground mb-1">
+                    {file ? <span className="font-medium text-foreground">{file.name}</span> : "Click to select or drag and drop"}
+                  </p>
+                  <p className="text-xs text-muted-foreground mb-3">.csv or .xlsx, max 5 MB</p>
+                  <input type="file" accept=".csv,.xlsx,.xls" className="hidden" id="import-file-input"
+                    onChange={(e) => { setFile(e.target.files?.[0] ?? null); setErr(""); }} />
+                  <label htmlFor="import-file-input">
+                    <Button variant="outline" size="sm" type="button" onClick={() => document.getElementById("import-file-input")?.click()}>
+                      Browse File
+                    </Button>
+                  </label>
+                </div>
+                <button onClick={downloadImportTemplate}
+                  className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-gold transition-colors">
+                  <Download className="h-3 w-3" />Download template (.csv)
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1.5">Google Sheet URL</label>
+                  <input
+                    value={sheetUrl}
+                    onChange={(e) => { setSheetUrl(e.target.value); setErr(""); }}
+                    placeholder="https://docs.google.com/spreadsheets/d/…"
+                    className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold"
+                  />
+                </div>
+                <div className="rounded-lg bg-blue-50 border border-blue-200 p-3 text-xs text-blue-700 space-y-1">
+                  <div className="font-semibold">Requirements:</div>
+                  <div>• Sheet must be set to "Anyone with the link can view"</div>
+                  <div>• First row must be column headers (e.g. <code className="font-mono">legal_name, client_type, ...</code>)</div>
+                  <div>• <code className="font-mono">legal_name</code> column is required</div>
+                </div>
+                <button onClick={downloadImportTemplate}
+                  className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-gold transition-colors">
+                  <Download className="h-3 w-3" />Download template to see expected columns
+                </button>
+              </div>
+            )}
+
+            {err && (
+              <div className="flex items-center gap-2 p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-sm text-destructive">
+                <AlertCircle className="h-4 w-4 flex-shrink-0" />{err}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Footer */}
+        {!result && (
+          <div className="flex gap-2 px-6 py-4 border-t border-border">
+            <Button variant="outline" onClick={onClose} className="flex-1">Cancel</Button>
+            <Button className="flex-1 bg-gold hover:bg-gold/90 text-black" onClick={handleImport} disabled={busy}>
+              {busy ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Importing…</> : <><Upload className="h-4 w-4 mr-2" />Import</>}
+            </Button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 export default function Clients() {
@@ -319,6 +487,7 @@ export default function Clients() {
   const [statusF, setStatusF]   = useState("All");
   const [kpiModal, setKpiModal] = useState<KpiDef | null>(null);
 
+  const [showImport, setShowImport] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [editC, setEditC]       = useState<any>(null);
   const [form, setForm]         = useState<CF>(BLANK);
@@ -441,6 +610,9 @@ export default function Clients() {
         description="Client portfolio, GST classification, and contact management."
         actions={
           <>
+            <Button variant="outline" size="sm" onClick={() => setShowImport(true)}>
+              <Upload className="h-4 w-4 mr-2" />Import
+            </Button>
             <Button variant="outline" size="sm" onClick={() =>
               downloadCSV(`clients-${new Date().toISOString().slice(0,10)}.csv`,
                 clients.map((c: any) => ({
@@ -896,6 +1068,14 @@ export default function Clients() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ── Import Modal ─────────────────────────────────────────────────────── */}
+      {showImport && (
+        <ImportModal
+          onClose={() => setShowImport(false)}
+          onDone={() => { fetchClients(1); api.getClientStats().then(setStats).catch(() => {}); }}
+        />
       )}
 
       {/* ── KPI Drill-down Modal ─────────────────────────────────────────────── */}

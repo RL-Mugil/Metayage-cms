@@ -13,6 +13,7 @@
         "laravel/reverb": "^1.0",
         "laravel/sanctum": "^4.0",
         "laravel/tinker": "^3.0",
+        "phpoffice/phpspreadsheet": "^5.8",
         "spatie/laravel-activitylog": "^4.8",
         "spatie/laravel-permission": "^6.4"
     },
