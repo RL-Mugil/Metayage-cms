@@ -39,7 +39,7 @@ export default function Portal() {
   const [resetError, setResetError] = useState("");
 
   const loadPortal = () => api.getPortalClients().then(setClients).catch(() => {}).finally(() => setLoading(false));
-  const loadAll = () => api.getClients().then((res: any) => setAllClients(Array.isArray(res) ? res : res?.data ?? [])).catch(() => {});
+  const loadAll = () => api.getClients(new URLSearchParams({ per_page: '2000' })).then((res: any) => setAllClients(Array.isArray(res) ? res : res?.data ?? [])).catch(() => {});
 
   useEffect(() => { loadPortal(); loadAll(); }, []);
 

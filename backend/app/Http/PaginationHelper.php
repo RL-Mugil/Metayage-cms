@@ -16,8 +16,8 @@ class PaginationHelper
         $perPage = (int) $request->query('per_page', $defaultPerPage);
         $page = max(1, (int) $request->query('page', 1));
 
-        // Clamp per_page to reasonable bounds (1-500)
-        $perPage = max(1, min($perPage, 500));
+        // Clamp per_page to reasonable bounds (1-2000)
+        $perPage = max(1, min($perPage, 2000));
 
         $total = $query->count();
         $data = $query->forPage($page, $perPage)->get();
@@ -42,7 +42,7 @@ class PaginationHelper
         $limit = (int) $request->query('limit', $defaultLimit);
         $offset = max(0, (int) $request->query('offset', 0));
 
-        $limit = max(1, min($limit, 500));
+        $limit = max(1, min($limit, 2000));
 
         $total = $query->count();
         $data = $query->limit($limit)->offset($offset)->get();

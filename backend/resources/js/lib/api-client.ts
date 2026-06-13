@@ -70,7 +70,10 @@ export const api = {
 
   // ── Cases / Projects ──
   async getProjects(search?: string): Promise<any[]> {
-    return this.request(`/projects${search ? `?search=${encodeURIComponent(search)}` : ''}`)
+    const params = new URLSearchParams({ per_page: '500' })
+    if (search) params.set('search', search)
+    const res: any = await this.request(`/projects?${params.toString()}`)
+    return Array.isArray(res) ? res : (res?.data ?? [])
   },
   async getProject(id: number | string): Promise<any> { return this.request(`/projects/${id}`) },
   async createProject(data: any): Promise<any> {
