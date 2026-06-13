@@ -54,7 +54,7 @@ export default function AI() {
       const assistantMessage: Message = {
         role: "assistant",
         content: res.response,
-        sql_query: res.sql_query,
+        sql_query: res.sql_query ?? undefined,
         results: res.results,
       };
       setMessages((prev) => [...prev, assistantMessage]);

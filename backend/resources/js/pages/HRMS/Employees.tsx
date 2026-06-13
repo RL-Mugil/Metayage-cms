@@ -67,10 +67,10 @@ export default function HRMSEmployees() {
     try {
       const payload = { ...form, salary: form.salary ? parseFloat(form.salary) : null };
       if (editEmp) {
-        const updated = await api.updateEmployee(editEmp.id, payload);
+        const updated = await api.updateEmployee(editEmp.id, payload as any);
         setEmployees(prev => prev.map(e => e.id === editEmp.id ? { ...e, ...updated } : e));
       } else {
-        const created = await api.createEmployee(payload);
+        const created = await api.createEmployee(payload as any);
         setEmployees(prev => [created, ...prev]);
       }
       setShowModal(false);

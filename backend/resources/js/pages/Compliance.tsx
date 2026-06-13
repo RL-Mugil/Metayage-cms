@@ -142,7 +142,7 @@ export default function Compliance() {
   const [complianceStats, setComplianceStats] = useState({ critical: 0, at_risk: 0, on_track: 0, compliant: 0 });
   const [kpiModal, setKpiModal] = useState<ComplianceKpiDef | null>(null);
 
-  const load = () => api.getCompliance().then(setItems).catch(() => {}).finally(() => setLoading(false));
+  const load = () => api.getCompliance().then((d) => setItems(d as unknown as ComplianceItem[])).catch(() => {}).finally(() => setLoading(false));
 
   useEffect(() => {
     load();

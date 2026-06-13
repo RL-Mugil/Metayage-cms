@@ -198,7 +198,7 @@ export default function Financial() {
         ...form,
         client_id: parseInt(form.client_id),
         project_id: form.project_id ? parseInt(form.project_id) : null,
-        items: validItems.map(i => ({ description: i.description, amount: parseFloat(i.amount) })),
+        items: validItems.map(i => ({ description: i.description, amount: parseFloat(i.amount) })) as unknown as import('@/types').InvoiceItem[],
       });
       setInvoices(prev => [created, ...prev]);
       setShowModal(false);

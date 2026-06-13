@@ -72,7 +72,7 @@ export default function Documents() {
 
   function refresh() {
     api.getDocuments()
-      .then((data) => setFiles(data))
+      .then((data) => setFiles(data as unknown as DocFile[]))
       .catch((e) => showBanner("err", e.message || "Failed to load documents"))
       .finally(() => setLoading(false));
   }

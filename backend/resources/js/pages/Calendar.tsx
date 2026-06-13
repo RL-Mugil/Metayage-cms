@@ -98,7 +98,7 @@ export default function Calendar() {
 
   useEffect(() => {
     api.getCalendarEvents()
-      .then((data) => { setEvents(data); setLoading(false); })
+      .then((data) => { setEvents(data as CaseEvent[]); setLoading(false); })
       .catch(() => setLoading(false));
   }, []);
 

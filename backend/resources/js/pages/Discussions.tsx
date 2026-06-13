@@ -60,7 +60,7 @@ export default function Discussions() {
 
   useEffect(() => {
     api.getDiscussions()
-      .then(setThreads)
+      .then((data) => setThreads(data as unknown as Thread[]))
       .catch((e) => setError(e.message || "Failed to load discussions."))
       .finally(() => setLoading(false));
   }, []);
@@ -75,7 +75,7 @@ export default function Discussions() {
     setSending(true);
     setError("");
     try {
-      const msg = await api.replyDiscussion(selectedThreadId, replyText.trim());
+      const msg = await api.replyDiscussion(selectedThreadId, replyText.trim()) as unknown as Message;
       setThreads((prev) =>
         prev.map((t) =>
           t.id !== selectedThreadId
@@ -100,7 +100,7 @@ export default function Discussions() {
         title: newTitle.trim(),
         tag: newTag,
         message: newMessage.trim(),
-      });
+      }) as any;
       const thread: Thread = {
         id: created.id,
         title: created.title,

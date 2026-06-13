@@ -175,7 +175,7 @@ export default function Dashboard() {
     }
     setSaving(true); setSaveError("");
     try {
-      const created = await api.createProject(caseForm);
+      const created = await api.createProject(caseForm as any);
       setProjects(prev => [created, ...prev]);
       setShowNewCase(false);
       setCaseForm({ project_name: "", project_type: "Patent Filing (Utility)", client_id: "", urgency: "Normal", hard_deadline: "" });

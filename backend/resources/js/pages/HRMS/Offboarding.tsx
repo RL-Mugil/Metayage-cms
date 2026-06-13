@@ -51,9 +51,10 @@ export default function HRMSOffboarding() {
 
   const load = () => api.getOffboarding()
     .then((d) => {
-      setCases(d.cases);
+      const cases = d.cases as unknown as Case[];
+      setCases(cases);
       setCompletedCases(d.completed);
-      setChecks(Object.fromEntries(d.cases.map((c: Case) => [c.id, c.checklist])));
+      setChecks(Object.fromEntries(cases.map((c) => [c.id, c.checklist])));
     })
     .catch(() => {})
     .finally(() => setLoading(false));

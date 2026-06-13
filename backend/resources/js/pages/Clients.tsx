@@ -570,9 +570,9 @@ export default function Clients() {
         account_manager_id: form.account_manager_id ? parseInt(form.account_manager_id) : null,
       };
       if (editC) {
-        await api.updateClient(editC.id, payload);
+        await api.updateClient(editC.id, payload as any);
       } else {
-        await api.createClient(payload);
+        await api.createClient(payload as any);
       }
       setShowForm(false);
       fetchClients(paginatedResult.current_page);

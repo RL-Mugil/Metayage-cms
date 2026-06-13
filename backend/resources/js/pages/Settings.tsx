@@ -54,13 +54,13 @@ export default function Settings() {
   useEffect(() => {
     api.getSettings().then((data) => {
       if (data.profile) {
-        setProfile((p) => ({ ...p, ...data.profile }));
+        setProfile((p) => ({ ...p, ...(data.profile as object) }));
       }
       if (data.notifications) {
-        setNotifs((n) => ({ ...n, ...data.notifications }));
+        setNotifs((n) => ({ ...n, ...(data.notifications as object) }));
       }
       if (data.system) {
-        setSystem((s) => ({ ...s, ...data.system }));
+        setSystem((s) => ({ ...s, ...(data.system as object) }));
       }
     }).catch(() => {});
   }, []);

@@ -42,7 +42,7 @@ export default function Integrations() {
   const [apiKeys, setApiKeys] = useState<Record<string, string>>({});
   const [keySaved, setKeySaved] = useState<Record<string, boolean>>({});
 
-  const load = () => api.getIntegrations().then(setList).catch(() => {}).finally(() => setLoading(false));
+  const load = () => api.getIntegrations().then((d) => setList(d as unknown as Integration[])).catch(() => {}).finally(() => setLoading(false));
   useEffect(() => { load(); }, []);
 
   const toggle = (id: string) => {

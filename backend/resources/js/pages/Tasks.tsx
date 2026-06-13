@@ -153,7 +153,7 @@ export default function Tasks() {
         assignee_id: form.assignee_id ? parseInt(form.assignee_id) : undefined,
       };
       if (editTask) {
-        const updated = await api.updateTask(editTask.id, payload);
+        const updated = await api.updateTask(editTask.id, payload as any);
         setTasks(prev => prev.map(t => {
           if (t.id !== editTask.id) return t;
           const proj = projects.find(p => p.id === parseInt(form.project_id));
@@ -161,7 +161,7 @@ export default function Tasks() {
           return { ...t, ...updated, project: proj ?? t.project, assignee: user ?? t.assignee };
         }));
       } else {
-        const created = await api.createTask({ ...payload, status: "Pending" });
+        const created = await api.createTask({ ...payload, status: "Pending" } as any);
         const proj = projects.find(p => p.id === parseInt(form.project_id));
         const user = users.find(u => u.id === (form.assignee_id ? parseInt(form.assignee_id) : -1));
         setTasks(prev => [{ ...created, project: proj ?? null, assignee: user ?? null }, ...prev]);

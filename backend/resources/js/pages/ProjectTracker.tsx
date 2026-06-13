@@ -159,11 +159,11 @@ export default function ProjectTracker() {
       api.getTrackerProjects(),
     ]).then(async ([circlesData, usersData, projectsData]) => {
       if (!alive) return;
-      setCircles(circlesData);
+      setCircles(circlesData as unknown as CircleInfo[]);
       setUsers(usersData);
-      setTrackerProjects(projectsData);
+      setTrackerProjects(projectsData as unknown as TrackerProject[]);
       const rowsData = await api.getTrackerRows(activeCircle);
-      if (alive) { setRows(rowsData); setLoading(false); }
+      if (alive) { setRows(rowsData as unknown as TrackerRow[]); setLoading(false); }
     }).catch(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
   }, [activeCircle]);
@@ -270,7 +270,7 @@ export default function ProjectTracker() {
     if (!currentCircle) return;
     try {
       const newRow = await api.createTrackerRow({ circle_slug: activeCircle });
-      setRows((prev) => [...prev, newRow]);
+      setRows((prev) => [...prev, newRow as unknown as TrackerRow]);
     } catch {}
   }
 

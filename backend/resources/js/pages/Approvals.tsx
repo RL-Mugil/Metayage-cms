@@ -40,7 +40,7 @@ export default function Approvals() {
 
   useEffect(() => {
     api.getApprovals()
-      .then(setItems)
+      .then((data) => setItems(data as unknown as Approval[]))
       .catch((e) => setError(e.message || "Failed to load approvals."))
       .finally(() => setLoading(false));
   }, []);

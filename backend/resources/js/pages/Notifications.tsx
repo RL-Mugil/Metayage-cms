@@ -48,7 +48,15 @@ export default function Notifications() {
 
   useEffect(() => {
     api.getNotifications()
-      .then((data) => setItems(data))
+      .then((data) => setItems(data.map((n) => ({
+        id: n.id,
+        type: (n as any).type ?? "system",
+        title: n.title,
+        description: n.message,
+        meta: (n as any).meta,
+        read: n.is_read,
+        created_at: n.created_at,
+      }) as Notif)))
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);

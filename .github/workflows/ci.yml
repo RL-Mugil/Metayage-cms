@@ -12,6 +12,22 @@ jobs:
     defaults:
       run:
         working-directory: backend
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: mypl_cms_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
     steps:
       - uses: actions/checkout@v4
 
@@ -19,7 +35,7 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: '8.4'
-          extensions: mbstring, pdo, pdo_sqlite, sqlite3, bcmath, intl
+          extensions: mbstring, pdo, pdo_pgsql, bcmath, intl
           coverage: none
 
       - name: Install dependencies
@@ -32,6 +48,12 @@ jobs:
 
       - name: Run tests
         run: php artisan test
+        env:
+          DB_HOST: 127.0.0.1
+          DB_PORT: 5432
+          DB_DATABASE: mypl_cms_test
+          DB_USERNAME: postgres
+          DB_PASSWORD: postgres
 
   frontend:
     name: Frontend (typecheck + build)

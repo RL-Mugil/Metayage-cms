@@ -46,7 +46,7 @@ export default function Reminders() {
     assignedTo: "self",
   });
 
-  const load = () => api.getReminders().then(setReminders).catch(() => {}).finally(() => setLoading(false));
+  const load = () => api.getReminders().then((d) => setReminders(d as unknown as Reminder[])).catch(() => {}).finally(() => setLoading(false));
   useEffect(() => { load(); }, []);
 
   function toggleComplete(id: number) {

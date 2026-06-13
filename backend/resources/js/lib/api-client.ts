@@ -430,7 +430,7 @@ export const api = {
     return this.request('/payroll/runs')
   },
   async getPayrollRun(id: number | string): Promise<PayrollRun> { return this.request(`/payroll/runs/${id}`) },
-  async createPayrollRun(period: string): Promise<PayrollRun> {
+  async createPayrollRun(period: string): Promise<{ run: PayrollRun; message: string; skipped_employees?: string[] }> {
     return this.request('/payroll/runs', { method: 'POST', body: JSON.stringify({ period }) })
   },
   async deletePayrollRun(id: number | string): Promise<{ message: string }> {

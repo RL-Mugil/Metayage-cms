@@ -615,11 +615,11 @@ export default function Projects() {
         project_type: form.case_type,
       };
       if (editProj) {
-        const updated = await api.updateProject(editProj.id, payload);
+        const updated = await api.updateProject(editProj.id, payload as any);
         setProjects((prev) => prev.map((p) => p.id === editProj.id
           ? { ...p, ...updated, client: p.client } : p));
       } else {
-        const created = await api.createProject(payload);
+        const created = await api.createProject(payload as any);
         const clientObj = clients.find((c) => c.id === parseInt(form.client_id));
         setProjects((prev) => [{ ...created, client: clientObj ?? null }, ...prev]);
       }

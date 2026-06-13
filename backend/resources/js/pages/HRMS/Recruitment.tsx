@@ -91,7 +91,7 @@ export default function HRMSRecruitment() {
   const [saving, setSaving] = useState(false);
 
   const load = () => api.getRecruitment()
-    .then((d) => { setJobsList(d.jobs); setPipeline(d.pipeline); })
+    .then((d) => { setJobsList(d.jobs as Job[]); setPipeline(d.pipeline); })
     .catch(() => {})
     .finally(() => setLoading(false));
 
