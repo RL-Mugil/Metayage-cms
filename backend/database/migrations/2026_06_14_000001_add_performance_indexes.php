@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\Schema;
 // CONCURRENTLY cannot run inside any transaction block (PostgreSQL restriction).
 return new class extends Migration
 {
-    public bool $withinTransaction = false;
+    public $withinTransaction = false;
     private function createConcurrently(string $table, string $indexName, array $columns): void
     {
         $cols = implode(', ', $columns);
