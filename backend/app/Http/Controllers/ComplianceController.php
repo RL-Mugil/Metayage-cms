@@ -27,11 +27,38 @@ class ComplianceController extends Controller
         return 'Compliant';
     }
 
+    public function stats(Request $request)
+    {
+        if ($deny = $this->denyClients($request)) return $deny;
+
+        $today = Carbon::today();
+        $base  = ComplianceItem::where('status', '!=', 'Resolved');
+
+        return response()->json([
+            'critical' => (clone $base)->where('deadline', '<=', $today->copy()->addDays(30))->count(),
+            'at_risk'  => (clone $base)->whereBetween('deadline', [$today->copy()->addDays(31)->toDateString(), $today->copy()->addDays(75)->toDateString()])->count(),
+            'on_track' => (clone $base)->whereBetween('deadline', [$today->copy()->addDays(76)->toDateString(), $today->copy()->addDays(150)->toDateString()])->count(),
+            'compliant'=> (clone $base)->where('deadline', '>', $today->copy()->addDays(150))->count(),
+        ]);
+    }
+
     public function index(Request $request)
     {
         if ($deny = $this->denyClients($request)) return $deny;
 
         $query = ComplianceItem::where('status', '!=', 'Resolved')->orderBy('deadline');
+
+        if ($request->filled('status')) {
+            $today = Carbon::today();
+            match ($request->status) {
+                'Critical' => $query->where('deadline', '<=', $today->copy()->addDays(30)),
+                'At Risk'  => $query->whereBetween('deadline', [$today->copy()->addDays(31)->toDateString(), $today->copy()->addDays(75)->toDateString()]),
+                'On Track' => $query->whereBetween('deadline', [$today->copy()->addDays(76)->toDateString(), $today->copy()->addDays(150)->toDateString()]),
+                'Compliant'=> $query->where('deadline', '>', $today->copy()->addDays(150)),
+                default    => null,
+            };
+        }
+
         $result = PaginationHelper::paginate($query, $request, 50);
 
         $result['data'] = $result['data']->map(function ($i) {

@@ -24,6 +24,23 @@ class HRMSController extends Controller
     public function inertiaEmployees(Request $request)  { return Inertia::render('HRMS/Employees'); }
     public function inertiaAttendance(Request $request) { return Inertia::render('HRMS/Attendance'); }
 
+    /* ──────────────────────────── STATS ──────────────────────────────── */
+
+    public function stats(Request $request)
+    {
+        $user = $request->user();
+        if (! in_array($user->role, ['super_admin', 'partner', 'manager', 'hr'])) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        return response()->json([
+            'total'       => Employee::count(),
+            'active'      => Employee::where('employment_status', 'Active')->count(),
+            'on_leave'    => Employee::where('employment_status', 'On Leave')->count(),
+            'departments' => Department::count(),
+        ]);
+    }
+
     /* ──────────────────────────── EMPLOYEES ──────────────────────────── */
 
     public function employees(Request $request)
@@ -34,6 +51,19 @@ class HRMSController extends Controller
         }
 
         $query = Employee::with('department', 'designation', 'user');
+
+        if ($request->filled('employment_status')) {
+            $query->where('employment_status', $request->employment_status);
+        }
+
+        if ($request->filled('search')) {
+            $s = $request->search;
+            $query->where(function ($q) use ($s) {
+                $q->where('full_name', 'ilike', "%{$s}%")
+                  ->orWhere('work_email', 'ilike', "%{$s}%");
+            });
+        }
+
         $result = PaginationHelper::paginate($query, $request);
 
         // Compensation, banking and identity fields are HR-only.

@@ -121,9 +121,16 @@ export const api = {
   },
 
   // ── HRMS ──
+  async getHRMSStats(): Promise<{ total: number; active: number; on_leave: number; departments: number }> {
+    return this.request('/hrms/stats')
+  },
   async getEmployees(): Promise<any[]> {
     const res: any = await this.request('/hrms/employees')
     return Array.isArray(res) ? res : (res?.data ?? [])
+  },
+  async getEmployeesPaged(params?: URLSearchParams): Promise<any> {
+    const query = params ? '?' + params.toString() : ''
+    return this.request(`/hrms/employees${query}`)
   },
   async createEmployee(data: any): Promise<any> {
     return this.request('/hrms/employees', { method: 'POST', body: JSON.stringify(data) })
@@ -305,9 +312,16 @@ export const api = {
   },
 
   // ── Compliance ──
+  async getComplianceStats(): Promise<{ critical: number; at_risk: number; on_track: number; compliant: number }> {
+    return this.request('/compliance/stats')
+  },
   async getCompliance(): Promise<any[]> {
     const res: any = await this.request('/compliance')
     return Array.isArray(res) ? res : (res?.data ?? [])
+  },
+  async getCompliancePaged(params?: URLSearchParams): Promise<any> {
+    const query = params ? '?' + params.toString() : ''
+    return this.request(`/compliance${query}`)
   },
   async updateCompliance(id: number | string, data: { assignee?: string; note?: string; resolved?: boolean }): Promise<any> {
     return this.request(`/compliance/${id}`, { method: 'PUT', body: JSON.stringify(data) })

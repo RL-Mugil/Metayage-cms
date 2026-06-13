@@ -53,6 +53,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/tasks/time-entries', [TaskController::class, 'addTimeEntry']);
 
     // Enterprise HRMS
+    Route::get('/hrms/stats', [HRMSController::class, 'stats']);
     Route::get('/hrms/employees', [HRMSController::class, 'employees']);
     Route::post('/hrms/employees', [HRMSController::class, 'createEmployee']);
     Route::put('/hrms/employees/{id}', [HRMSController::class, 'updateEmployee']);
@@ -124,6 +125,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/settings/system',        [\App\Http\Controllers\SettingsController::class, 'updateSystem']);
 
     // Compliance
+    Route::get('/compliance/stats', [\App\Http\Controllers\ComplianceController::class, 'stats']);
     Route::get('/compliance', [\App\Http\Controllers\ComplianceController::class, 'index']);
     Route::put('/compliance/{id}', [\App\Http\Controllers\ComplianceController::class, 'update']);
     Route::post('/compliance/{id}/remind', [\App\Http\Controllers\ComplianceController::class, 'remind']);

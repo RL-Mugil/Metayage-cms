@@ -1,6 +1,6 @@
 import { Head } from "@inertiajs/react";
 import { Fragment, useEffect, useState } from "react";
-import { Star, Target, TrendingUp, CheckCircle, Clock, Award, Plus, Loader2 } from "lucide-react";
+import { Star, Target, TrendingUp, CheckCircle, Clock, Award, Plus, Loader2, X, Search } from "lucide-react";
 import AppLayout from "@/layouts/AppLayout";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,6 +9,83 @@ import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api-client";
 
 type ReviewTab = "reviews" | "goals" | "360";
+type PerfKpiKey = "completed" | "pending" | "avg";
+
+function PerformanceKpiModal({ kpiKey, reviews, onClose }: { kpiKey: PerfKpiKey; reviews: any[]; onClose: () => void }) {
+  const [search, setSearch] = useState("");
+
+  const titles: Record<PerfKpiKey, string> = {
+    completed: "Completed Reviews",
+    pending: "Pending Reviews",
+    avg: "All Reviews by Rating",
+  };
+
+  const rows = (() => {
+    if (kpiKey === "completed") return reviews.filter((r) => r.status === "Completed");
+    if (kpiKey === "pending") return reviews.filter((r) => r.status !== "Completed");
+    return [...reviews].sort((a, b) => b.rating - a.rating);
+  })();
+
+  const filtered = rows.filter((r: any) => {
+    const q = search.toLowerCase();
+    return !q || r.employee?.toLowerCase().includes(q) || r.reviewer?.toLowerCase().includes(q);
+  });
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+      <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-2xl max-h-[88vh] flex flex-col">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border flex-shrink-0">
+          <div>
+            <h2 className="font-display text-lg font-semibold">{titles[kpiKey]}</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">{filtered.length} review{filtered.length !== 1 ? "s" : ""}</p>
+          </div>
+          <button onClick={onClose}><X className="h-5 w-5 text-muted-foreground" /></button>
+        </div>
+        <div className="px-6 py-3 border-b border-border flex-shrink-0">
+          <div className="relative max-w-sm">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <input className="w-full h-9 pl-9 pr-3 rounded-md border border-border bg-background text-sm focus:outline-none focus:ring-1 focus:ring-gold"
+              placeholder="Search employee or reviewer…" value={search} onChange={(e) => setSearch(e.target.value)} />
+          </div>
+        </div>
+        <div className="flex-1 overflow-auto">
+          <table className="w-full text-sm">
+            <thead className="sticky top-0 bg-muted/60 backdrop-blur text-xs uppercase tracking-wider text-muted-foreground">
+              <tr>
+                <th className="px-4 py-3 text-left">Employee</th>
+                <th className="px-4 py-3 text-left">Reviewer</th>
+                <th className="px-4 py-3 text-left">Period</th>
+                <th className="px-4 py-3 text-left">Rating</th>
+                <th className="px-4 py-3 text-left">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.length === 0 && <tr><td colSpan={5} className="px-4 py-10 text-center text-muted-foreground">No reviews found.</td></tr>}
+              {filtered.map((r: any) => (
+                <tr key={r.id} className="border-t border-border hover:bg-muted/30">
+                  <td className="px-4 py-2.5 font-medium">{r.employee}</td>
+                  <td className="px-4 py-2.5 text-xs text-muted-foreground">{r.reviewer}</td>
+                  <td className="px-4 py-2.5 text-xs">{r.period}</td>
+                  <td className="px-4 py-2.5 text-xs">
+                    {r.rating > 0 ? (
+                      <div className="flex items-center gap-1">
+                        <Star className="h-3 w-3 fill-gold text-gold" />
+                        <span className="font-medium">{r.rating.toFixed(1)}</span>
+                      </div>
+                    ) : <span className="text-muted-foreground">—</span>}
+                  </td>
+                  <td className="px-4 py-2.5 text-xs">
+                    <span className={r.status === "Completed" ? "text-green-600 font-medium" : "text-amber-600"}>{r.status}</span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function Stars({ rating }: { rating: number }) {
   return (
@@ -31,6 +108,7 @@ export default function HRMSPerformance() {
   const [feedback360, setFeedback360] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [kpiModal, setKpiModal] = useState<PerfKpiKey | null>(null);
 
   const load = () => api.getPerformance()
     .then((d) => { setReviews(d.reviews); setGoals(d.goals); setFeedback360(d.feedback360); })
@@ -70,6 +148,7 @@ export default function HRMSPerformance() {
         actions={<Button className="bg-gold hover:bg-gold/90 text-black"><Plus className="h-4 w-4 mr-2" />Start Review</Button>}
       />
       <div className="px-8 py-6 space-y-6">
+        {kpiModal && <PerformanceKpiModal kpiKey={kpiModal} reviews={reviews} onClose={() => setKpiModal(null)} />}
         {/* Cycle banner */}
         <Card className="border-gold/30 bg-gold/5">
           <CardContent className="p-4 flex items-center gap-4">
@@ -90,17 +169,19 @@ export default function HRMSPerformance() {
 
         {/* Stats */}
         <div className="grid grid-cols-3 gap-4">
-          {[
-            { label: "Reviews Completed", value: completed, icon: CheckCircle, color: "text-green-500" },
-            { label: "Pending Reviews", value: reviews.length - completed, icon: Clock, color: "text-amber-500" },
-            { label: "Avg Rating (Q1)", value: `${avgRating.toFixed(1)} / 5.0`, icon: Star, color: "text-gold" },
-          ].map(({ label, value, icon: Icon, color }) => (
-            <Card key={label} className="border-border">
-              <CardContent className="p-4 flex items-center gap-3">
+          {([
+            { label: "Reviews Completed", value: completed, icon: CheckCircle, color: "text-green-500", kpiKey: "completed" as PerfKpiKey },
+            { label: "Pending Reviews", value: reviews.length - completed, icon: Clock, color: "text-amber-500", kpiKey: "pending" as PerfKpiKey },
+            { label: "Avg Rating (Q2)", value: `${avgRating.toFixed(1)} / 5.0`, icon: Star, color: "text-gold", kpiKey: "avg" as PerfKpiKey },
+          ]).map(({ label, value, icon: Icon, color, kpiKey }) => (
+            <button key={label} onClick={() => setKpiModal(kpiKey)}
+              className="rounded-xl border border-border bg-card p-4 text-left transition-all hover:shadow-md hover:border-gold/40 cursor-pointer">
+              <div className="flex items-center gap-3">
                 <Icon className={`h-7 w-7 ${color}`} />
                 <div><div className="text-xl font-bold">{value}</div><div className="text-xs text-muted-foreground">{label}</div></div>
-              </CardContent>
-            </Card>
+              </div>
+              <div className="mt-1 text-xs text-muted-foreground">Click to view</div>
+            </button>
           ))}
         </div>
 

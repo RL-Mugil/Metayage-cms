@@ -1,6 +1,6 @@
 import { Head } from "@inertiajs/react";
 import { useEffect, useState, useRef } from "react";
-import { Globe, Eye, EyeOff, Mail, Loader2, Plus, X, CheckCircle, Search, KeyRound, ChevronLeft, ChevronRight } from "lucide-react";
+import { Globe, Eye, EyeOff, Mail, Loader2, Plus, X, CheckCircle, Search, KeyRound, ChevronLeft, ChevronRight, AlertCircle } from "lucide-react";
 import AppLayout from "@/layouts/AppLayout";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,6 +9,77 @@ import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api-client";
 
 const PAGE_SIZE = 10;
+
+type PortalKpiKey = "active" | "pending" | "inactive";
+
+function PortalKpiModal({ kpiKey, clients, onClose }: { kpiKey: PortalKpiKey; clients: any[]; onClose: () => void }) {
+  const [search, setSearch] = useState("");
+
+  const titles: Record<PortalKpiKey, string> = {
+    active: "Active Portals",
+    pending: "Pending Invites",
+    inactive: "Inactive Portals",
+  };
+
+  const rows = (() => {
+    if (kpiKey === "active") return clients.filter((c) => c.portal_enabled);
+    if (kpiKey === "pending") return clients.filter((c) => !c.portal_enabled && c.portal_invited_at);
+    return clients.filter((c) => !c.portal_enabled);
+  })();
+
+  const filtered = rows.filter((c: any) => {
+    const q = search.toLowerCase();
+    return !q || c.company_name?.toLowerCase().includes(q) || c.client_code?.toLowerCase().includes(q);
+  });
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+      <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-xl max-h-[88vh] flex flex-col">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border flex-shrink-0">
+          <div>
+            <h2 className="font-display text-lg font-semibold">{titles[kpiKey]}</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">{filtered.length} client{filtered.length !== 1 ? "s" : ""}</p>
+          </div>
+          <button onClick={onClose}><X className="h-5 w-5 text-muted-foreground" /></button>
+        </div>
+        <div className="px-6 py-3 border-b border-border flex-shrink-0">
+          <div className="relative max-w-sm">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <input className="w-full h-9 pl-9 pr-3 rounded-md border border-border bg-background text-sm focus:outline-none focus:ring-1 focus:ring-gold"
+              placeholder="Search by name or code…" value={search} onChange={(e) => setSearch(e.target.value)} />
+          </div>
+        </div>
+        <div className="flex-1 overflow-auto">
+          <table className="w-full text-sm">
+            <thead className="sticky top-0 bg-muted/60 backdrop-blur text-xs uppercase tracking-wider text-muted-foreground">
+              <tr>
+                <th className="px-4 py-3 text-left">Client</th>
+                <th className="px-4 py-3 text-left">Code</th>
+                <th className="px-4 py-3 text-left">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.length === 0 && <tr><td colSpan={3} className="px-4 py-10 text-center text-muted-foreground">No clients found.</td></tr>}
+              {filtered.map((c: any) => (
+                <tr key={c.id} className="border-t border-border hover:bg-muted/30">
+                  <td className="px-4 py-2.5 font-medium">{c.company_name}</td>
+                  <td className="px-4 py-2.5 text-xs font-mono text-muted-foreground">{c.client_code}</td>
+                  <td className="px-4 py-2.5 text-xs">
+                    {c.portal_enabled
+                      ? <span className="text-green-600 font-medium flex items-center gap-1"><Eye className="h-3 w-3" />Active</span>
+                      : c.portal_invited_at
+                        ? <span className="text-amber-600 font-medium flex items-center gap-1"><Mail className="h-3 w-3" />Invited</span>
+                        : <span className="text-muted-foreground flex items-center gap-1"><EyeOff className="h-3 w-3" />Inactive</span>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function Portal() {
   const [clients, setClients] = useState<any[]>([]);
@@ -30,6 +101,8 @@ export default function Portal() {
   // Invite All modal
   const [showInviteAll, setShowInviteAll] = useState(false);
   const [inviteAllDone, setInviteAllDone] = useState(false);
+
+  const [kpiModal, setKpiModal] = useState<PortalKpiKey | null>(null);
 
   // Reset Password modal
   const [resetTarget, setResetTarget] = useState<any | null>(null);
@@ -282,47 +355,28 @@ export default function Portal() {
       )}
 
       <div className="px-8 py-6 space-y-6">
+        {kpiModal && <PortalKpiModal kpiKey={kpiModal} clients={clients} onClose={() => setKpiModal(null)} />}
         {/* Stats */}
         <div className="grid gap-4 md:grid-cols-3">
-          <Card className="border-border">
-            <CardContent className="pt-6">
+          {([
+            { label: "Portals Active", value: activePortals, icon: Globe, color: "text-gold", bg: "bg-gold/10", kpiKey: "active" as PortalKpiKey },
+            { label: "Pending Invites", value: pendingInvites, icon: Mail, color: "text-amber-500", bg: "bg-amber-500/10", kpiKey: "pending" as PortalKpiKey },
+            { label: "Portals Inactive", value: inactiveCount, icon: EyeOff, color: "text-muted-foreground", bg: "bg-muted", kpiKey: "inactive" as PortalKpiKey },
+          ]).map(({ label, value, icon: Icon, color, bg, kpiKey }) => (
+            <button key={label} onClick={() => setKpiModal(kpiKey)}
+              className="rounded-xl border border-border bg-card p-4 text-left transition-all hover:shadow-md hover:border-gold/40 cursor-pointer">
               <div className="flex items-center gap-4">
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gold/10">
-                  <Globe className="h-5 w-5 text-gold" />
+                <div className={`flex h-10 w-10 items-center justify-center rounded-full ${bg} flex-shrink-0`}>
+                  <Icon className={`h-5 w-5 ${color}`} />
                 </div>
                 <div>
-                  <div className="font-display text-2xl font-semibold">{activePortals}</div>
-                  <div className="text-xs text-muted-foreground">Portals Active</div>
+                  <div className="font-display text-2xl font-semibold">{value}</div>
+                  <div className="text-xs text-muted-foreground">{label}</div>
                 </div>
               </div>
-            </CardContent>
-          </Card>
-          <Card className="border-border">
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-4">
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-amber-500/10">
-                  <Mail className="h-5 w-5 text-amber-500" />
-                </div>
-                <div>
-                  <div className="font-display text-2xl font-semibold">{pendingInvites}</div>
-                  <div className="text-xs text-muted-foreground">Pending Invites</div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="border-border">
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-4">
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted">
-                  <EyeOff className="h-5 w-5 text-muted-foreground" />
-                </div>
-                <div>
-                  <div className="font-display text-2xl font-semibold">{inactiveCount}</div>
-                  <div className="text-xs text-muted-foreground">Portals Inactive</div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+              <div className="mt-1 text-xs text-muted-foreground">Click to view</div>
+            </button>
+          ))}
         </div>
 
         {/* Client portal table */}

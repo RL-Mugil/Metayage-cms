@@ -1,6 +1,6 @@
 import { Head } from "@inertiajs/react";
 import { useEffect, useState } from "react";
-import { Briefcase, Users, CheckCircle, Clock, Plus, ChevronRight, Building2, X, Eye, Loader2 } from "lucide-react";
+import { Briefcase, Users, CheckCircle, Clock, Plus, ChevronRight, Building2, X, Eye, Loader2, Search } from "lucide-react";
 import AppLayout from "@/layouts/AppLayout";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,12 +10,83 @@ import { api } from "@/lib/api-client";
 
 type Job = { id: number; title: string; dept: string; posted: string; applicants: number; status: string };
 
+type RecruitKpiKey = "open" | "applicants" | "hired";
+
+function RecruitmentKpiModal({ kpiKey, jobsList, pipeline, onClose }: { kpiKey: RecruitKpiKey; jobsList: Job[]; pipeline: any[]; onClose: () => void }) {
+  const [search, setSearch] = useState("");
+
+  const titles: Record<RecruitKpiKey, string> = {
+    open: "Open Roles",
+    applicants: "All Roles by Applicants",
+    hired: "Hired This Quarter",
+  };
+
+  const rows = (() => {
+    if (kpiKey === "open") return jobsList.filter((j) => j.status === "Active");
+    if (kpiKey === "applicants") return [...jobsList].sort((a, b) => b.applicants - a.applicants);
+    if (kpiKey === "hired") return pipeline.find((p: any) => p.stage === "Hired")?.candidates ?? [];
+    return [];
+  })();
+
+  const filtered = rows.filter((r: any) => {
+    const q = search.toLowerCase();
+    return !q || (r.title ?? r.name ?? "").toLowerCase().includes(q) || (r.dept ?? r.role ?? "").toLowerCase().includes(q);
+  });
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+      <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-2xl max-h-[88vh] flex flex-col">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border flex-shrink-0">
+          <div>
+            <h2 className="font-display text-lg font-semibold">{titles[kpiKey]}</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">{filtered.length} record{filtered.length !== 1 ? "s" : ""}</p>
+          </div>
+          <button onClick={onClose}><X className="h-5 w-5 text-muted-foreground" /></button>
+        </div>
+        <div className="px-6 py-3 border-b border-border flex-shrink-0">
+          <div className="relative max-w-sm">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <input className="w-full h-9 pl-9 pr-3 rounded-md border border-border bg-background text-sm focus:outline-none focus:ring-1 focus:ring-gold"
+              placeholder="Search…" value={search} onChange={(e) => setSearch(e.target.value)} />
+          </div>
+        </div>
+        <div className="flex-1 overflow-auto">
+          <table className="w-full text-sm">
+            <thead className="sticky top-0 bg-muted/60 backdrop-blur text-xs uppercase tracking-wider text-muted-foreground">
+              <tr>
+                {kpiKey === "hired" ? (
+                  <><th className="px-4 py-3 text-left">Candidate</th><th className="px-4 py-3 text-left">Role</th><th className="px-4 py-3 text-left">Date</th></>
+                ) : (
+                  <><th className="px-4 py-3 text-left">Role</th><th className="px-4 py-3 text-left">Department</th><th className="px-4 py-3 text-left">Posted</th><th className="px-4 py-3 text-right">Applicants</th><th className="px-4 py-3 text-left">Status</th></>
+                )}
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.length === 0 && <tr><td colSpan={5} className="px-4 py-10 text-center text-muted-foreground">No records found.</td></tr>}
+              {filtered.map((r: any, i: number) => (
+                <tr key={r.id ?? i} className="border-t border-border hover:bg-muted/30">
+                  {kpiKey === "hired" ? (
+                    <><td className="px-4 py-2.5 font-medium">{r.name}</td><td className="px-4 py-2.5 text-xs text-muted-foreground">{r.role}</td><td className="px-4 py-2.5 text-xs text-muted-foreground">{r.date}</td></>
+                  ) : (
+                    <><td className="px-4 py-2.5 font-medium">{r.title}</td><td className="px-4 py-2.5 text-xs text-muted-foreground">{r.dept}</td><td className="px-4 py-2.5 text-xs text-muted-foreground">{r.posted}</td><td className="px-4 py-2.5 text-xs font-semibold text-right">{r.applicants}</td><td className="px-4 py-2.5 text-xs"><span className={r.status === "Active" ? "text-green-600" : "text-muted-foreground"}>{r.status}</span></td></>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function HRMSRecruitment() {
   const [showNewJob, setShowNewJob] = useState(false);
   const [newJob, setNewJob] = useState({ title: "", dept: "", description: "", type: "Full-time" });
   const [jobsList, setJobsList] = useState<Job[]>([]);
   const [pipeline, setPipeline] = useState<any[]>([]);
   const [viewApplicants, setViewApplicants] = useState<Job | null>(null);
+  const [kpiModal, setKpiModal] = useState<RecruitKpiKey | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -64,19 +135,22 @@ export default function HRMSRecruitment() {
         actions={<Button className="bg-gold hover:bg-gold/90 text-black" onClick={() => setShowNewJob(true)}><Plus className="h-4 w-4 mr-2" />Post New Job</Button>}
       />
       <div className="px-8 py-6 space-y-6">
+        {kpiModal && <RecruitmentKpiModal kpiKey={kpiModal} jobsList={jobsList} pipeline={pipeline} onClose={() => setKpiModal(null)} />}
         {/* Stats */}
         <div className="grid grid-cols-3 gap-4">
-          {[
-            { label: "Open Roles", value: active, icon: Briefcase, color: "text-gold" },
-            { label: "Total Applicants", value: totalApplicants, icon: Users, color: "text-blue-500" },
-            { label: "Hired This Quarter", value: hired, icon: CheckCircle, color: "text-green-500" },
-          ].map(({ label, value, icon: Icon, color }) => (
-            <Card key={label} className="border-border">
-              <CardContent className="p-4 flex items-center gap-3">
+          {([
+            { label: "Open Roles", value: active, icon: Briefcase, color: "text-gold", kpiKey: "open" as RecruitKpiKey },
+            { label: "Total Applicants", value: totalApplicants, icon: Users, color: "text-blue-500", kpiKey: "applicants" as RecruitKpiKey },
+            { label: "Hired This Quarter", value: hired, icon: CheckCircle, color: "text-green-500", kpiKey: "hired" as RecruitKpiKey },
+          ]).map(({ label, value, icon: Icon, color, kpiKey }) => (
+            <button key={label} onClick={() => setKpiModal(kpiKey)}
+              className="rounded-xl border border-border bg-card p-4 text-left transition-all hover:shadow-md hover:border-gold/40 cursor-pointer">
+              <div className="flex items-center gap-3">
                 <Icon className={`h-8 w-8 ${color}`} />
                 <div><div className="text-2xl font-bold">{value}</div><div className="text-xs text-muted-foreground">{label}</div></div>
-              </CardContent>
-            </Card>
+              </div>
+              <div className="mt-1 text-xs text-muted-foreground">Click to view</div>
+            </button>
           ))}
         </div>
 

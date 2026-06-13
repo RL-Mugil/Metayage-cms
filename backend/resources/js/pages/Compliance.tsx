@@ -1,6 +1,6 @@
 import { Head } from "@inertiajs/react";
-import { Fragment, useEffect, useState } from "react";
-import { Shield, AlertTriangle, CheckCircle, Clock, Globe, Download, Loader2 } from "lucide-react";
+import { Fragment, useEffect, useState, useCallback } from "react";
+import { Shield, AlertTriangle, CheckCircle, Clock, Globe, Download, Loader2, X, Search, ChevronLeft, ChevronRight } from "lucide-react";
 import { api, downloadCSV } from "@/lib/api-client";
 import { fmtDate } from "@/lib/date-utils";
 import AppLayout from "@/layouts/AppLayout";
@@ -35,6 +35,100 @@ const statusConfig: Record<AlertLevel, { color: string; bg: string; icon: React.
 
 const daysColor = (d: number) => d <= 30 ? "text-red-600 font-bold" : d <= 90 ? "text-amber-600 font-semibold" : "text-green-600";
 
+interface ComplianceKpiDef { label: AlertLevel; key: string; color: string; bg: string; icon: React.ElementType }
+
+const COMPLIANCE_KPI_DEFS: ComplianceKpiDef[] = [
+  { label: "Critical", key: "critical", color: "text-red-600",   bg: "border-red-200 bg-red-50",    icon: AlertTriangle },
+  { label: "At Risk",  key: "at_risk",  color: "text-amber-600", bg: "border-amber-200 bg-amber-50",icon: Clock },
+  { label: "On Track", key: "on_track", color: "text-blue-600",  bg: "border-blue-200 bg-blue-50",  icon: Clock },
+  { label: "Compliant",key: "compliant",color: "text-green-600", bg: "border-green-200 bg-green-50",icon: CheckCircle },
+];
+
+function ComplianceKpiModal({ kpi, onClose }: { kpi: ComplianceKpiDef; onClose: () => void }) {
+  const [result, setResult]   = useState<{ data: any[]; total: number }>({ data: [], total: 0 });
+  const [search, setSearch]   = useState("");
+  const [loading, setLoading] = useState(false);
+  const [page, setPage]       = useState(1);
+  const PER_PAGE = 15;
+
+  const fetchPage = useCallback(async (pg: number, q: string) => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({ per_page: String(PER_PAGE), page: String(pg), status: kpi.label });
+      if (q) params.set("search", q);
+      const res: any = await api.getCompliancePaged(params);
+      setResult({ data: Array.isArray(res) ? res : (res?.data ?? []), total: res?.total ?? 0 });
+    } finally { setLoading(false); }
+  }, [kpi]);
+
+  useEffect(() => { fetchPage(1, ""); }, [fetchPage]);
+  function handleSearch(q: string) { setSearch(q); setPage(1); fetchPage(1, q); }
+  function goPage(pg: number) { setPage(pg); fetchPage(pg, search); }
+  const totalPages = Math.max(1, Math.ceil(result.total / PER_PAGE));
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+      <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-3xl max-h-[88vh] flex flex-col">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border flex-shrink-0">
+          <div>
+            <h2 className={`font-display text-lg font-semibold ${kpi.color}`}>{kpi.label}</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">{result.total} compliance item{result.total !== 1 ? "s" : ""}</p>
+          </div>
+          <button onClick={onClose}><X className="h-5 w-5 text-muted-foreground" /></button>
+        </div>
+        <div className="px-6 py-3 border-b border-border flex-shrink-0">
+          <div className="relative max-w-sm">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <input className="w-full h-9 pl-9 pr-3 rounded-md border border-border bg-background text-sm focus:outline-none focus:ring-1 focus:ring-gold"
+              placeholder="Search matter…" value={search} onChange={(e) => handleSearch(e.target.value)} />
+          </div>
+        </div>
+        <div className="flex-1 overflow-auto">
+          {loading ? (
+            <div className="flex items-center justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-gold" /></div>
+          ) : (
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 bg-muted/60 backdrop-blur text-xs uppercase tracking-wider text-muted-foreground">
+                <tr>
+                  <th className="px-4 py-3 text-left">Matter</th>
+                  <th className="px-4 py-3 text-left">Type</th>
+                  <th className="px-4 py-3 text-left">Jurisdiction</th>
+                  <th className="px-4 py-3 text-right">Days Left</th>
+                  <th className="px-4 py-3 text-left">Deadline</th>
+                  <th className="px-4 py-3 text-left">Assignee</th>
+                </tr>
+              </thead>
+              <tbody>
+                {result.data.map((item) => (
+                  <tr key={item.id} className="border-t border-border hover:bg-muted/30">
+                    <td className="px-4 py-2.5 font-medium max-w-[200px] truncate">{item.matter}</td>
+                    <td className="px-4 py-2.5 text-xs text-muted-foreground">{item.type}</td>
+                    <td className="px-4 py-2.5 text-xs text-muted-foreground">{item.jurisdiction}</td>
+                    <td className={`px-4 py-2.5 text-xs font-mono text-right ${daysColor(item.daysLeft)}`}>{item.daysLeft}d</td>
+                    <td className="px-4 py-2.5 text-xs font-mono text-muted-foreground">{fmtDate(item.deadline)}</td>
+                    <td className="px-4 py-2.5 text-xs text-muted-foreground">{item.assignee ?? "—"}</td>
+                  </tr>
+                ))}
+                {result.data.length === 0 && (
+                  <tr><td colSpan={6} className="px-4 py-10 text-center text-muted-foreground">No items found.</td></tr>
+                )}
+              </tbody>
+            </table>
+          )}
+        </div>
+        <div className="flex items-center justify-between px-6 py-3 border-t border-border flex-shrink-0 text-xs text-muted-foreground">
+          <span>Showing {result.data.length} of {result.total}</span>
+          <div className="flex items-center gap-1">
+            <button onClick={() => goPage(page - 1)} disabled={page === 1} className="p-1 rounded border border-border disabled:opacity-40 hover:bg-muted/40"><ChevronLeft className="h-4 w-4" /></button>
+            <span className="px-2">{page} / {totalPages}</span>
+            <button onClick={() => goPage(page + 1)} disabled={page >= totalPages} className="p-1 rounded border border-border disabled:opacity-40 hover:bg-muted/40"><ChevronRight className="h-4 w-4" /></button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Compliance() {
   const [items, setItems] = useState<ComplianceItem[]>([]);
   const [users, setUsers] = useState<any[]>([]);
@@ -45,12 +139,15 @@ export default function Compliance() {
   const [noteText, setNoteText] = useState("");
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<Record<number, string>>({});
+  const [complianceStats, setComplianceStats] = useState({ critical: 0, at_risk: 0, on_track: 0, compliant: 0 });
+  const [kpiModal, setKpiModal] = useState<ComplianceKpiDef | null>(null);
 
   const load = () => api.getCompliance().then(setItems).catch(() => {}).finally(() => setLoading(false));
 
   useEffect(() => {
     load();
     api.getUsers().then(setUsers).catch(() => {});
+    api.getComplianceStats().then(setComplianceStats).catch(() => {});
   }, []);
 
   const say = (id: number, msg: string) => {
@@ -88,11 +185,6 @@ export default function Compliance() {
     finally { setBusy(false); }
   }
 
-  const critical = items.filter((i) => i.status === "Critical").length;
-  const atRisk = items.filter((i) => i.status === "At Risk").length;
-  const onTrack = items.filter((i) => i.status === "On Track").length;
-  const compliant = items.filter((i) => i.status === "Compliant").length;
-
   const filtered = items.filter((i) => {
     if (filterStatus !== "All" && i.status !== filterStatus) return false;
     if (filterType !== "All" && i.type !== filterType && i.jurisdiction !== filterType) return false;
@@ -121,24 +213,28 @@ export default function Compliance() {
         }}><Download className="h-4 w-4 mr-2" />Export Report</Button>}
       />
       <div className="px-8 py-6 space-y-6">
+        {kpiModal && <ComplianceKpiModal kpi={kpiModal} onClose={() => setKpiModal(null)} />}
         {/* Alert summary */}
         <div className="grid grid-cols-4 gap-4">
-          {([
-            { label: "Critical", count: critical, color: "border-red-200 bg-red-50", text: "text-red-600", icon: AlertTriangle },
-            { label: "At Risk", count: atRisk, color: "border-amber-200 bg-amber-50", text: "text-amber-600", icon: Clock },
-            { label: "On Track", count: onTrack, color: "border-blue-200 bg-blue-50", text: "text-blue-600", icon: Shield },
-            { label: "Compliant", count: compliant, color: "border-green-200 bg-green-50", text: "text-green-600", icon: CheckCircle },
-          ]).map(({ label, count, color, text, icon: Icon }) => (
-            <Card key={label} className={`border ${color} cursor-pointer`} onClick={() => setFilterStatus(filterStatus === label as AlertLevel ? "All" : label as AlertLevel)}>
-              <CardContent className="p-4 flex items-center gap-3">
-                <Icon className={`h-8 w-8 ${text}`} />
-                <div>
-                  <div className={`text-2xl font-bold ${text}`}>{count}</div>
-                  <div className="text-xs text-muted-foreground">{label}</div>
+          {COMPLIANCE_KPI_DEFS.map((kpi) => {
+            const Icon = kpi.icon;
+            const count = complianceStats[kpi.key as keyof typeof complianceStats] ?? 0;
+            return (
+              <button key={kpi.key}
+                onClick={() => setKpiModal(kpi)}
+                className={`rounded-xl border ${kpi.bg} p-4 text-left transition-all hover:shadow-md hover:scale-[1.01] cursor-pointer`}
+              >
+                <div className="flex items-center gap-3">
+                  <Icon className={`h-8 w-8 ${kpi.color}`} />
+                  <div>
+                    <div className={`text-2xl font-bold ${kpi.color}`}>{count}</div>
+                    <div className="text-xs text-muted-foreground">{kpi.label}</div>
+                  </div>
                 </div>
-              </CardContent>
-            </Card>
-          ))}
+                <div className="mt-1 text-xs text-muted-foreground">Click to view</div>
+              </button>
+            );
+          })}
         </div>
 
         {/* Filters */}
