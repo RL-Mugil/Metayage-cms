@@ -107,7 +107,7 @@ return new class extends Migration
         $this->createConcurrently('approvals', 'idx_approvals_status',        ['status']);
         $this->createConcurrently('approvals', 'idx_approvals_subject',       ['subject_type', 'subject_id']);
 
-        $this->createConcurrently('ip_notifications', 'idx_notifications_user_read', ['user_id', 'is_read']);
+        $this->createConcurrently('ip_notifications', 'idx_notifications_user_read', ['user_id', 'read_at']);
 
         $this->createConcurrently('discussion_threads',  'idx_discussion_threads_project_id',   ['project_id']);
         $this->createConcurrently('discussion_messages', 'idx_discussion_messages_thread_id',   ['thread_id']);
