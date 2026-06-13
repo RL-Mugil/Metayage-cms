@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 
@@ -78,6 +79,74 @@ class AIQueryService
         }
     }
 
+    // FK and enum annotations that information_schema doesn't carry.
+    // Column *names* come from the DB; these lines enrich them with domain context.
+    private const SCHEMA_ANNOTATIONS = [
+        'users'           => 'role (super_admin|partner|manager|hr|finance|associate|paralegal|client), status (Active|Inactive)',
+        'clients'         => 'client_type (individual|organization), gst_type (B2B|B2C|Export|Unregistered), status (Active|Inactive|Prospect|On Hold), account_manager_id→users',
+        'projects'        => 'project_type (Patent|Trademark|Copyright|Design|Trade Secret), patent_office_code (IN|US|EP|WO|AU|CA), status (Open|In Progress|On Hold|Closed|Completed), urgency (Low|Medium|High|Critical), assigned_partner_id→users, assigned_manager_id→users, patent_engineer_id→users, client_id→clients',
+        'project_stages'  => 'stage_name (Intake|Drafting|Filing|Examination|Object received|Granted|Renewal), status (Pending|In Progress|Completed), project_id→projects',
+        'tasks'           => 'status (Pending|In Progress|Review|Completed|Blocked), priority (Low|Medium|High|Urgent), project_id→projects, assignee_id→users, reviewer_id→users',
+        'time_entries'    => 'status (Draft|Approved|Invoiced), project_id→projects, task_id→tasks, user_id→users',
+        'invoices'        => 'status (Draft|Sent|Viewed|Partially Paid|Paid|Overdue|Cancelled), client_id→clients, project_id→projects',
+        'payments'        => 'status (Completed|Pending|Failed), client_id→clients, invoice_id→invoices',
+        'client_ledgers'  => 'document_type (Invoice|Payment|Credit Note), client_id→clients',
+        'employees'       => 'employment_type (Full-time|Part-time|Contract), employment_status (Active|Inactive|On Leave|Terminated), work_location (Office|Remote|Hybrid), user_id→users, department_id→departments, designation_id→designations',
+        'attendances'     => 'status (Present|Absent|Half Day|On Leave), employee_id→employees',
+        'leave_requests'  => 'leave_type (Earned Leave|Casual Leave|Sick Leave|LOP), status (Pending|Approved|Rejected|Cancelled), employee_id→employees',
+        'leave_balances'  => 'employee_id→employees',
+        'payroll_runs'    => 'status (Draft|Finalized|Paid), run_by_id→users',
+        'payslips'        => 'payroll_run_id→payroll_runs, employee_id→employees',
+        'compliance_items'=> 'type (Patent|Trademark|Copyright), status (Critical|At Risk|On Track|Compliant|Resolved)',
+        'tracker_rows'    => 'payment_status (Paid|Partial|Pending), pcm_id→users, scm_id→users, pr_id→users',
+    ];
+
+    // Whitelisted tables the AI is allowed to query.
+    private const ALLOWED_TABLES = [
+        'users', 'clients', 'client_contacts', 'projects', 'project_stages',
+        'tasks', 'time_entries', 'invoices', 'invoice_items', 'payments',
+        'client_ledgers', 'employees', 'departments', 'designations',
+        'attendances', 'leave_requests', 'leave_balances',
+        'payroll_runs', 'payslips', 'compliance_items',
+        'tracker_rows', 'public_holidays',
+    ];
+
+    private function schemaContext(): string
+    {
+        return Cache::remember('ai_schema_context', 3600, function () {
+            try {
+                $tables = self::ALLOWED_TABLES;
+                $placeholders = implode(',', array_fill(0, count($tables), '?'));
+                $rows = DB::select(
+                    "SELECT table_name, column_name
+                     FROM information_schema.columns
+                     WHERE table_schema = 'public'
+                       AND table_name IN ({$placeholders})
+                     ORDER BY table_name, ordinal_position",
+                    $tables
+                );
+
+                $grouped = [];
+                foreach ($rows as $row) {
+                    $grouped[$row->table_name][] = $row->column_name;
+                }
+
+                $lines = [];
+                foreach (self::ALLOWED_TABLES as $table) {
+                    if (!isset($grouped[$table])) continue;
+                    $cols = implode(', ', $grouped[$table]);
+                    $note = self::SCHEMA_ANNOTATIONS[$table] ?? '';
+                    $lines[] = "- {$table}: {$cols}" . ($note ? " — [{$note}]" : '');
+                }
+
+                return implode("\n", $lines);
+            } catch (\Exception) {
+                // Fallback: return table names only so the prompt stays valid
+                return implode("\n", array_map(fn($t) => "- {$t}", self::ALLOWED_TABLES));
+            }
+        });
+    }
+
     private function buildSystemPrompt(array $ctx): string
     {
         $role = $ctx['role'] ?? 'staff';
@@ -104,28 +173,7 @@ SECURITY RULES (only apply when writing SQL):
 - Never expose employees.salary to client or associate roles.
 
 DATABASE SCHEMA (only relevant when querying data):
-- users: id, name, email, role (super_admin|partner|manager|hr|finance|associate|paralegal|client), status (Active|Inactive), created_at
-- clients: id, client_code, company_name, legal_name, client_type (individual|organization), nationality, gst_type (B2B|B2C|Export|Unregistered), has_gstin, gstin, pan_number, status (Active|Inactive|Prospect|On Hold), account_manager_id→users, portal_enabled, created_at
-- client_contacts: id, client_id→clients, name, email, phone, role_type
-- projects: id, project_code, docket_number, project_name, project_type (Patent|Trademark|Copyright|Design|Trade Secret), case_type, patent_office_code (IN|US|EP|WO|AU|CA), status (Open|In Progress|On Hold|Closed|Completed), urgency (Low|Medium|High|Critical), hard_deadline, filing_date, assigned_partner_id→users, assigned_manager_id→users, patent_engineer_id→users, client_id→clients, created_at
-- project_stages: id, project_id→projects, stage_name (Intake|Drafting|Filing|Examination|Object received|Granted|Renewal), status (Pending|In Progress|Completed), sequence_order, due_date
-- tasks: id, title, status (Pending|In Progress|Review|Completed|Blocked), priority (Low|Medium|High|Urgent), due_date, project_id→projects, assignee_id→users, reviewer_id→users, billable, estimated_hours, actual_hours
-- time_entries: id, project_id→projects, task_id→tasks, user_id→users, duration_hours, entry_date, billable, status (Draft|Approved|Invoiced)
-- invoices: id, invoice_code, client_id→clients, project_id→projects, status (Draft|Sent|Viewed|Partially Paid|Paid|Overdue|Cancelled), subtotal, tax_amount, total_amount, balance_due, issue_date, due_date, currency, payment_terms
-- invoice_items: id, invoice_id→invoices, description, quantity, unit_rate, amount, tax_rate
-- payments: id, client_id→clients, invoice_id→invoices, receipt_code, payment_date, amount, payment_method, status (Completed|Pending|Failed)
-- client_ledgers: id, client_id→clients, transaction_date, document_type (Invoice|Payment|Credit Note), document_reference, debit, credit, balance
-- employees: id, employee_code, user_id→users, full_name, work_email, phone, department_id→departments, designation_id→designations, employment_type (Full-time|Part-time|Contract), employment_status (Active|Inactive|On Leave|Terminated), work_location (Office|Remote|Hybrid), date_of_joining
-- departments: id, name
-- designations: id, title, grade_band
-- attendances: id, employee_id→employees, attendance_date, check_in, check_out, status (Present|Absent|Half Day|On Leave), duration_minutes, capture_method
-- leave_requests: id, employee_id→employees, leave_type (Earned Leave|Casual Leave|Sick Leave|LOP), from_date, to_date, total_days, status (Pending|Approved|Rejected|Cancelled), reason, comments
-- leave_balances: id, employee_id→employees, year, earned_leave, sick_leave, casual_leave, lop_days
-- payroll_runs: id, month, year, status (Draft|Finalized|Paid), run_by_id→users
-- payslips: id, payroll_run_id→payroll_runs, employee_id→employees, basic, hra, special_allowance, gross_pay, pf_employee, esi_employee, professional_tax, tds, total_deductions, net_pay, lop_days
-- compliance_items: id, matter, type (Patent|Trademark|Copyright), jurisdiction (USPTO|EPO|WIPO|IPO India), deadline, action_required, assignee, status (Critical|At Risk|On Track|Compliant|Resolved), priority
-- tracker_rows: id, docket_number, client_name, record_type, pcm_id→users, scm_id→users, pr_id→users, status, delivery_due_date, payment_status (Paid|Partial|Pending), percentage_of_completion
-- public_holidays: id, date, name, country (IN)
+{$this->schemaContext()}
 
 RESPONSE FORMAT:
 - For general questions: answer directly and helpfully. No need for SQL.

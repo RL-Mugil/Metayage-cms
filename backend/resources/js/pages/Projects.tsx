@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { api, downloadCSV } from "@/lib/api-client";
-import { statusColor } from "@/lib/mock-data";
+import { statusColor } from "@/lib/utils";
 
 // ── Date helper ───────────────────────────────────────────────────────────────
 

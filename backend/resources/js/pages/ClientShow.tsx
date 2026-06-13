@@ -6,7 +6,7 @@ import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api-client";
-import { statusColor } from "@/lib/mock-data";
+import { statusColor } from "@/lib/utils";
 
 interface Props {
   clientId: number;

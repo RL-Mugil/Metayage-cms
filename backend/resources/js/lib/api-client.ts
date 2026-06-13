@@ -1,18 +1,17 @@
+import type {
+  User, Client, ClientContact, Project, Task, Invoice, InvoiceItem,
+  Employee, Attendance, LeaveRequest, LeaveBalance, PayrollRun, Payslip,
+  Notification, ReportResponse, AIResponse, DashboardMetrics,
+  PaginatedResponse,
+} from '@/types'
+
 function getCsrfToken(): string {
   if (typeof document === 'undefined') return ''
   const match = document.cookie.match(/XSRF-TOKEN=([^;]+)/)
   return match ? decodeURIComponent(match[1]) : ''
 }
 
-export interface User {
-  id: number
-  name: string
-  email: string
-  role: string
-  status: string
-  avatar_url?: string | null
-  permissions?: Record<string, string>
-}
+export type { User, Client, Project, Task, Invoice, Employee, PaginatedResponse }
 
 export const api = {
   async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
@@ -31,16 +30,16 @@ export const api = {
     if (!response.ok) {
       if (response.status === 401) { window.location.href = '/login'; return null as unknown as T }
       const errData = await response.json().catch(() => ({}))
-      throw new Error((errData as any).message || `Request failed: ${response.status}`)
+      throw new Error((errData as { message?: string }).message || `Request failed: ${response.status}`)
     }
     return response.json()
   },
 
   // ── Users ──
-  async getUsers(): Promise<any[]> { return this.request('/users') },
+  async getUsers(): Promise<User[]> { return this.request('/users') },
 
   // ── Dashboard ──
-  async getDashboardMetrics(): Promise<{ metrics: Record<string, number>; charts: any }> {
+  async getDashboardMetrics(): Promise<DashboardMetrics> {
     return this.request('/dashboard/metrics')
   },
 
@@ -51,7 +50,7 @@ export const api = {
   async getProjectStats(): Promise<{ total: number; open: number; in_progress: number; on_hold: number; overdue: number }> {
     return this.request('/projects/stats')
   },
-  async getClients(params?: string | URLSearchParams): Promise<any> {
+  async getClients(params?: string | URLSearchParams): Promise<PaginatedResponse<Client>> {
     let query = '';
     if (params instanceof URLSearchParams) {
       query = '?' + params.toString();
@@ -60,14 +59,14 @@ export const api = {
     }
     return this.request(`/clients${query}`);
   },
-  async getClient(id: number | string): Promise<any> { return this.request(`/clients/${id}`) },
-  async createClient(data: any): Promise<any> {
+  async getClient(id: number | string): Promise<Client> { return this.request(`/clients/${id}`) },
+  async createClient(data: Partial<Client>): Promise<Client> {
     return this.request('/clients', { method: 'POST', body: JSON.stringify(data) })
   },
-  async updateClient(id: number | string, data: any): Promise<any> {
+  async updateClient(id: number | string, data: Partial<Client>): Promise<Client> {
     return this.request(`/clients/${id}`, { method: 'PUT', body: JSON.stringify(data) })
   },
-  async deleteClient(id: number | string): Promise<any> {
+  async deleteClient(id: number | string): Promise<{ message: string }> {
     return this.request(`/clients/${id}`, { method: 'DELETE' })
   },
   async importClients(formData: FormData): Promise<{ imported: number; skipped: number; errors: string[] }> {
@@ -78,59 +77,59 @@ export const api = {
       credentials: 'same-origin',
     })
     if (!response.ok) {
-      if (response.status === 401) { window.location.href = '/login'; return null as any }
+      if (response.status === 401) { window.location.href = '/login'; return null as unknown as { imported: number; skipped: number; errors: string[] } }
       const errData = await response.json().catch(() => ({}))
-      throw new Error((errData as any).message || `Import failed: ${response.status}`)
+      throw new Error((errData as { message?: string }).message || `Import failed: ${response.status}`)
     }
     return response.json()
   },
-  async addClientContact(id: number | string, data: any): Promise<any> {
+  async addClientContact(id: number | string, data: Partial<ClientContact>): Promise<ClientContact> {
     return this.request(`/clients/${id}/contacts`, { method: 'POST', body: JSON.stringify(data) })
   },
 
   // ── Cases / Projects ──
-  async getProjects(search?: string): Promise<any[]> {
+  async getProjects(search?: string): Promise<Project[]> {
     const params = new URLSearchParams({ per_page: '500' })
     if (search) params.set('search', search)
-    const res: any = await this.request(`/projects?${params.toString()}`)
-    return Array.isArray(res) ? res : (res?.data ?? [])
+    const res = await this.request<PaginatedResponse<Project> | Project[]>(`/projects?${params.toString()}`)
+    return Array.isArray(res) ? res : ((res as PaginatedResponse<Project>).data ?? [])
   },
-  async getProjectsPaged(params?: URLSearchParams): Promise<any> {
+  async getProjectsPaged(params?: URLSearchParams): Promise<PaginatedResponse<Project>> {
     const query = params ? '?' + params.toString() : ''
     return this.request(`/projects${query}`)
   },
-  async getProject(id: number | string): Promise<any> { return this.request(`/projects/${id}`) },
-  async createProject(data: any): Promise<any> {
+  async getProject(id: number | string): Promise<Project> { return this.request(`/projects/${id}`) },
+  async createProject(data: Partial<Project>): Promise<Project> {
     return this.request('/projects', { method: 'POST', body: JSON.stringify(data) })
   },
-  async updateProject(id: number | string, data: any): Promise<any> {
+  async updateProject(id: number | string, data: Partial<Project>): Promise<Project> {
     return this.request(`/projects/${id}`, { method: 'PUT', body: JSON.stringify(data) })
   },
-  async deleteProject(id: number | string): Promise<any> {
+  async deleteProject(id: number | string): Promise<{ message: string }> {
     return this.request(`/projects/${id}`, { method: 'DELETE' })
   },
-  async updateProjectStage(id: number | string, stageName: string): Promise<any> {
+  async updateProjectStage(id: number | string, stageName: string): Promise<Project> {
     return this.request(`/projects/${id}/stage`, { method: 'POST', body: JSON.stringify({ stage_name: stageName }) })
   },
 
   // ── Tasks ──
-  async getTasks(status?: string): Promise<any[]> {
-    const res: any = await this.request(`/tasks${status ? `?status=${encodeURIComponent(status)}` : ''}`)
-    return Array.isArray(res) ? res : (res?.data ?? [])
+  async getTasks(status?: string): Promise<Task[]> {
+    const res = await this.request<PaginatedResponse<Task> | Task[]>(`/tasks${status ? `?status=${encodeURIComponent(status)}` : ''}`)
+    return Array.isArray(res) ? res : ((res as PaginatedResponse<Task>).data ?? [])
   },
-  async createTask(data: any): Promise<any> {
+  async createTask(data: Partial<Task>): Promise<Task> {
     return this.request('/tasks', { method: 'POST', body: JSON.stringify(data) })
   },
-  async updateTask(id: number | string, data: any): Promise<any> {
+  async updateTask(id: number | string, data: Partial<Task>): Promise<Task> {
     return this.request(`/tasks/${id}`, { method: 'PUT', body: JSON.stringify(data) })
   },
-  async deleteTask(id: number | string): Promise<any> {
+  async deleteTask(id: number | string): Promise<{ message: string }> {
     return this.request(`/tasks/${id}`, { method: 'DELETE' })
   },
   async logTimeEntry(data: {
     project_id: number; task_id?: number | null
     duration_hours: number; entry_date: string; description: string; billable?: boolean
-  }): Promise<any> {
+  }): Promise<{ id: number }> {
     return this.request('/tasks/time-entries', { method: 'POST', body: JSON.stringify(data) })
   },
 
@@ -138,32 +137,34 @@ export const api = {
   async getHRMSStats(): Promise<{ total: number; active: number; on_leave: number; departments: number }> {
     return this.request('/hrms/stats')
   },
-  async getEmployees(): Promise<any[]> {
-    const res: any = await this.request('/hrms/employees')
-    return Array.isArray(res) ? res : (res?.data ?? [])
+  async getEmployees(): Promise<Employee[]> {
+    const res = await this.request<PaginatedResponse<Employee> | Employee[]>('/hrms/employees')
+    return Array.isArray(res) ? res : ((res as PaginatedResponse<Employee>).data ?? [])
   },
-  async getEmployeesPaged(params?: URLSearchParams): Promise<any> {
+  async getEmployeesPaged(params?: URLSearchParams): Promise<PaginatedResponse<Employee>> {
     const query = params ? '?' + params.toString() : ''
     return this.request(`/hrms/employees${query}`)
   },
-  async createEmployee(data: any): Promise<any> {
+  async createEmployee(data: Partial<Employee>): Promise<Employee> {
     return this.request('/hrms/employees', { method: 'POST', body: JSON.stringify(data) })
   },
-  async updateEmployee(id: number | string, data: any): Promise<any> {
+  async updateEmployee(id: number | string, data: Partial<Employee>): Promise<Employee> {
     return this.request(`/hrms/employees/${id}`, { method: 'PUT', body: JSON.stringify(data) })
   },
-  async deleteEmployee(id: number | string): Promise<any> {
+  async deleteEmployee(id: number | string): Promise<{ message: string }> {
     return this.request(`/hrms/employees/${id}`, { method: 'DELETE' })
   },
-  async getAttendance(): Promise<any[]> { return this.request('/hrms/attendance') },
-  async clockIn(locationGps?: string): Promise<any> {
+  async getAttendance(): Promise<Attendance[]> { return this.request('/hrms/attendance') },
+  async clockIn(locationGps?: string): Promise<Attendance> {
     return this.request('/hrms/clock-in', { method: 'POST', body: JSON.stringify({ location_gps: locationGps }) })
   },
-  async clockOut(): Promise<any> {
+  async clockOut(): Promise<Attendance> {
     return this.request('/hrms/clock-out', { method: 'POST' })
   },
-  async getLeaves(): Promise<{ requests: any[]; balances: any }> { return this.request('/leaves') },
-  async applyLeave(data: { leave_type: string; from_date: string; to_date: string; reason?: string }): Promise<any> {
+  async getLeaves(): Promise<{ requests: LeaveRequest[]; balances: LeaveBalance | null; is_approver: boolean }> {
+    return this.request('/leaves')
+  },
+  async applyLeave(data: { leave_type: string; from_date: string; to_date: string; reason?: string }): Promise<LeaveRequest> {
     return this.request('/leaves', { method: 'POST', body: JSON.stringify(data) })
   },
 
@@ -171,27 +172,27 @@ export const api = {
   async getFinancialStats(): Promise<{ total_billed: number; total_received: number; total_outstanding: number; overdue_count: number; draft_count: number; paid_count: number }> {
     return this.request('/financial/stats')
   },
-  async getInvoices(params?: URLSearchParams): Promise<any[]> {
+  async getInvoices(params?: URLSearchParams): Promise<Invoice[]> {
     const query = params ? '?' + params.toString() : ''
-    const res: any = await this.request(`/financial/invoices${query}`)
-    return Array.isArray(res) ? res : (res?.data ?? [])
+    const res = await this.request<PaginatedResponse<Invoice> | Invoice[]>(`/financial/invoices${query}`)
+    return Array.isArray(res) ? res : ((res as PaginatedResponse<Invoice>).data ?? [])
   },
-  async getInvoicesPaged(params?: URLSearchParams): Promise<any> {
+  async getInvoicesPaged(params?: URLSearchParams): Promise<PaginatedResponse<Invoice>> {
     const query = params ? '?' + params.toString() : ''
     return this.request(`/financial/invoices${query}`)
   },
-  async createInvoice(data: any): Promise<any> {
+  async createInvoice(data: Partial<Invoice> & { items?: Partial<InvoiceItem>[] }): Promise<Invoice> {
     return this.request('/financial/invoices', { method: 'POST', body: JSON.stringify(data) })
   },
-  async updateInvoice(id: number | string, data: any): Promise<any> {
+  async updateInvoice(id: number | string, data: Partial<Invoice>): Promise<Invoice> {
     return this.request(`/financial/invoices/${id}`, { method: 'PUT', body: JSON.stringify(data) })
   },
-  async deleteInvoice(id: number | string): Promise<any> {
+  async deleteInvoice(id: number | string): Promise<{ message: string }> {
     return this.request(`/financial/invoices/${id}`, { method: 'DELETE' })
   },
-  async getQuotations(): Promise<any[]> {
-    const res: any = await this.request('/financial/quotations')
-    return Array.isArray(res) ? res : (res?.data ?? [])
+  async getQuotations(): Promise<Invoice[]> {
+    const res = await this.request<PaginatedResponse<Invoice> | Invoice[]>('/financial/quotations')
+    return Array.isArray(res) ? res : ((res as PaginatedResponse<Invoice>).data ?? [])
   },
   async recordPayment(data: {
     invoice_id: number; amount: number; payment_method: string
@@ -201,60 +202,61 @@ export const api = {
   },
 
   // ── Reports ──
-  async getReportData(type: string): Promise<{ type: string; rows: any[]; generated_at: string }> {
-    return this.request(`/reports/data?type=${encodeURIComponent(type)}`)
+  async getReportData(type: string, params?: URLSearchParams): Promise<ReportResponse> {
+    const extra = params ? '&' + params.toString() : ''
+    return this.request(`/reports/data?type=${encodeURIComponent(type)}${extra}`)
   },
 
   // ── AI ──
-  async queryAI(query: string): Promise<{ query: string; response: string; sql_query?: string; results?: any[] }> {
+  async queryAI(query: string): Promise<AIResponse> {
     return this.request('/ai/query', { method: 'POST', body: JSON.stringify({ query }) })
   },
 
   // ── Calendar ──
-  async getCalendarEvents(): Promise<any[]> { return this.request('/calendar/events') },
+  async getCalendarEvents(): Promise<Record<string, unknown>[]> { return this.request('/calendar/events') },
 
   // ── Analytics ──
-  async getTrackerAnalytics(): Promise<any> { return this.request('/analytics/tracker') },
+  async getTrackerAnalytics(): Promise<Record<string, unknown>> { return this.request('/analytics/tracker') },
 
   // ── Notifications ──
-  async getNotifications(): Promise<any[]> {
-    const res: any = await this.request('/notifications')
-    return Array.isArray(res) ? res : (res?.data ?? [])
+  async getNotifications(): Promise<Notification[]> {
+    const res = await this.request<PaginatedResponse<Notification> | Notification[]>('/notifications')
+    return Array.isArray(res) ? res : ((res as PaginatedResponse<Notification>).data ?? [])
   },
-  async markAllNotificationsRead(): Promise<any> { return this.request('/notifications/mark-all-read', { method: 'POST' }) },
-  async markNotificationRead(id: number | string): Promise<any> { return this.request(`/notifications/${id}/read`, { method: 'POST' }) },
-  async dismissNotification(id: number | string): Promise<any> { return this.request(`/notifications/${id}`, { method: 'DELETE' }) },
+  async markAllNotificationsRead(): Promise<{ message: string }> { return this.request('/notifications/mark-all-read', { method: 'POST' }) },
+  async markNotificationRead(id: number | string): Promise<{ message: string }> { return this.request(`/notifications/${id}/read`, { method: 'POST' }) },
+  async dismissNotification(id: number | string): Promise<{ message: string }> { return this.request(`/notifications/${id}`, { method: 'DELETE' }) },
 
   // ── Project Tracker ──
-  async getTrackerProjects(q?: string): Promise<any[]> {
+  async getTrackerProjects(q?: string): Promise<Project[]> {
     return this.request(`/tracker/projects${q ? `?q=${encodeURIComponent(q)}` : ''}`)
   },
-  async getTrackerCircles(): Promise<any[]> { return this.request('/tracker/circles') },
-  async getTrackerRows(circle: string): Promise<any[]> {
+  async getTrackerCircles(): Promise<Record<string, unknown>[]> { return this.request('/tracker/circles') },
+  async getTrackerRows(circle: string): Promise<Record<string, unknown>[]> {
     return this.request(`/tracker/rows?circle=${circle}`)
   },
-  async createTrackerRow(data: { circle_slug: string }): Promise<any> {
+  async createTrackerRow(data: { circle_slug: string }): Promise<Record<string, unknown>> {
     return this.request('/tracker/rows', { method: 'POST', body: JSON.stringify(data) })
   },
-  async updateTrackerRow(id: number | string, data: Record<string, any>): Promise<any> {
+  async updateTrackerRow(id: number | string, data: Record<string, unknown>): Promise<Record<string, unknown>> {
     return this.request(`/tracker/rows/${id}`, { method: 'PUT', body: JSON.stringify(data) })
   },
-  async deleteTrackerRow(id: number | string): Promise<any> {
+  async deleteTrackerRow(id: number | string): Promise<{ message: string }> {
     return this.request(`/tracker/rows/${id}`, { method: 'DELETE' })
   },
-  async addCircleMember(circleId: number | string, userId: number | string): Promise<any> {
+  async addCircleMember(circleId: number | string, userId: number | string): Promise<{ message: string }> {
     return this.request(`/tracker/circles/${circleId}/members`, { method: 'POST', body: JSON.stringify({ user_id: userId }) })
   },
-  async removeCircleMember(circleId: number | string, userId: number | string): Promise<any> {
+  async removeCircleMember(circleId: number | string, userId: number | string): Promise<{ message: string }> {
     return this.request(`/tracker/circles/${circleId}/members/${userId}`, { method: 'DELETE' })
   },
 
   // ── Documents ──
-  async getDocuments(): Promise<any[]> {
-    const res: any = await this.request('/documents')
-    return Array.isArray(res) ? res : (res?.data ?? [])
+  async getDocuments(): Promise<Record<string, unknown>[]> {
+    const res = await this.request<PaginatedResponse<Record<string, unknown>> | Record<string, unknown>[]>('/documents')
+    return Array.isArray(res) ? res : ((res as PaginatedResponse<Record<string, unknown>>).data ?? [])
   },
-  async uploadDocument(file: File, folder?: string): Promise<any> {
+  async uploadDocument(file: File, folder?: string): Promise<Record<string, unknown>> {
     const formData = new FormData()
     formData.append('file', file)
     if (folder) formData.append('folder', folder)
@@ -266,11 +268,11 @@ export const api = {
     })
     if (!response.ok) {
       const err = await response.json().catch(() => ({}))
-      throw new Error((err as any).message || 'Upload failed')
+      throw new Error((err as { message?: string }).message || 'Upload failed')
     }
     return response.json()
   },
-  async deleteDocument(path: string): Promise<any> {
+  async deleteDocument(path: string): Promise<{ message: string }> {
     return this.request('/documents', { method: 'DELETE', body: JSON.stringify({ path }) })
   },
   async downloadDocument(path: string, name: string): Promise<void> {
@@ -288,28 +290,28 @@ export const api = {
   },
 
   // ── Approvals ──
-  async getApprovals(): Promise<any[]> {
-    const res: any = await this.request('/approvals')
-    return Array.isArray(res) ? res : (res?.data ?? [])
+  async getApprovals(): Promise<Record<string, unknown>[]> {
+    const res = await this.request<PaginatedResponse<Record<string, unknown>> | Record<string, unknown>[]>('/approvals')
+    return Array.isArray(res) ? res : ((res as PaginatedResponse<Record<string, unknown>>).data ?? [])
   },
-  async resolveApproval(type: string, id: number, action: 'Approved' | 'Rejected'): Promise<any> {
+  async resolveApproval(type: string, id: number, action: 'Approved' | 'Rejected'): Promise<{ message: string }> {
     return this.request('/approvals/resolve', { method: 'POST', body: JSON.stringify({ type, id, action }) })
   },
 
   // ── Discussions ──
-  async getDiscussions(): Promise<any[]> {
-    const res: any = await this.request('/discussions')
-    return Array.isArray(res) ? res : (res?.data ?? [])
+  async getDiscussions(): Promise<Record<string, unknown>[]> {
+    const res = await this.request<PaginatedResponse<Record<string, unknown>> | Record<string, unknown>[]>('/discussions')
+    return Array.isArray(res) ? res : ((res as PaginatedResponse<Record<string, unknown>>).data ?? [])
   },
-  async createDiscussion(data: { title: string; tag: string; message: string }): Promise<any> {
+  async createDiscussion(data: { title: string; tag: string; message: string }): Promise<Record<string, unknown>> {
     return this.request('/discussions', { method: 'POST', body: JSON.stringify(data) })
   },
-  async replyDiscussion(threadId: number, message: string): Promise<any> {
+  async replyDiscussion(threadId: number, message: string): Promise<Record<string, unknown>> {
     return this.request(`/discussions/${threadId}/reply`, { method: 'POST', body: JSON.stringify({ message }) })
   },
 
   // ── Settings ──
-  async getSettings(): Promise<any> {
+  async getSettings(): Promise<Record<string, unknown>> {
     return this.request('/settings')
   },
   async updateProfile(data: { name: string; email: string; timezone?: string; language?: string }): Promise<any> {
@@ -329,74 +331,74 @@ export const api = {
   async getComplianceStats(): Promise<{ critical: number; at_risk: number; on_track: number; compliant: number }> {
     return this.request('/compliance/stats')
   },
-  async getCompliance(): Promise<any[]> {
-    const res: any = await this.request('/compliance')
-    return Array.isArray(res) ? res : (res?.data ?? [])
+  async getCompliance(): Promise<Record<string, unknown>[]> {
+    const res = await this.request<PaginatedResponse<Record<string, unknown>> | Record<string, unknown>[]>('/compliance')
+    return Array.isArray(res) ? res : ((res as PaginatedResponse<Record<string, unknown>>).data ?? [])
   },
-  async getCompliancePaged(params?: URLSearchParams): Promise<any> {
+  async getCompliancePaged(params?: URLSearchParams): Promise<PaginatedResponse<Record<string, unknown>>> {
     const query = params ? '?' + params.toString() : ''
     return this.request(`/compliance${query}`)
   },
-  async updateCompliance(id: number | string, data: { assignee?: string; note?: string; resolved?: boolean }): Promise<any> {
+  async updateCompliance(id: number | string, data: { assignee?: string; note?: string; resolved?: boolean }): Promise<Record<string, unknown>> {
     return this.request(`/compliance/${id}`, { method: 'PUT', body: JSON.stringify(data) })
   },
-  async remindCompliance(id: number | string): Promise<any> {
+  async remindCompliance(id: number | string): Promise<{ message: string }> {
     return this.request(`/compliance/${id}/remind`, { method: 'POST' })
   },
 
   // ── Reminders ──
-  async getReminders(): Promise<any[]> {
-    const res: any = await this.request('/reminders')
-    return Array.isArray(res) ? res : (res?.data ?? [])
+  async getReminders(): Promise<Record<string, unknown>[]> {
+    const res = await this.request<PaginatedResponse<Record<string, unknown>> | Record<string, unknown>[]>('/reminders')
+    return Array.isArray(res) ? res : ((res as PaginatedResponse<Record<string, unknown>>).data ?? [])
   },
-  async createReminder(data: any): Promise<any> {
+  async createReminder(data: Record<string, unknown>): Promise<Record<string, unknown>> {
     return this.request('/reminders', { method: 'POST', body: JSON.stringify(data) })
   },
-  async updateReminder(id: number | string, data: { completed: boolean }): Promise<any> {
+  async updateReminder(id: number | string, data: { completed: boolean }): Promise<Record<string, unknown>> {
     return this.request(`/reminders/${id}`, { method: 'PUT', body: JSON.stringify(data) })
   },
 
   // ── Feedback / CSAT ──
-  async getFeedback(): Promise<any[]> {
-    const res: any = await this.request('/feedback')
-    return Array.isArray(res) ? res : (res?.data ?? [])
+  async getFeedback(): Promise<Record<string, unknown>[]> {
+    const res = await this.request<PaginatedResponse<Record<string, unknown>> | Record<string, unknown>[]>('/feedback')
+    return Array.isArray(res) ? res : ((res as PaginatedResponse<Record<string, unknown>>).data ?? [])
   },
-  async requestFeedback(data: { client: string; subject: string }): Promise<any> {
+  async requestFeedback(data: { client: string; subject: string }): Promise<{ message: string }> {
     return this.request('/feedback/request', { method: 'POST', body: JSON.stringify(data) })
   },
 
   // ── Performance ──
-  async getPerformance(): Promise<{ reviews: any[]; goals: any[]; feedback360: any[] }> {
+  async getPerformance(): Promise<{ reviews: Record<string, unknown>[]; goals: Record<string, unknown>[]; feedback360: Record<string, unknown>[] }> {
     return this.request('/performance')
   },
-  async submitPerformanceReview(id: number | string, data: { scores: Record<string, number>; comments?: string }): Promise<any> {
+  async submitPerformanceReview(id: number | string, data: { scores: Record<string, number>; comments?: string }): Promise<{ message: string }> {
     return this.request(`/performance/reviews/${id}/submit`, { method: 'POST', body: JSON.stringify(data) })
   },
 
   // ── Recruitment ──
-  async getRecruitment(): Promise<{ jobs: any[]; pipeline: any[] }> { return this.request('/recruitment') },
-  async createJob(data: any): Promise<any> {
+  async getRecruitment(): Promise<{ jobs: Record<string, unknown>[]; pipeline: Record<string, unknown>[] }> { return this.request('/recruitment') },
+  async createJob(data: Record<string, unknown>): Promise<Record<string, unknown>> {
     return this.request('/recruitment/jobs', { method: 'POST', body: JSON.stringify(data) })
   },
-  async updateJob(id: number | string, data: { status: string }): Promise<any> {
+  async updateJob(id: number | string, data: { status: string }): Promise<Record<string, unknown>> {
     return this.request(`/recruitment/jobs/${id}`, { method: 'PUT', body: JSON.stringify(data) })
   },
 
   // ── Offboarding ──
-  async getOffboarding(): Promise<{ cases: any[]; completed: any[] }> { return this.request('/offboarding') },
-  async createOffboarding(data: any): Promise<any> {
+  async getOffboarding(): Promise<{ cases: Record<string, unknown>[]; completed: Record<string, unknown>[] }> { return this.request('/offboarding') },
+  async createOffboarding(data: Record<string, unknown>): Promise<Record<string, unknown>> {
     return this.request('/offboarding', { method: 'POST', body: JSON.stringify(data) })
   },
-  async updateOffboardingChecklist(id: number | string, checklist: boolean[]): Promise<any> {
+  async updateOffboardingChecklist(id: number | string, checklist: boolean[]): Promise<Record<string, unknown>> {
     return this.request(`/offboarding/${id}/checklist`, { method: 'PUT', body: JSON.stringify({ checklist }) })
   },
 
   // ── Integrations ──
-  async getIntegrations(): Promise<any[]> { return this.request('/integrations') },
-  async toggleIntegration(slug: string): Promise<any> {
+  async getIntegrations(): Promise<Record<string, unknown>[]> { return this.request('/integrations') },
+  async toggleIntegration(slug: string): Promise<{ message: string }> {
     return this.request(`/integrations/${slug}/toggle`, { method: 'POST' })
   },
-  async saveIntegrationConfig(slug: string, apiKey: string): Promise<any> {
+  async saveIntegrationConfig(slug: string, apiKey: string): Promise<{ message: string }> {
     return this.request(`/integrations/${slug}/config`, { method: 'POST', body: JSON.stringify({ api_key: apiKey }) })
   },
   async testIntegration(slug: string): Promise<{ ok: boolean }> {
@@ -404,8 +406,8 @@ export const api = {
   },
 
   // ── Client Portal ──
-  async getPortalClients(): Promise<any[]> { return this.request('/portal/clients') },
-  async togglePortal(clientId: number | string): Promise<any> {
+  async getPortalClients(): Promise<Record<string, unknown>[]> { return this.request('/portal/clients') },
+  async togglePortal(clientId: number | string): Promise<{ message: string }> {
     return this.request(`/portal/clients/${clientId}/toggle`, { method: 'POST' })
   },
   async portalInviteAll(): Promise<{ ok: boolean; invited: number }> {
@@ -424,28 +426,28 @@ export const api = {
   },
 
   // ── Payroll ──
-  async getPayrollRuns(): Promise<{ runs: any[]; ytd_paid: number; can_manage: boolean; can_pay: boolean }> {
+  async getPayrollRuns(): Promise<{ runs: PayrollRun[]; ytd_paid: number; can_manage: boolean; can_pay: boolean }> {
     return this.request('/payroll/runs')
   },
-  async getPayrollRun(id: number | string): Promise<any> { return this.request(`/payroll/runs/${id}`) },
-  async createPayrollRun(period: string): Promise<any> {
+  async getPayrollRun(id: number | string): Promise<PayrollRun> { return this.request(`/payroll/runs/${id}`) },
+  async createPayrollRun(period: string): Promise<PayrollRun> {
     return this.request('/payroll/runs', { method: 'POST', body: JSON.stringify({ period }) })
   },
-  async deletePayrollRun(id: number | string): Promise<any> {
+  async deletePayrollRun(id: number | string): Promise<{ message: string }> {
     return this.request(`/payroll/runs/${id}`, { method: 'DELETE' })
   },
-  async finalizePayrollRun(id: number | string): Promise<any> {
+  async finalizePayrollRun(id: number | string): Promise<PayrollRun> {
     return this.request(`/payroll/runs/${id}/finalize`, { method: 'POST' })
   },
-  async payPayrollRun(id: number | string): Promise<any> {
+  async payPayrollRun(id: number | string): Promise<PayrollRun> {
     return this.request(`/payroll/runs/${id}/pay`, { method: 'POST' })
   },
-  async updatePayslip(id: number | string, data: { lop_days?: number; tds?: number }): Promise<any> {
+  async updatePayslip(id: number | string, data: { lop_days?: number; tds?: number }): Promise<Payslip> {
     return this.request(`/payroll/payslips/${id}`, { method: 'PUT', body: JSON.stringify(data) })
   },
-  async getMyPayslips(): Promise<any[]> {
-    const res: any = await this.request('/payroll/my-slips')
-    return Array.isArray(res) ? res : (res?.data ?? [])
+  async getMyPayslips(): Promise<Payslip[]> {
+    const res = await this.request<PaginatedResponse<Payslip> | Payslip[]>('/payroll/my-slips')
+    return Array.isArray(res) ? res : ((res as PaginatedResponse<Payslip>).data ?? [])
   },
 }
 

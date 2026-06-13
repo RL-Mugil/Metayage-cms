@@ -7,6 +7,8 @@ use App\Http\Controllers\DocumentController;
 use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\TaskController;
 use App\Http\Controllers\HRMSController;
+use App\Http\Controllers\AttendanceController;
+use App\Http\Controllers\LeaveController;
 use App\Http\Controllers\FinancialController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\AIController;
@@ -59,12 +61,12 @@ Route::middleware(['auth:sanctum', 'throttle:60,1'])->group(function () {
     Route::post('/hrms/employees', [HRMSController::class, 'createEmployee']);
     Route::put('/hrms/employees/{id}', [HRMSController::class, 'updateEmployee']);
     Route::delete('/hrms/employees/{id}', [HRMSController::class, 'deleteEmployee']);
-    Route::get('/hrms/attendance', [HRMSController::class, 'attendance']);
-    Route::post('/hrms/clock-in', [HRMSController::class, 'clockIn']);
-    Route::post('/hrms/clock-out', [HRMSController::class, 'clockOut']);
-    Route::get('/hrms/leaves', [HRMSController::class, 'leaves']);
-    Route::post('/hrms/leaves', [HRMSController::class, 'applyLeave']);
-    Route::put('/hrms/leaves/{id}', [HRMSController::class, 'updateLeave']);
+    Route::get('/hrms/attendance', [AttendanceController::class, 'index']);
+    Route::post('/hrms/clock-in', [AttendanceController::class, 'clockIn']);
+    Route::post('/hrms/clock-out', [AttendanceController::class, 'clockOut']);
+    Route::get('/hrms/leaves', [LeaveController::class, 'index']);
+    Route::post('/hrms/leaves', [LeaveController::class, 'store']);
+    Route::put('/hrms/leaves/{id}', [LeaveController::class, 'update']);
 
     // Financial Suite
     Route::get('/financial/stats', [FinancialController::class, 'stats']);
@@ -154,9 +156,10 @@ Route::middleware(['auth:sanctum', 'throttle:60,1'])->group(function () {
     Route::post('/offboarding', [\App\Http\Controllers\OffboardingController::class, 'store']);
     Route::put('/offboarding/{id}/checklist', [\App\Http\Controllers\OffboardingController::class, 'updateChecklist']);
 
-    // Leave Management
-    Route::get('/leaves', [\App\Http\Controllers\LeaveController::class, 'index']);
-    Route::post('/leaves', [\App\Http\Controllers\LeaveController::class, 'store']);
+    // Leave Management (aliases for /hrms/leaves)
+    Route::get('/leaves', [LeaveController::class, 'index']);
+    Route::post('/leaves', [LeaveController::class, 'store']);
+    Route::put('/leaves/{id}', [LeaveController::class, 'update']);
 
     // Integrations
     Route::get('/integrations', [\App\Http\Controllers\IntegrationController::class, 'index']);

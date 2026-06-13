@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\PaginationHelper;
+use App\Jobs\GeneratePayrollJob;
 use App\Models\AuditLog;
 use App\Models\Employee;
 use App\Models\PayrollRun;
@@ -74,15 +75,12 @@ class PayrollController extends Controller
             return response()->json(['message' => 'A payroll run for this month already exists.'], 422);
         }
 
-        $employees = Employee::with('designation:id,title')
-            ->where('employment_status', 'Active')
-            ->get();
+        // Quick feasibility check: are there any employees with salaries?
+        $hasEligible = Employee::where('employment_status', 'Active')
+            ->whereRaw('CAST(salary AS FLOAT) > 0')
+            ->exists();
 
-        $eligible = $employees->filter(fn ($e) => (float) ($e->salary ?? 0) > 0);
-        $skipped  = $employees->reject(fn ($e) => (float) ($e->salary ?? 0) > 0)
-            ->map(fn ($e) => $e->full_name)->values();
-
-        if ($eligible->isEmpty()) {
+        if (! $hasEligible) {
             return response()->json([
                 'message' => 'No active employees with a salary set. Add salaries in HRMS → Employees first.',
             ], 422);
@@ -90,43 +88,22 @@ class PayrollController extends Controller
 
         $daysInMonth = $period->daysInMonth;
 
-        $run = DB::transaction(function () use ($eligible, $period, $daysInMonth, $user) {
-            $run = PayrollRun::create([
-                'period' => $period->toDateString(),
-                'status' => 'Draft',
-                'processed_by_id' => $user->id,
-            ]);
+        $run = PayrollRun::create([
+            'period'           => $period->toDateString(),
+            'status'           => 'Processing',
+            'processed_by_id'  => $user->id,
+        ]);
 
-            foreach ($eligible as $emp) {
-                $gross = (float) $emp->salary;
-                $amounts = $this->payroll->computeSlip($gross, 0, 0, $daysInMonth);
-
-                Payslip::create([
-                    'payroll_run_id' => $run->id,
-                    'employee_id' => $emp->id,
-                    'employee_name' => $emp->full_name,
-                    'employee_code' => $emp->employee_code,
-                    'designation' => $emp->designation?->title,
-                    'gross_salary' => $gross,
-                    ...$amounts,
-                ]);
-            }
-
-            $this->refreshTotals($run);
-            return $run;
-        });
+        GeneratePayrollJob::dispatch($run->id, $daysInMonth);
 
         AuditLog::create([
             'user_id' => $user->id, 'action' => 'create_payroll_run',
             'subject_type' => 'PayrollRun', 'subject_id' => $run->id,
-            'metadata' => ['period' => $period->format('Y-m'), 'employees' => $eligible->count()],
+            'metadata' => ['period' => $period->format('Y-m')],
             'ip_address' => $request->ip(), 'user_agent' => $request->userAgent(),
         ]);
 
-        return response()->json([
-            'run' => $run->load('payslips'),
-            'skipped_employees' => $skipped,
-        ], 201);
+        return response()->json(['run' => $run, 'message' => 'Payroll generation queued.'], 202);
     }
 
     public function destroy(Request $request, $id)

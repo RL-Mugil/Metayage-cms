@@ -15,8 +15,6 @@ use Illuminate\Support\Carbon;
 
 class ReportsController extends Controller
 {
-    // Roles allowed to access each report type. Reports expose firm-wide data,
-    // so client portal users and junior staff are denied across the board.
     private const REPORT_ACCESS = [
         'client-portfolio'  => ['super_admin', 'partner', 'manager'],
         'matter-status'     => ['super_admin', 'partner', 'manager', 'finance'],
@@ -44,103 +42,104 @@ class ReportsController extends Controller
 
         switch ($type) {
             case 'client-portfolio':
-                $data = Client::with('contacts', 'accountManager')
+                $paginator = Client::with('contacts', 'accountManager')
                     ->withCount('projects')
-                    ->get()
-                    ->map(fn($c) => [
-                        'client_code'         => $c->client_code,
-                        'company_name'        => $c->company_name,
-                        'entity_type'         => $c->entity_type,
-                        'primary_jurisdiction'=> $c->primary_jurisdiction,
-                        'gst_type'            => $c->gst_type,
-                        'status'              => $c->status,
-                        'projects_count'      => $c->projects_count,
-                        'account_manager'     => $c->accountManager?->name,
-                    ]);
-                break;
+                    ->paginate($perPage, ['*'], 'page', $page);
+                $rows = $paginator->getCollection()->map(fn($c) => [
+                    'client_code'         => $c->client_code,
+                    'company_name'        => $c->company_name,
+                    'entity_type'         => $c->entity_type,
+                    'primary_jurisdiction'=> $c->primary_jurisdiction,
+                    'gst_type'            => $c->gst_type,
+                    'status'              => $c->status,
+                    'projects_count'      => $c->projects_count,
+                    'account_manager'     => $c->accountManager?->name,
+                ]);
+                return $this->paginatedResponse($type, $rows, $paginator, $perPage);
 
             case 'matter-status':
-                $data = Project::with('client', 'manager', 'stages')
-                    ->get()
-                    ->map(fn($p) => [
-                        'project_code'  => $p->project_code,
-                        'project_name'  => $p->project_name,
-                        'client'        => $p->client?->company_name,
-                        'project_type'  => $p->project_type,
-                        'status'        => $p->status,
-                        'urgency'       => $p->urgency,
-                        'current_stage' => $p->stages?->firstWhere('status', 'In Progress')?->stage_name ?? 'Intake',
-                        'hard_deadline' => $p->hard_deadline,
-                        'manager'       => $p->manager?->name,
-                    ]);
-                break;
+                $paginator = Project::with('client', 'manager', 'stages')
+                    ->paginate($perPage, ['*'], 'page', $page);
+                $rows = $paginator->getCollection()->map(fn($p) => [
+                    'project_code'  => $p->project_code,
+                    'project_name'  => $p->project_name,
+                    'client'        => $p->client?->company_name,
+                    'project_type'  => $p->project_type,
+                    'status'        => $p->status,
+                    'urgency'       => $p->urgency,
+                    'current_stage' => $p->stages?->firstWhere('status', 'In Progress')?->stage_name ?? 'Intake',
+                    'hard_deadline' => $p->hard_deadline,
+                    'manager'       => $p->manager?->name,
+                ]);
+                return $this->paginatedResponse($type, $rows, $paginator, $perPage);
 
             case 'financial-summary':
-                $data = Invoice::with('client')
-                    ->get()
-                    ->map(fn($i) => [
-                        'invoice_code'  => $i->invoice_code,
-                        'client'        => $i->client?->company_name,
-                        'issue_date'    => $i->issue_date,
-                        'due_date'      => $i->due_date,
-                        'total_amount'  => $i->total_amount,
-                        'balance_due'   => $i->balance_due,
-                        'status'        => $i->status,
-                        'currency'      => $i->currency,
-                    ]);
-                break;
+                $paginator = Invoice::with('client')
+                    ->paginate($perPage, ['*'], 'page', $page);
+                $rows = $paginator->getCollection()->map(fn($i) => [
+                    'invoice_code'  => $i->invoice_code,
+                    'client'        => $i->client?->company_name,
+                    'issue_date'    => $i->issue_date,
+                    'due_date'      => $i->due_date,
+                    'total_amount'  => $i->total_amount,
+                    'balance_due'   => $i->balance_due,
+                    'status'        => $i->status,
+                    'currency'      => $i->currency,
+                ]);
+                return $this->paginatedResponse($type, $rows, $paginator, $perPage);
 
             case 'hrms':
-                $data = Employee::with('department', 'designation', 'user')
-                    ->get()
-                    ->map(fn($e) => [
-                        'employee_code'     => $e->employee_code,
-                        'full_name'         => $e->full_name,
-                        'work_email'        => $e->work_email,
-                        'department'        => $e->department?->name,
-                        'designation'       => $e->designation?->title,
-                        'employment_status' => $e->employment_status,
-                        'work_location'     => $e->work_location,
-                        'date_of_joining'   => $e->date_of_joining,
-                    ]);
-                break;
+                $paginator = Employee::with('department', 'designation', 'user')
+                    ->paginate($perPage, ['*'], 'page', $page);
+                $rows = $paginator->getCollection()->map(fn($e) => [
+                    'employee_code'     => $e->employee_code,
+                    'full_name'         => $e->full_name,
+                    'work_email'        => $e->work_email,
+                    'department'        => $e->department?->name,
+                    'designation'       => $e->designation?->title,
+                    'employment_status' => $e->employment_status,
+                    'work_location'     => $e->work_location,
+                    'date_of_joining'   => $e->date_of_joining,
+                ]);
+                return $this->paginatedResponse($type, $rows, $paginator, $perPage);
 
             case 'ip-deadline':
-                $data = Project::with('client')
+                $paginator = Project::with('client')
                     ->whereNotNull('hard_deadline')
                     ->orderBy('hard_deadline')
-                    ->get()
-                    ->map(fn($p) => [
-                        'project_code' => $p->project_code,
-                        'project_name' => $p->project_name,
-                        'client'       => $p->client?->company_name,
-                        'project_type' => $p->project_type,
-                        'deadline'     => $p->hard_deadline,
-                        'days_left'    => Carbon::parse($p->hard_deadline)->diffInDays(now(), false) * -1,
-                        'urgency'      => $p->urgency,
-                        'status'       => $p->status,
-                    ]);
-                break;
+                    ->paginate($perPage, ['*'], 'page', $page);
+                $rows = $paginator->getCollection()->map(fn($p) => [
+                    'project_code' => $p->project_code,
+                    'project_name' => $p->project_name,
+                    'client'       => $p->client?->company_name,
+                    'project_type' => $p->project_type,
+                    'deadline'     => $p->hard_deadline,
+                    'days_left'    => Carbon::parse($p->hard_deadline)->diffInDays(now(), false) * -1,
+                    'urgency'      => $p->urgency,
+                    'status'       => $p->status,
+                ]);
+                return $this->paginatedResponse($type, $rows, $paginator, $perPage);
 
             case 'productivity':
-                $data = Task::with('assignee', 'project')
-                    ->get()
-                    ->map(fn($t) => [
-                        'title'          => $t->title,
-                        'project_code'   => $t->project?->project_code,
-                        'assignee'       => $t->assignee?->name,
-                        'status'         => $t->status,
-                        'priority'       => $t->priority,
-                        'due_date'       => $t->due_date,
-                        'actual_hours'   => $t->actual_hours,
-                    ]);
-                break;
+                $paginator = Task::with('assignee', 'project')
+                    ->paginate($perPage, ['*'], 'page', $page);
+                $rows = $paginator->getCollection()->map(fn($t) => [
+                    'title'          => $t->title,
+                    'project_code'   => $t->project?->project_code,
+                    'assignee'       => $t->assignee?->name,
+                    'status'         => $t->status,
+                    'priority'       => $t->priority,
+                    'due_date'       => $t->due_date,
+                    'actual_hours'   => $t->actual_hours,
+                ]);
+                return $this->paginatedResponse($type, $rows, $paginator, $perPage);
 
             case 'tracker-workload':
-                $rows = TrackerRow::all();
+                // Aggregate over all rows — bounded at 5000 to cap memory
+                $trackerRows = TrackerRow::limit(5000)->get();
                 $today = now()->startOfDay();
                 $workload = [];
-                foreach ($rows as $r) {
+                foreach ($trackerRows as $r) {
                     foreach (['pcm', 'scm', 'pr'] as $field) {
                         $name = trim($r->$field ?? '');
                         if (!$name) continue;
@@ -154,55 +153,57 @@ class ReportsController extends Controller
                 }
                 usort($workload, fn($a, $b) => $b['Total Cases'] - $a['Total Cases']);
                 $data = collect(array_values($workload));
-                break;
+                return $this->collectionPaginatedResponse($type, $data, $perPage, $page);
 
             case 'overdue-cases':
                 $today = now()->startOfDay();
-                $data = TrackerRow::whereNotNull('delivery_due_date')
+                $paginator = TrackerRow::whereNotNull('delivery_due_date')
                     ->whereDate('delivery_due_date', '<', $today)
                     ->orderBy('delivery_due_date')
-                    ->get()
-                    ->map(fn($r) => [
-                        'Docket #'       => $r->docket_number ?? '—',
-                        'Client'         => $r->client_name ?? '—',
-                        'Record Type'    => $r->record_type ?? '—',
-                        'PCM'            => $r->pcm ?? '—',
-                        'SCM'            => $r->scm ?? '—',
-                        'PR'             => $r->pr ?? '—',
-                        'Due Date'       => $r->delivery_due_date?->toDateString() ?? '—',
-                        'Days Overdue'   => $r->delivery_due_date ? (int) Carbon::parse($r->delivery_due_date)->diffInDays(now()) : 0,
-                        'Status'         => $r->status ?? '—',
-                        'Payment'        => $r->payment_status ?? '—',
-                    ]);
-                break;
+                    ->paginate($perPage, ['*'], 'page', $page);
+                $rows = $paginator->getCollection()->map(fn($r) => [
+                    'Docket #'       => $r->docket_number ?? '—',
+                    'Client'         => $r->client_name ?? '—',
+                    'Record Type'    => $r->record_type ?? '—',
+                    'PCM'            => $r->pcm ?? '—',
+                    'SCM'            => $r->scm ?? '—',
+                    'PR'             => $r->pr ?? '—',
+                    'Due Date'       => $r->delivery_due_date?->toDateString() ?? '—',
+                    'Days Overdue'   => $r->delivery_due_date ? (int) Carbon::parse($r->delivery_due_date)->diffInDays(now()) : 0,
+                    'Status'         => $r->status ?? '—',
+                    'Payment'        => $r->payment_status ?? '—',
+                ]);
+                return $this->paginatedResponse($type, $rows, $paginator, $perPage);
 
             case 'deadline-forecast':
-                $data = TrackerRow::whereNotNull('delivery_due_date')
+                $paginator = TrackerRow::whereNotNull('delivery_due_date')
                     ->whereDate('delivery_due_date', '>=', now()->toDateString())
                     ->orderBy('delivery_due_date')
-                    ->get()
-                    ->map(fn($r) => [
-                        'Docket #'      => $r->docket_number ?? '—',
-                        'Client'        => $r->client_name ?? '—',
-                        'Record Type'   => $r->record_type ?? '—',
-                        'PCM'           => $r->pcm ?? '—',
-                        'Due Date'      => $r->delivery_due_date?->toDateString() ?? '—',
-                        'Days Left'     => $r->delivery_due_date ? (int) Carbon::parse($r->delivery_due_date)->diffInDays(now()) : '—',
-                        'Status'        => $r->status ?? '—',
-                        '% Complete'    => $r->percentage_of_completion . '%',
-                        'Payment'       => $r->payment_status ?? '—',
-                    ]);
-                break;
+                    ->paginate($perPage, ['*'], 'page', $page);
+                $rows = $paginator->getCollection()->map(fn($r) => [
+                    'Docket #'      => $r->docket_number ?? '—',
+                    'Client'        => $r->client_name ?? '—',
+                    'Record Type'   => $r->record_type ?? '—',
+                    'PCM'           => $r->pcm ?? '—',
+                    'Due Date'      => $r->delivery_due_date?->toDateString() ?? '—',
+                    'Days Left'     => $r->delivery_due_date ? (int) Carbon::parse($r->delivery_due_date)->diffInDays(now()) : '—',
+                    'Status'        => $r->status ?? '—',
+                    '% Complete'    => $r->percentage_of_completion . '%',
+                    'Payment'       => $r->payment_status ?? '—',
+                ]);
+                return $this->paginatedResponse($type, $rows, $paginator, $perPage);
 
             case 'payment-collection':
+                // Aggregate over all tracker rows — bounded at 5000 to cap memory
                 $data = TrackerRow::whereNotNull('client_name')
+                    ->limit(5000)
                     ->get()
                     ->groupBy('client_name')
-                    ->map(function ($rows, $client) {
-                        $paid    = $rows->where('payment_status', 'Paid')->count();
-                        $partial = $rows->where('payment_status', 'Partial')->count();
-                        $pending = $rows->where('payment_status', 'Pending')->count();
-                        $total   = $rows->count();
+                    ->map(function ($clientRows, $client) {
+                        $paid    = $clientRows->where('payment_status', 'Paid')->count();
+                        $partial = $clientRows->where('payment_status', 'Partial')->count();
+                        $pending = $clientRows->where('payment_status', 'Pending')->count();
+                        $total   = $clientRows->count();
                         return [
                             'Client'       => $client,
                             'Total Cases'  => $total,
@@ -214,18 +215,36 @@ class ReportsController extends Controller
                     })
                     ->sortByDesc('Total Cases')
                     ->values();
-                break;
+                return $this->collectionPaginatedResponse($type, $data, $perPage, $page);
 
             default:
-                $data = [];
+                return response()->json([
+                    'type' => $type, 'rows' => [], 'total' => 0,
+                    'per_page' => $perPage, 'current_page' => 1, 'last_page' => 1,
+                    'generated_at' => now()->toDateTimeString(),
+                ]);
         }
+    }
 
-        $total  = $data->count();
-        $paged  = $data->forPage($page, $perPage)->values();
-
+    private function paginatedResponse(string $type, $rows, $paginator, int $perPage): \Illuminate\Http\JsonResponse
+    {
         return response()->json([
             'type'         => $type,
-            'rows'         => $paged,
+            'rows'         => $rows->values(),
+            'total'        => $paginator->total(),
+            'per_page'     => $perPage,
+            'current_page' => $paginator->currentPage(),
+            'last_page'    => $paginator->lastPage(),
+            'generated_at' => now()->toDateTimeString(),
+        ]);
+    }
+
+    private function collectionPaginatedResponse(string $type, $data, int $perPage, int $page): \Illuminate\Http\JsonResponse
+    {
+        $total = $data->count();
+        return response()->json([
+            'type'         => $type,
+            'rows'         => $data->forPage($page, $perPage)->values(),
             'total'        => $total,
             'per_page'     => $perPage,
             'current_page' => $page,

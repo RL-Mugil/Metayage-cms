@@ -7,7 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { api, downloadCSV } from "@/lib/api-client";
-import { statusColor } from "@/lib/mock-data";
+import { statusColor } from "@/lib/utils";
 
 const DEPTS = ["Legal", "Operations", "HR", "Finance", "Engineering", "Business Development", "Administration"];
 const ROLES = ["Partner", "Senior Attorney", "Associate Attorney", "Paralegal", "Patent Analyst", "Technical Writer", "HR Executive", "Finance Manager", "Business Developer", "Admin"];
