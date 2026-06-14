@@ -310,31 +310,112 @@ class ProjectTrackerController extends Controller implements HasMiddleware
     public function calendarEvents(Request $request)
     {
         $user = $request->user();
-        $hasGlobalAccess = in_array($user->role, ['super_admin', 'partner', 'manager']);
+        $hasGlobalAccess = in_array($user->role, ['super_admin', 'partner', 'manager', 'hr', 'finance']);
 
-        $query = TrackerRow::with(['pcmUser:id,name', 'scmUser:id,name', 'prUser:id,name'])
-            ->whereNotNull('delivery_due_date');
+        // ── Source 1: Projects with hard_deadline ──────────────────────────────
+        $projectQuery = Project::with([
+            'client:id,company_name',
+            'manager:id,name',
+            'patentEngineer:id,name',
+        ])
+        ->whereNull('deleted_at')
+        ->whereNotIn('status', ['Completed', 'Archived'])
+        ->where(function ($q) {
+            $q->whereNotNull('hard_deadline')
+              ->orWhereNotNull('target_filing_date');
+        });
 
         if (!$hasGlobalAccess) {
-            $userId = $user->id;
-            $query->where(function ($q) use ($userId) {
-                $q->where('pcm_id', $userId)
-                  ->orWhere('scm_id', $userId)
-                  ->orWhere('pr_id',  $userId);
+            $uid = $user->id;
+            $projectQuery->where(function ($q) use ($uid) {
+                $q->where('assigned_manager_id', $uid)
+                  ->orWhere('assigned_partner_id', $uid)
+                  ->orWhere('patent_engineer_id', $uid)
+                  ->orWhereJsonContains('assigned_team', $uid);
             });
         }
 
-        $rows = $query->orderBy('delivery_due_date')->get();
-
-        return response()->json($rows->map(function ($r) use ($user, $hasGlobalAccess) {
+        $projectEvents = $projectQuery->get()->flatMap(function ($p) use ($user, $hasGlobalAccess) {
             $myRole = null;
             if (!$hasGlobalAccess) {
-                if ($r->pcm_id === $user->id)      $myRole = 'PCM';
-                elseif ($r->scm_id === $user->id)  $myRole = 'SCM';
-                elseif ($r->pr_id  === $user->id)  $myRole = 'PR';
+                if ($p->assigned_manager_id === $user->id || $p->assigned_partner_id === $user->id) $myRole = 'PCM';
+                elseif ($p->patent_engineer_id === $user->id) $myRole = 'PR';
+            }
+
+            $base = [
+                'project_id'               => $p->id,
+                'docket_number'            => $p->docket_number,
+                'client_name'              => $p->client?->company_name,
+                'record_type'              => $p->case_type ?? $p->project_type,
+                'status'                   => $p->status,
+                'pcm_id'                   => $p->assigned_manager_id,
+                'pcm_name'                 => $p->manager?->name,
+                'scm_id'                   => null,
+                'scm_name'                 => null,
+                'pr_id'                    => $p->patent_engineer_id,
+                'pr_name'                  => $p->patentEngineer?->name,
+                'percentage_of_completion' => 0,
+                'my_role'                  => $myRole,
+            ];
+
+            $events = [];
+
+            // Hard deadline → highest priority event
+            if ($p->hard_deadline) {
+                $events[] = array_merge($base, [
+                    'id'               => 'hd_' . $p->id,
+                    'delivery_due_date'=> $p->hard_deadline->toDateString(),
+                    'event_type'       => 'hard_deadline',
+                    'event_label'      => 'Hard Deadline',
+                ]);
+            }
+
+            // Target filing date → secondary event (shown only if different from hard deadline)
+            if ($p->target_filing_date) {
+                $tdStr = $p->target_filing_date->toDateString();
+                $hdStr = $p->hard_deadline?->toDateString();
+                if ($tdStr !== $hdStr) {
+                    $events[] = array_merge($base, [
+                        'id'               => 'tfd_' . $p->id,
+                        'delivery_due_date'=> $tdStr,
+                        'event_type'       => 'target_filing',
+                        'event_label'      => 'Target Filing',
+                    ]);
+                }
+            }
+
+            return $events;
+        });
+
+        // ── Source 2: Tracker rows NOT linked to any project ──────────────────
+        $linkedProjectIds = $projectQuery->pluck('id')->all();
+
+        $trackerQuery = TrackerRow::with(['pcmUser:id,name', 'scmUser:id,name', 'prUser:id,name'])
+            ->whereNotNull('delivery_due_date')
+            ->where(function ($q) use ($linkedProjectIds) {
+                $q->whereNull('project_id')
+                  ->orWhereNotIn('project_id', $linkedProjectIds);
+            });
+
+        if (!$hasGlobalAccess) {
+            $uid = $user->id;
+            $trackerQuery->where(function ($q) use ($uid) {
+                $q->where('pcm_id', $uid)
+                  ->orWhere('scm_id', $uid)
+                  ->orWhere('pr_id',  $uid);
+            });
+        }
+
+        $trackerEvents = $trackerQuery->get()->map(function ($r) use ($user, $hasGlobalAccess) {
+            $myRole = null;
+            if (!$hasGlobalAccess) {
+                if ($r->pcm_id === $user->id)     $myRole = 'PCM';
+                elseif ($r->scm_id === $user->id) $myRole = 'SCM';
+                elseif ($r->pr_id  === $user->id) $myRole = 'PR';
             }
             return [
-                'id'                       => $r->id,
+                'id'                       => 'tr_' . $r->id,
+                'project_id'               => null,
                 'docket_number'            => $r->docket_number,
                 'client_name'              => $r->client_name,
                 'record_type'              => $r->record_type,
@@ -348,8 +429,16 @@ class ProjectTrackerController extends Controller implements HasMiddleware
                 'pr_name'                  => $r->prUser?->name,
                 'percentage_of_completion' => $r->percentage_of_completion,
                 'my_role'                  => $myRole,
+                'event_type'               => 'delivery_due',
+                'event_label'              => 'Delivery Due',
             ];
-        }));
+        });
+
+        return response()->json(
+            $projectEvents->concat($trackerEvents)
+                ->sortBy('delivery_due_date')
+                ->values()
+        );
     }
 
     public function addMember(Request $request, $id)
