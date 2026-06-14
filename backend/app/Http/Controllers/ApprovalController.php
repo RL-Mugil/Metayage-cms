@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\AuditLog;
+use App\Models\Employee;
 use App\Models\ExpenseClaim;
 use App\Models\LeaveRequest;
 use App\Services\LeaveApprovalService;
@@ -24,17 +25,35 @@ class ApprovalController extends Controller
         $page    = max(1, (int) $request->query('page', 1));
         $offset  = ($page - 1) * $perPage;
 
-        $leavesCount   = LeaveRequest::count();
-        $expensesCount = ExpenseClaim::count();
+        // Managers see only direct/dotted-line reports; hr/partner/super_admin see all.
+        $scopedEmployeeIds = null;
+        if ($user->role === 'manager') {
+            $scopedEmployeeIds = Employee::where('reporting_manager_id', $user->id)
+                ->orWhere('dotted_line_manager_id', $user->id)
+                ->pluck('id')
+                ->all();
+        }
+
+        $leavesQuery   = LeaveRequest::query();
+        $expensesQuery = ExpenseClaim::query();
+        if ($scopedEmployeeIds !== null) {
+            $leavesQuery->whereIn('employee_id', $scopedEmployeeIds);
+            $expensesQuery->whereIn('employee_id', $scopedEmployeeIds);
+        }
+
+        $leavesCount   = (clone $leavesQuery)->count();
+        $expensesCount = (clone $expensesQuery)->count();
         $total         = $leavesCount + $expensesCount;
 
         // DB-level UNION pagination — only fetches the current page rows
-        $unionPage = DB::table('leave_requests')
-            ->select('id', DB::raw("'Leave' as type"), 'created_at')
-            ->unionAll(
-                DB::table('expense_claims')
-                    ->select('id', DB::raw("'Expense' as type"), 'created_at')
-            )
+        $leaveBase   = DB::table('leave_requests')->select('id', DB::raw("'Leave' as type"), 'created_at');
+        $expenseBase = DB::table('expense_claims')->select('id', DB::raw("'Expense' as type"), 'created_at');
+        if ($scopedEmployeeIds !== null) {
+            $leaveBase->whereIn('employee_id', $scopedEmployeeIds ?: [-1]);
+            $expenseBase->whereIn('employee_id', $scopedEmployeeIds ?: [-1]);
+        }
+        $unionPage = $leaveBase
+            ->unionAll($expenseBase)
             ->orderBy('created_at', 'desc')
             ->offset($offset)
             ->limit($perPage)
@@ -111,6 +130,14 @@ class ApprovalController extends Controller
 
         if ($validated['type'] === 'Leave') {
             $leave = LeaveRequest::findOrFail($validated['id']);
+            if ($user->role === 'manager') {
+                $allowed = Employee::where('reporting_manager_id', $user->id)
+                    ->orWhere('dotted_line_manager_id', $user->id)
+                    ->pluck('id')->all();
+                if (! in_array($leave->employee_id, $allowed)) {
+                    return response()->json(['message' => 'Forbidden'], 403);
+                }
+            }
             app(LeaveApprovalService::class)->resolve($leave, $validated['action'], $user->id);
             $subjectType = 'LeaveRequest';
         } else {

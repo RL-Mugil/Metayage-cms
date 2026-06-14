@@ -99,11 +99,14 @@ class OffboardingController extends Controller
             $case->status = 'Completed';
             $case->completed_label = now()->format('d M Y');
 
-            // Suspend the linked user account so the offboarded employee cannot log in.
+            // Suspend the employee record and linked user account on offboard completion.
             if ($case->employee_id) {
                 $employee = Employee::find($case->employee_id);
-                if ($employee && $employee->user_id) {
-                    User::where('id', $employee->user_id)->update(['status' => 'Inactive']);
+                if ($employee) {
+                    $employee->update(['employment_status' => 'Inactive']);
+                    if ($employee->user_id) {
+                        User::where('id', $employee->user_id)->update(['status' => 'Inactive']);
+                    }
                 }
             }
 

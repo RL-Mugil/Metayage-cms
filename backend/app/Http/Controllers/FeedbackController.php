@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\PaginationHelper;
+use App\Models\Client;
 use App\Models\FeedbackEntry;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -38,12 +39,19 @@ class FeedbackController extends Controller
     /** Client portal users submit a CSAT rating. */
     public function storeEntry(Request $request)
     {
+        $user = $request->user();
         $validated = $request->validate([
             'client_name' => 'required|string|max:255',
             'rating'      => 'required|integer|min:1|max:5',
             'comment'     => 'nullable|string|max:2000',
             'category'    => 'nullable|string|max:100',
         ]);
+
+        // Pin the client name from the DB for client-role users — prevents spoofing.
+        if ($user->role === 'client') {
+            $client = Client::whereHas('contacts', fn ($q) => $q->where('email', $user->email))->first();
+            $validated['client_name'] = $client ? $client->company_name : $user->name;
+        }
 
         $entry = FeedbackEntry::create([
             'client_name' => $validated['client_name'],

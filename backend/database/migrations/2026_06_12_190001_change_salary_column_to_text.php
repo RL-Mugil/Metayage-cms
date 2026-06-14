@@ -9,9 +9,14 @@ return new class extends Migration
     public function up(): void
     {
         if (Schema::hasColumn('employees', 'salary')) {
-            // decimal(12,2) cannot store the ciphertext produced by EncryptedSafe cast.
-            // USING clause converts existing numeric values to text before re-typing.
-            DB::statement('ALTER TABLE employees ALTER COLUMN salary TYPE TEXT USING CAST(salary AS TEXT)');
+            if (DB::getDriverName() === 'sqlite') {
+                Schema::table('employees', function ($table) {
+                    $table->text('salary')->nullable()->change();
+                });
+            } else {
+                // USING clause converts existing numeric values to text before re-typing.
+                DB::statement('ALTER TABLE employees ALTER COLUMN salary TYPE TEXT USING CAST(salary AS TEXT)');
+            }
         }
     }
 

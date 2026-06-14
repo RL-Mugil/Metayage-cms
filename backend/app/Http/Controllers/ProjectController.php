@@ -187,6 +187,7 @@ class ProjectController extends Controller
             'user_agent' => $request->userAgent(),
         ]);
 
+        Cache::increment('dashboard_v');
         return response()->json($project, 201);
     }
 
@@ -313,6 +314,7 @@ class ProjectController extends Controller
         }
 
         $project->delete();
+        Cache::increment('dashboard_v');
         return response()->json(['message' => 'Case deleted']);
     }
 }

@@ -52,8 +52,9 @@ class DashboardController extends Controller
             $tasksQuery->where('assignee_id', $user->id);
         }
 
-        // Calculations — cached per user to avoid N queries on every page load
-        $cacheKey = "dashboard_metrics_{$user->id}_{$user->role}";
+        // Calculations — cached per user to avoid N queries on every page load.
+        // dashboard_v is incremented by any mutative endpoint (projects, tasks, invoices).
+        $cacheKey = "dashboard_metrics_{$user->id}_{$user->role}_v" . Cache::get('dashboard_v', 0);
         [$activeMattersCount, $clientsCount, $tasksCount] = Cache::remember($cacheKey, 300, function () use ($activeMattersQuery, $clientsQuery, $tasksQuery) {
             return [
                 $activeMattersQuery->count(),

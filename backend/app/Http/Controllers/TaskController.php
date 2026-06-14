@@ -11,6 +11,7 @@ use App\Http\Requests\StoreTaskRequest;
 use App\Http\Requests\UpdateTaskRequest;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Inertia\Inertia;
 
 class TaskController extends Controller
@@ -65,6 +66,7 @@ class TaskController extends Controller
             'user_agent' => $request->userAgent(),
         ]);
 
+        Cache::increment('dashboard_v');
         return response()->json($task, 201);
     }
 
@@ -117,6 +119,13 @@ class TaskController extends Controller
             }
         }
 
+        if (! empty($validated['task_id'])) {
+            $task = Task::findOrFail($validated['task_id']);
+            if ($task->project_id !== (int) $validated['project_id']) {
+                return response()->json(['message' => 'The task does not belong to the selected project.'], 422);
+            }
+        }
+
         $validated['user_id'] = $user->id;
         $validated['status'] = 'Draft';
 
@@ -148,6 +157,7 @@ class TaskController extends Controller
         $this->authorize('delete', $task);
 
         $task->delete();
+        Cache::increment('dashboard_v');
         return response()->json(['message' => 'Task deleted']);
     }
 }

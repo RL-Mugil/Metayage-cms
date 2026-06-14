@@ -69,9 +69,10 @@ class LeaveApprovalService
             ]);
 
             if ($status === 'Approved') {
-                $column  = self::TYPE_COLUMN[$locked->leave_type] ?? 'casual_leave';
-                $balance = LeaveBalance::where('employee_id', $locked->employee_id)
-                    ->where('year', date('Y'))
+                $column    = self::TYPE_COLUMN[$locked->leave_type] ?? 'casual_leave';
+                $leaveYear = date('Y', strtotime($locked->from_date));
+                $balance   = LeaveBalance::where('employee_id', $locked->employee_id)
+                    ->where('year', $leaveYear)
                     ->lockForUpdate()
                     ->first();
 

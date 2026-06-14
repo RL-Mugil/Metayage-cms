@@ -34,7 +34,7 @@ class FinancialController extends Controller
             });
         }
 
-        $cacheKey = "financial_stats_{$user->id}_{$user->role}";
+        $cacheKey = "financial_stats_{$user->id}_{$user->role}_v" . Cache::get('dashboard_v', 0);
         $stats = Cache::remember($cacheKey, 300, function () use ($base) {
             $row = (clone $base)->selectRaw("
                 COALESCE(SUM(total_amount), 0) as total_billed,
@@ -185,6 +185,7 @@ class FinancialController extends Controller
             'ip_address' => $request->ip(), 'user_agent' => $request->userAgent(),
         ]);
 
+        Cache::increment('dashboard_v');
         return response()->json($invoice->load('client'), 201);
     }
 
@@ -343,6 +344,7 @@ class FinancialController extends Controller
             'user_agent'   => $request->userAgent(),
         ]);
 
+        Cache::increment('dashboard_v');
         return response()->json($payment, 201);
     }
 }
