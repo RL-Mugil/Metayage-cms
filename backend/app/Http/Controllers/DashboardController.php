@@ -62,35 +62,43 @@ class DashboardController extends Controller
             ];
         });
 
-        // Financial aggregates (WIP & Receipts) — scoped to accessible projects
-        $wipQuery = TimeEntry::where('status', 'Approved')->where('billable', true);
+        // Financial aggregates — only for roles with financial visibility per RBAC matrix.
+        // associate, paralegal, hr have Financial = ❌; zeroing out prevents firm-wide data leaks.
+        $canSeeFinancials = in_array($user->role, ['super_admin', 'partner', 'manager', 'finance', 'client']);
+
+        $wipAmount      = 0;
+        $invoicedAmount = 0;
+        $receivedAmount = 0;
+
+        if ($canSeeFinancials) {
+            $wipQuery = TimeEntry::where('status', 'Approved')->where('billable', true);
+            if ($user->role === 'client') {
+                $wipQuery->whereHas('project.client.contacts', fn ($q) => $q->where('email', $user->email));
+            }
+            $wipAmount = $wipQuery->sum(\DB::raw('duration_hours * 150'));
+
+            $invoiceAgg = (clone $invoicesQuery)->selectRaw("
+                COALESCE(SUM(CASE WHEN status != 'Draft' THEN total_amount ELSE 0 END), 0) as invoiced,
+                COALESCE(SUM(CASE WHEN status = 'Paid' THEN total_amount ELSE 0 END), 0) as paid,
+                COALESCE(SUM(CASE WHEN status = 'Partially Paid' THEN total_amount - balance_due ELSE 0 END), 0) as partial_paid
+            ")->first();
+
+            $invoicedAmount = (float) $invoiceAgg->invoiced;
+            $receivedAmount = (float) $invoiceAgg->paid + (float) $invoiceAgg->partial_paid;
+        }
+
+        // Stage distribution — scoped to projects the user can see
         $stagesQuery = \DB::table('project_stages')
             ->select('stage_name', \DB::raw('count(*) as count'))
             ->groupBy('stage_name')
             ->orderBy('stage_name');
 
         if ($user->role === 'client') {
-            $wipQuery->whereHas('project.client.contacts', fn ($q) => $q->where('email', $user->email));
-            $clientProjectIds = (clone $activeMattersQuery)->pluck('id');
-            $stagesQuery->whereIn('project_id', $clientProjectIds);
+            $stagesQuery->whereIn('project_id', (clone $activeMattersQuery)->pluck('id'));
         } elseif (in_array($user->role, ['associate', 'paralegal'])) {
-            $wipQuery->where('user_id', $user->id);
-            $assignedProjectIds = (clone $activeMattersQuery)->pluck('id');
-            $stagesQuery->whereIn('project_id', $assignedProjectIds);
+            $stagesQuery->whereIn('project_id', (clone $activeMattersQuery)->pluck('id'));
         }
 
-        $wipAmount = $wipQuery->sum(\DB::raw('duration_hours * 150'));
-
-        $invoiceAgg = (clone $invoicesQuery)->selectRaw("
-            COALESCE(SUM(CASE WHEN status != 'Draft' THEN total_amount ELSE 0 END), 0) as invoiced,
-            COALESCE(SUM(CASE WHEN status = 'Paid' THEN total_amount ELSE 0 END), 0) as paid,
-            COALESCE(SUM(CASE WHEN status = 'Partially Paid' THEN total_amount - balance_due ELSE 0 END), 0) as partial_paid
-        ")->first();
-
-        $invoicedAmount = (float) $invoiceAgg->invoiced;
-        $receivedAmount = (float) $invoiceAgg->paid + (float) $invoiceAgg->partial_paid;
-
-        // Stage distribution for charts
         $stagesDist = $stagesQuery->get();
 
         return response()->json([
