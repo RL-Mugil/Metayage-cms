@@ -508,10 +508,13 @@ export default function Clients() {
   };
 
   useEffect(() => {
+    api.getClientStats().then(setStats).catch(() => {});
+  }, []);
+
+  useEffect(() => {
     setLoading(true);
     fetchClients(1);
     api.getUsers().then(setUsers).catch(() => {});
-    api.getClientStats().then(setStats).catch(() => {});
   }, [search]);
 
   const isOrg    = form.client_type === "organization";

@@ -96,7 +96,7 @@ class ClientController extends Controller
 
         $cacheKey = "client_stats_{$user->id}_{$user->role}";
         $stats = Cache::remember($cacheKey, 300, function () use ($base) {
-            return (clone $base)->selectRaw("
+            $row = (clone $base)->selectRaw("
                 COUNT(*) as total,
                 SUM(CASE WHEN status = 'Active' THEN 1 ELSE 0 END) as active,
                 SUM(CASE WHEN status = 'Inactive' THEN 1 ELSE 0 END) as inactive,
@@ -106,18 +106,19 @@ class ClientController extends Controller
                 SUM(CASE WHEN gst_type = 'Export' THEN 1 ELSE 0 END) as export,
                 SUM(CASE WHEN gst_type = 'Unregistered' THEN 1 ELSE 0 END) as unregistered
             ")->first();
+            return [
+                'total'        => (int) ($row?->total        ?? 0),
+                'active'       => (int) ($row?->active       ?? 0),
+                'inactive'     => (int) ($row?->inactive     ?? 0),
+                'prospect'     => (int) ($row?->prospect     ?? 0),
+                'b2b'          => (int) ($row?->b2b          ?? 0),
+                'b2c'          => (int) ($row?->b2c          ?? 0),
+                'export'       => (int) ($row?->export       ?? 0),
+                'unregistered' => (int) ($row?->unregistered ?? 0),
+            ];
         });
 
-        return response()->json([
-            'total'        => (int) $stats->total,
-            'active'       => (int) $stats->active,
-            'inactive'     => (int) $stats->inactive,
-            'prospect'     => (int) $stats->prospect,
-            'b2b'          => (int) $stats->b2b,
-            'b2c'          => (int) $stats->b2c,
-            'export'       => (int) $stats->export,
-            'unregistered' => (int) $stats->unregistered,
-        ]);
+        return response()->json($stats);
     }
 
     public function index(Request $request)

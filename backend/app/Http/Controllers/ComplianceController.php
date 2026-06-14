@@ -51,10 +51,10 @@ class ComplianceController extends Controller
             ->first();
 
         return response()->json([
-            'critical' => (int) $row->critical,
-            'at_risk'  => (int) $row->at_risk,
-            'on_track' => (int) $row->on_track,
-            'compliant'=> (int) $row->compliant,
+            'critical' => (int) ($row?->critical ?? 0),
+            'at_risk'  => (int) ($row?->at_risk  ?? 0),
+            'on_track' => (int) ($row?->on_track ?? 0),
+            'compliant'=> (int) ($row?->compliant ?? 0),
         ]);
     }
 

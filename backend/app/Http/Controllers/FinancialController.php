@@ -36,7 +36,7 @@ class FinancialController extends Controller
 
         $cacheKey = "financial_stats_{$user->id}_{$user->role}";
         $stats = Cache::remember($cacheKey, 300, function () use ($base) {
-            return (clone $base)->selectRaw("
+            $row = (clone $base)->selectRaw("
                 COALESCE(SUM(total_amount), 0) as total_billed,
                 COALESCE(SUM(CASE WHEN status = 'Paid' THEN total_amount ELSE 0 END), 0) as total_received,
                 COALESCE(SUM(CASE WHEN status IN ('Sent', 'Overdue', 'Partially Paid') THEN balance_due ELSE 0 END), 0) as total_outstanding,
@@ -44,16 +44,17 @@ class FinancialController extends Controller
                 SUM(CASE WHEN status = 'Draft' THEN 1 ELSE 0 END) as draft_count,
                 SUM(CASE WHEN status = 'Paid' THEN 1 ELSE 0 END) as paid_count
             ")->first();
+            return [
+                'total_billed'      => (float) ($row?->total_billed      ?? 0),
+                'total_received'    => (float) ($row?->total_received    ?? 0),
+                'total_outstanding' => (float) ($row?->total_outstanding ?? 0),
+                'overdue_count'     => (int)   ($row?->overdue_count     ?? 0),
+                'draft_count'       => (int)   ($row?->draft_count       ?? 0),
+                'paid_count'        => (int)   ($row?->paid_count        ?? 0),
+            ];
         });
 
-        return response()->json([
-            'total_billed'      => (float) $stats->total_billed,
-            'total_received'    => (float) $stats->total_received,
-            'total_outstanding' => (float) $stats->total_outstanding,
-            'overdue_count'     => (int)   $stats->overdue_count,
-            'draft_count'       => (int)   $stats->draft_count,
-            'paid_count'        => (int)   $stats->paid_count,
-        ]);
+        return response()->json($stats);
     }
 
     public function invoices(Request $request)

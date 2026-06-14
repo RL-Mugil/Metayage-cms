@@ -47,22 +47,23 @@ class ProjectController extends Controller
 
         $cacheKey = "project_stats_{$user->id}_{$user->role}";
         $stats = Cache::remember($cacheKey, 300, function () use ($base, $today) {
-            return (clone $base)->selectRaw("
+            $row = (clone $base)->selectRaw("
                 COUNT(*) as total,
                 SUM(CASE WHEN status = 'Open' THEN 1 ELSE 0 END) as open,
                 SUM(CASE WHEN status = 'In Progress' THEN 1 ELSE 0 END) as in_progress,
                 SUM(CASE WHEN status = 'On Hold' THEN 1 ELSE 0 END) as on_hold,
                 SUM(CASE WHEN hard_deadline IS NOT NULL AND hard_deadline < ? AND status NOT IN ('Closed', 'Completed') THEN 1 ELSE 0 END) as overdue
             ", [$today])->first();
+            return [
+                'total'       => (int) ($row?->total       ?? 0),
+                'open'        => (int) ($row?->open        ?? 0),
+                'in_progress' => (int) ($row?->in_progress ?? 0),
+                'on_hold'     => (int) ($row?->on_hold     ?? 0),
+                'overdue'     => (int) ($row?->overdue     ?? 0),
+            ];
         });
 
-        return response()->json([
-            'total'       => (int) $stats->total,
-            'open'        => (int) $stats->open,
-            'in_progress' => (int) $stats->in_progress,
-            'on_hold'     => (int) $stats->on_hold,
-            'overdue'     => (int) $stats->overdue,
-        ]);
+        return response()->json($stats);
     }
 
     public function index(Request $request)
