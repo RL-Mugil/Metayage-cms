@@ -276,9 +276,10 @@ class ModuleActionsTest extends TestCase
 
     public function test_bulk_change_status_on_clients(): void
     {
-        $a = $this->client('A', 'C02M');
-        $b = $this->client('B', 'C03M');
-        Sanctum::actingAs($this->user('manager'));
+        $manager = $this->user('manager');
+        $a = Client::create(['company_name' => 'A', 'client_code' => 'C02M', 'status' => 'Active', 'account_manager_id' => $manager->id]);
+        $b = Client::create(['company_name' => 'B', 'client_code' => 'C03M', 'status' => 'Active', 'account_manager_id' => $manager->id]);
+        Sanctum::actingAs($manager);
 
         $this->postJson('/api/bulk/execute', [
             'entity' => 'clients', 'ids' => [$a->id, $b->id], 'action' => 'change_status', 'status' => 'On Hold',
@@ -290,8 +291,9 @@ class ModuleActionsTest extends TestCase
 
     public function test_bulk_rejects_unsafe_input(): void
     {
-        $client = $this->client('A', 'C04M');
-        Sanctum::actingAs($this->user('manager'));
+        $manager = $this->user('manager');
+        $client = Client::create(['company_name' => 'A', 'client_code' => 'C04M', 'status' => 'Active', 'account_manager_id' => $manager->id]);
+        Sanctum::actingAs($manager);
 
         // Invoices are not bulk-mutable
         $this->postJson('/api/bulk/execute', [
