@@ -79,4 +79,72 @@ class PerformanceController extends Controller
 
         return response()->json(['ok' => true, 'rating' => (float) $review->rating]);
     }
+
+    public function storeGoal(Request $request)
+    {
+        if ($deny = $this->gate($request, self::WRITE_ROLES)) return $deny;
+
+        $validated = $request->validate([
+            'employee_id' => 'required|exists:employees,id',
+            'title'       => 'required|string|max:255',
+            'due_label'   => 'nullable|string|max:50',
+            'status'      => 'nullable|in:In Progress,Completed,Missed',
+        ]);
+
+        $goal = PerformanceGoal::create([
+            'employee_id' => $validated['employee_id'],
+            'title'       => $validated['title'],
+            'due_label'   => $validated['due_label'] ?? null,
+            'progress'    => 0,
+            'status'      => $validated['status'] ?? 'In Progress',
+        ]);
+
+        return response()->json(['ok' => true, 'goal' => [
+            'id'       => $goal->id,
+            'title'    => $goal->title,
+            'progress' => $goal->progress,
+            'status'   => $goal->status,
+        ]], 201);
+    }
+
+    public function updateGoal(Request $request, $id)
+    {
+        if ($deny = $this->gate($request, self::WRITE_ROLES)) return $deny;
+
+        $goal = PerformanceGoal::findOrFail($id);
+        $validated = $request->validate([
+            'progress' => 'sometimes|integer|min:0|max:100',
+            'status'   => 'sometimes|in:In Progress,Completed,Missed',
+        ]);
+
+        if (isset($validated['progress']) && $validated['progress'] === 100) {
+            $validated['status'] = 'Completed';
+        }
+
+        $goal->update($validated);
+
+        return response()->json(['ok' => true, 'progress' => $goal->progress, 'status' => $goal->status]);
+    }
+
+    public function storeFeedback360(Request $request)
+    {
+        if ($deny = $this->gate($request, self::WRITE_ROLES)) return $deny;
+
+        $validated = $request->validate([
+            'from_name' => 'required|string|max:255',
+            'to_name'   => 'required|string|max:255',
+            'comments'  => 'nullable|string|max:5000',
+            'status'    => 'nullable|in:Pending,Submitted',
+        ]);
+
+        $feedback = PerformanceFeedback360::create([
+            'from_name'  => $validated['from_name'],
+            'to_name'    => $validated['to_name'],
+            'comments'   => $validated['comments'] ?? null,
+            'sent_label' => now()->format('d M Y'),
+            'status'     => $validated['status'] ?? 'Pending',
+        ]);
+
+        return response()->json(['ok' => true, 'id' => $feedback->id], 201);
+    }
 }

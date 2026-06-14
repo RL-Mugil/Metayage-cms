@@ -100,4 +100,53 @@ class RecruitmentController extends Controller
 
         return response()->json(['ok' => true]);
     }
+
+    public function storeCandidate(Request $request)
+    {
+        if ($deny = $this->gate($request, self::WRITE_ROLES)) return $deny;
+
+        $validated = $request->validate([
+            'job_posting_id' => 'required|exists:job_postings,id',
+            'name'           => 'required|string|max:255',
+            'role'           => 'nullable|string|max:255',
+            'email'          => 'nullable|email|max:255',
+            'phone'          => 'nullable|string|max:50',
+            'resume_url'     => 'nullable|url|max:1000',
+        ]);
+
+        $candidate = JobCandidate::create([
+            'job_posting_id' => $validated['job_posting_id'],
+            'name'           => $validated['name'],
+            'role'           => $validated['role'] ?? null,
+            'email'          => $validated['email'] ?? null,
+            'phone'          => $validated['phone'] ?? null,
+            'resume_url'     => $validated['resume_url'] ?? null,
+            'stage'          => 'Applied',
+            'applied_label'  => now()->format('d M Y'),
+        ]);
+
+        JobPosting::where('id', $validated['job_posting_id'])->increment('applicants');
+
+        return response()->json(['ok' => true, 'candidate' => [
+            'id'    => $candidate->id,
+            'name'  => $candidate->name,
+            'role'  => $candidate->role,
+            'stage' => $candidate->stage,
+            'date'  => $candidate->applied_label,
+        ]], 201);
+    }
+
+    public function updateCandidate(Request $request, $id)
+    {
+        if ($deny = $this->gate($request, self::WRITE_ROLES)) return $deny;
+
+        $candidate = JobCandidate::findOrFail($id);
+        $validated = $request->validate([
+            'stage' => 'required|in:Applied,Screening,Interview,Offer,Hired,Rejected',
+        ]);
+
+        $candidate->update(['stage' => $validated['stage']]);
+
+        return response()->json(['ok' => true, 'stage' => $candidate->stage]);
+    }
 }

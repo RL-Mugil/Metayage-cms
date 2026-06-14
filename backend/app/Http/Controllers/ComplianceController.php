@@ -11,9 +11,11 @@ use Illuminate\Support\Carbon;
 
 class ComplianceController extends Controller
 {
+    private const ALLOWED_ROLES = ['super_admin', 'partner', 'manager'];
+
     private function denyClients(Request $request): ?\Illuminate\Http\JsonResponse
     {
-        if ($request->user()->role === 'client') {
+        if (! in_array($request->user()->role, self::ALLOWED_ROLES)) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
         return null;

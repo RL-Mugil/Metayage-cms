@@ -53,7 +53,7 @@ class BulkController extends Controller
         // Managers may only operate on records they own; super_admin and partner are unrestricted.
         if ($user->role === 'manager') {
             $ids = match ($entity) {
-                'clients'  => $ids, // managers may bulk-act on any client
+                'clients'  => Client::whereIn('id', $ids)->where('account_manager_id', $user->id)->pluck('id')->all(),
                 'projects' => Project::whereIn('id', $ids)->where('assigned_manager_id', $user->id)->pluck('id')->all(),
                 'tasks'    => Task::whereIn('id', $ids)->whereHas('project', fn ($q) => $q->where('assigned_manager_id', $user->id))->pluck('id')->all(),
             };

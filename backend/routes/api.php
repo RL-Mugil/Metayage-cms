@@ -140,16 +140,22 @@ Route::middleware(['auth:sanctum', 'throttle:60,1'])->group(function () {
 
     // Feedback / CSAT
     Route::get('/feedback', [\App\Http\Controllers\FeedbackController::class, 'index']);
+    Route::post('/feedback', [\App\Http\Controllers\FeedbackController::class, 'storeEntry']);
     Route::post('/feedback/request', [\App\Http\Controllers\FeedbackController::class, 'requestFeedback']);
 
     // Performance
     Route::get('/performance', [\App\Http\Controllers\PerformanceController::class, 'index']);
     Route::post('/performance/reviews/{id}/submit', [\App\Http\Controllers\PerformanceController::class, 'submitReview']);
+    Route::post('/performance/goals', [\App\Http\Controllers\PerformanceController::class, 'storeGoal']);
+    Route::put('/performance/goals/{id}', [\App\Http\Controllers\PerformanceController::class, 'updateGoal']);
+    Route::post('/performance/feedback360', [\App\Http\Controllers\PerformanceController::class, 'storeFeedback360']);
 
     // Recruitment
     Route::get('/recruitment', [\App\Http\Controllers\RecruitmentController::class, 'index']);
     Route::post('/recruitment/jobs', [\App\Http\Controllers\RecruitmentController::class, 'storeJob']);
     Route::put('/recruitment/jobs/{id}', [\App\Http\Controllers\RecruitmentController::class, 'updateJob']);
+    Route::post('/recruitment/candidates', [\App\Http\Controllers\RecruitmentController::class, 'storeCandidate']);
+    Route::put('/recruitment/candidates/{id}', [\App\Http\Controllers\RecruitmentController::class, 'updateCandidate']);
 
     // Offboarding
     Route::get('/offboarding', [\App\Http\Controllers\OffboardingController::class, 'index']);
