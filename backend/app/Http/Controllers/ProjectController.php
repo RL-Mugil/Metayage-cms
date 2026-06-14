@@ -87,9 +87,10 @@ class ProjectController extends Controller
         if ($request->filled('search')) {
             $search = str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $request->search);
             $query->where(function ($q) use ($search) {
-                $q->where('project_name', 'ilike', "%{$search}%")
-                  ->orWhere('project_code', 'ilike', "%{$search}%")
-                  ->orWhere('invention_title', 'ilike', "%{$search}%");
+                $sl = strtolower($search);
+                $q->whereRaw('LOWER(project_name) LIKE ?', ["%{$sl}%"])
+                  ->orWhereRaw('LOWER(project_code) LIKE ?', ["%{$sl}%"])
+                  ->orWhereRaw('LOWER(invention_title) LIKE ?', ["%{$sl}%"]);
             });
         }
 

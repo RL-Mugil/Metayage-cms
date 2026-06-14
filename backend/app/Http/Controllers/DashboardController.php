@@ -62,10 +62,24 @@ class DashboardController extends Controller
             ];
         });
 
-        // Financial aggregates (WIP & Receipts)
-        $wipAmount = TimeEntry::where('status', 'Approved')
-            ->where('billable', true)
-            ->sum(\DB::raw('duration_hours * 150')); // Assumed standard rate of $150/hr for WIP
+        // Financial aggregates (WIP & Receipts) — scoped to accessible projects
+        $wipQuery = TimeEntry::where('status', 'Approved')->where('billable', true);
+        $stagesQuery = \DB::table('project_stages')
+            ->select('stage_name', \DB::raw('count(*) as count'))
+            ->groupBy('stage_name')
+            ->orderBy('stage_name');
+
+        if ($user->role === 'client') {
+            $wipQuery->whereHas('project.client.contacts', fn ($q) => $q->where('email', $user->email));
+            $clientProjectIds = (clone $activeMattersQuery)->pluck('id');
+            $stagesQuery->whereIn('project_id', $clientProjectIds);
+        } elseif (in_array($user->role, ['associate', 'paralegal'])) {
+            $wipQuery->where('user_id', $user->id);
+            $assignedProjectIds = (clone $activeMattersQuery)->pluck('id');
+            $stagesQuery->whereIn('project_id', $assignedProjectIds);
+        }
+
+        $wipAmount = $wipQuery->sum(\DB::raw('duration_hours * 150'));
 
         $invoiceAgg = (clone $invoicesQuery)->selectRaw("
             COALESCE(SUM(CASE WHEN status != 'Draft' THEN total_amount ELSE 0 END), 0) as invoiced,
@@ -77,11 +91,7 @@ class DashboardController extends Controller
         $receivedAmount = (float) $invoiceAgg->paid + (float) $invoiceAgg->partial_paid;
 
         // Stage distribution for charts
-        $stagesDist = \DB::table('project_stages')
-            ->select('stage_name', \DB::raw('count(*) as count'))
-            ->groupBy('stage_name')
-            ->orderBy('stage_name')
-            ->get();
+        $stagesDist = $stagesQuery->get();
 
         return response()->json([
             'metrics' => [

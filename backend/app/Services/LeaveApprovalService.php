@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\LeaveBalance;
 use App\Models\LeaveRequest;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -31,6 +32,31 @@ class LeaveApprovalService
     {
         return DB::transaction(function () use ($leave, $status, $approverId, $comments) {
             $locked = LeaveRequest::lockForUpdate()->findOrFail($leave->id);
+
+            // Cancellation of an already-approved leave: restore balance then mark Cancelled.
+            if ($locked->status === 'Approved' && $status === 'Cancelled') {
+                $column      = self::TYPE_COLUMN[$locked->leave_type] ?? 'casual_leave';
+                $leaveYear   = Carbon::parse($locked->from_date)->year;
+                $balance     = LeaveBalance::where('employee_id', $locked->employee_id)
+                    ->where('year', $leaveYear)
+                    ->lockForUpdate()
+                    ->first();
+
+                if ($balance) {
+                    $days           = (float) $locked->total_days;
+                    $currentLop     = (float) $balance->lop_days;
+                    // Reverse in the same order it was applied: LOP first, then balance column.
+                    $lopToRestore     = min($currentLop, $days);
+                    $balanceToRestore = $days - $lopToRestore;
+                    $balance->update([
+                        $column    => (float) $balance->{$column} + $balanceToRestore,
+                        'lop_days' => max(0.0, $currentLop - $lopToRestore),
+                    ]);
+                }
+
+                $locked->update(['status' => 'Cancelled', 'approved_by_id' => $approverId, 'comments' => $comments]);
+                return $locked->fresh();
+            }
 
             if ($locked->status !== 'Pending') {
                 throw ValidationException::withMessages([

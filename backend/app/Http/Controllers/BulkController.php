@@ -41,13 +41,26 @@ class BulkController extends Controller
         ]);
 
         $entity = $validated['entity'];
-        $ids = $validated['ids'];
+        $ids    = $validated['ids'];
+        $user   = $request->user();
 
         $model = match ($entity) {
             'clients' => Client::class,
             'projects' => Project::class,
             'tasks' => Task::class,
         };
+
+        // Managers may only operate on records they own; super_admin and partner are unrestricted.
+        if ($user->role === 'manager') {
+            $ids = match ($entity) {
+                'clients'  => $ids, // managers may bulk-act on any client
+                'projects' => Project::whereIn('id', $ids)->where('assigned_manager_id', $user->id)->pluck('id')->all(),
+                'tasks'    => Task::whereIn('id', $ids)->whereHas('project', fn ($q) => $q->where('assigned_manager_id', $user->id))->pluck('id')->all(),
+            };
+            if (empty($ids)) {
+                return response()->json(['message' => 'No records found within your scope.'], 403);
+            }
+        }
 
         $affected = 0;
 

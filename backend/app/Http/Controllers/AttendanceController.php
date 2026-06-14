@@ -70,11 +70,19 @@ class AttendanceController extends Controller
             return response()->json(['message' => 'No employee profile linked to your account.'], 422);
         }
 
-        $today = Carbon::today()->toDateString();
-        $log   = Attendance::where('employee_id', $employee->id)->whereDate('attendance_date', $today)->firstOrFail();
+        // Find the open record by absence of check_out, not today's date, so
+        // night-shift employees who clock in before midnight and out after midnight are handled correctly.
+        $log = Attendance::where('employee_id', $employee->id)
+            ->whereNull('check_out')
+            ->orderBy('attendance_date', 'desc')
+            ->firstOrFail();
 
-        $checkoutTime    = Carbon::now()->toTimeString();
-        $durationMinutes = (int) abs(Carbon::parse($log->check_in)->diffInMinutes(Carbon::parse($checkoutTime)));
+        $checkoutAt = Carbon::now();
+        // Build the full check-in datetime from the stored date + time so diffInMinutes
+        // crosses midnight correctly (e.g. 23:00 check-in → 01:00 next day = 120 min, not -1380).
+        $checkInAt       = Carbon::parse($log->attendance_date->toDateString() . ' ' . $log->check_in);
+        $durationMinutes = (int) $checkInAt->diffInMinutes($checkoutAt);
+        $checkoutTime    = $checkoutAt->toTimeString();
 
         $log->update(['check_out' => $checkoutTime, 'duration_minutes' => $durationMinutes]);
 

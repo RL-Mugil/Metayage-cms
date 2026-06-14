@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\AuditLog;
 use App\Models\Employee;
 use App\Models\OffboardingCase;
 use App\Models\User;
@@ -97,6 +98,23 @@ class OffboardingController extends Controller
         if ($doneCount === self::CHECKLIST_SIZE) {
             $case->status = 'Completed';
             $case->completed_label = now()->format('d M Y');
+
+            // Suspend the linked user account so the offboarded employee cannot log in.
+            if ($case->employee_id) {
+                $employee = Employee::find($case->employee_id);
+                if ($employee && $employee->user_id) {
+                    User::where('id', $employee->user_id)->update(['status' => 'Inactive']);
+                }
+            }
+
+            AuditLog::create([
+                'user_id'      => $request->user()->id,
+                'action'       => 'offboarding_completed',
+                'subject_type' => 'OffboardingCase',
+                'subject_id'   => $case->id,
+                'ip_address'   => $request->ip(),
+                'user_agent'   => $request->userAgent(),
+            ]);
         } else {
             $case->status = $doneCount > 0 ? 'In Progress' : 'Scheduled';
             $case->completed_label = null;

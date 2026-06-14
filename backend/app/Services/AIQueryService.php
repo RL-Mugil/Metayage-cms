@@ -43,7 +43,7 @@ class AIQueryService
         $explain = $content;
 
         if ($sql) {
-            $this->guardSql($sql);
+            $this->guardSql($sql, $userContext);
             $results = DB::connection('ai_readonly')->select($sql);
             // Strip the raw SQL block from the explanation shown to the user
             $explain = trim(preg_replace('/```sql[\s\S]*?```/i', '', $content));
@@ -64,7 +64,7 @@ class AIQueryService
         return null;
     }
 
-    private function guardSql(string $sql): void
+    private function guardSql(string $sql, array $userContext = []): void
     {
         // Allow SELECT or WITH ... SELECT (CTEs)
         if (!preg_match('/^\s*(SELECT|WITH)\b/i', $sql)) {
@@ -76,6 +76,16 @@ class AIQueryService
         // Block stacked statements
         if (substr_count($sql, ';') > 1) {
             throw new \RuntimeException('Multiple statements are not permitted.');
+        }
+        // Block access to sensitive columns regardless of role
+        if (preg_match('/\bpassword\b/i', $sql)) {
+            throw new \RuntimeException('Access to password column is not permitted.');
+        }
+
+        // Clients must not execute arbitrary SQL — their data boundary cannot be
+        // reliably enforced through LLM prompt alone. Return general answers only.
+        if (($userContext['role'] ?? '') === 'client') {
+            throw new \RuntimeException('Live data queries are not available for client accounts.');
         }
     }
 
@@ -153,7 +163,7 @@ class AIQueryService
         $name = $ctx['name'] ?? 'User';
 
         $scopeNote = match ($role) {
-            'client'    => "The current user is a CLIENT. When querying firm data, always scope to their records only (never expose other clients' data).",
+            'client'    => "The current user is a CLIENT (external). Do NOT write SQL queries under any circumstances — data access via SQL is disabled for client accounts. Answer general questions from your training knowledge only.",
             'associate' => "The current user is an ASSOCIATE. Scope project queries to cases they are assigned to.",
             default     => "The current user is internal staff (role: {$role}) with full read access.",
         };

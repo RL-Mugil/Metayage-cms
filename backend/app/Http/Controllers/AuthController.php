@@ -84,6 +84,11 @@ class AuthController extends Controller
 
     public function users(Request $request)
     {
+        $role = $request->user()->role;
+        if ($role === 'client') {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
         $users = User::where('status', 'Active')
             ->select('id', 'name', 'email', 'role')
             ->orderBy('name')

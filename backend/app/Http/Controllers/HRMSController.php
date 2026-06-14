@@ -54,8 +54,9 @@ class HRMSController extends Controller
         if ($request->filled('search')) {
             $s = str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $request->search);
             $query->where(function ($q) use ($s) {
-                $q->where('full_name', 'ilike', "%{$s}%")
-                  ->orWhere('work_email', 'ilike', "%{$s}%");
+                $sl = strtolower($s);
+                $q->whereRaw('LOWER(full_name) LIKE ?', ["%{$sl}%"])
+                  ->orWhereRaw('LOWER(work_email) LIKE ?', ["%{$sl}%"]);
             });
         }
 
@@ -183,6 +184,20 @@ class HRMSController extends Controller
         $employee = Employee::findOrFail($id);
         $this->authorize('delete', $employee);
         $employee->update(['employment_status' => 'Terminated']);
+
+        // Suspend the linked user account so the ex-employee cannot log in.
+        if ($employee->user_id) {
+            User::where('id', $employee->user_id)->update(['status' => 'Inactive']);
+        }
+
+        AuditLog::create([
+            'user_id'      => $request->user()->id,
+            'action'       => 'terminate_employee',
+            'subject_type' => 'Employee',
+            'subject_id'   => $employee->id,
+            'ip_address'   => $request->ip(),
+            'user_agent'   => $request->userAgent(),
+        ]);
 
         return response()->json(['message' => 'Employee deactivated']);
     }

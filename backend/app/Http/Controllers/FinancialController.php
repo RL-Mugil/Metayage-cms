@@ -197,6 +197,12 @@ class FinancialController extends Controller
             'due_date'     => 'sometimes|date',
             'payment_terms'=> 'sometimes|string',
         ]);
+
+        // Route cancellations through the dedicated transaction so the ledger is reversed correctly.
+        if (($validated['status'] ?? null) === 'Cancelled') {
+            return $this->deleteInvoice($request, $id);
+        }
+
         $invoice->update($validated);
         return response()->json($invoice->load('client'));
     }
@@ -216,10 +222,13 @@ class FinancialController extends Controller
 
             $invoice->update(['status' => 'Cancelled']);
 
-            // Reverse the ledger debit created when the invoice was raised.
+            // Reverse only the remaining outstanding balance (balance_due).
+            // Payments already applied have their own credit ledger entries; reversing
+            // total_amount here would double-credit the already-paid portion.
+            $amountToReverse = (float) $invoice->balance_due;
             $latestLedger = ClientLedger::where('client_id', $invoice->client_id)
                 ->orderBy('id', 'desc')->lockForUpdate()->first();
-            $runningBalance = ($latestLedger ? $latestLedger->balance : 0.00) - (float) $invoice->total_amount;
+            $runningBalance = ($latestLedger ? $latestLedger->balance : 0.00) - $amountToReverse;
 
             ClientLedger::create([
                 'client_id'          => $invoice->client_id,
@@ -227,7 +236,7 @@ class FinancialController extends Controller
                 'document_type'      => 'Credit Note',
                 'document_reference' => $invoice->invoice_code,
                 'debit'              => 0,
-                'credit'             => $invoice->total_amount,
+                'credit'             => $amountToReverse,
                 'balance'            => $runningBalance,
                 'notes'              => 'Invoice cancelled',
             ]);

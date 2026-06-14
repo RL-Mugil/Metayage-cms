@@ -8,9 +8,11 @@ use Illuminate\Support\Facades\DB;
 
 class PortalController extends Controller
 {
-    private function denyClients(Request $request): ?\Illuminate\Http\JsonResponse
+    private const MANAGE_ROLES = ['super_admin', 'partner', 'manager'];
+
+    private function denyUnauthorized(Request $request): ?\Illuminate\Http\JsonResponse
     {
-        if ($request->user()->role === 'client') {
+        if (! in_array($request->user()->role, self::MANAGE_ROLES)) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
         return null;
@@ -18,7 +20,7 @@ class PortalController extends Controller
 
     public function clients(Request $request)
     {
-        if ($deny = $this->denyClients($request)) return $deny;
+        if ($deny = $this->denyUnauthorized($request)) return $deny;
 
         return response()->json(
             Client::orderBy('company_name')->limit(500)->get()->map(fn ($c) => [
@@ -33,7 +35,7 @@ class PortalController extends Controller
 
     public function toggle(Request $request, $id)
     {
-        if ($deny = $this->denyClients($request)) return $deny;
+        if ($deny = $this->denyUnauthorized($request)) return $deny;
 
         $client = Client::findOrFail($id);
         $client->portal_enabled = ! $client->portal_enabled;
@@ -48,7 +50,7 @@ class PortalController extends Controller
     /** Mark all portal-disabled clients invited and notify the actor. */
     public function inviteAll(Request $request)
     {
-        if ($deny = $this->denyClients($request)) return $deny;
+        if ($deny = $this->denyUnauthorized($request)) return $deny;
 
         $count = Client::where('portal_enabled', false)->update(['portal_invited_at' => now()]);
 
@@ -67,7 +69,7 @@ class PortalController extends Controller
 
     public function create(Request $request)
     {
-        if ($deny = $this->denyClients($request)) return $deny;
+        if ($deny = $this->denyUnauthorized($request)) return $deny;
 
         $validated = $request->validate([
             'client_id' => 'required|integer|exists:clients,id',

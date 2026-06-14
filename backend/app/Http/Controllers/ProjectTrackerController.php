@@ -113,10 +113,11 @@ class ProjectTrackerController extends Controller implements HasMiddleware
             ->whereNull('deleted_at');
 
         if ($q) {
-            $query->where(function ($sub) use ($q) {
-                $sub->where('docket_number', 'ilike', "%{$q}%")
-                    ->orWhere('project_code', 'ilike', "%{$q}%")
-                    ->orWhereHas('client', fn ($c) => $c->where('company_name', 'ilike', "%{$q}%"));
+            $ql = strtolower($q);
+            $query->where(function ($sub) use ($q, $ql) {
+                $sub->whereRaw('LOWER(docket_number) LIKE ?', ["%{$ql}%"])
+                    ->orWhereRaw('LOWER(project_code) LIKE ?', ["%{$ql}%"])
+                    ->orWhereHas('client', fn ($c) => $c->whereRaw('LOWER(company_name) LIKE ?', ["%{$ql}%"]));
             });
         }
 

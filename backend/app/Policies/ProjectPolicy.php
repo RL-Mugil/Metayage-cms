@@ -17,6 +17,15 @@ class ProjectPolicy
         if ($user->role === 'client') {
             return $project->client && $project->client->contacts()->where('email', $user->email)->exists();
         }
+
+        // Associates and paralegals may only view projects they are directly assigned to.
+        if (in_array($user->role, ['associate', 'paralegal'])) {
+            return $project->assigned_partner_id === $user->id
+                || $project->assigned_manager_id === $user->id
+                || $project->patent_engineer_id === $user->id
+                || $project->tasks()->where('assignee_id', $user->id)->exists();
+        }
+
         return true;
     }
 
