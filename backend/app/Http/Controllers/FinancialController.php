@@ -181,7 +181,7 @@ class FinancialController extends Controller
         AuditLog::create([
             'user_id' => $user->id, 'action' => 'create_invoice',
             'subject_type' => 'Invoice', 'subject_id' => $invoice->id,
-            'metadata' => ['code' => $code, 'total' => $totalAmount],
+            'metadata' => ['code' => $invoice->invoice_code, 'total' => $totalAmount],
             'ip_address' => $request->ip(), 'user_agent' => $request->userAgent(),
         ]);
 

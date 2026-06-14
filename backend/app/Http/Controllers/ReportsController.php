@@ -58,8 +58,11 @@ class ReportsController extends Controller
                 return $this->paginatedResponse($type, $rows, $paginator, $perPage);
 
             case 'matter-status':
-                $paginator = Project::with('client', 'manager', 'stages')
-                    ->paginate($perPage, ['*'], 'page', $page);
+                $matterQuery = Project::with('client', 'manager', 'stages');
+                if ($user->role === 'manager') {
+                    $matterQuery->where('assigned_manager_id', $user->id);
+                }
+                $paginator = $matterQuery->paginate($perPage, ['*'], 'page', $page);
                 $rows = $paginator->getCollection()->map(fn($p) => [
                     'project_code'  => $p->project_code,
                     'project_name'  => $p->project_name,
@@ -107,9 +110,11 @@ class ReportsController extends Controller
                 return $this->paginatedResponse($type, $rows, $paginator, $perPage);
 
             case 'ip-deadline':
-                $paginator = Project::with('client')
-                    ->whereNotNull('hard_deadline')
-                    ->orderBy('hard_deadline')
+                $deadlineQuery = Project::with('client')->whereNotNull('hard_deadline');
+                if ($user->role === 'manager') {
+                    $deadlineQuery->where('assigned_manager_id', $user->id);
+                }
+                $paginator = $deadlineQuery->orderBy('hard_deadline')
                     ->paginate($perPage, ['*'], 'page', $page);
                 $rows = $paginator->getCollection()->map(fn($p) => [
                     'project_code' => $p->project_code,

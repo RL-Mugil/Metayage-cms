@@ -109,9 +109,12 @@ class AIQueryService
                     throw new \RuntimeException("Access to payroll data ({$table}) is not permitted for your role.");
                 }
             }
-            // Salary column is encrypted but defence in depth: block the word entirely
-            if (preg_match('/\bsalary\b/i', $sql)) {
-                throw new \RuntimeException('Access to salary data is not permitted for your role.');
+            // Salary and PII columns are encrypted but defence in depth: block them entirely
+            $piiColumns = ['salary', 'aadhaar_ssn_encrypted', 'pan_tax_id', 'bank_account_number', 'bank_ifsc_code', 'personal_email'];
+            foreach ($piiColumns as $col) {
+                if (preg_match('/\b' . preg_quote($col, '/') . '\b/i', $sql)) {
+                    throw new \RuntimeException("Access to sensitive column ({$col}) is not permitted for your role.");
+                }
             }
         }
 

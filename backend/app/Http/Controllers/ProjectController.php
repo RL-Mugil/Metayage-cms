@@ -39,7 +39,9 @@ class ProjectController extends Controller
         } elseif (in_array($user->role, ['associate', 'paralegal'])) {
             $base->where(function ($q) use ($user) {
                 $q->where('assigned_manager_id', $user->id)
-                    ->orWhere('assigned_partner_id', $user->id);
+                    ->orWhere('assigned_partner_id', $user->id)
+                    ->orWhere('patent_engineer_id', $user->id)
+                    ->orWhereJsonContains('assigned_team', (string) $user->id);
             });
         }
 
