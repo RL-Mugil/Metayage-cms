@@ -1,7 +1,19 @@
 import { Head, useForm, Link } from "@inertiajs/react";
-import { Lock, Mail, Loader2, Sparkles } from "lucide-react";
+import { Lock, Mail, Loader2, ChevronDown, ChevronUp } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { useState } from "react";
+
+const TEST_USERS = [
+  { role: "Super Admin",  email: "test.superadmin@myipstrategy.com", password: "Test@1234", color: "text-red-400" },
+  { role: "Partner",      email: "test.partner@myipstrategy.com",    password: "Test@1234", color: "text-orange-400" },
+  { role: "Manager",      email: "test.manager@myipstrategy.com",    password: "Test@1234", color: "text-amber-400" },
+  { role: "HR",           email: "test.hr@myipstrategy.com",         password: "Test@1234", color: "text-purple-400" },
+  { role: "Finance",      email: "test.finance@myipstrategy.com",    password: "Test@1234", color: "text-blue-400" },
+  { role: "Associate",    email: "test.associate@myipstrategy.com",  password: "Test@1234", color: "text-green-400" },
+  { role: "Paralegal",    email: "test.paralegal@myipstrategy.com",  password: "Test@1234", color: "text-teal-400" },
+  { role: "Client",       email: "test.client@myipstrategy.com",     password: "Test@1234", color: "text-zinc-400" },
+];
 
 export default function Login() {
   const { data, setData, post, processing, errors } = useForm({
@@ -9,10 +21,19 @@ export default function Login() {
     password: "",
     remember: false,
   });
+  const [showQuick, setShowQuick] = useState(false);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     post("/login");
+  };
+
+  const fillAndLogin = (email: string, password: string) => {
+    setData({ email, password, remember: false });
+    // Small delay so Inertia form state settles before submit
+    setTimeout(() => {
+      (document.getElementById("login-form") as HTMLFormElement)?.requestSubmit();
+    }, 50);
   };
 
   return (
@@ -34,7 +55,7 @@ export default function Login() {
           </div>
 
           <div className="rounded-2xl border border-zinc-800 bg-zinc-950/80 backdrop-blur-xl p-8 shadow-2xl space-y-6">
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form id="login-form" onSubmit={handleSubmit} className="space-y-4">
               {errors.email && (
                 <div className="rounded-lg bg-destructive/15 border border-destructive/30 p-3 text-xs text-destructive">
                   {errors.email}
@@ -82,6 +103,36 @@ export default function Login() {
                 {processing ? <Loader2 className="h-4 w-4 animate-spin" /> : "Sign In to Workspace"}
               </Button>
             </form>
+
+            {/* Quick Access Panel */}
+            <div className="border-t border-zinc-800 pt-4">
+              <button
+                type="button"
+                onClick={() => setShowQuick((v) => !v)}
+                className="flex w-full items-center justify-between text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+              >
+                <span className="font-medium uppercase tracking-wider">Quick Access — Test Accounts</span>
+                {showQuick ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+              </button>
+
+              {showQuick && (
+                <div className="mt-3 grid grid-cols-2 gap-1.5">
+                  {TEST_USERS.map((u) => (
+                    <button
+                      key={u.role}
+                      type="button"
+                      onClick={() => fillAndLogin(u.email, u.password)}
+                      className="flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2 text-left hover:border-zinc-600 hover:bg-zinc-800 transition-colors"
+                    >
+                      <span className={`text-[10px] font-bold uppercase tracking-wide ${u.color}`}>{u.role}</span>
+                    </button>
+                  ))}
+                  <p className="col-span-2 mt-1 text-[10px] text-zinc-600 text-center">
+                    All test accounts use password: <span className="font-mono text-zinc-500">Test@1234</span>
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
