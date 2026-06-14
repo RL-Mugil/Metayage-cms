@@ -64,8 +64,16 @@ class AIQueryService
         return null;
     }
 
+    // Tables that contain financial data — off-limits to roles without Finance access.
+    private const FINANCIAL_TABLES = ['invoices', 'invoice_items', 'payments', 'client_ledgers', 'quotations'];
+
+    // Tables that contain HRMS sensitive data — off-limits to non-HR/admin roles.
+    private const HRMS_SENSITIVE_TABLES = ['payroll_runs', 'payslips'];
+
     private function guardSql(string $sql, array $userContext = []): void
     {
+        $role = $userContext['role'] ?? 'staff';
+
         // Allow SELECT or WITH ... SELECT (CTEs)
         if (!preg_match('/^\s*(SELECT|WITH)\b/i', $sql)) {
             throw new \RuntimeException('Only SELECT queries are permitted.');
@@ -82,10 +90,38 @@ class AIQueryService
             throw new \RuntimeException('Access to password column is not permitted.');
         }
 
-        // Clients must not execute arbitrary SQL — their data boundary cannot be
-        // reliably enforced through LLM prompt alone. Return general answers only.
-        if (($userContext['role'] ?? '') === 'client') {
+        // Clients must not execute arbitrary SQL — data boundary cannot be
+        // reliably enforced through LLM prompt alone.
+        if ($role === 'client') {
             throw new \RuntimeException('Live data queries are not available for client accounts.');
+        }
+
+        // Associates and paralegals have no Financial access per RBAC matrix.
+        // Block programmatically — do not rely on LLM prompt instructions alone.
+        if (in_array($role, ['associate', 'paralegal'])) {
+            foreach (self::FINANCIAL_TABLES as $table) {
+                if (preg_match('/\b' . preg_quote($table, '/') . '\b/i', $sql)) {
+                    throw new \RuntimeException("Access to financial data ({$table}) is not permitted for your role.");
+                }
+            }
+            foreach (self::HRMS_SENSITIVE_TABLES as $table) {
+                if (preg_match('/\b' . preg_quote($table, '/') . '\b/i', $sql)) {
+                    throw new \RuntimeException("Access to payroll data ({$table}) is not permitted for your role.");
+                }
+            }
+            // Salary column is encrypted but defence in depth: block the word entirely
+            if (preg_match('/\bsalary\b/i', $sql)) {
+                throw new \RuntimeException('Access to salary data is not permitted for your role.');
+            }
+        }
+
+        // HR can see employee/attendance/leave data but not firm financials.
+        if ($role === 'hr') {
+            foreach (self::FINANCIAL_TABLES as $table) {
+                if (preg_match('/\b' . preg_quote($table, '/') . '\b/i', $sql)) {
+                    throw new \RuntimeException("Access to financial data ({$table}) is not permitted for HR role.");
+                }
+            }
         }
     }
 
