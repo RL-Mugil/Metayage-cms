@@ -115,16 +115,9 @@ class ProjectController extends Controller
 
     public function show(Request $request, $id)
     {
-        $user = $request->user();
         $project = Project::with('client', 'partner', 'manager', 'stages.owner', 'tasks.assignee')->findOrFail($id);
 
-        // RBAC validation
-        if ($user->role === 'client') {
-            $isAssociated = $project->client->contacts()->where('email', $user->email)->exists();
-            if (! $isAssociated) {
-                return response()->json(['message' => 'Unauthorized Access'], 403);
-            }
-        }
+        $this->authorize('view', $project);
 
         return response()->json($project);
     }
