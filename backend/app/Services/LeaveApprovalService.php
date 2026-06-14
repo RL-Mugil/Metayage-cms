@@ -4,7 +4,6 @@ namespace App\Services;
 
 use App\Models\LeaveBalance;
 use App\Models\LeaveRequest;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -35,12 +34,9 @@ class LeaveApprovalService
 
             // Cancellation of an already-approved leave: restore balance then mark Cancelled.
             if ($locked->status === 'Approved' && $status === 'Cancelled') {
-                $column      = self::TYPE_COLUMN[$locked->leave_type] ?? 'casual_leave';
-                // from_date is cast to 'date' in the model, so it's already a Carbon instance
-                $leaveYear   = $locked->from_date instanceof Carbon
-                    ? $locked->from_date->year
-                    : Carbon::parse($locked->from_date)->year;
-                $balance     = LeaveBalance::where('employee_id', $locked->employee_id)
+                $column    = self::TYPE_COLUMN[$locked->leave_type] ?? 'casual_leave';
+                $leaveYear = date('Y', strtotime($locked->from_date));
+                $balance   = LeaveBalance::where('employee_id', $locked->employee_id)
                     ->where('year', $leaveYear)
                     ->lockForUpdate()
                     ->first();
@@ -48,7 +44,6 @@ class LeaveApprovalService
                 if ($balance) {
                     $days           = (float) $locked->total_days;
                     $currentLop     = (float) $balance->lop_days;
-                    // Reverse in the same order it was applied: LOP first, then balance column.
                     $lopToRestore     = min($currentLop, $days);
                     $balanceToRestore = $days - $lopToRestore;
                     $balance->update([
