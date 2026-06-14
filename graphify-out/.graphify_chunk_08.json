@@ -1,0 +1,801 @@
+{
+  "nodes": [
+    {
+      "id": "ui-table-component",
+      "label": "Table UI Component",
+      "type": "class",
+      "file": "backend/resources/js/components/ui/table.tsx",
+      "description": "Reusable table primitives (Table, TableHeader, TableBody, TableFooter, TableRow, TableHead, TableCell, TableCaption) using React forwardRef",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "ui-tabs-component",
+      "label": "Tabs UI Component",
+      "type": "class",
+      "file": "backend/resources/js/components/ui/tabs.tsx",
+      "description": "Tab interface primitives from Radix UI (Tabs, TabsList, TabsTrigger, TabsContent)",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "ui-textarea-component",
+      "label": "Textarea UI Component",
+      "type": "class",
+      "file": "backend/resources/js/components/ui/textarea.tsx",
+      "description": "Controlled textarea form input with Tailwind styling",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "ui-toggle-group-component",
+      "label": "ToggleGroup UI Component",
+      "type": "class",
+      "file": "backend/resources/js/components/ui/toggle-group.tsx",
+      "description": "Multi-button toggle group with variant/size context provider pattern",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "ui-toggle-component",
+      "label": "Toggle UI Component",
+      "type": "class",
+      "file": "backend/resources/js/components/ui/toggle.tsx",
+      "description": "Single toggle button with CVA-based styling variants (default/outline, sm/default/lg)",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "toggle-variants-config",
+      "label": "toggleVariants Style Config",
+      "type": "config",
+      "file": "backend/resources/js/components/ui/toggle.tsx",
+      "description": "CVA style config for toggle buttons defining variant and size options",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "ui-tooltip-component",
+      "label": "Tooltip UI Component",
+      "type": "class",
+      "file": "backend/resources/js/components/ui/tooltip.tsx",
+      "description": "Tooltip primitives from Radix UI (TooltipProvider, Tooltip, TooltipTrigger, TooltipContent)",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "hook-use-is-mobile",
+      "label": "useIsMobile Hook",
+      "type": "function",
+      "file": "backend/resources/js/hooks/use-mobile.tsx",
+      "description": "Custom hook detecting mobile viewport (max-width < 768px) using matchMedia listener",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "layout-app-layout",
+      "label": "AppLayout Component",
+      "type": "class",
+      "file": "backend/resources/js/layouts/AppLayout.tsx",
+      "description": "Main app shell with SidebarProvider, AppSidebar, sticky header with search and notification badge",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "api-client-module",
+      "label": "API Client Module",
+      "type": "config",
+      "file": "backend/resources/js/lib/api-client.ts",
+      "description": "Centralized API client with 60+ endpoint methods for backend communication (CRUD, auth, payments, payroll, etc.)",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "api-get-csrf-token",
+      "label": "getCsrfToken Function",
+      "type": "function",
+      "file": "backend/resources/js/lib/api-client.ts",
+      "description": "Extracts XSRF-TOKEN from document cookies for use in POST/PUT/PATCH/DELETE requests",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "api-request-method",
+      "label": "api.request Generic Method",
+      "type": "function",
+      "file": "backend/resources/js/lib/api-client.ts",
+      "description": "Base fetch wrapper handling headers, CSRF token injection, error handling, and auth redirects on 401",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "api-clients-endpoints",
+      "label": "Client API Methods",
+      "type": "function",
+      "file": "backend/resources/js/lib/api-client.ts",
+      "description": "Methods for client CRUD (getClients, getClient, createClient, updateClient, deleteClient) and import/contacts",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "api-projects-endpoints",
+      "label": "Project API Methods",
+      "type": "function",
+      "file": "backend/resources/js/lib/api-client.ts",
+      "description": "Methods for project listing, detail, creation, updates, deletion, and stage transitions",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "api-tasks-endpoints",
+      "label": "Task API Methods",
+      "type": "function",
+      "file": "backend/resources/js/lib/api-client.ts",
+      "description": "Methods for task CRUD and time entry logging",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "api-financial-endpoints",
+      "label": "Financial API Methods",
+      "type": "function",
+      "file": "backend/resources/js/lib/api-client.ts",
+      "description": "Methods for invoices, payments, quotations, and financial stats",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "api-hrms-endpoints",
+      "label": "HRMS API Methods",
+      "type": "function",
+      "file": "backend/resources/js/lib/api-client.ts",
+      "description": "Methods for employees, attendance (clock in/out), leave requests, and HRMS stats",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "api-payroll-endpoints",
+      "label": "Payroll API Methods",
+      "type": "function",
+      "file": "backend/resources/js/lib/api-client.ts",
+      "description": "Methods for payroll runs, finalization, payment, payslips, and personal payslips",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "api-tracker-endpoints",
+      "label": "Tracker API Methods",
+      "type": "function",
+      "file": "backend/resources/js/lib/api-client.ts",
+      "description": "Methods for tracker projects, circles, rows (CRUD), and circle member management",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "api-notifications-endpoints",
+      "label": "Notifications API Methods",
+      "type": "function",
+      "file": "backend/resources/js/lib/api-client.ts",
+      "description": "Methods for retrieving notifications, marking read, and dismissing",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "api-documents-endpoints",
+      "label": "Documents API Methods",
+      "type": "function",
+      "file": "backend/resources/js/lib/api-client.ts",
+      "description": "Methods for document listing, upload (FormData), deletion, and download",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "api-csv-download-utility",
+      "label": "downloadCSV Utility Function",
+      "type": "function",
+      "file": "backend/resources/js/lib/api-client.ts",
+      "description": "Generates CSV from array of objects and triggers browser download with proper CSV escaping",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "util-fmt-date",
+      "label": "fmtDate Function",
+      "type": "function",
+      "file": "backend/resources/js/lib/date-utils.ts",
+      "description": "Converts ISO/YYYY-MM-DD strings to DD-MM-YYYY format, returns '—' for empty",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "util-fmt-time",
+      "label": "fmtTime Function",
+      "type": "function",
+      "file": "backend/resources/js/lib/date-utils.ts",
+      "description": "Formats time string to HH:MM:SS AM/PM IST using en-US locale and Asia/Kolkata timezone",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "util-fmt-datetime",
+      "label": "fmtDateTime Function",
+      "type": "function",
+      "file": "backend/resources/js/lib/date-utils.ts",
+      "description": "Combines fmtDate and fmtTime to format full datetime strings",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "echo-realtime-config",
+      "label": "Echo Realtime Configuration",
+      "type": "config",
+      "file": "backend/resources/js/lib/echo.ts",
+      "description": "Laravel Echo instance configured with Reverb broadcaster for WebSocket real-time updates",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "util-cn-classname",
+      "label": "cn Utility Function",
+      "type": "function",
+      "file": "backend/resources/js/lib/utils.ts",
+      "description": "Merges Tailwind classes using clsx and tailwind-merge to resolve conflicts",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "util-status-color",
+      "label": "statusColor Utility Function",
+      "type": "function",
+      "file": "backend/resources/js/lib/utils.ts",
+      "description": "Maps status strings to badge variant colors (default/destructive/outline/secondary)",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "page-ai",
+      "label": "AI Assistant Page",
+      "type": "route",
+      "file": "backend/resources/js/pages/AI.tsx",
+      "description": "Natural language query interface with chat UI, quick prompts sidebar, SQL query display, and results table",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "ai-message-interface",
+      "label": "Message Interface",
+      "type": "config",
+      "file": "backend/resources/js/pages/AI.tsx",
+      "description": "Chat message type with role, content, optional sql_query and results array",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "ai-send-query-function",
+      "label": "sendQuery Function",
+      "type": "function",
+      "file": "backend/resources/js/pages/AI.tsx",
+      "description": "Sends user query via api.queryAI, updates chat with assistant response including SQL and table results",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "page-analytics",
+      "label": "Analytics Dashboard Page",
+      "type": "route",
+      "file": "backend/resources/js/pages/Analytics.tsx",
+      "description": "Operational dashboard with KPI cards, revenue/cases charts, task velocity, workload, and payment status",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "analytics-kpi-card",
+      "label": "KPICard Component",
+      "type": "class",
+      "file": "backend/resources/js/pages/Analytics.tsx",
+      "description": "Reusable card displaying single KPI metric with icon, value, and delta",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "analytics-custom-tooltip",
+      "label": "CustomTooltip Component",
+      "type": "class",
+      "file": "backend/resources/js/pages/Analytics.tsx",
+      "description": "Recharts tooltip formatting currency for revenue fields and plain values for others",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "page-approvals",
+      "label": "Approvals Management Page",
+      "type": "route",
+      "file": "backend/resources/js/pages/Approvals.tsx",
+      "description": "Approval queue for leave and expense requests with tab filters (pending/approved/rejected) and action buttons",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "approvals-type-colors",
+      "label": "Approval Type Colors Config",
+      "type": "config",
+      "file": "backend/resources/js/pages/Approvals.tsx",
+      "description": "Mapping of approval types (Leave/Expense) to badge styling colors",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "page-login",
+      "label": "Login Page",
+      "type": "route",
+      "file": "backend/resources/js/pages/Auth/Login.tsx",
+      "description": "Sign-in form with email/password fields, gradient background, and link to forgot-password",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "page-forgot-password",
+      "label": "Forgot Password Page",
+      "type": "route",
+      "file": "backend/resources/js/pages/Auth/ForgotPassword.tsx",
+      "description": "Email input form to request password reset link with success message display",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "page-reset-password",
+      "label": "Reset Password Page",
+      "type": "route",
+      "file": "backend/resources/js/pages/Auth/ResetPassword.tsx",
+      "description": "Form for setting new password with token and email (from route params) and confirmation field",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "page-bulk",
+      "label": "Bulk Operations Page",
+      "type": "route",
+      "file": "backend/resources/js/pages/Bulk.tsx",
+      "description": "Multi-step wizard for bulk entity operations: select entity → choose records → pick action → execute",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "bulk-entity-types",
+      "label": "BulkAction and EntityType Types",
+      "type": "config",
+      "file": "backend/resources/js/pages/Bulk.tsx",
+      "description": "Type definitions for bulk-eligible entities (Clients/Projects/Tasks/Invoices/Employees) and actions (Export CSV/Change Status/Archive/Notify)",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "bulk-fetch-rows-function",
+      "label": "fetchRows Function",
+      "type": "function",
+      "file": "backend/resources/js/pages/Bulk.tsx",
+      "description": "Async function fetching entity records from API and mapping to Row struct based on entity type",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "bulk-execute-function",
+      "label": "execute Function",
+      "type": "function",
+      "file": "backend/resources/js/pages/Bulk.tsx",
+      "description": "Executes bulk action via api.bulkExecute or downloadCSV depending on action type",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "page-calendar",
+      "label": "Calendar Page",
+      "type": "route",
+      "file": "backend/resources/js/pages/Calendar.tsx",
+      "description": "Month calendar view of case delivery deadlines with day selection, event details panel, and upcoming list",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "calendar-case-event-type",
+      "label": "CaseEvent Type",
+      "type": "config",
+      "file": "backend/resources/js/pages/Calendar.tsx",
+      "description": "Event type for calendar with docket number, client, delivery date, team assignments (PCM/SCM/PR), and completion %",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "calendar-grid-builder",
+      "label": "buildCalendarGrid Function",
+      "type": "function",
+      "file": "backend/resources/js/pages/Calendar.tsx",
+      "description": "Generates 7-column calendar grid cells for given year/month including prev/next month padding",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "calendar-event-chip-class",
+      "label": "eventChipClass Function",
+      "type": "function",
+      "file": "backend/resources/js/pages/Calendar.tsx",
+      "description": "Returns color class for event badge based on overdue/within 7 days/normal status",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "page-client-show",
+      "label": "Client Detail Page",
+      "type": "route",
+      "file": "backend/resources/js/pages/ClientShow.tsx",
+      "description": "Client detail view with metadata (industry, jurisdiction, credit limit, payment terms) and contacts list",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "page-clients",
+      "label": "Clients List Page",
+      "type": "route",
+      "file": "backend/resources/js/pages/Clients.tsx",
+      "description": "CRM module for managing clients with CRUD, import/export, GST classification, and Indian state/organization type data",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "clients-compute-gst-type",
+      "label": "computeGstType Function",
+      "type": "function",
+      "file": "backend/resources/js/pages/Clients.tsx",
+      "description": "Determines GST type (Export/B2B/B2C/Unregistered) based on nationality, GSTIN presence, and client type",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "clients-next-client-code",
+      "label": "nextClientCode Function",
+      "type": "function",
+      "file": "backend/resources/js/pages/Clients.tsx",
+      "description": "Auto-generates next client code by incrementing 2-digit sequence and appending M (India) or Y (foreign) suffix",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "clients-section-component",
+      "label": "Section Component",
+      "type": "class",
+      "file": "backend/resources/js/pages/Clients.tsx",
+      "description": "Collapsible section wrapper with expand/collapse UI for form grouping",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "page-compliance",
+      "label": "Compliance Tracking Page",
+      "type": "route",
+      "file": "backend/resources/js/pages/Compliance.tsx",
+      "description": "IP deadline compliance dashboard showing critical/at-risk/on-track/compliant items with searchable KPI modals",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "compliance-item-type",
+      "label": "ComplianceItem Type",
+      "type": "config",
+      "file": "backend/resources/js/pages/Compliance.tsx",
+      "description": "Compliance record with matter details, jurisdiction, deadline, days left, status, assignee, and audit notes",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "compliance-kpi-modal",
+      "label": "ComplianceKpiModal Component",
+      "type": "class",
+      "file": "backend/resources/js/pages/Compliance.tsx",
+      "description": "Modal showing detailed compliance items for selected KPI with pagination, search, and status filtering",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "page-dashboard",
+      "label": "Dashboard Home Page",
+      "type": "route",
+      "file": "backend/resources/js/pages/Dashboard.tsx",
+      "description": "Executive overview with KPI stat cards, drill-down modals for active cases/clients/WIP/revenue, and top clients table",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "dashboard-drill-modal",
+      "label": "DashboardDrillModal Component",
+      "type": "class",
+      "file": "backend/resources/js/pages/Dashboard.tsx",
+      "description": "Reusable modal for KPI drill-down with configurable columns, pagination, and search",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "page-discussions",
+      "label": "Discussions/Forums Page",
+      "type": "route",
+      "file": "backend/resources/js/pages/Discussions.tsx",
+      "description": "Threaded conversation interface with tag filters (General/Project/HR/Finance), reply compose, and thread creation",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "discussions-thread-type",
+      "label": "Thread Type",
+      "type": "config",
+      "file": "backend/resources/js/pages/Discussions.tsx",
+      "description": "Discussion thread with id, title, author, last_reply timestamp, tag, and message array",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "discussions-get-initials",
+      "label": "getInitials Function",
+      "type": "function",
+      "file": "backend/resources/js/pages/Discussions.tsx",
+      "description": "Extracts 2-char initials from user name for avatar display",
+      "confidence": "EXTRACTED"
+    }
+  ],
+  "edges": [
+    {
+      "source": "ui-toggle-group-component",
+      "target": "toggle-variants-config",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "layout-app-layout",
+      "target": "hook-use-is-mobile",
+      "relationship": "uses",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "api-request-method",
+      "target": "api-get-csrf-token",
+      "relationship": "calls",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "api-client-module",
+      "target": "api-request-method",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "api-clients-endpoints",
+      "target": "api-request-method",
+      "relationship": "calls",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "api-projects-endpoints",
+      "target": "api-request-method",
+      "relationship": "calls",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "api-tasks-endpoints",
+      "target": "api-request-method",
+      "relationship": "calls",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "api-financial-endpoints",
+      "target": "api-request-method",
+      "relationship": "calls",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "api-hrms-endpoints",
+      "target": "api-request-method",
+      "relationship": "calls",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "api-payroll-endpoints",
+      "target": "api-request-method",
+      "relationship": "calls",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "api-tracker-endpoints",
+      "target": "api-request-method",
+      "relationship": "calls",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "api-notifications-endpoints",
+      "target": "api-request-method",
+      "relationship": "calls",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "api-documents-endpoints",
+      "target": "api-request-method",
+      "relationship": "calls",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "page-ai",
+      "target": "api-client-module",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "page-ai",
+      "target": "ai-send-query-function",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "ai-send-query-function",
+      "target": "api-client-module",
+      "relationship": "calls",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "page-analytics",
+      "target": "api-client-module",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "page-analytics",
+      "target": "analytics-kpi-card",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "page-analytics",
+      "target": "analytics-custom-tooltip",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "page-approvals",
+      "target": "api-client-module",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "page-approvals",
+      "target": "approvals-type-colors",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "page-login",
+      "target": "layout-app-layout",
+      "relationship": "uses",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "page-bulk",
+      "target": "api-client-module",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "page-bulk",
+      "target": "bulk-fetch-rows-function",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "page-bulk",
+      "target": "bulk-execute-function",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "page-bulk",
+      "target": "api-csv-download-utility",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "bulk-fetch-rows-function",
+      "target": "api-client-module",
+      "relationship": "calls",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "bulk-execute-function",
+      "target": "api-client-module",
+      "relationship": "calls",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "page-calendar",
+      "target": "api-client-module",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "page-calendar",
+      "target": "calendar-grid-builder",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "page-calendar",
+      "target": "calendar-event-chip-class",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "page-client-show",
+      "target": "api-client-module",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "page-clients",
+      "target": "api-client-module",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "page-clients",
+      "target": "clients-compute-gst-type",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "page-clients",
+      "target": "clients-next-client-code",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "page-clients",
+      "target": "clients-section-component",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "page-compliance",
+      "target": "api-client-module",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "page-compliance",
+      "target": "compliance-kpi-modal",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "compliance-kpi-modal",
+      "target": "api-client-module",
+      "relationship": "calls",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "page-dashboard",
+      "target": "api-client-module",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "page-dashboard",
+      "target": "dashboard-drill-modal",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "dashboard-drill-modal",
+      "target": "api-client-module",
+      "relationship": "calls",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "page-discussions",
+      "target": "api-client-module",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "page-discussions",
+      "target": "discussions-get-initials",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "util-fmt-date",
+      "target": "page-calendar",
+      "relationship": "uses",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "util-cn-classname",
+      "target": "ui-table-component",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "util-cn-classname",
+      "target": "ui-tabs-component",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "util-cn-classname",
+      "target": "ui-textarea-component",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "util-status-color",
+      "target": "page-analytics",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "util-status-color",
+      "target": "page-bulk",
+      "relationship": "uses",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "util-status-color",
+      "target": "page-client-show",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "echo-realtime-config",
+      "target": "api-client-module",
+      "relationship": "uses",
+      "confidence": "INFERRED"
+    }
+  ],
+  "hyperedges": [],
+  "input_tokens": 0,
+  "output_tokens": 0
+}

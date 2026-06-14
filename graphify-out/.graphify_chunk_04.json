@@ -1,0 +1,1089 @@
+{
+  "nodes": [
+    {
+      "id": "laravel-app-bootstrap",
+      "label": "Application Bootstrap Configuration",
+      "type": "config",
+      "file": "backend/bootstrap/app.php",
+      "description": "Configures Laravel 12 application routing, middleware, and exception handling with Inertia integration",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "middleware-inertia-requests",
+      "label": "HandleInertiaRequests Middleware",
+      "type": "class",
+      "file": "backend/bootstrap/app.php",
+      "description": "Web middleware for Inertia request handling",
+      "code": "\\App\\Http\\Middleware\\HandleInertiaRequests::class",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "middleware-sanctum-stateful",
+      "label": "EnsureFrontendRequestsAreStateful Middleware",
+      "type": "class",
+      "file": "backend/bootstrap/app.php",
+      "description": "API middleware for Sanctum token validation from frontend",
+      "code": "\\Laravel\\Sanctum\\Http\\Middleware\\EnsureFrontendRequestsAreStateful::class",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "middleware-role",
+      "label": "RoleMiddleware",
+      "type": "class",
+      "file": "backend/bootstrap/app.php",
+      "description": "Spatie permission-based role middleware for access control",
+      "code": "\\Spatie\\Permission\\Middleware\\RoleMiddleware::class",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "exception-monitoring-webhook",
+      "label": "Exception Monitoring Webhook",
+      "type": "function",
+      "file": "backend/bootstrap/app.php",
+      "description": "Forwards unhandled exceptions to monitoring webhook (n8n, GlitchTip, email). Failure-safe.",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "app-service-provider",
+      "label": "AppServiceProvider",
+      "type": "class",
+      "file": "backend/bootstrap/providers.php",
+      "description": "Single registered service provider for the application",
+      "code": "App\\Providers\\AppServiceProvider::class",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "composer-json",
+      "label": "Composer Configuration",
+      "type": "config",
+      "file": "backend/composer.json",
+      "description": "PHP dependencies: Laravel 12, Sanctum, Inertia, Spatie permissions, PHPSpreadsheet, Activity logs",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "composer-require-sanctum",
+      "label": "Laravel Sanctum ^4.0",
+      "type": "config",
+      "file": "backend/composer.json",
+      "description": "Token-based API authentication library",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "composer-require-inertia",
+      "label": "Inertia Laravel ^2.0",
+      "type": "config",
+      "file": "backend/composer.json",
+      "description": "React/Vue SPA adapter for Laravel",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "composer-require-spatie-permission",
+      "label": "Spatie Laravel Permission ^6.4",
+      "type": "config",
+      "file": "backend/composer.json",
+      "description": "Role-based access control (RBAC) library",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "composer-require-spatie-activitylog",
+      "label": "Spatie Activity Log ^4.8",
+      "type": "config",
+      "file": "backend/composer.json",
+      "description": "Audit logging for model changes",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "composer-require-phpspreadsheet",
+      "label": "PHPOffice PHPSpreadsheet ^5.8",
+      "type": "config",
+      "file": "backend/composer.json",
+      "description": "Excel/CSV import-export for bulk operations",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "config-app",
+      "label": "App Configuration",
+      "type": "config",
+      "file": "backend/config/app.php",
+      "description": "Application name, environment, timezone (UTC), locale (en), encryption cipher (AES-256-CBC)",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "config-auth",
+      "label": "Auth Configuration",
+      "type": "config",
+      "file": "backend/config/auth.php",
+      "description": "Guard 'web' (session), User provider (Eloquent), password reset table and broker config",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "config-cache",
+      "label": "Cache Configuration",
+      "type": "config",
+      "file": "backend/config/cache.php",
+      "description": "Default cache driver 'database', supports redis, memcached, dynamodb, file, array, failover",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "config-database",
+      "label": "Database Configuration",
+      "type": "config",
+      "file": "backend/config/database.php",
+      "description": "Multiple DB connections: sqlite, mysql, mariadb, pgsql, sqlsrv + ai_readonly (SELECT-only) connection",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "db-connection-pgsql",
+      "label": "PostgreSQL Connection",
+      "type": "config",
+      "file": "backend/config/database.php",
+      "description": "Primary database driver (port 5432, sslmode prefer)",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "db-connection-ai-readonly",
+      "label": "AI Readonly PostgreSQL Connection",
+      "type": "config",
+      "file": "backend/config/database.php",
+      "description": "Isolated read-only connection for AI query service, must grant SELECT-only privileges on PostgreSQL role",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "config-filesystems",
+      "label": "Filesystems Configuration",
+      "type": "config",
+      "file": "backend/config/filesystems.php",
+      "description": "Default 'local' disk (private), 'public' disk, S3 support",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "config-inertia",
+      "label": "Inertia Configuration",
+      "type": "config",
+      "file": "backend/config/inertia.php",
+      "description": "Page paths and extensions for Inertia view finder (resource_path js/pages)",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "config-logging",
+      "label": "Logging Configuration",
+      "type": "config",
+      "file": "backend/config/logging.php",
+      "description": "Monolog channels: stack, single, daily, slack, papertrail, stderr, syslog, errorlog, emergency",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "config-mail",
+      "label": "Mail Configuration",
+      "type": "config",
+      "file": "backend/config/mail.php",
+      "description": "Mailer drivers: smtp, ses, postmark, resend, sendmail, log, array, failover, roundrobin; FROM address config",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "config-payroll",
+      "label": "Payroll Configuration",
+      "type": "config",
+      "file": "backend/config/payroll.php",
+      "description": "Professional Tax (PT) monthly amount; default ₹200 (Karnataka/Maharashtra slab); env override PAYROLL_PT_MONTHLY",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "config-queue",
+      "label": "Queue Configuration",
+      "type": "config",
+      "file": "backend/config/queue.php",
+      "description": "Default 'database' queue driver, supports redis, beanstalkd, sqs, deferred, background, failover",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "config-services",
+      "label": "Services Configuration",
+      "type": "config",
+      "file": "backend/config/services.php",
+      "description": "Third-party integrations: Postmark, Resend, SES, Slack, Groq LLM, GST rates, monitoring webhook",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "service-groq-llm",
+      "label": "Groq LLM Service",
+      "type": "config",
+      "file": "backend/config/services.php",
+      "description": "Groq API key and model config (meta-llama/llama-4-scout-17b-16e-instruct)",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "service-gst-config",
+      "label": "GST Configuration",
+      "type": "config",
+      "file": "backend/config/services.php",
+      "description": "Indian GST rates: standard 18%, export 0%; override per-client/invoice",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "service-monitoring-webhook",
+      "label": "Monitoring Webhook Service",
+      "type": "config",
+      "file": "backend/config/services.php",
+      "description": "Exception monitoring endpoint (n8n, GlitchTip, email); optional",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "config-session",
+      "label": "Session Configuration",
+      "type": "config",
+      "file": "backend/config/session.php",
+      "description": "Driver 'database', lifetime 120 min, encryption false, JSON serialization, SameSite lax",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "factory-user",
+      "label": "UserFactory",
+      "type": "class",
+      "file": "backend/database/factories/UserFactory.php",
+      "description": "Eloquent factory for User model; generates name, email, password hash, remember token",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "migration-users-table",
+      "label": "Create Users Table",
+      "type": "command",
+      "file": "backend/database/migrations/0001_01_01_000000_create_users_table.php",
+      "description": "Creates users, password_reset_tokens, sessions tables for authentication",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "table-users",
+      "label": "users Table",
+      "type": "model",
+      "file": "backend/database/migrations/0001_01_01_000000_create_users_table.php",
+      "description": "Core auth table: id, name, email (unique), email_verified_at, password, remember_token, timestamps",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "table-password-reset-tokens",
+      "label": "password_reset_tokens Table",
+      "type": "model",
+      "file": "backend/database/migrations/0001_01_01_000000_create_users_table.php",
+      "description": "Password reset tokens: email (primary), token, created_at",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "table-sessions",
+      "label": "sessions Table",
+      "type": "model",
+      "file": "backend/database/migrations/0001_01_01_000000_create_users_table.php",
+      "description": "Session storage: id (primary), user_id (nullable), ip_address, user_agent, payload, last_activity",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "migration-cache-table",
+      "label": "Create Cache Table",
+      "type": "command",
+      "file": "backend/database/migrations/0001_01_01_000001_create_cache_table.php",
+      "description": "Creates cache and cache_locks tables for database cache driver",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "table-cache",
+      "label": "cache Table",
+      "type": "model",
+      "file": "backend/database/migrations/0001_01_01_000001_create_cache_table.php",
+      "description": "Cache storage: key (primary), value (mediumText), expiration (index)",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "table-cache-locks",
+      "label": "cache_locks Table",
+      "type": "model",
+      "file": "backend/database/migrations/0001_01_01_000001_create_cache_table.php",
+      "description": "Cache lock management: key (primary), owner, expiration (index)",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "migration-jobs-table",
+      "label": "Create Jobs Table",
+      "type": "command",
+      "file": "backend/database/migrations/0001_01_01_000002_create_jobs_table.php",
+      "description": "Creates jobs, job_batches, failed_jobs tables for queue processing",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "table-jobs",
+      "label": "jobs Table",
+      "type": "model",
+      "file": "backend/database/migrations/0001_01_01_000002_create_jobs_table.php",
+      "description": "Job queue: id, queue (index), payload, attempts, reserved_at, available_at, created_at",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "table-job-batches",
+      "label": "job_batches Table",
+      "type": "model",
+      "file": "backend/database/migrations/0001_01_01_000002_create_jobs_table.php",
+      "description": "Job batch tracking: id (primary), name, total/pending/failed counts, options, cancelled_at, finished_at",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "table-failed-jobs",
+      "label": "failed_jobs Table",
+      "type": "model",
+      "file": "backend/database/migrations/0001_01_01_000002_create_jobs_table.php",
+      "description": "Failed job log: id, uuid (unique), connection, queue, payload, exception, failed_at",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "migration-clients-contacts",
+      "label": "Create Clients and Contacts",
+      "type": "command",
+      "file": "backend/database/migrations/2026_06_04_000000_create_clients_and_contacts_table.php",
+      "description": "Creates clients, client_contacts, client_relationships tables for CRM",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "table-clients",
+      "label": "clients Table",
+      "type": "model",
+      "file": "backend/database/migrations/2026_06_04_000000_create_clients_and_contacts_table.php",
+      "description": "Client master: client_code (unique), company_name, entity_type, tax_id, industry, jurisdiction, account_manager_id, credit_limit, payment_terms, currency, sla_tier, status, soft deletes",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "table-client-contacts",
+      "label": "client_contacts Table",
+      "type": "model",
+      "file": "backend/database/migrations/2026_06_04_000000_create_clients_and_contacts_table.php",
+      "description": "People at client: client_id (FK), name, title, department, email (unique), phone, role_type (Primary/Technical/Billing/Legal), timezone, notification_preferences",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "table-client-relationships",
+      "label": "client_relationships Table",
+      "type": "model",
+      "file": "backend/database/migrations/2026_06_04_000000_create_clients_and_contacts_table.php",
+      "description": "Parent-subsidiary relationships: parent_client_id, subsidiary_client_id, relationship_type",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "migration-projects-tracker",
+      "label": "Create Projects and Tracker",
+      "type": "command",
+      "file": "backend/database/migrations/2026_06_04_000001_create_projects_and_tracker_table.php",
+      "description": "Creates projects, project_stages tables for matter lifecycle",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "table-projects",
+      "label": "projects Table",
+      "type": "model",
+      "file": "backend/database/migrations/2026_06_04_000001_create_projects_and_tracker_table.php",
+      "description": "IP matters: project_code (unique), client_id, project_type, project_name, invention_title, priority_date, assigned_partner_id/manager_id, hard_deadline, budget, fee_arrangement, status, urgency, soft deletes",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "table-project-stages",
+      "label": "project_stages Table",
+      "type": "model",
+      "file": "backend/database/migrations/2026_06_04_000001_create_projects_and_tracker_table.php",
+      "description": "Pipeline stages: project_id (FK), stage_name, owner_id, duration_days, due_date, actual_start_at/end_at, checklist (JSON), gate_criteria (JSON), sequence_order, status (Pending/In Progress/Completed/Escalated)",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "migration-tasks-time-entries",
+      "label": "Create Tasks and Time Entries",
+      "type": "command",
+      "file": "backend/database/migrations/2026_06_04_000002_create_tasks_and_time_entries_table.php",
+      "description": "Creates tasks, time_entries tables for work tracking",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "table-tasks",
+      "label": "tasks Table",
+      "type": "model",
+      "file": "backend/database/migrations/2026_06_04_000002_create_tasks_and_time_entries_table.php",
+      "description": "Work items: task_code (optional), project_id (FK), title, description, assignee_id/reviewer_id, priority, due_date, estimated/actual_hours, status, dependencies (JSON), recurring, billable",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "table-time-entries",
+      "label": "time_entries Table",
+      "type": "model",
+      "file": "backend/database/migrations/2026_06_04_000002_create_tasks_and_time_entries_table.php",
+      "description": "Hours logged: user_id (FK), project_id (FK), task_id (FK), duration_hours, entry_date, billable, status (Draft/Submitted/Approved/Invoiced), approved_by_id",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "migration-documents-dms",
+      "label": "Create Documents and DMS",
+      "type": "command",
+      "file": "backend/database/migrations/2026_06_04_000003_create_documents_and_dms_table.php",
+      "description": "Creates documents, document_versions tables for case file management",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "table-documents",
+      "label": "documents Table",
+      "type": "model",
+      "file": "backend/database/migrations/2026_06_04_000003_create_documents_and_dms_table.php",
+      "description": "Document metadata: project_id (FK), client_id (FK), file_name, file_type (MIME), file_size, category, storage_path, current_version, checked_out_by_id, ocr_enabled, ocr_content, status, soft deletes",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "table-document-versions",
+      "label": "document_versions Table",
+      "type": "model",
+      "file": "backend/database/migrations/2026_06_04_000003_create_documents_and_dms_table.php",
+      "description": "Document versioning: document_id (FK), version_number, file_name, file_size, storage_path, uploaded_by_id, version_notes",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "migration-financial-suite",
+      "label": "Create Financial Suite",
+      "type": "command",
+      "file": "backend/database/migrations/2026_06_04_000004_create_financial_suite_table.php",
+      "description": "Creates quotations, invoices, invoice_items, client_ledger, payments tables",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "table-quotations",
+      "label": "quotations Table",
+      "type": "model",
+      "file": "backend/database/migrations/2026_06_04_000004_create_financial_suite_table.php",
+      "description": "Estimates: quote_code (unique), client_id, project_id, valid_until, fee_structure, estimated_hours, hourly_rates (JSON), disbursements, buffer, total_amount, currency, status, approved_by_id",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "table-invoices",
+      "label": "invoices Table",
+      "type": "model",
+      "file": "backend/database/migrations/2026_06_04_000004_create_financial_suite_table.php",
+      "description": "Invoices: invoice_code (unique), invoice_type, client_id, project_id, issue_date, due_date, subtotal, tax_amount, discount, total_amount, balance_due, status, tax_details (JSON)",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "table-invoice-items",
+      "label": "invoice_items Table",
+      "type": "model",
+      "file": "backend/database/migrations/2026_06_04_000004_create_financial_suite_table.php",
+      "description": "Line items: invoice_id (FK), description, hsn_sac_code, quantity, unit_rate, amount, tax_rate",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "table-client-ledger",
+      "label": "client_ledger Table",
+      "type": "model",
+      "file": "backend/database/migrations/2026_06_04_000004_create_financial_suite_table.php",
+      "description": "Running balance: client_id (FK), transaction_date, document_type (Invoice/Payment/Credit Note), document_reference, debit, credit, balance, notes",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "table-payments",
+      "label": "payments Table",
+      "type": "model",
+      "file": "backend/database/migrations/2026_06_04_000004_create_financial_suite_table.php",
+      "description": "Money received: client_id (FK), invoice_id (FK), receipt_code (unique), payment_date, amount, payment_method (Bank/Stripe/PayPal/Razorpay/Cash), status",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "migration-enterprise-hrms",
+      "label": "Create Enterprise HRMS",
+      "type": "command",
+      "file": "backend/database/migrations/2026_06_04_000005_create_enterprise_hrms_table.php",
+      "description": "Creates departments, designations, employees, attendances, leave_requests, leave_balances, assets, expense_claims, grievances tables",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "table-departments",
+      "label": "departments Table",
+      "type": "model",
+      "file": "backend/database/migrations/2026_06_04_000005_create_enterprise_hrms_table.php",
+      "description": "Org units: name, parent_id (self-referential), manager_id (HOD)",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "table-designations",
+      "label": "designations Table",
+      "type": "model",
+      "file": "backend/database/migrations/2026_06_04_000005_create_enterprise_hrms_table.php",
+      "description": "Job roles: title, description, grade_band (A/B/C/L1/L2)",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "table-employees",
+      "label": "employees Table",
+      "type": "model",
+      "file": "backend/database/migrations/2026_06_04_000005_create_enterprise_hrms_table.php",
+      "description": "Staff records: employee_code (unique), user_id (FK), full_name, DOB, gender, aadhaar_ssn_encrypted, pan_tax_id, uan_pf_number, esi_number, bank details (encrypted), department_id, designation_id, reporting_manager_id, employment_type, status, work_location, shift",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "table-attendances",
+      "label": "attendances Table",
+      "type": "model",
+      "file": "backend/database/migrations/2026_06_04_000005_create_enterprise_hrms_table.php",
+      "description": "Clock in/out: employee_id (FK), attendance_date, check_in/check_out, capture_method (Biometric/Web/GPS/QR), location_gps, status, duration_minutes, regularized",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "table-leave-requests",
+      "label": "leave_requests Table",
+      "type": "model",
+      "file": "backend/database/migrations/2026_06_04_000005_create_enterprise_hrms_table.php",
+      "description": "Time off: employee_id (FK), leave_type, from_date, to_date, total_days, reason, status (Pending/Approved/Rejected), approved_by_id",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "table-leave-balances",
+      "label": "leave_balances Table",
+      "type": "model",
+      "file": "backend/database/migrations/2026_06_04_000005_create_enterprise_hrms_table.php",
+      "description": "Annual quotas: employee_id (FK), year, earned_leave, casual_leave, sick_leave, maternity_leave, lop_days",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "table-assets",
+      "label": "assets Table",
+      "type": "model",
+      "file": "backend/database/migrations/2026_06_04_000005_create_enterprise_hrms_table.php",
+      "description": "Asset catalog: asset_tag (unique QR), name, category, brand, model, serial_number, status, assigned_to_employee_id, allocated_date, returned_date",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "table-expense-claims",
+      "label": "expense_claims Table",
+      "type": "model",
+      "file": "backend/database/migrations/2026_06_04_000005_create_enterprise_hrms_table.php",
+      "description": "Reimbursements: employee_id (FK), category (Travel/Accommodation/Meals/Supplies), amount, currency, claim_date, receipt_path, status, approved_by_id",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "table-grievances",
+      "label": "grievances Table",
+      "type": "model",
+      "file": "backend/database/migrations/2026_06_04_000005_create_enterprise_hrms_table.php",
+      "description": "Grievance redressal: employee_id (FK, nullable for anonymous), category, description, status (Open/Investigation/Resolved), assigned_hr_id, resolution",
+      "confidence": "EXTRACTED"
+    }
+  ],
+  "edges": [
+    {
+      "source": "laravel-app-bootstrap",
+      "target": "middleware-inertia-requests",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "laravel-app-bootstrap",
+      "target": "middleware-sanctum-stateful",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "laravel-app-bootstrap",
+      "target": "middleware-role",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "laravel-app-bootstrap",
+      "target": "exception-monitoring-webhook",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "composer-json",
+      "target": "composer-require-sanctum",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "composer-json",
+      "target": "composer-require-inertia",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "composer-json",
+      "target": "composer-require-spatie-permission",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "composer-json",
+      "target": "composer-require-spatie-activitylog",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "composer-json",
+      "target": "composer-require-phpspreadsheet",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "config-database",
+      "target": "db-connection-pgsql",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "config-database",
+      "target": "db-connection-ai-readonly",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "config-services",
+      "target": "service-groq-llm",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "config-services",
+      "target": "service-gst-config",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "config-services",
+      "target": "service-monitoring-webhook",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "factory-user",
+      "target": "table-users",
+      "relationship": "generates",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "migration-users-table",
+      "target": "table-users",
+      "relationship": "creates",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "migration-users-table",
+      "target": "table-password-reset-tokens",
+      "relationship": "creates",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "migration-users-table",
+      "target": "table-sessions",
+      "relationship": "creates",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "table-sessions",
+      "target": "table-users",
+      "relationship": "references",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "migration-cache-table",
+      "target": "table-cache",
+      "relationship": "creates",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "migration-cache-table",
+      "target": "table-cache-locks",
+      "relationship": "creates",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "migration-jobs-table",
+      "target": "table-jobs",
+      "relationship": "creates",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "migration-jobs-table",
+      "target": "table-job-batches",
+      "relationship": "creates",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "migration-jobs-table",
+      "target": "table-failed-jobs",
+      "relationship": "creates",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "migration-clients-contacts",
+      "target": "table-clients",
+      "relationship": "creates",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "migration-clients-contacts",
+      "target": "table-client-contacts",
+      "relationship": "creates",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "migration-clients-contacts",
+      "target": "table-client-relationships",
+      "relationship": "creates",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "table-client-contacts",
+      "target": "table-clients",
+      "relationship": "references",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "table-client-relationships",
+      "target": "table-clients",
+      "relationship": "references",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "migration-projects-tracker",
+      "target": "table-projects",
+      "relationship": "creates",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "migration-projects-tracker",
+      "target": "table-project-stages",
+      "relationship": "creates",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "table-projects",
+      "target": "table-clients",
+      "relationship": "references",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "table-projects",
+      "target": "table-users",
+      "relationship": "references",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "table-project-stages",
+      "target": "table-projects",
+      "relationship": "references",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "table-project-stages",
+      "target": "table-users",
+      "relationship": "references",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "migration-tasks-time-entries",
+      "target": "table-tasks",
+      "relationship": "creates",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "migration-tasks-time-entries",
+      "target": "table-time-entries",
+      "relationship": "creates",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "table-tasks",
+      "target": "table-projects",
+      "relationship": "references",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "table-tasks",
+      "target": "table-users",
+      "relationship": "references",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "table-time-entries",
+      "target": "table-users",
+      "relationship": "references",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "table-time-entries",
+      "target": "table-projects",
+      "relationship": "references",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "table-time-entries",
+      "target": "table-tasks",
+      "relationship": "references",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "migration-documents-dms",
+      "target": "table-documents",
+      "relationship": "creates",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "migration-documents-dms",
+      "target": "table-document-versions",
+      "relationship": "creates",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "table-documents",
+      "target": "table-projects",
+      "relationship": "references",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "table-documents",
+      "target": "table-clients",
+      "relationship": "references",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "table-documents",
+      "target": "table-users",
+      "relationship": "references",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "table-document-versions",
+      "target": "table-documents",
+      "relationship": "references",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "table-document-versions",
+      "target": "table-users",
+      "relationship": "references",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "migration-financial-suite",
+      "target": "table-quotations",
+      "relationship": "creates",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "migration-financial-suite",
+      "target": "table-invoices",
+      "relationship": "creates",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "migration-financial-suite",
+      "target": "table-invoice-items",
+      "relationship": "creates",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "migration-financial-suite",
+      "target": "table-client-ledger",
+      "relationship": "creates",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "migration-financial-suite",
+      "target": "table-payments",
+      "relationship": "creates",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "table-quotations",
+      "target": "table-clients",
+      "relationship": "references",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "table-quotations",
+      "target": "table-projects",
+      "relationship": "references",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "table-quotations",
+      "target": "table-users",
+      "relationship": "references",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "table-invoices",
+      "target": "table-clients",
+      "relationship": "references",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "table-invoices",
+      "target": "table-projects",
+      "relationship": "references",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "table-invoice-items",
+      "target": "table-invoices",
+      "relationship": "references",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "table-client-ledger",
+      "target": "table-clients",
+      "relationship": "references",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "table-payments",
+      "target": "table-clients",
+      "relationship": "references",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "table-payments",
+      "target": "table-invoices",
+      "relationship": "references",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "migration-enterprise-hrms",
+      "target": "table-departments",
+      "relationship": "creates",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "migration-enterprise-hrms",
+      "target": "table-designations",
+      "relationship": "creates",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "migration-enterprise-hrms",
+      "target": "table-employees",
+      "relationship": "creates",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "migration-enterprise-hrms",
+      "target": "table-attendances",
+      "relationship": "creates",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "migration-enterprise-hrms",
+      "target": "table-leave-requests",
+      "relationship": "creates",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "migration-enterprise-hrms",
+      "target": "table-leave-balances",
+      "relationship": "creates",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "migration-enterprise-hrms",
+      "target": "table-assets",
+      "relationship": "creates",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "migration-enterprise-hrms",
+      "target": "table-expense-claims",
+      "relationship": "creates",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "migration-enterprise-hrms",
+      "target": "table-grievances",
+      "relationship": "creates",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "table-departments",
+      "target": "table-departments",
+      "relationship": "self-references",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "table-departments",
+      "target": "table-users",
+      "relationship": "references",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "table-employees",
+      "target": "table-users",
+      "relationship": "references",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "table-employees",
+      "target": "table-departments",
+      "relationship": "references",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "table-employees",
+      "target": "table-designations",
+      "relationship": "references",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "table-attendances",
+      "target": "table-employees",
+      "relationship": "references",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "table-leave-requests",
+      "target": "table-employees",
+      "relationship": "references",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "table-leave-requests",
+      "target": "table-users",
+      "relationship": "references",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "table-leave-balances",
+      "target": "table-employees",
+      "relationship": "references",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "table-assets",
+      "target": "table-employees",
+      "relationship": "references",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "table-expense-claims",
+      "target": "table-employees",
+      "relationship": "references",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "table-expense-claims",
+      "target": "table-users",
+      "relationship": "references",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "table-grievances",
+      "target": "table-employees",
+      "relationship": "references",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "table-grievances",
+      "target": "table-users",
+      "relationship": "references",
+      "confidence": "INFERRED"
+    }
+  ],
+  "hyperedges": [],
+  "input_tokens": 0,
+  "output_tokens": 0
+}

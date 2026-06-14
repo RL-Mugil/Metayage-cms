@@ -423,8 +423,8 @@ class LeaveManagementTest extends TestCase
         Sanctum::actingAs($employee2->user);
         $this->postJson('/api/hrms/leaves', [
             'leave_type' => 'Casual Leave',
-            'from_date'  => now()->addDays(20)->toDateString(),
-            'to_date'    => now()->addDays(21)->toDateString(),
+            'from_date'  => now()->addDays(30)->toDateString(),
+            'to_date'    => now()->addDays(31)->toDateString(),
             'reason'     => 'Test',
         ])->assertCreated();
 

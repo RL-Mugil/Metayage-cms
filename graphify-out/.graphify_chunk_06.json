@@ -1,0 +1,925 @@
+{
+  "nodes": [
+    {
+      "id": "database-seeder-class",
+      "label": "DatabaseSeeder",
+      "type": "class",
+      "file": "backend/database/seeders/DatabaseSeeder.php",
+      "description": "Seeds core roles (8), departments (5), designations (7), and creates super_admin user",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "database-seeder-run",
+      "label": "DatabaseSeeder::run()",
+      "type": "function",
+      "file": "backend/database/seeders/DatabaseSeeder.php",
+      "description": "Orchestrates seeding of roles, departments, designations, and admin user account",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "demo-modules-seeder-class",
+      "label": "DemoModulesSeeder",
+      "type": "class",
+      "file": "backend/database/seeders/DemoModulesSeeder.php",
+      "description": "Seeds integration configurations (8 integrations: Google Calendar, Slack, Gmail, USPTO, EPO, etc.)",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "demo-modules-seeder-run",
+      "label": "DemoModulesSeeder::run()",
+      "type": "function",
+      "file": "backend/database/seeders/DemoModulesSeeder.php",
+      "description": "Seeds Integration model with 8 operational integrations if table is empty",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "public-holidays-seeder-class",
+      "label": "PublicHolidaysSeeder",
+      "type": "class",
+      "file": "backend/database/seeders/PublicHolidaysSeeder.php",
+      "description": "Seeds 17 Indian public holidays for 2026 (Republic Day, Holi, Independence Day, etc.)",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "public-holidays-seeder-run",
+      "label": "PublicHolidaysSeeder::run()",
+      "type": "function",
+      "file": "backend/database/seeders/PublicHolidaysSeeder.php",
+      "description": "Populates public_holidays table with Indian gazetted holidays and festival dates",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "backend-package-json",
+      "label": "backend/package.json",
+      "type": "config",
+      "file": "backend/package.json",
+      "description": "Frontend dependencies for Laravel Inertia React setup with 40+ packages (Radix UI, React 19, Tailwind, recharts)",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "backend-public-index",
+      "label": "public/index.php",
+      "type": "config",
+      "file": "backend/public/index.php",
+      "description": "Laravel entry point: loads composer autoloader, bootstraps app, handles HTTP request",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "inertia-app-tsx",
+      "label": "Inertia App",
+      "type": "function",
+      "file": "backend/resources/js/app.tsx",
+      "description": "Creates Inertia React app with SSR, page resolution via glob, root mounting, title formatting",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "app-sidebar-component",
+      "label": "AppSidebar",
+      "type": "function",
+      "file": "backend/resources/js/components/app-sidebar.tsx",
+      "description": "Main navigation sidebar with 7 groups (Overview, Practice, Client Engagement, Knowledge, Finance, Operations, HRMS), collapsible, RBAC-aware",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "page-header-component",
+      "label": "PageHeader",
+      "type": "function",
+      "file": "backend/resources/js/components/page-header.tsx",
+      "description": "Reusable page header with eyebrow, title, description, and action buttons",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "stat-card-component",
+      "label": "StatCard",
+      "type": "function",
+      "file": "backend/resources/js/components/stat-card.tsx",
+      "description": "Metric display card with label, value, delta, trend indicator, icon, accent colors",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "accordion-ui-component",
+      "label": "Accordion",
+      "type": "function",
+      "file": "backend/resources/js/components/ui/accordion.tsx",
+      "description": "Radix UI accordion wrapper with Item, Trigger, Content exports; supports chevron animation",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "accordion-item-component",
+      "label": "AccordionItem",
+      "type": "function",
+      "file": "backend/resources/js/components/ui/accordion.tsx",
+      "description": "Individual accordion panel element with border-bottom styling",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "accordion-trigger-component",
+      "label": "AccordionTrigger",
+      "type": "function",
+      "file": "backend/resources/js/components/ui/accordion.tsx",
+      "description": "Clickable header that toggles accordion item; rotates chevron on open state",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "accordion-content-component",
+      "label": "AccordionContent",
+      "type": "function",
+      "file": "backend/resources/js/components/ui/accordion.tsx",
+      "description": "Accordion panel body with animate-up/down transitions based on state",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "alert-dialog-ui-component",
+      "label": "AlertDialog",
+      "type": "function",
+      "file": "backend/resources/js/components/ui/alert-dialog.tsx",
+      "description": "Modal confirmation dialog with overlay, header, content, actions, cancel; Radix UI primitive",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "alert-dialog-overlay-component",
+      "label": "AlertDialogOverlay",
+      "type": "function",
+      "file": "backend/resources/js/components/ui/alert-dialog.tsx",
+      "description": "Dark backdrop overlay with fade animation and high z-index",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "alert-dialog-content-component",
+      "label": "AlertDialogContent",
+      "type": "function",
+      "file": "backend/resources/js/components/ui/alert-dialog.tsx",
+      "description": "Centered modal content with zoom and fade animations, max-width constraint",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "alert-dialog-header-component",
+      "label": "AlertDialogHeader",
+      "type": "function",
+      "file": "backend/resources/js/components/ui/alert-dialog.tsx",
+      "description": "Flex column container for dialog title and description",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "alert-dialog-footer-component",
+      "label": "AlertDialogFooter",
+      "type": "function",
+      "file": "backend/resources/js/components/ui/alert-dialog.tsx",
+      "description": "Action button container; flex-row on desktop with gap-2 spacing",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "alert-component",
+      "label": "Alert",
+      "type": "function",
+      "file": "backend/resources/js/components/ui/alert.tsx",
+      "description": "Styled alert container with variant CVA (default, destructive) and icon support",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "alert-variants-cva",
+      "label": "alertVariants",
+      "type": "config",
+      "file": "backend/resources/js/components/ui/alert.tsx",
+      "description": "Class Variance Authority styles for alert variants and destructive state",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "alert-title-component",
+      "label": "AlertTitle",
+      "type": "function",
+      "file": "backend/resources/js/components/ui/alert.tsx",
+      "description": "h5 element for alert heading with font styling",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "alert-description-component",
+      "label": "AlertDescription",
+      "type": "function",
+      "file": "backend/resources/js/components/ui/alert.tsx",
+      "description": "Paragraph container for alert body text with leading-relaxed spacing",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "aspect-ratio-component",
+      "label": "AspectRatio",
+      "type": "function",
+      "file": "backend/resources/js/components/ui/aspect-ratio.tsx",
+      "description": "Radix UI aspect ratio primitive for maintaining fixed aspect ratio containers",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "avatar-component",
+      "label": "Avatar",
+      "type": "function",
+      "file": "backend/resources/js/components/ui/avatar.tsx",
+      "description": "Circular image container with overflow-hidden and relative positioning",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "avatar-image-component",
+      "label": "AvatarImage",
+      "type": "function",
+      "file": "backend/resources/js/components/ui/avatar.tsx",
+      "description": "Avatar image element with aspect-square and full dimensions",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "avatar-fallback-component",
+      "label": "AvatarFallback",
+      "type": "function",
+      "file": "backend/resources/js/components/ui/avatar.tsx",
+      "description": "Fallback content when image fails to load; centered background with muted color",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "badge-component",
+      "label": "Badge",
+      "type": "function",
+      "file": "backend/resources/js/components/ui/badge.tsx",
+      "description": "Small inline label with variant CVA (default, secondary, destructive, outline)",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "badge-variants-cva",
+      "label": "badgeVariants",
+      "type": "config",
+      "file": "backend/resources/js/components/ui/badge.tsx",
+      "description": "CVA style definitions for badge variants with focus ring and hover states",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "breadcrumb-component",
+      "label": "Breadcrumb",
+      "type": "function",
+      "file": "backend/resources/js/components/ui/breadcrumb.tsx",
+      "description": "Navigation breadcrumb nav element with optional separator prop",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "breadcrumb-list-component",
+      "label": "BreadcrumbList",
+      "type": "function",
+      "file": "backend/resources/js/components/ui/breadcrumb.tsx",
+      "description": "Ordered list for breadcrumb items with flex wrap and gap spacing",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "breadcrumb-item-component",
+      "label": "BreadcrumbItem",
+      "type": "function",
+      "file": "backend/resources/js/components/ui/breadcrumb.tsx",
+      "description": "Individual breadcrumb list item with inline-flex layout",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "breadcrumb-link-component",
+      "label": "BreadcrumbLink",
+      "type": "function",
+      "file": "backend/resources/js/components/ui/breadcrumb.tsx",
+      "description": "Anchor link or Slot wrapper for breadcrumb navigation with hover text color",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "breadcrumb-page-component",
+      "label": "BreadcrumbPage",
+      "type": "function",
+      "file": "backend/resources/js/components/ui/breadcrumb.tsx",
+      "description": "Current page indicator (span) with aria-current and disabled link styling",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "breadcrumb-separator-component",
+      "label": "BreadcrumbSeparator",
+      "type": "function",
+      "file": "backend/resources/js/components/ui/breadcrumb.tsx",
+      "description": "Separator between breadcrumb items; defaults to ChevronRight icon",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "breadcrumb-ellipsis-component",
+      "label": "BreadcrumbEllipsis",
+      "type": "function",
+      "file": "backend/resources/js/components/ui/breadcrumb.tsx",
+      "description": "Overflow indicator for truncated breadcrumb paths (MoreHorizontal icon)",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "button-component",
+      "label": "Button",
+      "type": "function",
+      "file": "backend/resources/js/components/ui/button.tsx",
+      "description": "Flexible button with 6 variants (default, destructive, outline, secondary, ghost, link) and 4 sizes",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "button-variants-cva",
+      "label": "buttonVariants",
+      "type": "config",
+      "file": "backend/resources/js/components/ui/button.tsx",
+      "description": "CVA styles for button variants, sizes, focus rings, and disabled states",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "calendar-component",
+      "label": "Calendar",
+      "type": "function",
+      "file": "backend/resources/js/components/ui/calendar.tsx",
+      "description": "React Day Picker wrapper with Radix UI styling, month/year dropdowns, range selection support",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "calendar-day-button-component",
+      "label": "CalendarDayButton",
+      "type": "function",
+      "file": "backend/resources/js/components/ui/calendar.tsx",
+      "description": "Individual calendar day cell with range start/end/middle states and focus handling",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "card-component",
+      "label": "Card",
+      "type": "function",
+      "file": "backend/resources/js/components/ui/card.tsx",
+      "description": "Container div with rounded border, card background, and shadow styling",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "card-header-component",
+      "label": "CardHeader",
+      "type": "function",
+      "file": "backend/resources/js/components/ui/card.tsx",
+      "description": "Card section header with flex column layout and 1.5 spacing",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "card-title-component",
+      "label": "CardTitle",
+      "type": "function",
+      "file": "backend/resources/js/components/ui/card.tsx",
+      "description": "Card heading with semibold font and tracking-tight spacing",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "card-description-component",
+      "label": "CardDescription",
+      "type": "function",
+      "file": "backend/resources/js/components/ui/card.tsx",
+      "description": "Subtitle text for card with muted foreground color",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "card-content-component",
+      "label": "CardContent",
+      "type": "function",
+      "file": "backend/resources/js/components/ui/card.tsx",
+      "description": "Card body section with padding (pt-0 removes top padding when after header)",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "card-footer-component",
+      "label": "CardFooter",
+      "type": "function",
+      "file": "backend/resources/js/components/ui/card.tsx",
+      "description": "Card bottom section with flex row layout and aligned items",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "carousel-component",
+      "label": "Carousel",
+      "type": "function",
+      "file": "backend/resources/js/components/ui/carousel.tsx",
+      "description": "Embla carousel wrapper with orientation support, keyboard navigation (arrows), scroll state tracking",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "carousel-context",
+      "label": "CarouselContext",
+      "type": "config",
+      "file": "backend/resources/js/components/ui/carousel.tsx",
+      "description": "React context for carousel state (api, scrolling, canScroll flags, orientation)",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "use-carousel-hook",
+      "label": "useCarousel()",
+      "type": "function",
+      "file": "backend/resources/js/components/ui/carousel.tsx",
+      "description": "Custom hook to access carousel context; throws if used outside Carousel provider",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "carousel-content-component",
+      "label": "CarouselContent",
+      "type": "function",
+      "file": "backend/resources/js/components/ui/carousel.tsx",
+      "description": "Carousel slide container with overflow-hidden and flex layout based on orientation",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "carousel-item-component",
+      "label": "CarouselItem",
+      "type": "function",
+      "file": "backend/resources/js/components/ui/carousel.tsx",
+      "description": "Individual carousel slide with shrink-0 basis-full and padding based on orientation",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "carousel-previous-component",
+      "label": "CarouselPrevious",
+      "type": "function",
+      "file": "backend/resources/js/components/ui/carousel.tsx",
+      "description": "Previous slide button; position and rotation vary by orientation; disabled if !canScrollPrev",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "carousel-next-component",
+      "label": "CarouselNext",
+      "type": "function",
+      "file": "backend/resources/js/components/ui/carousel.tsx",
+      "description": "Next slide button; position and rotation vary by orientation; disabled if !canScrollNext",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "chart-container-component",
+      "label": "ChartContainer",
+      "type": "function",
+      "file": "backend/resources/js/components/ui/chart.tsx",
+      "description": "Recharts ResponsiveContainer wrapper with theme-aware CSS variables and chart config provider",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "chart-context",
+      "label": "ChartContext",
+      "type": "config",
+      "file": "backend/resources/js/components/ui/chart.tsx",
+      "description": "React context for chart configuration (label, icon, color/theme mapping)",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "use-chart-hook",
+      "label": "useChart()",
+      "type": "function",
+      "file": "backend/resources/js/components/ui/chart.tsx",
+      "description": "Custom hook to access chart config context; throws if used outside ChartContainer",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "chart-style-component",
+      "label": "ChartStyle",
+      "type": "function",
+      "file": "backend/resources/js/components/ui/chart.tsx",
+      "description": "Generates inline style tag with CSS color variables for light/dark theme variants",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "chart-tooltip-component",
+      "label": "ChartTooltip",
+      "type": "function",
+      "file": "backend/resources/js/components/ui/chart.tsx",
+      "description": "Recharts Tooltip primitive re-export for wrapping custom tooltip content",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "chart-tooltip-content-component",
+      "label": "ChartTooltipContent",
+      "type": "function",
+      "file": "backend/resources/js/components/ui/chart.tsx",
+      "description": "Tooltip body with payload rendering, label, indicator (dot/line/dashed), formatter, color indicator",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "chart-legend-component",
+      "label": "ChartLegend",
+      "type": "function",
+      "file": "backend/resources/js/components/ui/chart.tsx",
+      "description": "Recharts Legend primitive re-export for chart legends",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "chart-legend-content-component",
+      "label": "ChartLegendContent",
+      "type": "function",
+      "file": "backend/resources/js/components/ui/chart.tsx",
+      "description": "Legend items with icon/color indicator and label from config; supports hideIcon toggle",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "get-payload-config-from-payload-function",
+      "label": "getPayloadConfigFromPayload()",
+      "type": "function",
+      "file": "backend/resources/js/components/ui/chart.tsx",
+      "description": "Helper to extract chart config matching a Recharts payload item key",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "checkbox-component",
+      "label": "Checkbox",
+      "type": "function",
+      "file": "backend/resources/js/components/ui/checkbox.tsx",
+      "description": "Radix UI checkbox with Check icon indicator, focus ring, and disabled state support",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "collapsible-component",
+      "label": "Collapsible",
+      "type": "function",
+      "file": "backend/resources/js/components/ui/collapsible.tsx",
+      "description": "Radix UI collapsible container (expand/collapse element)",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "collapsible-trigger-component",
+      "label": "CollapsibleTrigger",
+      "type": "function",
+      "file": "backend/resources/js/components/ui/collapsible.tsx",
+      "description": "Button to toggle collapsible open/closed state",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "collapsible-content-component",
+      "label": "CollapsibleContent",
+      "type": "function",
+      "file": "backend/resources/js/components/ui/collapsible.tsx",
+      "description": "Content revealed when collapsible is expanded",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "command-component",
+      "label": "Command",
+      "type": "function",
+      "file": "backend/resources/js/components/ui/command.tsx",
+      "description": "cmdk command palette wrapper with flex column and popover styling",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "command-dialog-component",
+      "label": "CommandDialog",
+      "type": "function",
+      "file": "backend/resources/js/components/ui/command.tsx",
+      "description": "Modal dialog wrapping Command for quick search/action palette patterns",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "command-input-component",
+      "label": "CommandInput",
+      "type": "function",
+      "file": "backend/resources/js/components/ui/command.tsx",
+      "description": "Searchable input field with Search icon and border-bottom separator",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "command-list-component",
+      "label": "CommandList",
+      "type": "function",
+      "file": "backend/resources/js/components/ui/command.tsx",
+      "description": "Scrollable container for command results (max-h-[300px])",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "command-empty-component",
+      "label": "CommandEmpty",
+      "type": "function",
+      "file": "backend/resources/js/components/ui/command.tsx",
+      "description": "Fallback message when command list has no results",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "command-group-component",
+      "label": "CommandGroup",
+      "type": "function",
+      "file": "backend/resources/js/components/ui/command.tsx",
+      "description": "Grouped section of command items with heading and styling",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "command-item-component",
+      "label": "CommandItem",
+      "type": "function",
+      "file": "backend/resources/js/components/ui/command.tsx",
+      "description": "Individual command item with selection state, accent bg on selected, gap-2 layout",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "command-separator-component",
+      "label": "CommandSeparator",
+      "type": "function",
+      "file": "backend/resources/js/components/ui/command.tsx",
+      "description": "Horizontal line divider between command groups",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "command-shortcut-component",
+      "label": "CommandShortcut",
+      "type": "function",
+      "file": "backend/resources/js/components/ui/command.tsx",
+      "description": "Keyboard shortcut label display in command items (right-aligned, muted)",
+      "confidence": "EXTRACTED"
+    }
+  ],
+  "edges": [
+    {
+      "source": "database-seeder-class",
+      "target": "database-seeder-run",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "demo-modules-seeder-class",
+      "target": "demo-modules-seeder-run",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "public-holidays-seeder-class",
+      "target": "public-holidays-seeder-run",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "inertia-app-tsx",
+      "target": "app-sidebar-component",
+      "relationship": "uses",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "app-sidebar-component",
+      "target": "page-header-component",
+      "relationship": "uses",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "accordion-component",
+      "target": "accordion-item-component",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "accordion-component",
+      "target": "accordion-trigger-component",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "accordion-component",
+      "target": "accordion-content-component",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "alert-dialog-ui-component",
+      "target": "alert-dialog-overlay-component",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "alert-dialog-ui-component",
+      "target": "alert-dialog-content-component",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "alert-dialog-ui-component",
+      "target": "alert-dialog-header-component",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "alert-dialog-ui-component",
+      "target": "alert-dialog-footer-component",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "alert-component",
+      "target": "alert-variants-cva",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "alert-component",
+      "target": "alert-title-component",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "alert-component",
+      "target": "alert-description-component",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "avatar-component",
+      "target": "avatar-image-component",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "avatar-component",
+      "target": "avatar-fallback-component",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "badge-component",
+      "target": "badge-variants-cva",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "breadcrumb-component",
+      "target": "breadcrumb-list-component",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "breadcrumb-component",
+      "target": "breadcrumb-item-component",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "breadcrumb-component",
+      "target": "breadcrumb-link-component",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "breadcrumb-component",
+      "target": "breadcrumb-separator-component",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "button-component",
+      "target": "button-variants-cva",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "calendar-component",
+      "target": "calendar-day-button-component",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "card-component",
+      "target": "card-header-component",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "card-component",
+      "target": "card-title-component",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "card-component",
+      "target": "card-description-component",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "card-component",
+      "target": "card-content-component",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "card-component",
+      "target": "card-footer-component",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "carousel-component",
+      "target": "carousel-context",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "carousel-component",
+      "target": "use-carousel-hook",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "carousel-content-component",
+      "target": "use-carousel-hook",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "carousel-item-component",
+      "target": "use-carousel-hook",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "carousel-previous-component",
+      "target": "use-carousel-hook",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "carousel-next-component",
+      "target": "use-carousel-hook",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "carousel-previous-component",
+      "target": "button-component",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "carousel-next-component",
+      "target": "button-component",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "chart-container-component",
+      "target": "chart-context",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "chart-container-component",
+      "target": "chart-style-component",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "chart-tooltip-content-component",
+      "target": "use-chart-hook",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "chart-legend-content-component",
+      "target": "use-chart-hook",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "chart-tooltip-content-component",
+      "target": "get-payload-config-from-payload-function",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "chart-legend-content-component",
+      "target": "get-payload-config-from-payload-function",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "command-component",
+      "target": "command-input-component",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "command-component",
+      "target": "command-list-component",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "command-component",
+      "target": "command-group-component",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "command-component",
+      "target": "command-item-component",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "command-dialog-component",
+      "target": "command-component",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "command-group-component",
+      "target": "command-item-component",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "stat-card-component",
+      "target": "button-component",
+      "relationship": "uses",
+      "confidence": "INFERRED"
+    }
+  ],
+  "hyperedges": [],
+  "input_tokens": 24567,
+  "output_tokens": 3421
+}

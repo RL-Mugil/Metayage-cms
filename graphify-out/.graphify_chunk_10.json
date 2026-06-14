@@ -1,0 +1,1305 @@
+{
+  "nodes": [
+    {
+      "id": "route-api-php",
+      "label": "API Routes Configuration",
+      "type": "route",
+      "file": "backend/routes/api.php",
+      "description": "All API endpoints (60+) protected by Sanctum middleware with throttling",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "route-api-login-post",
+      "label": "POST /api/login",
+      "type": "route",
+      "file": "backend/routes/api.php",
+      "description": "Public login endpoint, throttled at 10/1min",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "route-api-clients-index",
+      "label": "GET /api/clients",
+      "type": "route",
+      "file": "backend/routes/api.php",
+      "description": "List clients with pagination, search, filtering",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "route-api-clients-store",
+      "label": "POST /api/clients",
+      "type": "route",
+      "file": "backend/routes/api.php",
+      "description": "Create new client, auto-generate client_code and gst_type",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "route-api-clients-import",
+      "label": "POST /api/clients/import",
+      "type": "route",
+      "file": "backend/routes/api.php",
+      "description": "Bulk import clients from CSV or Google Sheet, throttled at 5/1min",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "route-api-projects-store",
+      "label": "POST /api/projects",
+      "type": "route",
+      "file": "backend/routes/api.php",
+      "description": "Create project, auto-generate project_code and docket_number",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "route-api-projects-stage",
+      "label": "POST /api/projects/{id}/stage",
+      "type": "route",
+      "file": "backend/routes/api.php",
+      "description": "Update project lifecycle stage",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "route-api-hrms-leaves",
+      "label": "POST /api/hrms/leaves",
+      "type": "route",
+      "file": "backend/routes/api.php",
+      "description": "Apply for leave, requires employee profile",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "route-api-hrms-clock-in",
+      "label": "POST /api/hrms/clock-in",
+      "type": "route",
+      "file": "backend/routes/api.php",
+      "description": "Clock in for attendance, one per day max",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "route-api-ai-query",
+      "label": "POST /api/ai/query",
+      "type": "route",
+      "file": "backend/routes/api.php",
+      "description": "AI assistant query with Groq LLM, stricter 10/1min throttle",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "route-api-financial-invoices",
+      "label": "POST /api/financial/invoices",
+      "type": "route",
+      "file": "backend/routes/api.php",
+      "description": "Create invoice with sequential code generation and tax computation",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "route-api-payroll-runs",
+      "label": "POST /api/payroll/runs",
+      "type": "route",
+      "file": "backend/routes/api.php",
+      "description": "Create payroll run for month, generates payslips for all active employees",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "route-api-approvals",
+      "label": "POST /api/approvals/resolve",
+      "type": "route",
+      "file": "backend/routes/api.php",
+      "description": "Approve/reject pending items (leave, expenses)",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "route-api-compliance",
+      "label": "GET /api/compliance",
+      "type": "route",
+      "file": "backend/routes/api.php",
+      "description": "List compliance items with alert level derivation",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "route-api-bulk-execute",
+      "label": "POST /api/bulk/execute",
+      "type": "route",
+      "file": "backend/routes/api.php",
+      "description": "Bulk operations on entities (clients, projects) with status change",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "route-web-php",
+      "label": "Web Routes Configuration",
+      "type": "route",
+      "file": "backend/routes/web.php",
+      "description": "Inertia web routes rendering React components (SPA pages)",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "route-web-login",
+      "label": "GET /login",
+      "type": "route",
+      "file": "backend/routes/web.php",
+      "description": "Login page rendered via Inertia",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "route-web-dashboard",
+      "label": "GET /",
+      "type": "route",
+      "file": "backend/routes/web.php",
+      "description": "Main dashboard route with authentication guard",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "route-console-php",
+      "label": "Console Routes Configuration",
+      "type": "route",
+      "file": "backend/routes/console.php",
+      "description": "Scheduled commands and artisan console routes",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "schedule-reminders-send-deadlines",
+      "label": "Schedule: reminders:send-deadlines",
+      "type": "command",
+      "file": "backend/routes/console.php",
+      "description": "Sends deadline reminder notifications daily at 09:00",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "test-ai-controller",
+      "label": "AIControllerTest",
+      "type": "class",
+      "file": "backend/tests/Feature/AIControllerTest.php",
+      "description": "Tests for AI query endpoint: auth, input validation, SQL safety, Groq API integration",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "test-ai-authorization",
+      "label": "Test: AI Authorization",
+      "type": "function",
+      "file": "backend/tests/Feature/AIControllerTest.php",
+      "description": "Verifies all authenticated roles (super_admin, partner, manager, associate, client) can access AI query",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "test-ai-sql-safety",
+      "label": "Test: AI SQL Safety",
+      "type": "function",
+      "file": "backend/tests/Feature/AIControllerTest.php",
+      "description": "Rejects DELETE/write SQL and stacked statements from AI response",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "test-client-controller",
+      "label": "ClientControllerTest",
+      "type": "class",
+      "file": "backend/tests/Feature/ClientControllerTest.php",
+      "description": "Comprehensive tests for client CRUD, validation, import, GST type computation, RBAC",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "test-client-code-generation",
+      "label": "Test: Client Code Auto-generation",
+      "type": "function",
+      "file": "backend/tests/Feature/ClientControllerTest.php",
+      "description": "Validates client_code format (C/Z + 2 digits + M/Y suffix), uniqueness, India/foreign distinction",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "test-client-gst-type",
+      "label": "Test: GST Type Computation",
+      "type": "function",
+      "file": "backend/tests/Feature/ClientControllerTest.php",
+      "description": "Computes gst_type (B2B, B2C, Export, Unregistered) from nationality, client_type, has_gstin",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "test-client-import-csv",
+      "label": "Test: Client Import CSV",
+      "type": "function",
+      "file": "backend/tests/Feature/ClientControllerTest.php",
+      "description": "Bulk import clients from CSV with flexible headers, duplicate detection, skip validation",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "test-client-import-google-sheet",
+      "label": "Test: Client Import Google Sheet",
+      "type": "function",
+      "file": "backend/tests/Feature/ClientControllerTest.php",
+      "description": "Fetch CSV from Google Sheet URL via HTTP, validate accessibility, parse as import",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "test-leave-management",
+      "label": "LeaveManagementTest",
+      "type": "class",
+      "file": "backend/tests/Feature/LeaveManagementTest.php",
+      "description": "Tests for leave application, approval workflow, balance deduction, overlap detection",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "test-leave-application",
+      "label": "Test: Leave Application",
+      "type": "function",
+      "file": "backend/tests/Feature/LeaveManagementTest.php",
+      "description": "Employee can apply for leave with from_date, to_date, reason; status starts as Pending",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "test-leave-balance-deduction",
+      "label": "Test: Leave Balance Deduction",
+      "type": "function",
+      "file": "backend/tests/Feature/LeaveManagementTest.php",
+      "description": "Approved leave deducts from corresponding leave_type balance; excess becomes LOP days",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "test-leave-overlap-detection",
+      "label": "Test: Leave Overlap Detection",
+      "type": "function",
+      "file": "backend/tests/Feature/LeaveManagementTest.php",
+      "description": "Prevents overlapping leave requests on same employee",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "test-module-actions",
+      "label": "ModuleActionsTest",
+      "type": "class",
+      "file": "backend/tests/Feature/ModuleActionsTest.php",
+      "description": "Tests for compliance, reminders, feedback, performance, recruitment, offboarding, integrations, portal, bulk operations",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "test-compliance-alert-levels",
+      "label": "Test: Compliance Alert Levels",
+      "type": "function",
+      "file": "backend/tests/Feature/ModuleActionsTest.php",
+      "description": "Derives alert level (Critical/At Risk/On Track) from deadline days remaining",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "test-performance-review-submission",
+      "label": "Test: Performance Review Submission",
+      "type": "function",
+      "file": "backend/tests/Feature/ModuleActionsTest.php",
+      "description": "Computes average rating from 5-point scores, locks review status to Completed",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "test-offboarding-checklist",
+      "label": "Test: Offboarding Checklist",
+      "type": "function",
+      "file": "backend/tests/Feature/ModuleActionsTest.php",
+      "description": "Tracks 8-item checklist completion; status progresses Draft → In Progress → Completed",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "test-module-pages",
+      "label": "ModulePagesTest",
+      "type": "class",
+      "file": "backend/tests/Feature/ModulePagesTest.php",
+      "description": "Tests Inertia rendering of 9 demo-shell modules (portal, bulk, compliance, etc.)",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "test-pagination-helper",
+      "label": "PaginationHelperTest",
+      "type": "class",
+      "file": "backend/tests/Feature/PaginationHelperTest.php",
+      "description": "Tests PaginationHelper::paginate() and paginateByOffset() with bounds clamping",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "test-pagination-defaults",
+      "label": "Test: Pagination Defaults",
+      "type": "function",
+      "file": "backend/tests/Feature/PaginationHelperTest.php",
+      "description": "Default per_page=25, clamped 1-2000, has_more boolean, last_page calculation",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "test-payroll-processing",
+      "label": "PayrollProcessingTest",
+      "type": "class",
+      "file": "backend/tests/Feature/PayrollProcessingTest.php",
+      "description": "Tests payroll run creation, payslip generation, salary calculations (PF/ESI/PT), LOP deduction",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "test-payroll-salary-calculation",
+      "label": "Test: Payroll Salary Calculation",
+      "type": "function",
+      "file": "backend/tests/Feature/PayrollProcessingTest.php",
+      "description": "Basic = 50% gross, HRA = 25%, Special = remainder; PF capped at 1800; ESI only if ≤21k; PT fixed 200",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "test-payroll-lop-handling",
+      "label": "Test: Payroll LOP Handling",
+      "type": "function",
+      "file": "backend/tests/Feature/PayrollProcessingTest.php",
+      "description": "LOP deducts pro-rata from gross before applying salary structure",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "test-project-controller",
+      "label": "ProjectControllerTest",
+      "type": "class",
+      "file": "backend/tests/Feature/ProjectControllerTest.php",
+      "description": "Tests project CRUD, code/docket generation, lifecycle stages, status transitions, deletion rules",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "test-project-code-generation",
+      "label": "Test: Project Code Auto-generation",
+      "type": "function",
+      "file": "backend/tests/Feature/ProjectControllerTest.php",
+      "description": "Generates project_code (PRJ-2026-xxxxx) and docket_number (C01M001INPAT format)",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "test-project-stage-transitions",
+      "label": "Test: Project Stage Transitions",
+      "type": "function",
+      "file": "backend/tests/Feature/ProjectControllerTest.php",
+      "description": "Draft → Active → On Hold; Closed projects cannot reopen",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "test-rbac",
+      "label": "RbacTest",
+      "type": "class",
+      "file": "backend/tests/Feature/RbacTest.php",
+      "description": "Tests role-based access control: client read restrictions, HR/associate permissions",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "test-rbac-tracker-access",
+      "label": "Test: RBAC Tracker Access",
+      "type": "function",
+      "file": "backend/tests/Feature/RbacTest.php",
+      "description": "Client role denied access to project tracker; internal staff (manager) can read",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "test-rbac-payroll-creation",
+      "label": "Test: RBAC Payroll Creation",
+      "type": "function",
+      "file": "backend/tests/Feature/RbacTest.php",
+      "description": "Only HR and super_admin can create payroll; finance can view but not create",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "test-settings-attendance-portal",
+      "label": "SettingsAttendancePortalTest",
+      "type": "class",
+      "file": "backend/tests/Feature/SettingsAttendancePortalTest.php",
+      "description": "Tests settings (profile/password/notifications), attendance clock in/out, portal client listing",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "test-attendance-clock-in",
+      "label": "Test: Attendance Clock In",
+      "type": "function",
+      "file": "backend/tests/Feature/SettingsAttendancePortalTest.php",
+      "description": "Creates attendance record with check_in timestamp, status Present; prevents double clock-in same day",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "test-attendance-clock-out",
+      "label": "Test: Attendance Clock Out",
+      "type": "function",
+      "file": "backend/tests/Feature/SettingsAttendancePortalTest.php",
+      "description": "Updates check_out and calculates duration_minutes",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "test-settings-password-change",
+      "label": "Test: Settings Password Change",
+      "type": "function",
+      "file": "backend/tests/Feature/SettingsAttendancePortalTest.php",
+      "description": "Validates current_password before updating; supports password_confirmation",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "test-settings-system-rbac",
+      "label": "Test: Settings System RBAC",
+      "type": "function",
+      "file": "backend/tests/Feature/SettingsAttendancePortalTest.php",
+      "description": "Only super_admin and partner can modify system settings (company, currency, fiscal month)",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "testcase-php",
+      "label": "TestCase",
+      "type": "class",
+      "file": "backend/tests/TestCase.php",
+      "description": "Base test class extending Laravel TestCase",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "encrypted-safe-cast-test",
+      "label": "EncryptedSafeTest",
+      "type": "class",
+      "file": "backend/tests/Unit/EncryptedSafeTest.php",
+      "description": "Unit tests for EncryptedSafe cast: encryption roundtrip, plaintext tolerance, nondeterminism",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "encrypted-safe-roundtrip",
+      "label": "Test: Encryption Roundtrip",
+      "type": "function",
+      "file": "backend/tests/Unit/EncryptedSafeTest.php",
+      "description": "Encrypts value, stores non-plaintext, decrypts back to original",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "encrypted-safe-plaintext-tolerance",
+      "label": "Test: Plaintext Tolerance",
+      "type": "function",
+      "file": "backend/tests/Unit/EncryptedSafeTest.php",
+      "description": "Legacy plaintext values pass through unchanged (backward compatibility)",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "payroll-service-test",
+      "label": "PayrollServiceTest",
+      "type": "class",
+      "file": "backend/tests/Unit/PayrollServiceTest.php",
+      "description": "Unit tests for PayrollService::computeSlip() with various salary/LOP/TDS combinations",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "payroll-service-standard-calc",
+      "label": "Test: Payroll Service Standard Calculation",
+      "type": "function",
+      "file": "backend/tests/Unit/PayrollServiceTest.php",
+      "description": "100k gross: basic 50k, HRA 25k, special 25k, PF capped 1800, ESI 0, PT 200",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "payroll-service-esi-threshold",
+      "label": "Test: Payroll ESI Threshold",
+      "type": "function",
+      "file": "backend/tests/Unit/PayrollServiceTest.php",
+      "description": "ESI 0.75% charged only if gross ≤ 21000",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "payroll-service-lop-proration",
+      "label": "Test: Payroll LOP Proration",
+      "type": "function",
+      "file": "backend/tests/Unit/PayrollServiceTest.php",
+      "description": "LOP days deduct pro-rata from gross; e.g., 15/30 days = 50% deduction",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "config-typescript",
+      "label": "TypeScript Configuration",
+      "type": "config",
+      "file": "tsconfig.json",
+      "description": "Compiler options: ES2022 target, JSX react-jsx, strict mode, Bundler resolution, @ path alias",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "config-vite",
+      "label": "Vite Configuration",
+      "type": "config",
+      "file": "vite.config.ts",
+      "description": "TanStack Start + Tailwind setup via @lovable.dev/vite-tanstack-config",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "config-components-json",
+      "label": "shadcn/ui Components Configuration",
+      "type": "config",
+      "file": "components.json",
+      "description": "New York style, Tailwind CSS v4, lucide icons, aliases for @/components, @/ui, @/hooks",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "deploy-rebuild-sh",
+      "label": "Deploy Rebuild Script",
+      "type": "config",
+      "file": "deploy-rebuild.sh",
+      "description": "Production deployment: packages backend, uploads to DigitalOcean, installs deps, builds frontend, migrates DB, starts Horizon",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "deploy-setup-sh",
+      "label": "Deploy Setup Script",
+      "type": "config",
+      "file": "deploy-setup.sh",
+      "description": "Initial deployment: extracts files, creates PostgreSQL container, writes .env, runs migrations, sets up PHP-FPM, Nginx, SSL",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "config-eslint",
+      "label": "ESLint Configuration",
+      "type": "config",
+      "file": "eslint.config.js",
+      "description": "TypeScript ESLint with React hooks, React refresh, Prettier integration, no-restricted-imports for server-only",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "auth-controller",
+      "label": "AuthController",
+      "type": "class",
+      "file": "backend/app/Http/Controllers/AuthController.php",
+      "description": "Login, logout, user profile, all users list endpoints",
+      "confidence": "INFERRED"
+    },
+    {
+      "id": "client-controller",
+      "label": "ClientController",
+      "type": "class",
+      "file": "backend/app/Http/Controllers/ClientController.php",
+      "description": "CRUD for clients, import CSV/Google Sheet, stats endpoint, contact management",
+      "confidence": "INFERRED"
+    },
+    {
+      "id": "project-controller",
+      "label": "ProjectController",
+      "type": "class",
+      "file": "backend/app/Http/Controllers/ProjectController.php",
+      "description": "CRUD for projects, stage transitions, stats, Inertia page rendering",
+      "confidence": "INFERRED"
+    },
+    {
+      "id": "task-controller",
+      "label": "TaskController",
+      "type": "class",
+      "file": "backend/app/Http/Controllers/TaskController.php",
+      "description": "CRUD for tasks, time entry tracking, Inertia page rendering",
+      "confidence": "INFERRED"
+    },
+    {
+      "id": "hrms-controller",
+      "label": "HRMSController",
+      "type": "class",
+      "file": "backend/app/Http/Controllers/HRMSController.php",
+      "description": "Employee management, attendance, leave, payroll, stats, Inertia pages",
+      "confidence": "INFERRED"
+    },
+    {
+      "id": "attendance-controller",
+      "label": "AttendanceController",
+      "type": "class",
+      "file": "backend/app/Http/Controllers/AttendanceController.php",
+      "description": "Clock in/out endpoints, attendance list",
+      "confidence": "INFERRED"
+    },
+    {
+      "id": "leave-controller",
+      "label": "LeaveController",
+      "type": "class",
+      "file": "backend/app/Http/Controllers/LeaveController.php",
+      "description": "Leave application, approval workflow, list and update",
+      "confidence": "INFERRED"
+    },
+    {
+      "id": "financial-controller",
+      "label": "FinancialController",
+      "type": "class",
+      "file": "backend/app/Http/Controllers/FinancialController.php",
+      "description": "Invoice CRUD, quotations, payment recording, financial stats, Inertia page",
+      "confidence": "INFERRED"
+    },
+    {
+      "id": "dashboard-controller",
+      "label": "DashboardController",
+      "type": "class",
+      "file": "backend/app/Http/Controllers/DashboardController.php",
+      "description": "Dashboard metrics and index page rendering",
+      "confidence": "INFERRED"
+    },
+    {
+      "id": "ai-controller",
+      "label": "AIController",
+      "type": "class",
+      "file": "backend/app/Http/Controllers/AIController.php",
+      "description": "AI query endpoint: accepts NL, calls Groq LLM, extracts/executes SQL, returns results",
+      "confidence": "INFERRED"
+    },
+    {
+      "id": "notification-controller",
+      "label": "NotificationController",
+      "type": "class",
+      "file": "backend/app/Http/Controllers/NotificationController.php",
+      "description": "List, mark read, dismiss in-app notifications",
+      "confidence": "INFERRED"
+    },
+    {
+      "id": "project-tracker-controller",
+      "label": "ProjectTrackerController",
+      "type": "class",
+      "file": "backend/app/Http/Controllers/ProjectTrackerController.php",
+      "description": "Tracker circles, rows, calendar events, analytics, Inertia page",
+      "confidence": "INFERRED"
+    },
+    {
+      "id": "reports-controller",
+      "label": "ReportsController",
+      "type": "class",
+      "file": "backend/app/Http/Controllers/ReportsController.php",
+      "description": "getData() with type switch for 10 report types",
+      "confidence": "INFERRED"
+    },
+    {
+      "id": "settings-controller",
+      "label": "SettingsController",
+      "type": "class",
+      "file": "backend/app/Http/Controllers/SettingsController.php",
+      "description": "Profile, password, notification preferences, system settings, user reset-password",
+      "confidence": "INFERRED"
+    },
+    {
+      "id": "approval-controller",
+      "label": "ApprovalController",
+      "type": "class",
+      "file": "backend/app/Http/Controllers/ApprovalController.php",
+      "description": "List approvals, resolve (approve/reject)",
+      "confidence": "INFERRED"
+    },
+    {
+      "id": "discussion-controller",
+      "label": "DiscussionController",
+      "type": "class",
+      "file": "backend/app/Http/Controllers/DiscussionController.php",
+      "description": "Thread CRUD, reply to discussion, list threads",
+      "confidence": "INFERRED"
+    },
+    {
+      "id": "compliance-controller",
+      "label": "ComplianceController",
+      "type": "class",
+      "file": "backend/app/Http/Controllers/ComplianceController.php",
+      "description": "List compliance items with alert levels, update, remind endpoint",
+      "confidence": "INFERRED"
+    },
+    {
+      "id": "reminder-controller",
+      "label": "ReminderController",
+      "type": "class",
+      "file": "backend/app/Http/Controllers/ReminderController.php",
+      "description": "CRUD reminders with scope (self/team), list with filtering",
+      "confidence": "INFERRED"
+    },
+    {
+      "id": "feedback-controller",
+      "label": "FeedbackController",
+      "type": "class",
+      "file": "backend/app/Http/Controllers/FeedbackController.php",
+      "description": "List feedback, request feedback (creates notification)",
+      "confidence": "INFERRED"
+    },
+    {
+      "id": "performance-controller",
+      "label": "PerformanceController",
+      "type": "class",
+      "file": "backend/app/Http/Controllers/PerformanceController.php",
+      "description": "List performance reviews, submit review with scoring and rating computation",
+      "confidence": "INFERRED"
+    },
+    {
+      "id": "recruitment-controller",
+      "label": "RecruitmentController",
+      "type": "class",
+      "file": "backend/app/Http/Controllers/RecruitmentController.php",
+      "description": "List, create, update job postings",
+      "confidence": "INFERRED"
+    },
+    {
+      "id": "offboarding-controller",
+      "label": "OffboardingController",
+      "type": "class",
+      "file": "backend/app/Http/Controllers/OffboardingController.php",
+      "description": "List offboarding cases, create, update checklist",
+      "confidence": "INFERRED"
+    },
+    {
+      "id": "integration-controller",
+      "label": "IntegrationController",
+      "type": "class",
+      "file": "backend/app/Http/Controllers/IntegrationController.php",
+      "description": "List integrations, toggle enable/disable, save config, test connection",
+      "confidence": "INFERRED"
+    },
+    {
+      "id": "portal-controller",
+      "label": "PortalController",
+      "type": "class",
+      "file": "backend/app/Http/Controllers/PortalController.php",
+      "description": "List clients for portal, toggle portal access, invite all, create portal user",
+      "confidence": "INFERRED"
+    },
+    {
+      "id": "bulk-controller",
+      "label": "BulkController",
+      "type": "class",
+      "file": "backend/app/Http/Controllers/BulkController.php",
+      "description": "Execute bulk operations (status change, archive) with input validation",
+      "confidence": "INFERRED"
+    },
+    {
+      "id": "payroll-controller",
+      "label": "PayrollController",
+      "type": "class",
+      "file": "backend/app/Http/Controllers/PayrollController.php",
+      "description": "List runs, create run, show run details, finalize, mark paid, update payslips, my-slips",
+      "confidence": "INFERRED"
+    },
+    {
+      "id": "document-controller",
+      "label": "DocumentController",
+      "type": "class",
+      "file": "backend/app/Http/Controllers/DocumentController.php",
+      "description": "List, store, delete documents, download",
+      "confidence": "INFERRED"
+    },
+    {
+      "id": "pagination-helper-class",
+      "label": "PaginationHelper",
+      "type": "class",
+      "file": "backend/app/Http/PaginationHelper.php",
+      "description": "Static helper methods paginate() and paginateByOffset() with bounds clamping",
+      "confidence": "INFERRED"
+    },
+    {
+      "id": "encrypted-safe-cast",
+      "label": "EncryptedSafe",
+      "type": "class",
+      "file": "backend/app/Casts/EncryptedSafe.php",
+      "description": "Custom Eloquent cast: encrypts on set, decrypts on get, tolerates legacy plaintext",
+      "confidence": "INFERRED"
+    },
+    {
+      "id": "payroll-service-class",
+      "label": "PayrollService",
+      "type": "class",
+      "file": "backend/app/Services/PayrollService.php",
+      "description": "Computes payslip components: salary structure, PF/ESI/PT/TDS, LOP deduction",
+      "confidence": "INFERRED"
+    },
+    {
+      "id": "leave-approval-service",
+      "label": "LeaveApprovalService",
+      "type": "class",
+      "file": "backend/app/Services/LeaveApprovalService.php",
+      "description": "Approval workflow: approve (deduct balance), reject (no change), cancel (restore balance)",
+      "confidence": "INFERRED"
+    },
+    {
+      "id": "model-user",
+      "label": "User",
+      "type": "model",
+      "file": "backend/app/Models/User.php",
+      "description": "Eloquent model with role (super_admin, partner, manager, hr, finance, associate, paralegal, client), status, auth",
+      "confidence": "INFERRED"
+    },
+    {
+      "id": "model-client",
+      "label": "Client",
+      "type": "model",
+      "file": "backend/app/Models/Client.php",
+      "description": "Eloquent model with soft deletes, client_code, gst_type, encrypted PII fields",
+      "confidence": "INFERRED"
+    },
+    {
+      "id": "model-project",
+      "label": "Project",
+      "type": "model",
+      "file": "backend/app/Models/Project.php",
+      "description": "Eloquent model with soft deletes, project_code, docket_number, lifecycle stages",
+      "confidence": "INFERRED"
+    },
+    {
+      "id": "model-task",
+      "label": "Task",
+      "type": "model",
+      "file": "backend/app/Models/Task.php",
+      "description": "Eloquent model with assignee, reviewer, priority, due_date, billable flag",
+      "confidence": "INFERRED"
+    },
+    {
+      "id": "model-employee",
+      "label": "Employee",
+      "type": "model",
+      "file": "backend/app/Models/Employee.php",
+      "description": "Eloquent model with user_id, salary (encrypted), designation, department, employment_status",
+      "confidence": "INFERRED"
+    },
+    {
+      "id": "model-attendance",
+      "label": "Attendance",
+      "type": "model",
+      "file": "backend/app/Models/Attendance.php",
+      "description": "Eloquent model with employee_id, check_in, check_out, duration_minutes, status",
+      "confidence": "INFERRED"
+    },
+    {
+      "id": "model-leave-request",
+      "label": "LeaveRequest",
+      "type": "model",
+      "file": "backend/app/Models/LeaveRequest.php",
+      "description": "Eloquent model with employee_id, leave_type, from_date, to_date, total_days, status",
+      "confidence": "INFERRED"
+    },
+    {
+      "id": "model-leave-balance",
+      "label": "LeaveBalance",
+      "type": "model",
+      "file": "backend/app/Models/LeaveBalance.php",
+      "description": "Eloquent model with employee_id, year, earned_leave, casual_leave, sick_leave, lop_days",
+      "confidence": "INFERRED"
+    },
+    {
+      "id": "model-invoice",
+      "label": "Invoice",
+      "type": "model",
+      "file": "backend/app/Models/Invoice.php",
+      "description": "Eloquent model with sequential invoice_code, client_id, subtotal, tax, total_amount, balance_due, status",
+      "confidence": "INFERRED"
+    },
+    {
+      "id": "model-payroll-run",
+      "label": "PayrollRun",
+      "type": "model",
+      "file": "backend/app/Models/PayrollRun.php",
+      "description": "Eloquent model with period (YYYY-MM), status (Draft/Finalized/Paid), has many Payslips",
+      "confidence": "INFERRED"
+    },
+    {
+      "id": "model-payslip",
+      "label": "Payslip",
+      "type": "model",
+      "file": "backend/app/Models/Payslip.php",
+      "description": "Eloquent model with payroll_run_id, employee_id, basic, hra, pf, esi, pt, tds, net_pay",
+      "confidence": "INFERRED"
+    },
+    {
+      "id": "relationship-client-projects",
+      "label": "Client → Projects",
+      "type": "model",
+      "file": "backend/app/Models/Client.php",
+      "description": "One-to-many: each client has multiple projects",
+      "confidence": "INFERRED"
+    },
+    {
+      "id": "relationship-project-stages",
+      "label": "Project → ProjectStages",
+      "type": "model",
+      "file": "backend/app/Models/Project.php",
+      "description": "One-to-many: each project has 7 default lifecycle stages",
+      "confidence": "INFERRED"
+    },
+    {
+      "id": "relationship-project-tasks",
+      "label": "Project → Tasks",
+      "type": "model",
+      "file": "backend/app/Models/Project.php",
+      "description": "One-to-many: each project has multiple tasks",
+      "confidence": "INFERRED"
+    },
+    {
+      "id": "relationship-employee-user",
+      "label": "Employee → User",
+      "type": "model",
+      "file": "backend/app/Models/Employee.php",
+      "description": "Belongs-to: employee linked to user account for auth",
+      "confidence": "INFERRED"
+    },
+    {
+      "id": "relationship-payroll-payslips",
+      "label": "PayrollRun → Payslips",
+      "type": "model",
+      "file": "backend/app/Models/PayrollRun.php",
+      "description": "One-to-many: each run has payslips for all active employees",
+      "confidence": "INFERRED"
+    }
+  ],
+  "edges": [
+    {
+      "source": "route-api-clients-store",
+      "target": "client-controller",
+      "relationship": "calls",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "route-api-clients-import",
+      "target": "client-controller",
+      "relationship": "calls",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "route-api-projects-store",
+      "target": "project-controller",
+      "relationship": "calls",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "route-api-projects-stage",
+      "target": "project-controller",
+      "relationship": "calls",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "route-api-hrms-leaves",
+      "target": "leave-controller",
+      "relationship": "calls",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "route-api-hrms-clock-in",
+      "target": "attendance-controller",
+      "relationship": "calls",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "route-api-ai-query",
+      "target": "ai-controller",
+      "relationship": "calls",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "route-api-financial-invoices",
+      "target": "financial-controller",
+      "relationship": "calls",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "route-api-payroll-runs",
+      "target": "payroll-controller",
+      "relationship": "calls",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "route-api-approvals",
+      "target": "approval-controller",
+      "relationship": "calls",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "route-api-compliance",
+      "target": "compliance-controller",
+      "relationship": "calls",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "route-api-bulk-execute",
+      "target": "bulk-controller",
+      "relationship": "calls",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "route-web-dashboard",
+      "target": "dashboard-controller",
+      "relationship": "calls",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "test-ai-controller",
+      "target": "ai-controller",
+      "relationship": "tests",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "test-ai-authorization",
+      "target": "route-api-ai-query",
+      "relationship": "tests",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "test-ai-sql-safety",
+      "target": "ai-controller",
+      "relationship": "tests",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "test-client-controller",
+      "target": "client-controller",
+      "relationship": "tests",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "test-client-code-generation",
+      "target": "model-client",
+      "relationship": "tests",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "test-client-gst-type",
+      "target": "model-client",
+      "relationship": "tests",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "test-client-import-csv",
+      "target": "route-api-clients-import",
+      "relationship": "tests",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "test-client-import-google-sheet",
+      "target": "route-api-clients-import",
+      "relationship": "tests",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "test-leave-management",
+      "target": "leave-controller",
+      "relationship": "tests",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "test-leave-application",
+      "target": "route-api-hrms-leaves",
+      "relationship": "tests",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "test-leave-balance-deduction",
+      "target": "leave-approval-service",
+      "relationship": "tests",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "test-module-actions",
+      "target": "compliance-controller",
+      "relationship": "tests",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "test-compliance-alert-levels",
+      "target": "model-compliance-item",
+      "relationship": "tests",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "test-performance-review-submission",
+      "target": "performance-controller",
+      "relationship": "tests",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "test-offboarding-checklist",
+      "target": "offboarding-controller",
+      "relationship": "tests",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "test-module-pages",
+      "target": "route-web-php",
+      "relationship": "tests",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "test-pagination-helper",
+      "target": "pagination-helper-class",
+      "relationship": "tests",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "test-payroll-processing",
+      "target": "payroll-controller",
+      "relationship": "tests",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "test-payroll-salary-calculation",
+      "target": "payroll-service-class",
+      "relationship": "tests",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "test-payroll-lop-handling",
+      "target": "payroll-service-class",
+      "relationship": "tests",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "test-project-controller",
+      "target": "project-controller",
+      "relationship": "tests",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "test-project-code-generation",
+      "target": "model-project",
+      "relationship": "tests",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "test-project-stage-transitions",
+      "target": "route-api-projects-stage",
+      "relationship": "tests",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "test-rbac",
+      "target": "route-api-php",
+      "relationship": "tests",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "test-rbac-tracker-access",
+      "target": "project-tracker-controller",
+      "relationship": "tests",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "test-rbac-payroll-creation",
+      "target": "payroll-controller",
+      "relationship": "tests",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "test-settings-attendance-portal",
+      "target": "attendance-controller",
+      "relationship": "tests",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "test-attendance-clock-in",
+      "target": "route-api-hrms-clock-in",
+      "relationship": "tests",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "test-attendance-clock-out",
+      "target": "attendance-controller",
+      "relationship": "tests",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "test-settings-password-change",
+      "target": "settings-controller",
+      "relationship": "tests",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "test-settings-system-rbac",
+      "target": "settings-controller",
+      "relationship": "tests",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "encrypted-safe-cast-test",
+      "target": "encrypted-safe-cast",
+      "relationship": "tests",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "encrypted-safe-roundtrip",
+      "target": "encrypted-safe-cast",
+      "relationship": "tests",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "encrypted-safe-plaintext-tolerance",
+      "target": "encrypted-safe-cast",
+      "relationship": "tests",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "payroll-service-test",
+      "target": "payroll-service-class",
+      "relationship": "tests",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "payroll-service-standard-calc",
+      "target": "payroll-service-class",
+      "relationship": "tests",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "payroll-service-esi-threshold",
+      "target": "payroll-service-class",
+      "relationship": "tests",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "payroll-service-lop-proration",
+      "target": "payroll-service-class",
+      "relationship": "tests",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "payroll-controller",
+      "target": "payroll-service-class",
+      "relationship": "uses",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "leave-controller",
+      "target": "leave-approval-service",
+      "relationship": "uses",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "client-controller",
+      "target": "model-client",
+      "relationship": "uses",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "project-controller",
+      "target": "model-project",
+      "relationship": "uses",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "employee-controller",
+      "target": "model-employee",
+      "relationship": "uses",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "attendance-controller",
+      "target": "model-attendance",
+      "relationship": "uses",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "payroll-controller",
+      "target": "model-payroll-run",
+      "relationship": "uses",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "payroll-controller",
+      "target": "model-payslip",
+      "relationship": "uses",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "model-employee",
+      "target": "encrypted-safe-cast",
+      "relationship": "uses",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "client-controller",
+      "target": "pagination-helper-class",
+      "relationship": "uses",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "deploy-rebuild-sh",
+      "target": "route-api-php",
+      "relationship": "deploys",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "deploy-setup-sh",
+      "target": "route-api-php",
+      "relationship": "deploys",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "schedule-reminders-send-deadlines",
+      "target": "reminder-controller",
+      "relationship": "invokes",
+      "confidence": "INFERRED"
+    }
+  ],
+  "hyperedges": [],
+  "input_tokens": 0,
+  "output_tokens": 0
+}

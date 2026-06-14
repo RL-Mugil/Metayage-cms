@@ -1,0 +1,988 @@
+{
+  "nodes": [
+    {
+      "id": "settings-local-json",
+      "label": "settings.local.json",
+      "type": "config",
+      "file": ".claude/settings.local.json",
+      "description": "Claude Code local settings with permissions allowlist for bash, read, scp, rsync, curl, and PowerShell commands",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "lovable-project-json",
+      "label": "project.json",
+      "type": "config",
+      "file": ".lovable/project.json",
+      "description": "Lovable project metadata schema version 1, TanStack Start template 2026-05-29",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "ai-sidecar-main-py",
+      "label": "IPFlow AI Sidecar",
+      "type": "config",
+      "file": "ai-sidecar/main.py",
+      "description": "FastAPI application for AI query processing with Gemini and Groq support, read-only DB execution",
+      "code": "FastAPI app on port 8001, CORS enabled, supports SQL generation and LLM responses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "ai-sidecar-get-db-connection",
+      "label": "get_db_connection()",
+      "type": "function",
+      "file": "ai-sidecar/main.py",
+      "description": "PostgreSQL connection helper with configurable host/port/database/user/password from environment",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "ai-sidecar-query-request-class",
+      "label": "QueryRequest",
+      "type": "class",
+      "file": "ai-sidecar/main.py",
+      "description": "Pydantic BaseModel for AI query requests with optional context dictionary",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "ai-sidecar-handle-query",
+      "label": "handle_query()",
+      "type": "function",
+      "file": "ai-sidecar/main.py",
+      "description": "Main API endpoint POST /api/query — validates user auth headers, generates SQL via LLM, executes safely on read-only connection, returns formatted response",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "encrypted-safe-cast",
+      "label": "EncryptedSafe",
+      "type": "class",
+      "file": "backend/app/Casts/EncryptedSafe.php",
+      "description": "Custom Eloquent cast that encrypts on write and tolerates legacy plaintext on read for PII migration",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "import-clients-command",
+      "label": "ImportClientsCommand",
+      "type": "command",
+      "file": "backend/app/Console/Commands/ImportClientsCommand.php",
+      "description": "Artisan command to bulk import clients from CSV, handles GST classification, entity type detection, contact creation",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "import-tracker-projects-command",
+      "label": "ImportTrackerAndProjectsCommand",
+      "type": "command",
+      "file": "backend/app/Console/Commands/ImportTrackerAndProjectsCommand.php",
+      "description": "Seed employees, import projects and tracker rows from CSV, parse flexible date formats, resolve user assignments",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "send-deadline-reminders-command",
+      "label": "SendDeadlineRemindersCommand",
+      "type": "command",
+      "file": "backend/app/Console/Commands/SendDeadlineRemindersCommand.php",
+      "description": "Scheduled command to send deadline notifications to PCM/SCM/PR at 1/3/7 day thresholds and for overdue cases",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "notification-broadcast-event",
+      "label": "NotificationBroadcast",
+      "type": "event",
+      "file": "backend/app/Events/NotificationBroadcast.php",
+      "description": "Broadcasting event for real-time user notifications via private channel user.{userId}",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "ai-controller",
+      "label": "AIController",
+      "type": "class",
+      "file": "backend/app/Http/Controllers/AIController.php",
+      "description": "Handles natural language queries, logs to audit trail, delegates to AIQueryService",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "ai-controller-query",
+      "label": "query()",
+      "type": "function",
+      "file": "backend/app/Http/Controllers/AIController.php",
+      "description": "Validates query max 1000 chars, creates audit log, calls AIQueryService.ask(), returns JSON or 500 error",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "approval-controller",
+      "label": "ApprovalController",
+      "type": "class",
+      "file": "backend/app/Http/Controllers/ApprovalController.php",
+      "description": "Handles leave and expense claim approvals with RBAC, paginated UNION query for mixed entity lists",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "approval-controller-index",
+      "label": "index()",
+      "type": "function",
+      "file": "backend/app/Http/Controllers/ApprovalController.php",
+      "description": "RBAC checks approver roles, paginates UNION of leave_requests and expense_claims, returns mixed approval queue",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "approval-controller-resolve",
+      "label": "resolve()",
+      "type": "function",
+      "file": "backend/app/Http/Controllers/ApprovalController.php",
+      "description": "Validates type/id/action, delegates leave approval to LeaveApprovalService or updates ExpenseClaim directly, logs audit",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "attendance-controller",
+      "label": "AttendanceController",
+      "type": "class",
+      "file": "backend/app/Http/Controllers/AttendanceController.php",
+      "description": "Clock in/out tracking with daily attendance log creation, duration calculation across midnight boundary",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "attendance-controller-index",
+      "label": "index()",
+      "type": "function",
+      "file": "backend/app/Http/Controllers/AttendanceController.php",
+      "description": "Returns last 30 attendance logs for logged-in employee, 200 OK",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "attendance-controller-clock-in",
+      "label": "clockIn()",
+      "type": "function",
+      "file": "backend/app/Http/Controllers/AttendanceController.php",
+      "description": "Creates attendance record with check_in time, capture method, optional GPS, validates one check-in per day",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "attendance-controller-clock-out",
+      "label": "clockOut()",
+      "type": "function",
+      "file": "backend/app/Http/Controllers/AttendanceController.php",
+      "description": "Finds open attendance record, calculates duration_minutes across midnight boundary, updates check_out",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "auth-controller",
+      "label": "AuthController",
+      "type": "class",
+      "file": "backend/app/Http/Controllers/AuthController.php",
+      "description": "Session-based login/logout with status checks, user info endpoint, RBAC permission matrix per role",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "auth-controller-login",
+      "label": "login()",
+      "type": "function",
+      "file": "backend/app/Http/Controllers/AuthController.php",
+      "description": "Validates credentials, checks status != Active post-auth, regenerates session, logs audit entry, redirects to /",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "auth-controller-me",
+      "label": "me()",
+      "type": "function",
+      "file": "backend/app/Http/Controllers/AuthController.php",
+      "description": "Returns authenticated user profile with id/name/email/role/status/avatar_url and permissions for their role",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "auth-controller-users",
+      "label": "users()",
+      "type": "function",
+      "file": "backend/app/Http/Controllers/AuthController.php",
+      "description": "Returns all Active users (forbid client role) with id/name/email/role sorted by name",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "password-reset-controller",
+      "label": "PasswordResetController",
+      "type": "class",
+      "file": "backend/app/Http/Controllers/Auth/PasswordResetController.php",
+      "description": "Self-service password reset workflow with token validation and audit logging",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "password-reset-sendlink",
+      "label": "sendLink()",
+      "type": "function",
+      "file": "backend/app/Http/Controllers/Auth/PasswordResetController.php",
+      "description": "Sends password reset link, logs attempt regardless of email existence for security, always returns success message",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "password-reset-reset",
+      "label": "reset()",
+      "type": "function",
+      "file": "backend/app/Http/Controllers/Auth/PasswordResetController.php",
+      "description": "Validates token/email/password, resets via Laravel Password facade, logs completion, redirects to login",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "bulk-controller",
+      "label": "BulkController",
+      "type": "class",
+      "file": "backend/app/Http/Controllers/BulkController.php",
+      "description": "Mass operations on clients/projects/tasks with role-based scope restrictions and status whitelist",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "bulk-controller-execute",
+      "label": "execute()",
+      "type": "function",
+      "file": "backend/app/Http/Controllers/BulkController.php",
+      "description": "Validates entity/ids/action, applies manager scope filter, updates status/archives/notifies up to 500 records",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "client-controller",
+      "label": "ClientController",
+      "type": "class",
+      "file": "backend/app/Http/Controllers/ClientController.php",
+      "description": "CRM operations: stats, CRUD clients with sequential code generation, GST classification, contact management",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "client-controller-generate-code",
+      "label": "generateClientCode()",
+      "type": "function",
+      "file": "backend/app/Http/Controllers/ClientController.php",
+      "description": "Generates sequential client codes C00–Z99 with M/Y suffix for Indian/Foreign, uses lockForUpdate() to prevent duplicates",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "client-controller-compute-gst",
+      "label": "computeGstType()",
+      "type": "function",
+      "file": "backend/app/Http/Controllers/ClientController.php",
+      "description": "Derives GST classification: Export/B2B/B2C/Unregistered based on nationality, GSTIN status, client type",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "compliance-controller",
+      "label": "ComplianceController",
+      "type": "class",
+      "file": "backend/app/Http/Controllers/ComplianceController.php",
+      "description": "IP deadline tracking with alert levels (Critical/At Risk/On Track/Compliant) based on days remaining",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "compliance-controller-stats",
+      "label": "stats()",
+      "type": "function",
+      "file": "backend/app/Http/Controllers/ComplianceController.php",
+      "description": "Counts compliance items by alert level: critical ≤30d, at_risk 31-75d, on_track 76-150d, compliant >150d",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "compliance-controller-alert-level",
+      "label": "alertLevel()",
+      "type": "function",
+      "file": "backend/app/Http/Controllers/ComplianceController.php",
+      "description": "Maps days remaining to severity: ≤30→Critical, ≤75→At Risk, ≤150→On Track, else Compliant",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "base-controller",
+      "label": "Controller",
+      "type": "class",
+      "file": "backend/app/Http/Controllers/Controller.php",
+      "description": "Base controller using AuthorizesRequests trait for policy-based authorization",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "dashboard-controller",
+      "label": "DashboardController",
+      "type": "class",
+      "file": "backend/app/Http/Controllers/DashboardController.php",
+      "description": "Dashboard metrics with RBAC-scoped aggregates: active matters, clients, tasks, WIP balance, financials",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "dashboard-controller-metrics",
+      "label": "metrics()",
+      "type": "function",
+      "file": "backend/app/Http/Controllers/DashboardController.php",
+      "description": "Returns operational KPIs with role-based filtering (client/associate/staff), 300s cache per user",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "discussion-controller",
+      "label": "DiscussionController",
+      "type": "class",
+      "file": "backend/app/Http/Controllers/DiscussionController.php",
+      "description": "Threaded discussions with RBAC (internal only), list/create threads, add message replies",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "discussion-controller-index",
+      "label": "index()",
+      "type": "function",
+      "file": "backend/app/Http/Controllers/DiscussionController.php",
+      "description": "Lists discussion threads with messages and author names, ordered by updated_at descending",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "discussion-controller-store",
+      "label": "store()",
+      "type": "function",
+      "file": "backend/app/Http/Controllers/DiscussionController.php",
+      "description": "Creates thread with title/tag/message in single transaction, 201 response with loaded relations",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "discussion-controller-reply",
+      "label": "reply()",
+      "type": "function",
+      "file": "backend/app/Http/Controllers/DiscussionController.php",
+      "description": "Adds message to thread, touches thread updated_at, returns message with author and relative time",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "document-controller",
+      "label": "DocumentController",
+      "type": "class",
+      "file": "backend/app/Http/Controllers/DocumentController.php",
+      "description": "DMS for firm-wide file storage (internal roles only), upload with versioning, download, soft-delete",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "document-controller-folders",
+      "label": "FOLDERS constant",
+      "type": "config",
+      "file": "backend/app/Http/Controllers/DocumentController.php",
+      "description": "Document categories: General, Patents, Trademarks, Contracts, Correspondence, Invoices",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "document-controller-store",
+      "label": "store()",
+      "type": "function",
+      "file": "backend/app/Http/Controllers/DocumentController.php",
+      "description": "Upload file up to 51MB (pdf/doc/xlsx/etc), create versioned document record, prevent filename collisions, log audit",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "document-controller-destroy",
+      "label": "destroy()",
+      "type": "function",
+      "file": "backend/app/Http/Controllers/DocumentController.php",
+      "description": "Delete file from disk and soft-delete DB record, restricted to super_admin/partner/manager",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "feedback-controller",
+      "label": "FeedbackController",
+      "type": "class",
+      "file": "backend/app/Http/Controllers/FeedbackController.php",
+      "description": "CSAT survey and feedback collection (internal only), list entries, request feedback",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "feedback-controller-request",
+      "label": "requestFeedback()",
+      "type": "function",
+      "file": "backend/app/Http/Controllers/FeedbackController.php",
+      "description": "Creates in-app notification for feedback request, surfaces as notification for requester",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "financial-controller",
+      "label": "FinancialController",
+      "type": "class",
+      "file": "backend/app/Http/Controllers/FinancialController.php",
+      "description": "Invoicing, payments, quotations with client ledger, financial stats, invoice listing with status filters",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "financial-controller-stats",
+      "label": "stats()",
+      "type": "function",
+      "file": "backend/app/Http/Controllers/FinancialController.php",
+      "description": "Returns aggregates: total_billed, total_received, total_outstanding, overdue/draft/paid counts with policy check",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "financial-controller-invoices",
+      "label": "invoices()",
+      "type": "function",
+      "file": "backend/app/Http/Controllers/FinancialController.php",
+      "description": "Lists invoices with client/project relations, filters by status or outstanding flag, paginated, RBAC scoped",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "hrms-controller",
+      "label": "HRMSController",
+      "type": "class",
+      "file": "backend/app/Http/Controllers/HRMSController.php",
+      "description": "HRMS operations: employee CRUD with sequential codes, attendance, leave, payroll, policies",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "hrms-controller-stats",
+      "label": "stats()",
+      "type": "function",
+      "file": "backend/app/Http/Controllers/HRMSController.php",
+      "description": "Returns counts: total employees, active, on_leave, department count with policy check",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "hrms-controller-employees",
+      "label": "employees()",
+      "type": "function",
+      "file": "backend/app/Http/Controllers/HRMSController.php",
+      "description": "Lists employees with department/designation/user relations, filters by status/search, hides sensitive fields for non-HR",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "integration-controller",
+      "label": "IntegrationController",
+      "type": "class",
+      "file": "backend/app/Http/Controllers/IntegrationController.php",
+      "description": "Third-party integration management (Google Workspace, Slack) with connection status, API key storage, sync tests",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "integration-controller-toggle",
+      "label": "toggle()",
+      "type": "function",
+      "file": "backend/app/Http/Controllers/IntegrationController.php",
+      "description": "Toggle integration connection status, update last_sync timestamp if connected",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "integration-controller-save-config",
+      "label": "saveConfig()",
+      "type": "function",
+      "file": "backend/app/Http/Controllers/IntegrationController.php",
+      "description": "Stores encrypted API key in integration config JSON, max 500 chars",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "leave-controller",
+      "label": "LeaveController",
+      "type": "class",
+      "file": "backend/app/Http/Controllers/LeaveController.php",
+      "description": "Leave request workflow: create, list with balance info, approval checks for overlapping dates",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "leave-controller-index",
+      "label": "index()",
+      "type": "function",
+      "file": "backend/app/Http/Controllers/LeaveController.php",
+      "description": "Lists leave requests with approver flag, shows employee's balance for current year, RBAC scoped",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "leave-controller-store",
+      "label": "store()",
+      "type": "function",
+      "file": "backend/app/Http/Controllers/LeaveController.php",
+      "description": "Creates leave request, validates from_date/to_date/leave_type/reason, checks for overlapping approved leaves",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "import-tracker-resolve-user",
+      "label": "resolveUser()",
+      "type": "function",
+      "file": "backend/app/Console/Commands/ImportTrackerAndProjectsCommand.php",
+      "description": "Resolves user by email or partial name match from userMap or DB, returns User or null",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "import-tracker-parse-date",
+      "label": "parseDate()",
+      "type": "function",
+      "file": "backend/app/Console/Commands/ImportTrackerAndProjectsCommand.php",
+      "description": "Parses flexible date formats: 12/Feb/26, May/20/2026, 27-May-2026 17:12:45, fallback Carbon::parse",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "db-schema-prompt",
+      "label": "DB_SCHEMA_PROMPT",
+      "type": "config",
+      "file": "ai-sidecar/main.py",
+      "description": "System prompt for SQL generation with schema, role-based security constraints, and SELECT-only enforcement",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "ai-sidecar-gemini-model",
+      "label": "gemini_model",
+      "type": "config",
+      "file": "ai-sidecar/main.py",
+      "description": "Google Generative AI client initialized if GEMINI_API_KEY present, model: gemini-1.5-flash",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "ai-sidecar-groq-client",
+      "label": "groq_client",
+      "type": "config",
+      "file": "ai-sidecar/main.py",
+      "description": "Groq LLM client initialized if GROQ_API_KEY present, uses mixtral and llama3 models",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "send-reminders-thresholds",
+      "label": "THRESHOLDS constant",
+      "type": "config",
+      "file": "backend/app/Console/Commands/SendDeadlineRemindersCommand.php",
+      "description": "Reminder scheduling: 1, 3, 7 days before deadline, plus overdue detection",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "approval-controller-approver-roles",
+      "label": "APPROVER_ROLES constant",
+      "type": "config",
+      "file": "backend/app/Http/Controllers/ApprovalController.php",
+      "description": "Roles authorized to approve: super_admin, hr, manager, partner",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "bulk-controller-manage-roles",
+      "label": "MANAGE_ROLES constant",
+      "type": "config",
+      "file": "backend/app/Http/Controllers/BulkController.php",
+      "description": "Roles authorized to perform bulk operations: super_admin, partner, manager",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "bulk-controller-status-whitelist",
+      "label": "STATUS_WHITELIST constant",
+      "type": "config",
+      "file": "backend/app/Http/Controllers/BulkController.php",
+      "description": "Allowed status values per entity: clients (Active/Inactive/Prospect/On Hold), projects (Active/On Hold/Completed/Archived), tasks (Pending/In Progress/Completed/Archived)",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "document-controller-internal-roles",
+      "label": "INTERNAL_ROLES constant",
+      "type": "config",
+      "file": "backend/app/Http/Controllers/DocumentController.php",
+      "description": "Roles with DMS access: super_admin, partner, manager, associate, paralegal, finance, hr",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "integration-controller-manage-roles",
+      "label": "MANAGE_ROLES constant",
+      "type": "config",
+      "file": "backend/app/Http/Controllers/IntegrationController.php",
+      "description": "Roles authorized to manage integrations: super_admin, partner, manager",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "import-tracker-employees-const",
+      "label": "EMPLOYEES constant",
+      "type": "config",
+      "file": "backend/app/Console/Commands/ImportTrackerAndProjectsCommand.php",
+      "description": "Hardcoded employee seed data: 15 staff with codes, emails, roles (associate/manager/super_admin)",
+      "confidence": "EXTRACTED"
+    }
+  ],
+  "edges": [
+    {
+      "source": "ai-controller",
+      "target": "ai-controller-query",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "ai-controller-query",
+      "target": "ai-sidecar-main-py",
+      "relationship": "calls",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "ai-sidecar-main-py",
+      "target": "ai-sidecar-get-db-connection",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "ai-sidecar-main-py",
+      "target": "ai-sidecar-handle-query",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "ai-sidecar-handle-query",
+      "target": "ai-sidecar-get-db-connection",
+      "relationship": "calls",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "ai-sidecar-handle-query",
+      "target": "ai-sidecar-gemini-model",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "ai-sidecar-handle-query",
+      "target": "ai-sidecar-groq-client",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "ai-sidecar-main-py",
+      "target": "db-schema-prompt",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "encrypted-safe-cast",
+      "target": "client-controller",
+      "relationship": "uses",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "import-clients-command",
+      "target": "encrypted-safe-cast",
+      "relationship": "uses",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "import-tracker-projects-command",
+      "target": "import-tracker-resolve-user",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "import-tracker-projects-command",
+      "target": "import-tracker-parse-date",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "send-deadline-reminders-command",
+      "target": "send-reminders-thresholds",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "notification-broadcast-event",
+      "target": "send-deadline-reminders-command",
+      "relationship": "dispatched_by",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "approval-controller",
+      "target": "approval-controller-index",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "approval-controller",
+      "target": "approval-controller-resolve",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "approval-controller",
+      "target": "approval-controller-approver-roles",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "approval-controller-resolve",
+      "target": "leave-controller",
+      "relationship": "calls",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "attendance-controller",
+      "target": "attendance-controller-index",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "attendance-controller",
+      "target": "attendance-controller-clock-in",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "attendance-controller",
+      "target": "attendance-controller-clock-out",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "auth-controller",
+      "target": "auth-controller-login",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "auth-controller",
+      "target": "auth-controller-me",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "auth-controller",
+      "target": "auth-controller-users",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "password-reset-controller",
+      "target": "password-reset-sendlink",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "password-reset-controller",
+      "target": "password-reset-reset",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "bulk-controller",
+      "target": "bulk-controller-execute",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "bulk-controller",
+      "target": "bulk-controller-manage-roles",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "bulk-controller",
+      "target": "bulk-controller-status-whitelist",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "client-controller",
+      "target": "client-controller-generate-code",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "client-controller",
+      "target": "client-controller-compute-gst",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "compliance-controller",
+      "target": "compliance-controller-stats",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "compliance-controller",
+      "target": "compliance-controller-alert-level",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "dashboard-controller",
+      "target": "dashboard-controller-metrics",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "discussion-controller",
+      "target": "discussion-controller-index",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "discussion-controller",
+      "target": "discussion-controller-store",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "discussion-controller",
+      "target": "discussion-controller-reply",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "document-controller",
+      "target": "document-controller-folders",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "document-controller",
+      "target": "document-controller-store",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "document-controller",
+      "target": "document-controller-destroy",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "document-controller",
+      "target": "document-controller-internal-roles",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "feedback-controller",
+      "target": "feedback-controller-request",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "financial-controller",
+      "target": "financial-controller-stats",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "financial-controller",
+      "target": "financial-controller-invoices",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "hrms-controller",
+      "target": "hrms-controller-stats",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "hrms-controller",
+      "target": "hrms-controller-employees",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "integration-controller",
+      "target": "integration-controller-toggle",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "integration-controller",
+      "target": "integration-controller-save-config",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "integration-controller",
+      "target": "integration-controller-manage-roles",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "leave-controller",
+      "target": "leave-controller-index",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "leave-controller",
+      "target": "leave-controller-store",
+      "relationship": "contains",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "import-tracker-projects-command",
+      "target": "import-tracker-employees-const",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "base-controller",
+      "target": "client-controller",
+      "relationship": "extends",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "base-controller",
+      "target": "approval-controller",
+      "relationship": "extends",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "base-controller",
+      "target": "attendance-controller",
+      "relationship": "extends",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "base-controller",
+      "target": "auth-controller",
+      "relationship": "extends",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "base-controller",
+      "target": "bulk-controller",
+      "relationship": "extends",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "base-controller",
+      "target": "compliance-controller",
+      "relationship": "extends",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "base-controller",
+      "target": "dashboard-controller",
+      "relationship": "extends",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "base-controller",
+      "target": "discussion-controller",
+      "relationship": "extends",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "base-controller",
+      "target": "document-controller",
+      "relationship": "extends",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "base-controller",
+      "target": "feedback-controller",
+      "relationship": "extends",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "base-controller",
+      "target": "financial-controller",
+      "relationship": "extends",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "base-controller",
+      "target": "hrms-controller",
+      "relationship": "extends",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "base-controller",
+      "target": "integration-controller",
+      "relationship": "extends",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "base-controller",
+      "target": "leave-controller",
+      "relationship": "extends",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "approval-controller-index",
+      "target": "approval-controller-approver-roles",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    }
+  ],
+  "hyperedges": [],
+  "input_tokens": 95000,
+  "output_tokens": 4200
+}

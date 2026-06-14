@@ -1,0 +1,838 @@
+{
+  "nodes": [
+    {
+      "id": "package-json-config",
+      "label": "NPM Package Configuration",
+      "type": "config",
+      "file": "package.json",
+      "description": "Frontend project configuration with 46 dependencies including TanStack Start/Router/Query, React 19, Tailwind v4, Radix UI",
+      "code": "name: tanstack_start_ts, React 19.2.0, @tanstack/react-start 1.167.50",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "production-server-handler",
+      "label": "Production Server Entry Point",
+      "type": "function",
+      "file": "production-server.mjs",
+      "description": "Node.js HTTP server adapter for SSR-built TanStack Start application listening on PORT 3000",
+      "code": "createServer(async (req, res) => {...}); server.listen(PORT, HOST)",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "github-actions-ci",
+      "label": "GitHub Actions CI Pipeline",
+      "type": "config",
+      "file": ".github/workflows/ci.yml",
+      "description": "Backend PHPUnit + frontend typecheck/build CI on Ubuntu with PostgreSQL 16 service",
+      "code": "jobs: backend (PHP 8.4, Composer, PHPUnit), frontend (Node 20, tsc, npm build)",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "audit-1-findings",
+      "label": "MYPL-CMS Comprehensive Product Audit (June 5, 2026)",
+      "type": "config",
+      "file": "Audit-1.txt",
+      "description": "High-level UX audit of 25 modules identifying 40% dead-end pages, 7 data silos, 0% event-driven automation",
+      "code": "Overall Grade: C+ (Functional but Structurally Unsound); 28% production-ready modules",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "audit-2-critical-issues",
+      "label": "IPFlow Critical Engineering Audit (June 11, 2026)",
+      "type": "config",
+      "file": "Audit-2.md",
+      "description": "Backend security, financial, and HRMS wiring fixes including RBAC hardening, code race conditions, leave deduction, ledger corruption",
+      "code": "DEPLOYED 2026-06-11: 18 passing tests, DocumentController rewritten, PayrollService implemented, 6 hardening fixes",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "claude-context-master",
+      "label": "CLAUDE.md Master Context Document",
+      "type": "config",
+      "file": "CLAUDE.md",
+      "description": "Complete architectural specification covering 21 modules, data models, Indian IP law domain, GST rules, RBAC matrix, Laravel/React conventions",
+      "code": "22 modules mapped: Dashboard, Clients, Projects, Tasks, Financial, HRMS, Documents, Reports, AI, Compliance, Approvals, Discussions, Portal, etc.",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "ipflow-full-audit",
+      "label": "IPFlow Full Codebase Re-Audit (June 14, 2026)",
+      "type": "config",
+      "file": "IPFlow_Full_Audit_June14.md",
+      "description": "Fatal runtime crashes in SendDeadlineRemindersCommand, ImportTrackerAndProjectsCommand; portal cast bug; dual notification tables; unpaginated endpoints",
+      "code": "8 Critical issues identified: 3 fatal runtime crashes, split-brain notifications, 21 DB-specific queries, OOM risks",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "improvement-roadmap",
+      "label": "IPFlow Improvement Roadmap & Fix Guide",
+      "type": "config",
+      "file": "IPFlow_Improvement_Roadmap.md",
+      "description": "42-item phased remediation plan covering security (rotated Groq key, hardcoded passwords), architecture (RBAC extraction, TypeScript interfaces), data integrity, testing",
+      "code": "Phase 1 Security: 8 non-negotiable fixes; Phase 2 Architecture: 6 refactors; Phase 3 Data Integrity: 5 financial fixes; Phase 4 Testing: CI/CD, Docker, OpenAPI",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "ai-sidecar-requirements",
+      "label": "AI Sidecar Python Dependencies",
+      "type": "config",
+      "file": "ai-sidecar/requirements.txt",
+      "description": "FastAPI 0.110.0, Uvicorn, Groq SDK, Pydantic, psycopg2, python-dotenv",
+      "code": "fastapi, uvicorn, pydantic, google-generativeai, groq, psycopg2-binary",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "backend-architectural-audit",
+      "label": "Backend Architectural Issues Document",
+      "type": "config",
+      "file": "backend/ARCHITECTURAL-AUDIT.md",
+      "description": "8 critical architectural issues including string-based user matching, incomplete Settings/AI pages, inconsistent API responses, missing FormRequest/Policy layers",
+      "code": "Issues: Calendar/Tracker store user names not IDs, Settings incomplete, AI page broken, 4 separate structural gaps",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "backend-readme",
+      "label": "Laravel Framework README",
+      "type": "config",
+      "file": "backend/README.md",
+      "description": "Standard Laravel 13 framework documentation with AI agentic development features via Laravel Boost",
+      "code": "Laravel with Eloquent ORM, session/cache backends, queue processing, real-time broadcasting",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "robots-txt-config",
+      "label": "SEO Robots Configuration",
+      "type": "config",
+      "file": "backend/public/robots.txt",
+      "description": "Allows all robots (no disallow rules)",
+      "code": "User-agent: *; Disallow: (empty)",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "product-spec-v2",
+      "label": "IPFlow Enterprise Product Specification v2.0",
+      "type": "config",
+      "file": "graphify-out/converted/IPFlow_Enterprise_Product_Specification_v2_6deff436.md",
+      "description": "Complete functional specification for 25 modules covering client management, IP matter tracking, HRMS, financial suite, document vault, compliance, AI assistant",
+      "code": "25 modules defined: CRM, Projects, Tracker, Kanban, Tasks, Reminders, Portal, Timeline, DMS, Discussions, Approvals, Notifications, Analytics, Reports, Financial, AI, Workspace, Feedback, Bulk Operations, Calendar, Governance, Integrations, Mobile, Settings, HRMS",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "laravel-13-framework",
+      "label": "Laravel 13 Web Framework",
+      "type": "config",
+      "file": "backend/",
+      "description": "PHP 8.3+ web framework with Eloquent ORM, Sanctum auth, PostgreSQL 16 database, background job queues",
+      "confidence": "INFERRED"
+    },
+    {
+      "id": "react-19-frontend",
+      "label": "React 19 Frontend Application",
+      "type": "config",
+      "file": "src/",
+      "description": "TanStack Start SSR framework with TanStack Router file-based routing, TanStack Query for server state, Radix UI components, Tailwind CSS v4 styling",
+      "confidence": "INFERRED"
+    },
+    {
+      "id": "notification-split-brain",
+      "label": "Dual Notification Tables Bug",
+      "type": "config",
+      "file": "backend/database/migrations/",
+      "description": "Conflicting migrations create both 'notifications' and 'ip_notifications' tables; ProjectController writes to 'notifications' but NotificationController reads from 'ip_notifications'; stage-change notifications invisible",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "tracker-user-string-matching",
+      "label": "Tracker Row String-Based User Matching",
+      "type": "config",
+      "file": "backend/app/Models/TrackerRow.php",
+      "description": "PCM/SCM/PR stored as string names instead of user IDs; breaks RBAC, allows name collision, fails on renames; migration added FK columns but controller code unchanged",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "document-disk-scan-bottleneck",
+      "label": "Document Controller Filesystem Scanning",
+      "type": "config",
+      "file": "backend/app/Http/Controllers/DocumentController.php",
+      "description": "Scans all files in storage on every index() call via allFiles() + size/lastModified loop; bypasses documents/document_versions tables entirely; O(n) I/O on each page load",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "approval-memory-exhaustion",
+      "label": "Approval Controller Memory Leak",
+      "type": "config",
+      "file": "backend/app/Http/Controllers/ApprovalController.php",
+      "description": "Loads ALL LeaveRequest and ExpenseClaim records into PHP memory, merges, sorts, slices manually; no database-level pagination; OOM risk at scale",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "deadline-reminder-command-broken",
+      "label": "SendDeadlineRemindersCommand Fatal Bug",
+      "type": "config",
+      "file": "backend/app/Console/Commands/SendDeadlineRemindersCommand.php",
+      "description": "References dropped string columns pcm/scm/pr; should use pcm_id/scm_id/pr_id foreign keys; silently skips all notifications (NULL returns)",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "tracker-import-command-broken",
+      "label": "ImportTrackerAndProjectsCommand Fatal Bug",
+      "type": "config",
+      "file": "backend/app/Console/Commands/ImportTrackerAndProjectsCommand.php",
+      "description": "Attempts to insert into dropped pcm/scm/pr string columns instead of resolved pcm_id/scm_id/pr_id; crashes with PostgreSQL column-not-found error",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "portal-cast-bug",
+      "label": "PortalController portal_invited_at Cast Bug",
+      "type": "config",
+      "file": "backend/app/Http/Controllers/PortalController.php",
+      "description": "Calls toDateTimeString() on portal_invited_at which is not declared in Client $casts; returns plain string, not Carbon; fatal PHP error on portal client listing",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "postgres-regex-queries",
+      "label": "PostgreSQL-Specific ~Regex Operator",
+      "type": "config",
+      "file": "backend/app/Http/Controllers/ClientController.php",
+      "description": "Uses whereRaw() with PostgreSQL regex operator ~ in client code generation; breaks MySQL/SQLite test environments",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "postgres-filter-aggregates",
+      "label": "PostgreSQL COUNT FILTER Aggregates",
+      "type": "config",
+      "file": "backend/app/Http/Controllers/",
+      "description": "21 queries across 5+ controllers use PostgreSQL-specific COUNT(*) FILTER (WHERE condition) syntax; breaks standard SQL compatibility and SQLite local testing",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "postgres-json-operator",
+      "label": "PostgreSQL JSON ->> Operator",
+      "type": "config",
+      "file": "backend/app/Console/Commands/SendDeadlineRemindersCommand.php",
+      "description": "Uses whereRaw() with PostgreSQL JSON operator ->> in meta field queries; incompatible with SQLite",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "leave-approval-service",
+      "label": "Leave Approval Logic",
+      "type": "config",
+      "file": "backend/app/Services/LeaveApprovalService.php",
+      "description": "Handles leave request approval but does NOT deduct from leave balance; balances remain decorative; needs integration with LeaveBalance model",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "payroll-service-indian-math",
+      "label": "PayrollService Indian Salary Computation",
+      "type": "config",
+      "file": "backend/app/Services/PayrollService.php",
+      "description": "Implements Indian salary structure: Basic 50%, HRA 50% of Basic, Special Allowance remainder; PF 12% capped at ₹1,800; ESI 0.75% under ₹21k; PT ₹200; TDS manual",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "hardcoded-18-percent-gst",
+      "label": "Hardcoded 18% GST Tax Rate",
+      "type": "config",
+      "file": "backend/app/Http/Controllers/FinancialController.php",
+      "description": "Tax rate hardcoded as 18%; no CGST/SGST/IGST split per jurisdiction; exports should be 0%; needs per-client/per-service configuration",
+      "confidence": "INFERRED"
+    },
+    {
+      "id": "invoice-race-condition-fixed",
+      "label": "Invoice Sequential Code Race Condition (FIXED)",
+      "type": "config",
+      "file": "backend/app/Http/Controllers/FinancialController.php",
+      "description": "Previously generated codes via count()+1; now uses lockForUpdate() on max-code query inside DB transaction to prevent duplicates under concurrency",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "ledger-balance-corruption-fixed",
+      "label": "Client Ledger Running Balance Corruption (FIXED)",
+      "type": "config",
+      "file": "backend/app/Http/Controllers/FinancialController.php",
+      "description": "Previously wrote invoice-created ledger entry as balance=total instead of continuing from latest row; now both invoice and payment continue running balance with row locking",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "payment-double-submit-fixed",
+      "label": "Payment Double-Submit Race Condition (FIXED)",
+      "type": "config",
+      "file": "backend/app/Http/Controllers/FinancialController.php",
+      "description": "recordPayment now wrapped in DB::transaction with lockForUpdate() on invoice balance; overpayment rejected with validation error instead of silently clamped",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "employee-default-password-fixed",
+      "label": "Employee Creation Default Password (FIXED)",
+      "type": "config",
+      "file": "backend/app/Http/Controllers/HRMSController.php",
+      "description": "Previously defaulted passwords to 'changeme123'; now generates random 32-char password; User/Employee/LeaveBalance creation now transactional",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "login-enumeration-fixed",
+      "label": "Login User Enumeration (FIXED)",
+      "type": "config",
+      "file": "backend/app/Http/Controllers/AuthController.php",
+      "description": "Previously leaked email existence via 'account suspended' error before password check; now checks status after successful Auth::attempt",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "clock-out-negative-duration-fixed",
+      "label": "Negative Duration in clockOut (FIXED)",
+      "type": "config",
+      "file": "backend/app/Http/Controllers/HRMSController.php",
+      "description": "Carbon diff calculated with reversed arguments causing negative duration; now uses correct argument order",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "ai-controller-logging-fixed",
+      "label": "AIController Query Logging Bug (FIXED)",
+      "type": "config",
+      "file": "backend/app/Http/Controllers/AIController.php",
+      "description": "Previously logged $request->query object instead of text; used env() at runtime (null after php artisan optimize); now uses input() and config()",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "invoice-status-enum-fixed",
+      "label": "Invoice Status Enum Validation (FIXED)",
+      "type": "config",
+      "file": "backend/app/Http/Controllers/FinancialController.php",
+      "description": "Status column previously accepted any string on update; now validates via enum rule",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "leave-date-validation-fixed",
+      "label": "Leave to_date Validation (FIXED)",
+      "type": "config",
+      "file": "backend/app/Http/Controllers/HRMSController.php",
+      "description": "Previously allowed to_date before from_date; now validates with after_or_equal rule",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "documents-module-wired",
+      "label": "Documents Module Real Backend (WIRED)",
+      "type": "config",
+      "file": "backend/app/Http/Controllers/DocumentController.php",
+      "description": "Was 100% mock; now wired with real list/upload/delete + GET /api/documents/download streaming endpoint, folder support (Patents/Trademarks/Contracts/Correspondence/Invoices/General)",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "leave-approval-wired",
+      "label": "Leave Request Approval Workflow (WIRED)",
+      "type": "config",
+      "file": "backend/app/Http/Controllers/HRMSController.php",
+      "description": "Was mock (approve/reject buttons mutated local state); now approve/reject hits API, managers see all firm requests, approval deducts balance transactionally",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "approvals-module-wired",
+      "label": "Approvals Module Backend (WIRED)",
+      "type": "config",
+      "file": "backend/app/Http/Controllers/ApprovalController.php",
+      "description": "Was empty shell; now lists real pending/resolved leave requests and expense claims with database persistence",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "discussions-module-wired",
+      "label": "Discussions Module Backend (WIRED)",
+      "type": "config",
+      "file": "backend/app/Http/Controllers/DiscussionController.php",
+      "description": "Was fully fake; now real threads/messages on discussion_threads/discussion_messages tables with tag column support",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "settings-module-wired",
+      "label": "Settings Module Real Persistence (WIRED)",
+      "type": "config",
+      "file": "backend/app/Http/Controllers/SettingsController.php",
+      "description": "Save buttons were no-ops; now real profile update + password change (current-password verified, audit-logged); localStorage for client-side preferences",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "employee-salary-column-added",
+      "label": "Employee Salary Column Migration",
+      "type": "config",
+      "file": "backend/database/migrations/",
+      "description": "Salary field collected in form but silently dropped on save (no column); added to employees table and fillable array",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "typescript-errors-fixed",
+      "label": "TypeScript Compilation Errors (FIXED)",
+      "type": "config",
+      "file": "src/",
+      "description": "Vite/client types, echo generic, notification meta null-checks fixed; tsc --noEmit now clean",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "payroll-module-implemented",
+      "label": "Payroll Module Full Implementation",
+      "type": "config",
+      "file": "backend/app/Services/PayrollService.php",
+      "description": "Tables payroll_runs + payslips; Indian salary math v1; lifecycle Draft→Finalized→Paid; RBAC gating; 7 PHPUnit tests; CSV export; employee self-service",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "tracker-rbac-hardened",
+      "label": "Project Tracker RBAC Hardening",
+      "type": "config",
+      "file": "backend/app/Http/Controllers/ProjectTrackerController.php",
+      "description": "Client role blocked from all /api/tracker/* endpoints; returns JSON 403 not abort()",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "encryption-at-rest-cast",
+      "label": "EncryptedSafe Encryption Cast",
+      "type": "config",
+      "file": "backend/app/Casts/EncryptedSafe.php",
+      "description": "Custom cast for PII fields; decrypts or falls back to legacy plaintext; on employee Aadhaar/PAN/UAN/ESI/bank + client bank fields",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "password-reset-flow",
+      "label": "Password Reset Workflow",
+      "type": "config",
+      "file": "backend/app/Http/Controllers/AuthController.php",
+      "description": "Full flow: /forgot-password, /reset-password/{token}, Inertia pages, throttled, audit-logged, 'Forgot?' link wired; needs real SMTP provider",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "error-monitoring-webhook",
+      "label": "Error Monitoring Webhook",
+      "type": "config",
+      "file": "backend/app/Exceptions/Handler.php",
+      "description": "Unhandled exceptions POST to MONITORING_WEBHOOK environment variable (point at n8n/GlitchTip/email); no-op when unset; no Sentry dependency",
+      "confidence": "INFERRED"
+    },
+    {
+      "id": "login-throttling",
+      "label": "Login Throttle Rate Limiting",
+      "type": "config",
+      "file": "backend/routes/api.php",
+      "description": "throttle:10,1 applied to login endpoints to prevent brute force",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "rbac-feature-tests",
+      "label": "RBAC Feature Tests Suite",
+      "type": "config",
+      "file": "backend/tests/Feature/",
+      "description": "18 passing tests: PayrollService (7), EncryptedSafe (4), RBAC (7) covering client-tracker/reports/tasks denial and payroll role gating",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "github-actions-ci-pipeline",
+      "label": "GitHub Actions CI Workflow",
+      "type": "config",
+      "file": ".github/workflows/ci.yml",
+      "description": "PHPUnit + tsc + build on push to main/master; PostgreSQL 16 service; PHP 8.4 setup-php action",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "encrypted-salary-field",
+      "label": "Salary Field Encryption",
+      "type": "config",
+      "file": "backend/app/Models/Employee.php",
+      "description": "Salary/bank/ID fields hidden from non-HR roles in API responses; should use encrypted cast + field-level redaction",
+      "confidence": "INFERRED"
+    },
+    {
+      "id": "client-rbac-scoping",
+      "label": "Client RBAC Data Scoping",
+      "type": "config",
+      "file": "backend/app/Http/Controllers/",
+      "description": "Client role restricted to own data only; internal roles see firm-wide data; middleware or policy enforcement required on all endpoints",
+      "confidence": "INFERRED"
+    },
+    {
+      "id": "demo-data-seeders",
+      "label": "Demo Module Seeders Missing",
+      "type": "config",
+      "file": "backend/database/seeders/",
+      "description": "Performance, Recruitment, Offboarding, Reminders tables truncated without seeders; local dev builds get empty views; needs DemoModulesSeeder",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "ghost-admin-role",
+      "label": "Ghost 'admin' Role Reference",
+      "type": "config",
+      "file": "backend/app/Http/Controllers/ProjectTrackerController.php",
+      "description": "Code checks for 'admin' role in calendarEvents() but no 'admin' role seeded (only 'super_admin'); dead logic",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "vite-tsc-frontend",
+      "label": "Vite + TanStack Start Frontend Build",
+      "type": "config",
+      "file": "vite.config.ts",
+      "description": "Vite 7.3.1 with @tanstack/router-plugin, TypeScript 5.8.3, ESLint 9.32.0; builds to dist/ for production server",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "laravel-sanctum-auth",
+      "label": "Laravel Sanctum Token Authentication",
+      "type": "config",
+      "file": "backend/config/sanctum.php",
+      "description": "Token-based API auth for SPA + session-based Inertia routes; API guard protection on /api/* routes",
+      "confidence": "INFERRED"
+    },
+    {
+      "id": "groq-api-integration",
+      "label": "Groq LLM API Integration",
+      "type": "config",
+      "file": "backend/app/Services/AIQueryService.php",
+      "description": "AI queries sent to Groq LLM with DB schema context; LLM generates SELECT SQL; executed on read-only connection with regex safety checks (NOW LEAKED IN GIT)",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "fastapi-sidecar-ai",
+      "label": "FastAPI AI Sidecar (Deprecated)",
+      "type": "config",
+      "file": "ai-sidecar/main.py",
+      "description": "Python FastAPI sidecar on port 8001 with Groq/Google Generative AI integration; receives queries from Laravel, generates SQL on read-only DB; CORS misconfigured",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "role-permission-matrix",
+      "label": "RBAC Permission Matrix",
+      "type": "config",
+      "file": "backend/app/Http/Controllers/AuthController.php",
+      "description": "Permission matrix defined in AuthController: super_admin/partner/manager/hr/finance/associate/paralegal/client; returned to UI but not enforced server-side",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "soft-delete-cascade-risk",
+      "label": "Soft-Delete Cascade Financial Risk",
+      "type": "config",
+      "file": "backend/app/Models/Client.php",
+      "description": "Client hard-delete cascades through projects/invoices/ledger; one partner click destroys financial history; should block delete if invoices exist or use soft-deletes",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "invoice-cancellation-ledger-gap",
+      "label": "Invoice Cancellation Ledger Reversal Missing",
+      "type": "config",
+      "file": "backend/app/Http/Controllers/FinancialController.php",
+      "description": "Invoice cancellation doesn't reverse ledger entry; financial records remain unbalanced",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "quotation-crud-incomplete",
+      "label": "Quotation Module Create/Update Missing",
+      "type": "config",
+      "file": "backend/app/Http/Controllers/FinancialController.php",
+      "description": "Quotations are read-only; no create/update endpoints; credit notes, reconciliation absent",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "document-signed-urls-missing",
+      "label": "Document Download Signed URLs Missing",
+      "type": "config",
+      "file": "backend/app/Http/Controllers/DocumentController.php",
+      "description": "Document upload max 50MB but no signed URLs; Storage::url() on local disk broken (no download path); no malware scanning; no audit log per download",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "pagination-missing-global",
+      "label": "No Pagination on Heavy Endpoints",
+      "type": "config",
+      "file": "backend/app/Http/Controllers/",
+      "description": "LeaveController, many index endpoints return full tables; no PaginationHelper used; frontend expects arrays not paginated objects (inconsistent)",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "formrequest-classes-missing",
+      "label": "Form Request Validation Classes Missing",
+      "type": "config",
+      "file": "backend/app/Http/Requests/",
+      "description": "Validation logic inline in controllers; no StoreClientRequest, UpdateClientRequest, etc.; breaks reusability and authorization encapsulation",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "policy-classes-missing",
+      "label": "Authorization Policy Classes Missing",
+      "type": "config",
+      "file": "backend/app/Policies/",
+      "description": "RBAC checks inline in controllers; no dedicated Policy classes; no $this->authorize() calls; Spatie Permission tables exist but not used",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "assigned-team-json-unindexed",
+      "label": "Unindexed JSON Column Query",
+      "type": "config",
+      "file": "backend/app/Http/Controllers/",
+      "description": "assigned_team JSON column queried via whereJsonContains without database index; sequential scan on large tables",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "reverb-horizon-configured-unused",
+      "label": "Reverb & Horizon Configured but Unused",
+      "type": "config",
+      "file": "backend/config/",
+      "description": "Installed via Composer; configured in deploy script; queue=database, broadcast=log; no jobs queued, no events broadcast; NotificationBroadcast event exists but unused",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "gst-hardcoded-18-percent",
+      "label": "GST Rate Hardcoded 18%",
+      "type": "config",
+      "file": "backend/app/Http/Controllers/FinancialController.php",
+      "description": "No CGST/SGST/IGST split; no jurisdiction/client-based variation; exports should be 0%; tax_details column exists but unused",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "wip-hardcoded-150-per-hour",
+      "label": "WIP Hardcoded $150/hr",
+      "type": "config",
+      "file": "backend/app/Http/Controllers/DashboardController.php",
+      "description": "Dashboard WIP calculation hardcodes $150/hr instead of reading configurable billing rate",
+      "confidence": "EXTRACTED"
+    }
+  ],
+  "edges": [
+    {
+      "source": "package-json-config",
+      "target": "react-19-frontend",
+      "relationship": "defines",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "production-server-handler",
+      "target": "react-19-frontend",
+      "relationship": "serves",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "github-actions-ci",
+      "target": "laravel-13-framework",
+      "relationship": "tests",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "github-actions-ci",
+      "target": "react-19-frontend",
+      "relationship": "tests",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "audit-2-critical-issues",
+      "target": "payroll-service-indian-math",
+      "relationship": "documents",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "audit-2-critical-issues",
+      "target": "documents-module-wired",
+      "relationship": "documents",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "ipflow-full-audit",
+      "target": "deadline-reminder-command-broken",
+      "relationship": "identifies",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "ipflow-full-audit",
+      "target": "tracker-import-command-broken",
+      "relationship": "identifies",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "ipflow-full-audit",
+      "target": "portal-cast-bug",
+      "relationship": "identifies",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "ipflow-full-audit",
+      "target": "notification-split-brain",
+      "relationship": "identifies",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "ipflow-full-audit",
+      "target": "document-disk-scan-bottleneck",
+      "relationship": "identifies",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "ipflow-full-audit",
+      "target": "approval-memory-exhaustion",
+      "relationship": "identifies",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "ipflow-full-audit",
+      "target": "postgres-filter-aggregates",
+      "relationship": "identifies",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "ipflow-full-audit",
+      "target": "postgres-json-operator",
+      "relationship": "identifies",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "improvement-roadmap",
+      "target": "groq-api-integration",
+      "relationship": "addresses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "improvement-roadmap",
+      "target": "fastapi-sidecar-ai",
+      "relationship": "addresses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "improvement-roadmap",
+      "target": "formrequest-classes-missing",
+      "relationship": "addresses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "improvement-roadmap",
+      "target": "policy-classes-missing",
+      "relationship": "addresses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "backend-architectural-audit",
+      "target": "tracker-user-string-matching",
+      "relationship": "documents",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "backend-architectural-audit",
+      "target": "encrypted-salary-field",
+      "relationship": "documents",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "laravel-13-framework",
+      "target": "payroll-service-indian-math",
+      "relationship": "contains",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "laravel-13-framework",
+      "target": "leave-approval-service",
+      "relationship": "contains",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "laravel-13-framework",
+      "target": "encryption-at-rest-cast",
+      "relationship": "contains",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "laravel-13-framework",
+      "target": "role-permission-matrix",
+      "relationship": "implements",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "laravel-sanctum-auth",
+      "target": "client-rbac-scoping",
+      "relationship": "guards",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "payroll-module-implemented",
+      "target": "payroll-service-indian-math",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "invoice-race-condition-fixed",
+      "target": "ledger-balance-corruption-fixed",
+      "relationship": "complements",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "ledger-balance-corruption-fixed",
+      "target": "payment-double-submit-fixed",
+      "relationship": "complements",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "tracker-rbac-hardened",
+      "target": "client-rbac-scoping",
+      "relationship": "implements",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "documents-module-wired",
+      "target": "document-disk-scan-bottleneck",
+      "relationship": "mitigates",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "leave-approval-wired",
+      "target": "leave-approval-service",
+      "relationship": "calls",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "postgres-regex-queries",
+      "target": "postgres-filter-aggregates",
+      "relationship": "complements",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "postgres-json-operator",
+      "target": "postgres-filter-aggregates",
+      "relationship": "complements",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "deadline-reminder-command-broken",
+      "target": "tracker-user-string-matching",
+      "relationship": "depends-on",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "tracker-import-command-broken",
+      "target": "tracker-user-string-matching",
+      "relationship": "depends-on",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "vite-tsc-frontend",
+      "target": "typescript-errors-fixed",
+      "relationship": "checks",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "groq-api-integration",
+      "target": "fastapi-sidecar-ai",
+      "relationship": "calls",
+      "confidence": "INFERRED"
+    },
+    {
+      "source": "rbac-feature-tests",
+      "target": "tracker-rbac-hardened",
+      "relationship": "validates",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "rbac-feature-tests",
+      "target": "payroll-module-implemented",
+      "relationship": "validates",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "github-actions-ci-pipeline",
+      "target": "rbac-feature-tests",
+      "relationship": "runs",
+      "confidence": "EXTRACTED"
+    }
+  ],
+  "hyperedges": [],
+  "input_tokens": 45000,
+  "output_tokens": 8500
+}

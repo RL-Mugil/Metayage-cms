@@ -1,0 +1,970 @@
+{
+  "nodes": [
+    {
+      "id": "model-payment",
+      "label": "Payment Model",
+      "type": "model",
+      "file": "backend/app/Models/Payment.php",
+      "description": "Eloquent model representing client payments with receipt codes and amount tracking",
+      "code": "class Payment extends Model { protected $fillable = ['client_id', 'invoice_id', 'receipt_code', 'payment_date', 'amount', 'payment_method', ...]; }",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "model-payroll-run",
+      "label": "PayrollRun Model",
+      "type": "model",
+      "file": "backend/app/Models/PayrollRun.php",
+      "description": "Eloquent model for monthly payroll batch with aggregated gross/deductions/net totals",
+      "code": "class PayrollRun extends Model { protected $fillable = ['period', 'status', 'employee_count', 'gross_total', 'deductions_total', 'net_total', 'processed_by_id', ...]; }",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "model-payslip",
+      "label": "Payslip Model",
+      "type": "model",
+      "file": "backend/app/Models/Payslip.php",
+      "description": "Eloquent model storing computed pay components for an employee in a payroll run",
+      "code": "class Payslip extends Model { protected $fillable = ['payroll_run_id', 'employee_id', 'basic', 'hra', 'special_allowance', 'pf_employee', 'esi_employee', 'professional_tax', 'tds', 'net_pay', ...]; }",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "model-performance-feedback-360",
+      "label": "PerformanceFeedback360 Model",
+      "type": "model",
+      "file": "backend/app/Models/PerformanceFeedback360.php",
+      "description": "Eloquent model for 360-degree feedback collection with guarded attributes",
+      "code": "class PerformanceFeedback360 extends Model { protected $table = 'performance_feedback360'; protected $guarded = []; }",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "model-performance-goal",
+      "label": "PerformanceGoal Model",
+      "type": "model",
+      "file": "backend/app/Models/PerformanceGoal.php",
+      "description": "Eloquent model for employee performance goals with progress tracking",
+      "code": "class PerformanceGoal extends Model { protected $guarded = []; protected $casts = ['progress' => 'integer']; }",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "model-performance-review",
+      "label": "PerformanceReview Model",
+      "type": "model",
+      "file": "backend/app/Models/PerformanceReview.php",
+      "description": "Eloquent model for performance reviews with score arrays and ratings",
+      "code": "class PerformanceReview extends Model { protected $casts = ['scores' => 'array', 'rating' => 'float']; }",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "model-project",
+      "label": "Project Model",
+      "type": "model",
+      "file": "backend/app/Models/Project.php",
+      "description": "Eloquent model for IP matters/cases with soft deletes, auto-generated codes, and multi-team assignments",
+      "code": "class Project extends Model { use SoftDeletes; protected $fillable = ['project_code', 'docket_number', 'client_id', 'project_type', 'assigned_partner_id', ...]; }",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "model-project-stage",
+      "label": "ProjectStage Model",
+      "type": "model",
+      "file": "backend/app/Models/ProjectStage.php",
+      "description": "Eloquent model for project pipeline stages with sequence ordering and gate criteria",
+      "code": "class ProjectStage extends Model { protected $fillable = ['project_id', 'stage_name', 'owner_id', 'due_date', 'checklist', 'gate_criteria', 'sequence_order', 'status']; }",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "model-quotation",
+      "label": "Quotation Model",
+      "type": "model",
+      "file": "backend/app/Models/Quotation.php",
+      "description": "Eloquent model for fee estimates with hourly rates, disbursements, and buffer percentages",
+      "code": "class Quotation extends Model { protected $fillable = ['quote_code', 'client_id', 'project_id', 'hourly_rates', 'total_amount', ...]; }",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "model-reminder",
+      "label": "Reminder Model",
+      "type": "model",
+      "file": "backend/app/Models/Reminder.php",
+      "description": "Eloquent model for user reminders with due dates and completion tracking",
+      "code": "class Reminder extends Model { protected $guarded = []; protected $casts = ['due_date' => 'date:Y-m-d', 'completed' => 'boolean']; }",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "model-task",
+      "label": "Task Model",
+      "type": "model",
+      "file": "backend/app/Models/Task.php",
+      "description": "Eloquent model for work items with dependencies, billing flags, and recurrence patterns",
+      "code": "class Task extends Model { protected $fillable = ['task_code', 'project_id', 'title', 'assignee_id', 'priority', 'status', 'dependencies', 'billable', 'recurring', ...]; }",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "model-time-entry",
+      "label": "TimeEntry Model",
+      "type": "model",
+      "file": "backend/app/Models/TimeEntry.php",
+      "description": "Eloquent model for hours logged against projects/tasks for billing",
+      "code": "class TimeEntry extends Model { protected $fillable = ['user_id', 'project_id', 'task_id', 'duration_hours', 'entry_date', 'billable', 'status', 'approved_by_id']; }",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "model-tracker-circle",
+      "label": "TrackerCircle Model",
+      "type": "model",
+      "file": "backend/app/Models/TrackerCircle.php",
+      "description": "Eloquent model for team groups in project tracker with many-to-many member relationships",
+      "code": "class TrackerCircle extends Model { protected $fillable = ['name', 'slug', 'description']; public function members() { return $this->belongsToMany(User::class, ...) } }",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "model-tracker-row",
+      "label": "TrackerRow Model",
+      "type": "model",
+      "file": "backend/app/Models/TrackerRow.php",
+      "description": "Eloquent model for case entries in tracker circles with PCM/SCM/PR assignments",
+      "code": "class TrackerRow extends Model { protected $fillable = ['circle_id', 'project_id', 'docket_number', 'client_name', 'pcm_id', 'scm_id', 'pr_id', ...]; }",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "model-user",
+      "label": "User Model",
+      "type": "model",
+      "file": "backend/app/Models/User.php",
+      "description": "Authenticatable model for system users with Sanctum tokens and notification preferences",
+      "code": "class User extends Authenticatable { use HasApiTokens, HasFactory, Notifiable; #[Fillable(['name', 'email', 'password', 'role', 'status', 'avatar_url', ...])] }",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "policy-client",
+      "label": "ClientPolicy",
+      "type": "class",
+      "file": "backend/app/Policies/ClientPolicy.php",
+      "description": "Authorization policy for Client model with role-based access control",
+      "code": "class ClientPolicy { public function view(User $user, Client $client): bool { if ($user->role === 'client') return $client->contacts()->where('email', $user->email)->exists(); return true; } }",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "policy-client-viewAny",
+      "label": "ClientPolicy::viewAny",
+      "type": "function",
+      "file": "backend/app/Policies/ClientPolicy.php",
+      "description": "Authorization: anyone can list clients",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "policy-client-view",
+      "label": "ClientPolicy::view",
+      "type": "function",
+      "file": "backend/app/Policies/ClientPolicy.php",
+      "description": "Authorization: clients see only if they are a contact; staff see all",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "policy-client-create",
+      "label": "ClientPolicy::create",
+      "type": "function",
+      "file": "backend/app/Policies/ClientPolicy.php",
+      "description": "Authorization: super_admin, partner, or manager can create clients",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "policy-client-update",
+      "label": "ClientPolicy::update",
+      "type": "function",
+      "file": "backend/app/Policies/ClientPolicy.php",
+      "description": "Authorization: super_admin, partner, or manager can update clients",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "policy-client-delete",
+      "label": "ClientPolicy::delete",
+      "type": "function",
+      "file": "backend/app/Policies/ClientPolicy.php",
+      "description": "Authorization: only super_admin or partner can delete clients",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "policy-employee",
+      "label": "EmployeePolicy",
+      "type": "class",
+      "file": "backend/app/Policies/EmployeePolicy.php",
+      "description": "Authorization policy for Employee model with role-based access control",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "policy-employee-viewAny",
+      "label": "EmployeePolicy::viewAny",
+      "type": "function",
+      "file": "backend/app/Policies/EmployeePolicy.php",
+      "description": "Authorization: super_admin, partner, manager, or hr can list employees",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "policy-employee-view",
+      "label": "EmployeePolicy::view",
+      "type": "function",
+      "file": "backend/app/Policies/EmployeePolicy.php",
+      "description": "Authorization: staff can view any employee; employees see only themselves",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "policy-employee-create",
+      "label": "EmployeePolicy::create",
+      "type": "function",
+      "file": "backend/app/Policies/EmployeePolicy.php",
+      "description": "Authorization: only super_admin or hr can create employees",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "policy-employee-update",
+      "label": "EmployeePolicy::update",
+      "type": "function",
+      "file": "backend/app/Policies/EmployeePolicy.php",
+      "description": "Authorization: only super_admin or hr can update employees",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "policy-employee-delete",
+      "label": "EmployeePolicy::delete",
+      "type": "function",
+      "file": "backend/app/Policies/EmployeePolicy.php",
+      "description": "Authorization: only super_admin can delete employees",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "policy-employee-approveLeave",
+      "label": "EmployeePolicy::approveLeave",
+      "type": "function",
+      "file": "backend/app/Policies/EmployeePolicy.php",
+      "description": "Authorization: super_admin, hr, manager, or partner can approve leave",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "policy-invoice",
+      "label": "InvoicePolicy",
+      "type": "class",
+      "file": "backend/app/Policies/InvoicePolicy.php",
+      "description": "Authorization policy for Invoice model with client-scoped and staff access",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "policy-invoice-viewAny",
+      "label": "InvoicePolicy::viewAny",
+      "type": "function",
+      "file": "backend/app/Policies/InvoicePolicy.php",
+      "description": "Authorization: super_admin, partner, finance, manager, or client can list invoices",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "policy-invoice-view",
+      "label": "InvoicePolicy::view",
+      "type": "function",
+      "file": "backend/app/Policies/InvoicePolicy.php",
+      "description": "Authorization: clients see only their invoices; staff see all",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "policy-invoice-create",
+      "label": "InvoicePolicy::create",
+      "type": "function",
+      "file": "backend/app/Policies/InvoicePolicy.php",
+      "description": "Authorization: super_admin, partner, finance, or manager can create invoices",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "policy-invoice-update",
+      "label": "InvoicePolicy::update",
+      "type": "function",
+      "file": "backend/app/Policies/InvoicePolicy.php",
+      "description": "Authorization: super_admin, partner, finance, or manager can update invoices",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "policy-invoice-delete",
+      "label": "InvoicePolicy::delete",
+      "type": "function",
+      "file": "backend/app/Policies/InvoicePolicy.php",
+      "description": "Authorization: only super_admin or partner can delete invoices",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "policy-invoice-pay",
+      "label": "InvoicePolicy::pay",
+      "type": "function",
+      "file": "backend/app/Policies/InvoicePolicy.php",
+      "description": "Authorization: super_admin, partner, or finance can record payments",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "policy-project",
+      "label": "ProjectPolicy",
+      "type": "class",
+      "file": "backend/app/Policies/ProjectPolicy.php",
+      "description": "Authorization policy for Project model with client/associate/staff scope",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "policy-project-viewAny",
+      "label": "ProjectPolicy::viewAny",
+      "type": "function",
+      "file": "backend/app/Policies/ProjectPolicy.php",
+      "description": "Authorization: everyone can list projects",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "policy-project-view",
+      "label": "ProjectPolicy::view",
+      "type": "function",
+      "file": "backend/app/Policies/ProjectPolicy.php",
+      "description": "Authorization: clients see own projects; associates see assigned projects; staff see all",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "policy-project-create",
+      "label": "ProjectPolicy::create",
+      "type": "function",
+      "file": "backend/app/Policies/ProjectPolicy.php",
+      "description": "Authorization: super_admin, partner, or manager can create projects",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "policy-project-update",
+      "label": "ProjectPolicy::update",
+      "type": "function",
+      "file": "backend/app/Policies/ProjectPolicy.php",
+      "description": "Authorization: super_admin/partner can update; manager can update if assigned",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "policy-project-delete",
+      "label": "ProjectPolicy::delete",
+      "type": "function",
+      "file": "backend/app/Policies/ProjectPolicy.php",
+      "description": "Authorization: only super_admin or partner can delete projects",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "policy-task",
+      "label": "TaskPolicy",
+      "type": "class",
+      "file": "backend/app/Policies/TaskPolicy.php",
+      "description": "Authorization policy for Task model with assignee scope",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "policy-task-viewAny",
+      "label": "TaskPolicy::viewAny",
+      "type": "function",
+      "file": "backend/app/Policies/TaskPolicy.php",
+      "description": "Authorization: everyone can list tasks",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "policy-task-view",
+      "label": "TaskPolicy::view",
+      "type": "function",
+      "file": "backend/app/Policies/TaskPolicy.php",
+      "description": "Authorization: everyone can view tasks",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "policy-task-create",
+      "label": "TaskPolicy::create",
+      "type": "function",
+      "file": "backend/app/Policies/TaskPolicy.php",
+      "description": "Authorization: super_admin, partner, manager, or associate can create tasks",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "policy-task-update",
+      "label": "TaskPolicy::update",
+      "type": "function",
+      "file": "backend/app/Policies/TaskPolicy.php",
+      "description": "Authorization: staff can update any task; assignees can update their own",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "policy-task-delete",
+      "label": "TaskPolicy::delete",
+      "type": "function",
+      "file": "backend/app/Policies/TaskPolicy.php",
+      "description": "Authorization: only super_admin, partner, or manager can delete tasks",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "provider-app-service",
+      "label": "AppServiceProvider",
+      "type": "class",
+      "file": "backend/app/Providers/AppServiceProvider.php",
+      "description": "Laravel service provider that registers Eloquent authorization policies",
+      "code": "class AppServiceProvider extends ServiceProvider { public function boot(): void { Gate::policy(Client::class, ClientPolicy::class); Gate::policy(Project::class, ProjectPolicy::class); ... } }",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "provider-app-service-boot",
+      "label": "AppServiceProvider::boot",
+      "type": "function",
+      "file": "backend/app/Providers/AppServiceProvider.php",
+      "description": "Registers 5 authorization policies (Client, Project, Task, Invoice, Employee)",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "service-ai-query",
+      "label": "AIQueryService",
+      "type": "class",
+      "file": "backend/app/Services/AIQueryService.php",
+      "description": "Service for AI-powered SQL query generation via Groq API with security guards and schema context",
+      "code": "class AIQueryService { public function ask(string $userQuery, array $userContext): array { ... Http::withToken($this->apiKey)->post('https://api.groq.com/...', [...]) ... } }",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "service-ai-query-ask",
+      "label": "AIQueryService::ask",
+      "type": "function",
+      "file": "backend/app/Services/AIQueryService.php",
+      "description": "Main entry point: sends query to Groq LLM, extracts SQL, executes on read-only connection, returns results",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "service-ai-query-extractSql",
+      "label": "AIQueryService::extractSql",
+      "type": "function",
+      "file": "backend/app/Services/AIQueryService.php",
+      "description": "Extracts SQL from markdown ```sql...``` code blocks in LLM response",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "service-ai-query-guardSql",
+      "label": "AIQueryService::guardSql",
+      "type": "function",
+      "file": "backend/app/Services/AIQueryService.php",
+      "description": "Validates SQL for safety: blocks DDL/DML, prevents stacked statements, denies client role, guards password column",
+      "code": "private function guardSql(string $sql, array $userContext = []): void { if (!preg_match('/^\\s*(SELECT|WITH)\\b/i', $sql)) throw ...; if (preg_match('/\\b(DROP|DELETE|INSERT|...|GRANT|REVOKE)\\b/i', $sql)) throw ...; }",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "service-ai-query-schemaContext",
+      "label": "AIQueryService::schemaContext",
+      "type": "function",
+      "file": "backend/app/Services/AIQueryService.php",
+      "description": "Builds cached database schema documentation with table columns, foreign keys, enums, and domain annotations",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "service-ai-query-buildSystemPrompt",
+      "label": "AIQueryService::buildSystemPrompt",
+      "type": "function",
+      "file": "backend/app/Services/AIQueryService.php",
+      "description": "Constructs system prompt for Groq with schema context, security rules, and user role scope",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "service-ai-query-const-SCHEMA_ANNOTATIONS",
+      "label": "AIQueryService::SCHEMA_ANNOTATIONS",
+      "type": "config",
+      "file": "backend/app/Services/AIQueryService.php",
+      "description": "Enum-like annotations enriching schema with role values, enum members, and foreign key references for AI context",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "service-ai-query-const-ALLOWED_TABLES",
+      "label": "AIQueryService::ALLOWED_TABLES",
+      "type": "config",
+      "file": "backend/app/Services/AIQueryService.php",
+      "description": "Whitelist of 21 tables the AI is permitted to query (excludes sensitive ops/audit tables)",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "service-leave-approval",
+      "label": "LeaveApprovalService",
+      "type": "class",
+      "file": "backend/app/Services/LeaveApprovalService.php",
+      "description": "Service handling leave request approval/rejection with balance deduction and LOP accrual",
+      "code": "class LeaveApprovalService { public function resolve(LeaveRequest $leave, string $status, int $approverId, ?string $comments = null): LeaveRequest { ... DB::transaction(...) ... } }",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "service-leave-approval-resolve",
+      "label": "LeaveApprovalService::resolve",
+      "type": "function",
+      "file": "backend/app/Services/LeaveApprovalService.php",
+      "description": "Transactional: transitions leave request from Pending to Approved/Rejected/Cancelled, managing balance and LOP",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "service-leave-approval-const-TYPE_COLUMN",
+      "label": "LeaveApprovalService::TYPE_COLUMN",
+      "type": "config",
+      "file": "backend/app/Services/LeaveApprovalService.php",
+      "description": "Maps frontend leave type labels to leave_balances table columns (earned_leave, sick_leave, casual_leave)",
+      "code": "private const TYPE_COLUMN = ['Annual' => 'earned_leave', 'Earned' => 'earned_leave', 'Sick' => 'sick_leave', ...]",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "service-payroll",
+      "label": "PayrollService",
+      "type": "class",
+      "file": "backend/app/Services/PayrollService.php",
+      "description": "Service computing Indian salary structure with statutory deductions (PF, ESI, PT, TDS) and LOP proration",
+      "code": "class PayrollService { private const PF_RATE = 0.12; private const ESI_GROSS_LIMIT = 21000.0; public function computeSlip(float $monthlyGross, float $lopDays, float $tds, int $daysInMonth): array { ... } }",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "service-payroll-computeSlip",
+      "label": "PayrollService::computeSlip",
+      "type": "function",
+      "file": "backend/app/Services/PayrollService.php",
+      "description": "Computes payslip line items from gross salary: basic (50%), HRA (50% of basic), special allowance, all statutory deductions",
+      "code": "public function computeSlip(float $monthlyGross, float $lopDays, float $tds, int $daysInMonth): array { $lopDeduction = round($monthlyGross * $lopDays / $daysInMonth, 2); $basic = round($payableGross * 0.50, 2); ... return [...]; }",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "service-payroll-const-PF_RATE",
+      "label": "PayrollService::PF_RATE",
+      "type": "config",
+      "file": "backend/app/Services/PayrollService.php",
+      "description": "Employee PF (Provident Fund) rate: 12% of basic, capped at basic ₹15,000 (max ₹1,800/month)",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "service-payroll-const-ESI_RATE",
+      "label": "PayrollService::ESI_RATE",
+      "type": "config",
+      "file": "backend/app/Services/PayrollService.php",
+      "description": "Employee ESI (Employee State Insurance) rate: 0.75% of gross, only when gross ≤ ₹21,000",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "service-payroll-pt_monthly",
+      "label": "PayrollService Professional Tax",
+      "type": "config",
+      "file": "backend/app/Services/PayrollService.php",
+      "description": "Flat Professional Tax: ₹200/month (state simplification; full support requires employees.work_state column)",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "id": "command-artisan",
+      "label": "artisan (CLI entry point)",
+      "type": "command",
+      "file": "backend/artisan",
+      "description": "Laravel CLI bootstrap script: loads Composer autoloader and Symfony console",
+      "code": "#!/usr/bin/env php\\n<?php\\ndefine('LARAVEL_START', microtime(true));\\nrequire __DIR__.'/vendor/autoload.php';\\n$app = require_once __DIR__.'/bootstrap/app.php';\\n$status = $app->handleCommand(new ArgvInput);",
+      "confidence": "EXTRACTED"
+    }
+  ],
+  "edges": [
+    {
+      "source": "model-payment",
+      "target": "model-client",
+      "relationship": "belongs_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "model-payment",
+      "target": "model-invoice",
+      "relationship": "belongs_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "model-payroll-run",
+      "target": "model-payslip",
+      "relationship": "has_many",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "model-payroll-run",
+      "target": "model-user",
+      "relationship": "belongs_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "model-payslip",
+      "target": "model-payroll-run",
+      "relationship": "belongs_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "model-payslip",
+      "target": "model-employee",
+      "relationship": "belongs_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "model-performance-goal",
+      "target": "model-employee",
+      "relationship": "belongs_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "model-performance-review",
+      "target": "model-employee",
+      "relationship": "belongs_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "model-performance-review",
+      "target": "model-user",
+      "relationship": "belongs_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "model-project",
+      "target": "model-client",
+      "relationship": "belongs_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "model-project",
+      "target": "model-project-stage",
+      "relationship": "has_many",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "model-project",
+      "target": "model-task",
+      "relationship": "has_many",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "model-project",
+      "target": "model-user",
+      "relationship": "belongs_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "model-project-stage",
+      "target": "model-project",
+      "relationship": "belongs_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "model-project-stage",
+      "target": "model-user",
+      "relationship": "belongs_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "model-quotation",
+      "target": "model-client",
+      "relationship": "belongs_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "model-quotation",
+      "target": "model-project",
+      "relationship": "belongs_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "model-quotation",
+      "target": "model-user",
+      "relationship": "belongs_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "model-reminder",
+      "target": "model-user",
+      "relationship": "belongs_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "model-task",
+      "target": "model-project",
+      "relationship": "belongs_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "model-task",
+      "target": "model-user",
+      "relationship": "belongs_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "model-task",
+      "target": "model-time-entry",
+      "relationship": "has_many",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "model-time-entry",
+      "target": "model-user",
+      "relationship": "belongs_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "model-time-entry",
+      "target": "model-project",
+      "relationship": "belongs_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "model-time-entry",
+      "target": "model-task",
+      "relationship": "belongs_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "model-tracker-circle",
+      "target": "model-user",
+      "relationship": "has_many",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "model-tracker-circle",
+      "target": "model-tracker-row",
+      "relationship": "has_many",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "model-tracker-row",
+      "target": "model-tracker-circle",
+      "relationship": "belongs_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "model-tracker-row",
+      "target": "model-project",
+      "relationship": "belongs_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "model-tracker-row",
+      "target": "model-user",
+      "relationship": "belongs_to",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "policy-client",
+      "target": "model-client",
+      "relationship": "defines",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "policy-employee",
+      "target": "model-employee",
+      "relationship": "defines",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "policy-invoice",
+      "target": "model-invoice",
+      "relationship": "defines",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "policy-project",
+      "target": "model-project",
+      "relationship": "defines",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "policy-task",
+      "target": "model-task",
+      "relationship": "defines",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "provider-app-service",
+      "target": "policy-client",
+      "relationship": "registers",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "provider-app-service",
+      "target": "policy-project",
+      "relationship": "registers",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "provider-app-service",
+      "target": "policy-task",
+      "relationship": "registers",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "provider-app-service",
+      "target": "policy-invoice",
+      "relationship": "registers",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "provider-app-service",
+      "target": "policy-employee",
+      "relationship": "registers",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "service-ai-query-ask",
+      "target": "service-ai-query-buildSystemPrompt",
+      "relationship": "calls",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "service-ai-query-ask",
+      "target": "service-ai-query-extractSql",
+      "relationship": "calls",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "service-ai-query-ask",
+      "target": "service-ai-query-guardSql",
+      "relationship": "calls",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "service-ai-query-buildSystemPrompt",
+      "target": "service-ai-query-schemaContext",
+      "relationship": "calls",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "service-ai-query-schemaContext",
+      "target": "service-ai-query-const-ALLOWED_TABLES",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "service-ai-query-schemaContext",
+      "target": "service-ai-query-const-SCHEMA_ANNOTATIONS",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "service-leave-approval-resolve",
+      "target": "service-leave-approval-const-TYPE_COLUMN",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "service-leave-approval",
+      "target": "model-leave-request",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "service-leave-approval",
+      "target": "model-leave-balance",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "service-payroll-computeSlip",
+      "target": "service-payroll-const-PF_RATE",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "service-payroll-computeSlip",
+      "target": "service-payroll-const-ESI_RATE",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    },
+    {
+      "source": "service-payroll-computeSlip",
+      "target": "service-payroll-pt_monthly",
+      "relationship": "uses",
+      "confidence": "EXTRACTED"
+    }
+  ],
+  "hyperedges": [
+    {
+      "name": "rbac-matrix",
+      "nodes": [
+        "policy-client",
+        "policy-employee",
+        "policy-invoice",
+        "policy-project",
+        "policy-task"
+      ],
+      "description": "Complete RBAC authorization layer governing access to Client, Employee, Invoice, Project, and Task resources",
+      "confidence": "INFERRED"
+    },
+    {
+      "name": "payroll-pipeline",
+      "nodes": [
+        "model-employee",
+        "model-payroll-run",
+        "model-payslip",
+        "service-payroll",
+        "service-payroll-computeSlip"
+      ],
+      "description": "Monthly payroll processing pipeline: run aggregates employee data, service computes each payslip with Indian salary structure",
+      "confidence": "INFERRED"
+    },
+    {
+      "name": "leave-management",
+      "nodes": [
+        "model-employee",
+        "model-leave-request",
+        "model-leave-balance",
+        "service-leave-approval",
+        "service-leave-approval-resolve"
+      ],
+      "description": "Leave request lifecycle: approval/rejection/cancellation with balance deduction and LOP accrual",
+      "confidence": "INFERRED"
+    },
+    {
+      "name": "ai-query-engine",
+      "nodes": [
+        "service-ai-query",
+        "service-ai-query-ask",
+        "service-ai-query-guardSql",
+        "service-ai-query-buildSystemPrompt",
+        "service-ai-query-schemaContext",
+        "service-ai-query-const-ALLOWED_TABLES",
+        "service-ai-query-const-SCHEMA_ANNOTATIONS"
+      ],
+      "description": "Natural language SQL generation via Groq LLM with security guardrails, schema context injection, and role-based query scoping",
+      "confidence": "INFERRED"
+    },
+    {
+      "name": "project-lifecycle",
+      "nodes": [
+        "model-project",
+        "model-project-stage",
+        "model-task",
+        "model-quotation",
+        "policy-project"
+      ],
+      "description": "IP matter lifecycle: projects contain stages and tasks; quotations estimate fees; policy governs access",
+      "confidence": "INFERRED"
+    },
+    {
+      "name": "financial-operations",
+      "nodes": [
+        "model-payment",
+        "model-invoice",
+        "policy-invoice",
+        "model-time-entry",
+        "model-project"
+      ],
+      "description": "Financial tracking: invoices, payments, time entries linked to projects; policy controls access",
+      "confidence": "INFERRED"
+    },
+    {
+      "name": "tracker-circles",
+      "nodes": [
+        "model-tracker-circle",
+        "model-tracker-row",
+        "model-project",
+        "model-user"
+      ],
+      "description": "Team-organized tracker system: circles group users, rows are case entries with PCM/SCM/PR assignments",
+      "confidence": "INFERRED"
+    },
+    {
+      "name": "performance-management",
+      "nodes": [
+        "model-employee",
+        "model-performance-goal",
+        "model-performance-review",
+        "model-performance-feedback-360"
+      ],
+      "description": "Performance management: goals, reviews with ratings, and 360-degree feedback for employees",
+      "confidence": "INFERRED"
+    }
+  ],
+  "input_tokens": 0,
+  "output_tokens": 0
+}
