@@ -206,6 +206,7 @@ class FinancialController extends Controller
         }
 
         $invoice->update($validated);
+        Cache::increment('dashboard_v');
         return response()->json($invoice->load('client'));
     }
 
@@ -254,6 +255,7 @@ class FinancialController extends Controller
             ]);
         });
 
+        Cache::increment('dashboard_v');
         return response()->json(['message' => 'Invoice cancelled']);
     }
 

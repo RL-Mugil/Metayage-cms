@@ -142,6 +142,14 @@ class ApprovalController extends Controller
             $subjectType = 'LeaveRequest';
         } else {
             $claim = ExpenseClaim::findOrFail($validated['id']);
+            if ($user->role === 'manager') {
+                $allowed = Employee::where('reporting_manager_id', $user->id)
+                    ->orWhere('dotted_line_manager_id', $user->id)
+                    ->pluck('id')->all();
+                if (! in_array($claim->employee_id, $allowed)) {
+                    return response()->json(['message' => 'Forbidden'], 403);
+                }
+            }
             if ($claim->status !== 'Pending') {
                 return response()->json(['message' => "Claim already {$claim->status}."], 422);
             }

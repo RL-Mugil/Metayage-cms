@@ -45,7 +45,7 @@ class ProjectController extends Controller
 
         $today = now()->toDateString();
 
-        $cacheKey = "project_stats_{$user->id}_{$user->role}";
+        $cacheKey = "project_stats_{$user->id}_{$user->role}_v" . Cache::get('dashboard_v', 0);
         $stats = Cache::remember($cacheKey, 300, function () use ($base, $today) {
             $row = (clone $base)->selectRaw("
                 COUNT(*) as total,
@@ -210,6 +210,7 @@ class ProjectController extends Controller
             'user_agent' => $request->userAgent(),
         ]);
 
+        Cache::increment('dashboard_v');
         return response()->json($project);
     }
 
@@ -298,6 +299,7 @@ class ProjectController extends Controller
             ]);
         }
 
+        Cache::increment('dashboard_v');
         return response()->json([
             'message' => "Project stage updated to {$stageName}",
             'project' => Project::with('stages')->find($project->id)

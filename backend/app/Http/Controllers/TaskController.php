@@ -90,6 +90,7 @@ class TaskController extends Controller
             'user_agent' => $request->userAgent(),
         ]);
 
+        Cache::increment('dashboard_v');
         return response()->json($task);
     }
 
