@@ -13,6 +13,7 @@ use App\Http\Requests\UpdateProjectRequest;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Redis;
 use Inertia\Inertia;
 
 class ProjectController extends Controller
@@ -134,29 +135,32 @@ class ProjectController extends Controller
         $validated['assigned_manager_id'] = $validated['assigned_manager_id'] ?? $user->id;
 
         $project = \DB::transaction(function () use ($validated) {
-            // Sequential project code, row-locked so concurrent requests
-            // cannot generate duplicates (project_code is unique).
+            // Redis atomic counter for project codes — no table-wide lock.
             $year = date('Y');
-            $last = Project::where('project_code', 'like', "PRJ-{$year}-%")
-                ->orderBy('project_code', 'desc')
-                ->lockForUpdate()
-                ->value('project_code');
-            $seq = $last ? ((int) substr($last, -5)) + 1 : 10000;
-            $validated['project_code'] = sprintf('PRJ-%s-%05d', $year, $seq);
+            $projKey = "seq:project:{$year}";
+            if (! Redis::exists($projKey)) {
+                $last = Project::where('project_code', 'like', "PRJ-{$year}-%")
+                    ->orderBy('project_code', 'desc')->value('project_code');
+                Redis::setnx($projKey, $last ? (int) substr($last, -5) : 9999);
+            }
+            $validated['project_code'] = sprintf('PRJ-%s-%05d', $year, Redis::incr($projKey));
             $validated['status'] = 'Open';
 
-            // Auto-generate docket number: {ClientCode}{Seq:3}{OfficeCode}{ServiceCode}
+            // Docket sequence per client, also using Redis.
             $client = Client::findOrFail($validated['client_id']);
             $clientCode = $client->client_code ?? '';
-            $maxSeq = 0;
-            foreach (Project::where('client_id', $validated['client_id'])->whereNotNull('docket_number')->lockForUpdate()->pluck('docket_number') as $dn) {
-                if (strlen($dn) >= strlen($clientCode) + 3) {
-                    $seq = (int) substr($dn, strlen($clientCode), 3);
-                    if ($seq > $maxSeq)
-                        $maxSeq = $seq;
+            $docketKey = "seq:docket:client:{$client->id}";
+            if (! Redis::exists($docketKey)) {
+                $maxSeq = 0;
+                foreach (Project::where('client_id', $client->id)->whereNotNull('docket_number')->pluck('docket_number') as $dn) {
+                    if (strlen($dn) >= strlen($clientCode) + 3) {
+                        $n = (int) substr($dn, strlen($clientCode), 3);
+                        if ($n > $maxSeq) $maxSeq = $n;
+                    }
                 }
+                Redis::setnx($docketKey, $maxSeq);
             }
-            $seq = str_pad($maxSeq + 1, 3, '0', STR_PAD_LEFT);
+            $seq = str_pad(Redis::incr($docketKey), 3, '0', STR_PAD_LEFT);
             $office = strtoupper($validated['patent_office_code'] ?? '');
             $service = strtoupper($validated['service_code'] ?? '');
             $validated['docket_number'] = $clientCode . $seq . $office . $service;

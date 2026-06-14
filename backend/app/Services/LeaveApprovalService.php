@@ -69,7 +69,7 @@ class LeaveApprovalService
             ]);
 
             if ($status === 'Approved') {
-                $column    = self::TYPE_COLUMN[$locked->leave_type] ?? 'casual_leave';
+                $leaveType = $locked->leave_type;
                 $leaveYear = date('Y', strtotime($locked->from_date));
                 $balance   = LeaveBalance::where('employee_id', $locked->employee_id)
                     ->where('year', $leaveYear)
@@ -77,15 +77,22 @@ class LeaveApprovalService
                     ->first();
 
                 if ($balance) {
-                    $available = (float) $balance->{$column};
-                    $days      = (float) $locked->total_days;
-                    $deduct    = min($available, $days);
-                    $shortfall = $days - $deduct;
+                    $days = (float) $locked->total_days;
 
-                    $balance->update([
-                        $column    => $available - $deduct,
-                        'lop_days' => (float) $balance->lop_days + $shortfall,
-                    ]);
+                    if ($leaveType === 'LOP' || $leaveType === 'Loss of Pay') {
+                        // LOP: accrue directly — no paid-leave balance to deduct
+                        $balance->update(['lop_days' => (float) $balance->lop_days + $days]);
+                    } else {
+                        $column    = self::TYPE_COLUMN[$leaveType] ?? 'casual_leave';
+                        $available = (float) $balance->{$column};
+                        $deduct    = min($available, $days);
+                        $shortfall = $days - $deduct;
+
+                        $balance->update([
+                            $column    => $available - $deduct,
+                            'lop_days' => (float) $balance->lop_days + $shortfall,
+                        ]);
+                    }
                 }
             }
 

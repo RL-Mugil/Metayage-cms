@@ -8,6 +8,7 @@ use App\Models\Reminder;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Str;
 
 class ComplianceController extends Controller
 {
@@ -140,7 +141,7 @@ class ComplianceController extends Controller
         $reminder = Reminder::firstOrCreate(
             ['user_id' => $request->user()->id, 'source' => "compliance:{$item->id}"],
             [
-                'title' => $item->action_required . ' — ' . $item->matter,
+                'title' => Str::limit($item->action_required . ' — ' . $item->matter, 250),
                 'description' => "{$item->jurisdiction} deadline",
                 'category' => 'Deadline',
                 'due_date' => $item->deadline,

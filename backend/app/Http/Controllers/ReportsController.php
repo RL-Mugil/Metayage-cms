@@ -42,9 +42,11 @@ class ReportsController extends Controller
 
         switch ($type) {
             case 'client-portfolio':
-                $paginator = Client::with('contacts', 'accountManager')
-                    ->withCount('projects')
-                    ->paginate($perPage, ['*'], 'page', $page);
+                $portfolioQuery = Client::with('contacts', 'accountManager')->withCount('projects');
+                if ($user->role === 'manager') {
+                    $portfolioQuery->where('account_manager_id', $user->id);
+                }
+                $paginator = $portfolioQuery->paginate($perPage, ['*'], 'page', $page);
                 $rows = $paginator->getCollection()->map(fn($c) => [
                     'client_code'         => $c->client_code,
                     'company_name'        => $c->company_name,

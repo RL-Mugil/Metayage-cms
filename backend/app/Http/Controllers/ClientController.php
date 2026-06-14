@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Client;
 use App\Models\ClientContact;
+use App\Models\ClientLedger;
 use App\Models\AuditLog;
 use App\Http\PaginationHelper;
 use App\Http\Requests\StoreClientRequest;
@@ -11,6 +12,7 @@ use App\Http\Requests\UpdateClientRequest;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Redis;
 use Inertia\Inertia;
 
 class ClientController extends Controller
@@ -35,9 +37,10 @@ class ClientController extends Controller
      */
     private function generateClientCode(string $nationality): string
     {
-        // Lock all client_code rows; filter in PHP to stay database-agnostic.
+        // Load all existing codes from DB once per import; filter in PHP.
+        // No table-wide lock needed — we only need to find the max code; the
+        // unique constraint on client_code catches true duplicates at insert.
         $clients = Client::whereNotNull('client_code')
-            ->lockForUpdate()
             ->get(['client_code']);
 
         $last = $clients
@@ -189,6 +192,19 @@ class ClientController extends Controller
 
             $client = Client::create($v);
 
+            // Seed a zero-balance opening entry so concurrent invoice/payment
+            // creation always has a row to lockForUpdate() against.
+            ClientLedger::create([
+                'client_id'          => $client->id,
+                'transaction_date'   => now()->toDateString(),
+                'document_type'      => 'Opening Balance',
+                'document_reference' => $client->client_code,
+                'debit'              => 0,
+                'credit'             => 0,
+                'balance'            => 0,
+                'notes'              => 'Auto-seeded on client creation',
+            ]);
+
             AuditLog::create([
                 'user_id'      => $user->id,
                 'action'       => 'create',
@@ -252,6 +268,7 @@ class ClientController extends Controller
         }
 
         $name = $client->legal_name ?? $client->company_name;
+        $client->contacts()->delete();
         $client->delete();
 
         AuditLog::create([

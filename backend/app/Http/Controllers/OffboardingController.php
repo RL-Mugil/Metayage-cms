@@ -55,15 +55,20 @@ class OffboardingController extends Controller
         if ($deny = $this->gate($request, self::WRITE_ROLES)) return $deny;
 
         $validated = $request->validate([
-            'employee' => 'required|string|max:255',
-            'dept' => 'nullable|string|max:50',
-            'last_day' => 'required|string|max:30',
-            'exit_type' => 'required|in:Resignation,Retirement,Termination',
+            'employee'    => 'required|string|max:255',
+            'employee_id' => 'nullable|exists:employees,id',
+            'dept'        => 'nullable|string|max:50',
+            'last_day'    => 'required|string|max:30',
+            'exit_type'   => 'required|in:Resignation,Retirement,Termination',
             'assigned_hr' => 'nullable|string|max:255',
         ]);
 
         $assignedHrName = ($validated['assigned_hr'] ?? null) ?: $request->user()->name;
-        $employee = Employee::where('full_name', $validated['employee'])->first();
+        // Prefer explicit employee_id to avoid name-collision bugs when two
+        // employees share the same full name.
+        $employee = isset($validated['employee_id'])
+            ? Employee::find($validated['employee_id'])
+            : Employee::where('full_name', $validated['employee'])->first();
         $hrUser   = User::where('name', $assignedHrName)->first();
 
         $case = OffboardingCase::create([
@@ -105,7 +110,13 @@ class OffboardingController extends Controller
                 if ($employee) {
                     $employee->update(['employment_status' => 'Inactive']);
                     if ($employee->user_id) {
-                        User::where('id', $employee->user_id)->update(['status' => 'Inactive']);
+                        $offboardedUser = User::find($employee->user_id);
+                        if ($offboardedUser) {
+                            $offboardedUser->update(['status' => 'Inactive']);
+                            // Revoke all active Sanctum tokens so existing sessions
+                            // are immediately rejected without waiting for TTL.
+                            $offboardedUser->tokens()->delete();
+                        }
                     }
                 }
             }

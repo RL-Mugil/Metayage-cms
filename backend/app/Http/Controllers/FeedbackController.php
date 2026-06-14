@@ -49,10 +49,18 @@ class FeedbackController extends Controller
             'category'    => 'nullable|string|max:100',
         ]);
 
-        // Pin the client name from the DB for client-role users — prevents spoofing.
         if ($user->role === 'client') {
+            // Pin the client name from the DB — prevents spoofing.
             $client = Client::whereHas('contacts', fn ($q) => $q->where('email', $user->email))->first();
             $validated['client_name'] = $client ? $client->company_name : $user->name;
+        } else {
+            // Staff must reference a real client company name to prevent fake entries.
+            $exists = Client::where('company_name', $validated['client_name'])
+                ->orWhere('legal_name', $validated['client_name'])
+                ->exists();
+            if (! $exists) {
+                return response()->json(['message' => 'Client name does not match any known client.'], 422);
+            }
         }
 
         $entry = FeedbackEntry::create([

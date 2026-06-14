@@ -17,7 +17,7 @@ class StoreClientRequest extends FormRequest
             'client_type'          => 'required|in:individual,organization',
             'nationality'          => 'nullable|string|max:100',
             'has_gstin'            => 'boolean',
-            'gstin'                => 'nullable|string|max:15',
+            'gstin'                => ['nullable', 'string', 'max:15', 'regex:/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/'],
             'legal_name'           => 'required|string|max:255',
             'entity_type'          => 'nullable|string|max:100',
             'entity_subtype'       => 'nullable|string|max:100',

@@ -52,7 +52,10 @@ class PortalController extends Controller
     {
         if ($deny = $this->denyUnauthorized($request)) return $deny;
 
-        $count = Client::where('portal_enabled', false)->update(['portal_invited_at' => now()]);
+        $count = Client::where('portal_enabled', false)->update([
+            'portal_invited_at' => now(),
+            'portal_enabled'    => true,
+        ]);
 
         DB::table('ip_notifications')->insert([
             'user_id' => $request->user()->id,

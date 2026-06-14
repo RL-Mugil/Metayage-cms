@@ -136,6 +136,26 @@ class DocumentController extends Controller
         if (str_contains($path, '..') || ! str_starts_with($path, 'documents/')) {
             return response()->json(['message' => 'Invalid path'], 422);
         }
+
+        // Scope check: associates/paralegals may only download documents whose
+        // project they are assigned to. Managers/partners/admins are unrestricted.
+        $user = $request->user();
+        if (in_array($user->role, ['associate', 'paralegal'])) {
+            $doc = Document::where('storage_path', $path)->first();
+            if ($doc && $doc->project_id) {
+                $project = \App\Models\Project::find($doc->project_id);
+                $canAccess = $project && (
+                    $project->assigned_manager_id === $user->id ||
+                    $project->assigned_partner_id === $user->id ||
+                    $project->patent_engineer_id  === $user->id ||
+                    $project->tasks()->where('assignee_id', $user->id)->exists()
+                );
+                if (! $canAccess) {
+                    return response()->json(['message' => 'Forbidden'], 403);
+                }
+            }
+        }
+
         if (! Storage::disk('local')->exists($path)) {
             return response()->json(['message' => 'File not found'], 404);
         }

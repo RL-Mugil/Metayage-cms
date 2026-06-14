@@ -43,7 +43,7 @@ class IntegrationController extends Controller
 
         $integration = Integration::where('slug', $slug)->firstOrFail();
         $integration->connected = ! $integration->connected;
-        $integration->last_sync = $integration->connected ? 'just now' : null;
+        $integration->last_sync = $integration->connected ? now()->toIso8601String() : null;
         $integration->save();
 
         return response()->json(['ok' => true, 'connected' => $integration->connected]);
@@ -72,7 +72,7 @@ class IntegrationController extends Controller
         $integration = Integration::where('slug', $slug)->firstOrFail();
 
         $ok = $integration->connected;
-        $integration->last_sync = $ok ? 'just now' : $integration->last_sync;
+        $integration->last_sync = $ok ? now()->toIso8601String() : $integration->last_sync;
         $integration->save();
 
         return response()->json(['ok' => $ok]);

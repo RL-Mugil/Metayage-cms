@@ -8,6 +8,13 @@ class TrackerCircle extends Model
 {
     protected $fillable = ['name', 'slug', 'description'];
 
+    protected static function booted(): void
+    {
+        static::deleting(function (TrackerCircle $circle) {
+            $circle->members()->detach();
+        });
+    }
+
     public function members()
     {
         return $this->belongsToMany(User::class, 'tracker_circle_members', 'circle_id', 'user_id')

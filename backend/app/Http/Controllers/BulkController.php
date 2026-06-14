@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Client;
 use App\Models\Project;
 use App\Models\Task;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -77,16 +78,35 @@ class BulkController extends Controller
                 break;
 
             case 'notify':
-                $affected = $model::whereIn('id', $ids)->count();
-                DB::table('ip_notifications')->insert([
-                    'user_id' => $request->user()->id,
-                    'type' => 'bulk_notify',
-                    'title' => 'Bulk notification queued',
-                    'description' => "Notification queued for {$affected} {$entity}",
-                    'meta' => json_encode(['entity' => $entity, 'ids' => $ids]),
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ]);
+                // Resolve which user IDs should receive the notification.
+                // Clients → their portal user accounts (matched by contact email).
+                // Projects/Tasks → the assigned manager / assignee.
+                $recipientUserIds = match ($entity) {
+                    'clients' => DB::table('client_contacts')
+                        ->whereIn('client_id', $ids)
+                        ->join('users', 'users.email', '=', 'client_contacts.email')
+                        ->pluck('users.id')
+                        ->unique()->all(),
+                    'projects' => Project::whereIn('id', $ids)
+                        ->pluck('assigned_manager_id')
+                        ->filter()->unique()->all(),
+                    'tasks' => Task::whereIn('id', $ids)
+                        ->pluck('assignee_id')
+                        ->filter()->unique()->all(),
+                };
+                $affected = count($recipientUserIds);
+                $rows = array_map(fn($uid) => [
+                    'user_id'     => $uid,
+                    'type'        => 'bulk_notify',
+                    'title'       => 'You have been notified',
+                    'description' => "A bulk notification was sent to you regarding {$entity} by {$request->user()->name}",
+                    'meta'        => json_encode(['entity' => $entity, 'ids' => $ids, 'sent_by' => $request->user()->id]),
+                    'created_at'  => now(),
+                    'updated_at'  => now(),
+                ], $recipientUserIds);
+                if ($rows) {
+                    DB::table('ip_notifications')->insert($rows);
+                }
                 break;
         }
 

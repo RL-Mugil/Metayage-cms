@@ -19,11 +19,16 @@ class ProjectPolicy
         }
 
         // Associates and paralegals may only view projects they are directly assigned to.
+        // Mirrors the scope in ProjectController::index() exactly to prevent
+        // policy/controller divergence causing spurious 403s.
         if (in_array($user->role, ['associate', 'paralegal'])) {
-            return $project->assigned_partner_id === $user->id
-                || $project->assigned_manager_id === $user->id
-                || $project->patent_engineer_id === $user->id
-                || $project->tasks()->where('assignee_id', $user->id)->exists();
+            if ($project->assigned_partner_id === $user->id) return true;
+            if ($project->assigned_manager_id === $user->id) return true;
+            if ($project->patent_engineer_id === $user->id) return true;
+            if ($project->tasks()->where('assignee_id', $user->id)->exists()) return true;
+            $team = $project->assigned_team ?? [];
+            if (in_array((string) $user->id, array_map('strval', $team))) return true;
+            return false;
         }
 
         return true;

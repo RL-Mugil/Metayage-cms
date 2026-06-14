@@ -78,17 +78,20 @@ class HRMSController extends Controller
         $user = $request->user();
         $validated = $request->validated();
 
-        // Resolve department by name if ID not provided
+        // Resolve department by name if ID not provided.
+        // Normalize to title-case to prevent duplicates like "IP Law" vs "ip law".
         $deptId = $validated['department_id'] ?? null;
         if (!$deptId && !empty($validated['department_name'])) {
-            $dept = Department::firstOrCreate(['name' => $validated['department_name']]);
+            $deptName = mb_convert_case(trim($validated['department_name']), MB_CASE_TITLE, 'UTF-8');
+            $dept = Department::firstOrCreate(['name' => $deptName]);
             $deptId = $dept->id;
         }
 
-        // Resolve designation by title if ID not provided
+        // Resolve designation by title if ID not provided.
         $desigId = $validated['designation_id'] ?? null;
         if (!$desigId && !empty($validated['designation_title'])) {
-            $desig = Designation::firstOrCreate(['title' => $validated['designation_title']]);
+            $desigTitle = mb_convert_case(trim($validated['designation_title']), MB_CASE_TITLE, 'UTF-8');
+            $desig = Designation::firstOrCreate(['title' => $desigTitle]);
             $desigId = $desig->id;
         }
 

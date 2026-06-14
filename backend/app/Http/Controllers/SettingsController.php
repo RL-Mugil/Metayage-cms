@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\AuditLog;
 use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
@@ -145,6 +146,8 @@ class SettingsController extends Controller
                 ['value' => (string) $value, 'updated_at' => now()]
             );
         }
+
+        Cache::forget('system_settings');
 
         AuditLog::create([
             'user_id'    => $user->id,

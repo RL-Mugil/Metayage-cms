@@ -13,6 +13,7 @@ use App\Http\PaginationHelper;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Redis;
 use Inertia\Inertia;
 
 class FinancialController extends Controller
@@ -123,14 +124,16 @@ class FinancialController extends Controller
         $totalAmount = $subtotal + $taxAmount;
 
         $invoice = \DB::transaction(function () use ($validated, $subtotal, $taxAmount, $taxRate, $totalAmount) {
-            // Sequential invoice number from the highest existing code for the
-            // year, row-locked so concurrent requests cannot collide.
+            // Redis atomic counter: O(1) vs locking the entire invoices table.
+            // On first use (or after Redis restart) we seed from the DB max.
             $year = date('Y');
-            $last = Invoice::where('invoice_code', 'like', "INV-{$year}-%")
-                ->orderBy('invoice_code', 'desc')
-                ->lockForUpdate()
-                ->value('invoice_code');
-            $seq  = $last ? ((int) substr($last, -5)) + 1 : 1;
+            $redisKey = "seq:invoice:{$year}";
+            if (! Redis::exists($redisKey)) {
+                $last = Invoice::where('invoice_code', 'like', "INV-{$year}-%")
+                    ->orderBy('invoice_code', 'desc')->value('invoice_code');
+                Redis::setnx($redisKey, $last ? (int) substr($last, -5) : 0);
+            }
+            $seq  = Redis::incr($redisKey);
             $code = sprintf('INV-%s-%05d', $year, $seq);
 
             $invoice = Invoice::create([
@@ -285,14 +288,15 @@ class FinancialController extends Controller
                 ]);
             }
 
-            // Sequential receipt number, race-safe under the transaction.
+            // Redis atomic counter for receipt codes.
             $year = date('Y');
-            $last = Payment::where('receipt_code', 'like', "REC-{$year}-%")
-                ->orderBy('receipt_code', 'desc')
-                ->lockForUpdate()
-                ->value('receipt_code');
-            $seq         = $last ? ((int) substr($last, -5)) + 1 : 1;
-            $receiptCode = sprintf('REC-%s-%05d', $year, $seq);
+            $recKey = "seq:receipt:{$year}";
+            if (! Redis::exists($recKey)) {
+                $last = Payment::where('receipt_code', 'like', "REC-{$year}-%")
+                    ->orderBy('receipt_code', 'desc')->value('receipt_code');
+                Redis::setnx($recKey, $last ? (int) substr($last, -5) : 0);
+            }
+            $receiptCode = sprintf('REC-%s-%05d', $year, Redis::incr($recKey));
 
             // 1. Create Payment record
             $payment = Payment::create([

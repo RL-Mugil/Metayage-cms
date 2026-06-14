@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Employee;
 use App\Models\PerformanceFeedback360;
 use App\Models\PerformanceGoal;
 use App\Models\PerformanceReview;
@@ -91,10 +92,12 @@ class PerformanceController extends Controller
             'status'      => 'nullable|in:In Progress,Completed,Missed',
         ]);
 
+        $emp = Employee::findOrFail($validated['employee_id']);
         $goal = PerformanceGoal::create([
-            'employee_id' => $validated['employee_id'],
+            'employee_id' => $emp->id,
+            'employee'    => $emp->full_name,
             'title'       => $validated['title'],
-            'due_label'   => $validated['due_label'] ?? null,
+            'due_label'   => $validated['due_label'] ?? 'TBD',
             'progress'    => 0,
             'status'      => $validated['status'] ?? 'In Progress',
         ]);

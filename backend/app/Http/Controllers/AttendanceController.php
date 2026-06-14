@@ -75,7 +75,11 @@ class AttendanceController extends Controller
         $log = Attendance::where('employee_id', $employee->id)
             ->whereNull('check_out')
             ->orderBy('attendance_date', 'desc')
-            ->firstOrFail();
+            ->first();
+
+        if (! $log) {
+            return response()->json(['message' => 'You are not clocked in.'], 422);
+        }
 
         $checkoutAt = Carbon::now();
         // Build the full check-in datetime from the stored date + time so diffInMinutes
