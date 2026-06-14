@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Project;
 use App\Models\Task;
 use App\Models\TimeEntry;
 use App\Models\AuditLog;
@@ -104,6 +105,17 @@ class TaskController extends Controller
             'description' => 'required|string',
             'billable' => 'boolean',
         ]);
+
+        if (! in_array($user->role, ['super_admin', 'partner', 'manager'])) {
+            $project = Project::findOrFail($validated['project_id']);
+            $isTeamMember = $project->assigned_manager_id === $user->id
+                || $project->assigned_partner_id === $user->id
+                || $project->patent_engineer_id === $user->id
+                || $project->tasks()->where('assignee_id', $user->id)->exists();
+            if (! $isTeamMember) {
+                return response()->json(['message' => 'You are not assigned to this project.'], 403);
+            }
+        }
 
         $validated['user_id'] = $user->id;
         $validated['status'] = 'Draft';

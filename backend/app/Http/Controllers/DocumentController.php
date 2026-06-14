@@ -157,10 +157,15 @@ class DocumentController extends Controller
             return response()->json(['message' => 'Invalid path'], 422);
         }
 
+        $doc = Document::where('storage_path', $path)->first();
+        if ($doc) {
+            foreach ($doc->versions as $version) {
+                Storage::disk('local')->delete($version->storage_path);
+            }
+        }
+
         Storage::disk('local')->delete($path);
 
-        // Soft-delete the DB record if it exists
-        $doc = Document::where('storage_path', $path)->first();
         if ($doc) {
             $doc->delete();
         }

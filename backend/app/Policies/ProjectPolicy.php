@@ -37,7 +37,7 @@ class ProjectPolicy
     public function update(User $user, Project $project): bool
     {
         if (in_array($user->role, ['super_admin', 'partner'])) return true;
-        if ($user->role === 'manager' && $project->manager_id === $user->id) return true;
+        if ($user->role === 'manager' && $project->assigned_manager_id === $user->id) return true;
         return false;
     }
 

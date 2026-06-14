@@ -22,7 +22,17 @@ class DiscussionController extends Controller
     {
         if ($deny = $this->denyClients($request)) return $deny;
 
+        $user = $request->user();
         $query = DiscussionThread::with(['messages.author:id,name'])->orderByDesc('updated_at');
+
+        if (in_array($user->role, ['associate', 'paralegal'])) {
+            $query->whereHas('project', function ($q) use ($user) {
+                $q->where('assigned_manager_id', $user->id)
+                  ->orWhere('assigned_partner_id', $user->id)
+                  ->orWhere('patent_engineer_id', $user->id)
+                  ->orWhereHas('tasks', fn ($t) => $t->where('assignee_id', $user->id));
+            });
+        }
         $paginated = PaginationHelper::paginate($query, $request);
 
         $paginated['data'] = $paginated['data']->map(fn ($t) => [

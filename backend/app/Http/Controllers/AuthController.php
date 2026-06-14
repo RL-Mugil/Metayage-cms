@@ -60,6 +60,10 @@ class AuthController extends Controller
             'user_agent' => $request->userAgent(),
         ]);
 
+        if ($request->user() && $request->user()->currentAccessToken()) {
+            $request->user()->currentAccessToken()->delete();
+        }
+
         Auth::logout();
         $request->session()->invalidate();
         $request->session()->regenerateToken();

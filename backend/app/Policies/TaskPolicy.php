@@ -25,7 +25,7 @@ class TaskPolicy
     public function update(User $user, Task $task): bool
     {
         if (in_array($user->role, ['super_admin', 'partner', 'manager'])) return true;
-        if ($task->assignee_id === $user->id) return true;
+        if ($task->assignee_id === $user->id || $task->reviewer_id === $user->id) return true;
         return false;
     }
 

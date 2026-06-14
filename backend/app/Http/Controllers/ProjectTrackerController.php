@@ -209,6 +209,10 @@ class ProjectTrackerController extends Controller implements HasMiddleware
 
     public function trackerAnalytics(Request $request)
     {
+        if (! in_array($request->user()->role, ['super_admin', 'partner', 'manager'])) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
         // All aggregation done in SQL — no full table load into PHP.
         $summary = \DB::table('tracker_rows')->selectRaw("
             COUNT(*) as total,
@@ -279,12 +283,12 @@ class ProjectTrackerController extends Controller implements HasMiddleware
     public function calendarEvents(Request $request)
     {
         $user = $request->user();
-        $isAdmin = $user->role === 'super_admin';
+        $hasGlobalAccess = in_array($user->role, ['super_admin', 'partner', 'manager']);
 
         $query = TrackerRow::with(['pcmUser:id,name', 'scmUser:id,name', 'prUser:id,name'])
             ->whereNotNull('delivery_due_date');
 
-        if (!$isAdmin) {
+        if (!$hasGlobalAccess) {
             $userId = $user->id;
             $query->where(function ($q) use ($userId) {
                 $q->where('pcm_id', $userId)
@@ -295,9 +299,9 @@ class ProjectTrackerController extends Controller implements HasMiddleware
 
         $rows = $query->orderBy('delivery_due_date')->get();
 
-        return response()->json($rows->map(function ($r) use ($user, $isAdmin) {
+        return response()->json($rows->map(function ($r) use ($user, $hasGlobalAccess) {
             $myRole = null;
-            if (!$isAdmin) {
+            if (!$hasGlobalAccess) {
                 if ($r->pcm_id === $user->id)      $myRole = 'PCM';
                 elseif ($r->scm_id === $user->id)  $myRole = 'SCM';
                 elseif ($r->pr_id  === $user->id)  $myRole = 'PR';

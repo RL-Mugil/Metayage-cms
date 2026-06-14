@@ -217,9 +217,7 @@ class ProjectController extends Controller
         $user = $request->user();
         $project = Project::findOrFail($id);
 
-        if (! in_array($user->role, ['super_admin', 'partner', 'manager']) && $project->assigned_manager_id !== $user->id) {
-            return response()->json(['message' => 'Forbidden'], 403);
-        }
+        $this->authorize('update', $project);
 
         // Status-only update (no pipeline stage change): update the project's top-level status field.
         if ($request->filled('status') && ! $request->filled('stage_name')) {
