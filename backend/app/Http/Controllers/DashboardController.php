@@ -29,20 +29,29 @@ class DashboardController extends Controller
         $invoicesQuery = Invoice::query();
         $tasksQuery = Task::where('status', '!=', 'Completed');
 
-        // RBAC client filter
+        // RBAC client filter — also enforce portal_enabled so disabling the portal
+        // immediately blocks all data access, not just the UI.
         if ($user->role === 'client') {
-            $activeMattersQuery->whereHas('client.contacts', function ($q) use ($user) {
-                $q->where('email', $user->email);
-            });
-            $clientsQuery->whereHas('contacts', function ($q) use ($user) {
-                $q->where('email', $user->email);
-            });
-            $invoicesQuery->whereHas('client.contacts', function ($q) use ($user) {
-                $q->where('email', $user->email);
-            });
-            $tasksQuery->whereHas('project.client.contacts', function ($q) use ($user) {
-                $q->where('email', $user->email);
-            });
+            $activeMattersQuery
+                ->whereHas('client', fn ($q) => $q->where('portal_enabled', true))
+                ->whereHas('client.contacts', function ($q) use ($user) {
+                    $q->where('email', $user->email);
+                });
+            $clientsQuery
+                ->where('portal_enabled', true)
+                ->whereHas('contacts', function ($q) use ($user) {
+                    $q->where('email', $user->email);
+                });
+            $invoicesQuery
+                ->whereHas('client', fn ($q) => $q->where('portal_enabled', true))
+                ->whereHas('client.contacts', function ($q) use ($user) {
+                    $q->where('email', $user->email);
+                });
+            $tasksQuery
+                ->whereHas('project.client', fn ($q) => $q->where('portal_enabled', true))
+                ->whereHas('project.client.contacts', function ($q) use ($user) {
+                    $q->where('email', $user->email);
+                });
         } elseif (in_array($user->role, ['associate', 'paralegal'])) {
             $activeMattersQuery->where(function ($q) use ($user) {
                 $q->where('assigned_manager_id', $user->id)

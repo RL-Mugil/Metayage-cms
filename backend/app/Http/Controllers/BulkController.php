@@ -7,6 +7,7 @@ use App\Models\Project;
 use App\Models\Task;
 use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 class BulkController extends Controller
@@ -15,9 +16,9 @@ class BulkController extends Controller
 
     /** Per-entity allowed status values for bulk Change Status. */
     private const STATUS_WHITELIST = [
-        'clients' => ['Active', 'Inactive', 'Prospect', 'On Hold'],
+        'clients'  => ['Active', 'Inactive', 'Prospect', 'On Hold'],
         'projects' => ['Active', 'On Hold', 'Completed', 'Archived'],
-        'tasks' => ['Pending', 'In Progress', 'Completed', 'Archived'],
+        'tasks'    => ['Pending', 'In Progress', 'Awaiting Review', 'Completed', 'Cancelled'],
     ];
 
     /** What "Archive" means per entity. */
@@ -55,7 +56,10 @@ class BulkController extends Controller
         if ($user->role === 'manager') {
             $ids = match ($entity) {
                 'clients'  => Client::whereIn('id', $ids)->where('account_manager_id', $user->id)->pluck('id')->all(),
-                'projects' => Project::whereIn('id', $ids)->where('assigned_manager_id', $user->id)->pluck('id')->all(),
+                'projects' => Project::whereIn('id', $ids)
+                    ->where(fn ($q) => $q->where('assigned_manager_id', $user->id)
+                        ->orWhereJsonContains('assigned_team', $user->id))
+                    ->pluck('id')->all(),
                 'tasks'    => Task::whereIn('id', $ids)->whereHas('project', fn ($q) => $q->where('assigned_manager_id', $user->id))->pluck('id')->all(),
             };
             if (empty($ids)) {
@@ -110,6 +114,7 @@ class BulkController extends Controller
                 break;
         }
 
+        Cache::increment('dashboard_v');
         return response()->json(['ok' => true, 'affected' => $affected]);
     }
 }

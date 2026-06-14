@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\AuditLog;
+use App\Models\Employee;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -63,6 +64,15 @@ class SettingsController extends Controller
         if (isset($validated['language'])) $user->language = $validated['language'];
         $user->save();
 
+        // Keep linked Employee record in sync so HRMS displays current name/email.
+        $employee = Employee::where('user_id', $user->id)->first();
+        if ($employee) {
+            $employee->update([
+                'full_name'  => $validated['name'],
+                'work_email' => $validated['email'],
+            ]);
+        }
+
         AuditLog::create([
             'user_id'    => $user->id,
             'action'     => 'update_profile',
@@ -90,6 +100,7 @@ class SettingsController extends Controller
 
         $user->password = $validated['password']; // cast handles hashing
         $user->save();
+        $user->tokens()->delete(); // revoke all active API tokens so compromised sessions die
 
         AuditLog::create([
             'user_id'    => $user->id,

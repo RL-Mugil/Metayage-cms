@@ -179,6 +179,19 @@ class DocumentController extends Controller
 
         $doc = Document::where('storage_path', $path)->first();
         if ($doc) {
+            // Managers may only delete documents belonging to projects they manage.
+            if ($user->role === 'manager' && $doc->project_id) {
+                $project = \App\Models\Project::find($doc->project_id);
+                $team    = $project->assigned_team ?? [];
+                $canDelete = $project && (
+                    $project->assigned_manager_id === $user->id ||
+                    in_array((string) $user->id, array_map('strval', $team))
+                );
+                if (! $canDelete) {
+                    return response()->json(['message' => 'Forbidden'], 403);
+                }
+            }
+
             // Hard-delete version records (DocumentVersion has no SoftDeletes).
             // Physical files are preserved so the document can be restored from
             // the soft-deleted Document record if needed.

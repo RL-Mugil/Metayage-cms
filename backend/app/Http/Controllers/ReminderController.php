@@ -58,7 +58,7 @@ class ReminderController extends Controller
             'description' => 'nullable|string|max:2000',
             'category' => 'required|in:Deadline,Meeting,Follow-up,Renewal',
             'due_date' => 'required|date',
-            'due_time' => 'nullable|string|max:10',
+            'due_time' => 'nullable|date_format:H:i',
             'scope' => 'required|in:self,team',
         ]);
 

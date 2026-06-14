@@ -71,7 +71,14 @@ class LeaveApprovalService
             if ($status === 'Approved') {
                 $leaveType = $locked->leave_type;
                 $leaveYear = date('Y', strtotime($locked->from_date));
-                $balance   = LeaveBalance::where('employee_id', $locked->employee_id)
+
+                // firstOrCreate ensures a balance row always exists — otherwise a
+                // missing row silently skips deductions and grants free leave.
+                $balance = LeaveBalance::firstOrCreate(
+                    ['employee_id' => $locked->employee_id, 'year' => $leaveYear],
+                    ['earned_leave' => 15, 'casual_leave' => 8, 'sick_leave' => 7, 'lop_days' => 0]
+                );
+                $balance = LeaveBalance::where('employee_id', $locked->employee_id)
                     ->where('year', $leaveYear)
                     ->lockForUpdate()
                     ->first();

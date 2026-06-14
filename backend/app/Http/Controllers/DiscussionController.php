@@ -92,6 +92,10 @@ class DiscussionController extends Controller
         $user   = $request->user();
         $thread = DiscussionThread::findOrFail($id);
 
+        if ($thread->status === 'Closed') {
+            return response()->json(['message' => 'Cannot reply to a closed discussion.'], 422);
+        }
+
         if (in_array($user->role, ['associate', 'paralegal']) && $thread->project_id !== null) {
             $project = $thread->project;
             $canReply = $project && (
