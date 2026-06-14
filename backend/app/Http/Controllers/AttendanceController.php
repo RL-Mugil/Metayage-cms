@@ -10,6 +10,12 @@ use Illuminate\Support\Carbon;
 
 class AttendanceController extends Controller
 {
+    private const MAX_SESSIONS  = 6;
+    private const IST_ZONE      = 'Asia/Kolkata';
+
+    private function istNow(): Carbon  { return Carbon::now(self::IST_ZONE); }
+    private function istToday(): string { return $this->istNow()->toDateString(); }
+
     public function index(Request $request)
     {
         $user     = $request->user();
@@ -21,7 +27,26 @@ class AttendanceController extends Controller
             ->take(30)
             ->get();
 
-        return response()->json($logs);
+        $today = $this->istToday();
+
+        return response()->json($logs->map(function ($log) use ($today) {
+            $sessions = $log->sessions ?? [];
+            $lastSession = end($sessions) ?: null;
+            $isToday = $log->attendance_date->toDateString() === $today;
+
+            return [
+                'id'               => $log->id,
+                'attendance_date'  => $log->attendance_date->toDateString(),
+                'status'           => $log->status,
+                'duration_minutes' => $log->duration_minutes,
+                'sessions'         => $sessions,
+                'session_count'    => count($sessions),
+                'has_open_session' => $isToday && $lastSession && isset($lastSession['out']) && $lastSession['out'] === null,
+                'can_clock_in'     => $isToday && (!$lastSession || $lastSession['out'] !== null) && count($sessions) < self::MAX_SESSIONS,
+                'can_clock_out'    => $isToday && $lastSession && $lastSession['out'] === null,
+                'is_today'         => $isToday,
+            ];
+        }));
     }
 
     public function clockIn(Request $request)
@@ -33,25 +58,49 @@ class AttendanceController extends Controller
             return response()->json(['message' => 'No employee profile linked to your account. Contact HR.'], 422);
         }
 
-        $today    = Carbon::today()->toDateString();
-        $existing = Attendance::where('employee_id', $employee->id)->whereDate('attendance_date', $today)->first();
+        $today = $this->istToday();
+        $now   = $this->istNow()->format('H:i:s');
 
-        if ($existing) {
-            return response()->json(['message' => 'Already checked in today'], 400);
-        }
+        // Find or create today's attendance record
+        $log = Attendance::where('employee_id', $employee->id)
+            ->whereDate('attendance_date', $today)
+            ->first();
 
-        try {
-            $log = Attendance::create([
-                'employee_id'     => $employee->id,
-                'attendance_date' => $today,
-                'check_in'        => Carbon::now()->toTimeString(),
-                'capture_method'  => 'Web Check-in',
-                'location_gps'    => $request->location_gps,
-                'status'          => 'Present',
+        if ($log) {
+            $sessions    = $log->sessions ?? [];
+            $lastSession = end($sessions) ?: null;
+
+            if ($lastSession && $lastSession['out'] === null) {
+                return response()->json(['message' => 'You are already clocked in. Please clock out first.'], 400);
+            }
+
+            if (count($sessions) >= self::MAX_SESSIONS) {
+                return response()->json(['message' => 'Daily limit of ' . self::MAX_SESSIONS . ' sessions reached.'], 400);
+            }
+
+            $sessions[] = ['in' => $now, 'out' => null, 'duration_minutes' => null];
+            $log->update([
+                'sessions'  => $sessions,
+                'check_in'  => $sessions[0]['in'],
+                'check_out' => null,
             ]);
-        } catch (\Illuminate\Database\UniqueConstraintViolationException $e) {
-            // Concurrent double-tap: unique constraint on (employee_id, attendance_date) fired.
-            return response()->json(['message' => 'Already checked in today'], 400);
+        } else {
+            $sessions = [['in' => $now, 'out' => null, 'duration_minutes' => null]];
+
+            try {
+                $log = Attendance::create([
+                    'employee_id'     => $employee->id,
+                    'attendance_date' => $today,
+                    'check_in'        => $now,
+                    'capture_method'  => 'Web Check-in',
+                    'location_gps'    => $request->location_gps,
+                    'status'          => 'Present',
+                    'duration_minutes'=> 0,
+                    'sessions'        => $sessions,
+                ]);
+            } catch (\Illuminate\Database\UniqueConstraintViolationException $e) {
+                return response()->json(['message' => 'Already checked in today.'], 400);
+            }
         }
 
         AuditLog::create([
@@ -63,7 +112,7 @@ class AttendanceController extends Controller
             'user_agent'   => $request->userAgent(),
         ]);
 
-        return response()->json($log, 201);
+        return response()->json(['message' => 'Clocked in successfully.', 'id' => $log->id], 201);
     }
 
     public function clockOut(Request $request)
@@ -75,25 +124,51 @@ class AttendanceController extends Controller
             return response()->json(['message' => 'No employee profile linked to your account.'], 422);
         }
 
-        // Find the open record by absence of check_out, not today's date, so
-        // night-shift employees who clock in before midnight and out after midnight are handled correctly.
-        $log = Attendance::where('employee_id', $employee->id)
-            ->whereNull('check_out')
+        // Find the attendance record with an open session (last session has no out)
+        $logs = Attendance::where('employee_id', $employee->id)
             ->orderBy('attendance_date', 'desc')
-            ->first();
+            ->take(3)
+            ->get();
+
+        $log = null;
+        foreach ($logs as $l) {
+            $sessions = $l->sessions ?? [];
+            $last = end($sessions);
+            if ($last && $last['out'] === null) {
+                $log = $l;
+                break;
+            }
+        }
 
         if (! $log) {
             return response()->json(['message' => 'You are not clocked in.'], 422);
         }
 
-        $checkoutAt = Carbon::now();
-        // Build the full check-in datetime from the stored date + time so diffInMinutes
-        // crosses midnight correctly (e.g. 23:00 check-in → 01:00 next day = 120 min, not -1380).
-        $checkInAt       = Carbon::parse($log->attendance_date->toDateString() . ' ' . $log->check_in);
-        $durationMinutes = (int) $checkInAt->diffInMinutes($checkoutAt);
-        $checkoutTime    = $checkoutAt->toTimeString();
+        $sessions    = $log->sessions ?? [];
+        $lastIdx     = count($sessions) - 1;
+        $nowIst      = $this->istNow();
+        $nowTime     = $nowIst->format('H:i:s');
 
-        $log->update(['check_out' => $checkoutTime, 'duration_minutes' => $durationMinutes]);
+        // Calculate duration for this session
+        $sessionDate = $log->attendance_date->toDateString();
+        $checkInAt   = Carbon::parse($sessionDate . ' ' . $sessions[$lastIdx]['in'], self::IST_ZONE);
+        $durationMin = (int) $checkInAt->diffInMinutes($nowIst);
+
+        $sessions[$lastIdx]['out']              = $nowTime;
+        $sessions[$lastIdx]['duration_minutes'] = $durationMin;
+
+        // Total duration = sum of all completed sessions
+        $totalMinutes = array_sum(array_column(
+            array_filter($sessions, fn($s) => $s['duration_minutes'] !== null),
+            'duration_minutes'
+        ));
+
+        $log->update([
+            'sessions'         => $sessions,
+            'check_in'         => $sessions[0]['in'],
+            'check_out'        => $nowTime,
+            'duration_minutes' => $totalMinutes,
+        ]);
 
         AuditLog::create([
             'user_id'      => $user->id,
@@ -104,6 +179,6 @@ class AttendanceController extends Controller
             'user_agent'   => $request->userAgent(),
         ]);
 
-        return response()->json($log);
+        return response()->json(['message' => 'Clocked out successfully.', 'duration_minutes' => $durationMin]);
     }
 }

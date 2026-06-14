@@ -18,11 +18,13 @@ class Attendance extends Model
         'duration_minutes',
         'regularized',
         'regularization_reason',
+        'sessions',
     ];
 
     protected $casts = [
         'attendance_date' => 'date',
-        'regularized' => 'boolean',
+        'regularized'     => 'boolean',
+        'sessions'        => 'array',
     ];
 
     public function employee(): BelongsTo
