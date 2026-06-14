@@ -106,6 +106,7 @@ interface TrackerProject {
   pr_id: number | null;
   pr_name: string | null;
   start_date: string | null;
+  hard_deadline: string | null;
   record_type: string | null;
 }
 
@@ -258,6 +259,7 @@ export default function ProjectTracker() {
       record_type:   project.record_type || null,
     };
     if (project.start_date) updates.project_start_date = project.start_date;
+    if (project.hard_deadline) updates.delivery_due_date = project.hard_deadline;
     setSavingIds((s) => new Set(s).add(rowId));
     setRows((prev) => prev.map((r) => r.id === rowId ? { ...r, ...updates } : r));
     api.updateTrackerRow(rowId, updates)

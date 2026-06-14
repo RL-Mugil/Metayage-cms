@@ -126,18 +126,19 @@ class ProjectTrackerController extends Controller implements HasMiddleware
                 ->limit(100)
                 ->get()
                 ->map(fn ($p) => [
-                    'id'            => $p->id,
-                    'project_code'  => $p->project_code,
-                    'docket_number' => $p->docket_number,
-                    'client_name'   => $p->client?->company_name,
-                    'pcm_id'        => $p->assigned_manager_id,
-                    'pcm_name'      => $p->manager?->name,
-                    'scm_id'        => $p->secondary_manager_id,
-                    'scm_name'      => $p->secondaryManager?->name,
-                    'pr_id'         => $p->patent_engineer_id,
-                    'pr_name'       => $p->patentEngineer?->name,
-                    'start_date'    => $p->start_date?->toDateString(),
-                    'record_type'   => $p->case_type,
+                    'id'             => $p->id,
+                    'project_code'   => $p->project_code,
+                    'docket_number'  => $p->docket_number,
+                    'client_name'    => $p->client?->company_name,
+                    'pcm_id'         => $p->assigned_manager_id,
+                    'pcm_name'       => $p->manager?->name,
+                    'scm_id'         => $p->secondary_manager_id,
+                    'scm_name'       => $p->secondaryManager?->name,
+                    'pr_id'          => $p->patent_engineer_id,
+                    'pr_name'        => $p->patentEngineer?->name,
+                    'start_date'     => $p->start_date?->toDateString(),
+                    'hard_deadline'  => $p->hard_deadline?->toDateString(),
+                    'record_type'    => $p->case_type,
                 ])
         );
     }
