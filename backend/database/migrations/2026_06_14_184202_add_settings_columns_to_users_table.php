@@ -12,9 +12,15 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('users', function (Blueprint $table) {
-            $table->string('timezone')->default('Asia/Kolkata')->after('remember_token');
-            $table->string('language')->default('English')->after('timezone');
-            $table->json('notification_prefs')->nullable()->after('language');
+            if (!Schema::hasColumn('users', 'timezone')) {
+                $table->string('timezone')->default('Asia/Kolkata')->after('remember_token');
+            }
+            if (!Schema::hasColumn('users', 'language')) {
+                $table->string('language')->default('English')->after('timezone');
+            }
+            if (!Schema::hasColumn('users', 'notification_prefs')) {
+                $table->json('notification_prefs')->nullable()->after('language');
+            }
         });
     }
 
@@ -24,7 +30,15 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('users', function (Blueprint $table) {
-            $table->dropColumn(['timezone', 'language', 'notification_prefs']);
+            if (Schema::hasColumn('users', 'timezone')) {
+                $table->dropColumn('timezone');
+            }
+            if (Schema::hasColumn('users', 'language')) {
+                $table->dropColumn('language');
+            }
+            if (Schema::hasColumn('users', 'notification_prefs')) {
+                $table->dropColumn('notification_prefs');
+            }
         });
     }
 };
