@@ -183,6 +183,7 @@ class SettingsController extends Controller
         $target = User::findOrFail($id);
         $target->password = $request->input('password');
         $target->save();
+        $target->tokens()->delete(); // revoke compromised sessions immediately
 
         AuditLog::create([
             'user_id'      => $actor->id,

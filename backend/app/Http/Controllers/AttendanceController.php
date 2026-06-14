@@ -40,14 +40,19 @@ class AttendanceController extends Controller
             return response()->json(['message' => 'Already checked in today'], 400);
         }
 
-        $log = Attendance::create([
-            'employee_id'     => $employee->id,
-            'attendance_date' => $today,
-            'check_in'        => Carbon::now()->toTimeString(),
-            'capture_method'  => 'Web Check-in',
-            'location_gps'    => $request->location_gps,
-            'status'          => 'Present',
-        ]);
+        try {
+            $log = Attendance::create([
+                'employee_id'     => $employee->id,
+                'attendance_date' => $today,
+                'check_in'        => Carbon::now()->toTimeString(),
+                'capture_method'  => 'Web Check-in',
+                'location_gps'    => $request->location_gps,
+                'status'          => 'Present',
+            ]);
+        } catch (\Illuminate\Database\UniqueConstraintViolationException $e) {
+            // Concurrent double-tap: unique constraint on (employee_id, attendance_date) fired.
+            return response()->json(['message' => 'Already checked in today'], 400);
+        }
 
         AuditLog::create([
             'user_id'      => $user->id,
