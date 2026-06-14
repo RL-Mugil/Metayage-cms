@@ -43,3 +43,5 @@ spec_plain.txt
 spec_extract.py
 check_tools.py
 run_composer.py
+graphify-out/
+backend/.phpunit.result.cache
