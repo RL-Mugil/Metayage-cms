@@ -139,7 +139,7 @@ const BLANK: CF = {
 
 // ── KPI Drill-down Modal ─────────────────────────────────────────────────────
 
-type KpiKey = "total" | "active" | "b2b" | "export";
+type KpiKey = "total" | "active" | "b2b" | "b2c" | "export";
 
 interface KpiDef {
   label: string; key: KpiKey; color: string;
@@ -150,6 +150,7 @@ const KPI_DEFS: KpiDef[] = [
   { label: "Total Clients", key: "total",  color: "text-gold",        filterParams: {}                     },
   { label: "Active",        key: "active", color: "text-green-500",   filterParams: { status: "Active" }   },
   { label: "B2B (GST Reg)", key: "b2b",   color: "text-blue-500",    filterParams: { gst_type: "B2B" }    },
+  { label: "B2C",           key: "b2c",   color: "text-emerald-500", filterParams: { gst_type: "B2C" }    },
   { label: "Export",        key: "export", color: "text-purple-500",  filterParams: { gst_type: "Export" } },
 ];
 
@@ -479,7 +480,7 @@ function ImportModal({ onClose, onDone }: { onClose: () => void; onDone: () => v
 
 export default function Clients() {
   const [paginatedResult, setPaginatedResult] = useState<any>({ data: [], total: 0, per_page: 25, current_page: 1, last_page: 1, has_more: false });
-  const [stats, setStats]       = useState<Record<string, number>>({ total: 0, active: 0, b2b: 0, export: 0 });
+  const [stats, setStats]       = useState<Record<string, number>>({ total: 0, active: 0, b2b: 0, b2c: 0, export: 0 });
   const [users, setUsers]       = useState<any[]>([]);
   const [loading, setLoading]   = useState(true);
   const [search, setSearch]     = useState("");
@@ -597,15 +598,6 @@ export default function Clients() {
   const dname = (c: any) => c.legal_name ?? c.company_name ?? "—";
   const clients = paginatedResult.data;
 
-  if (loading) return (
-    <AppLayout>
-      <Head title="Clients" />
-      <div className="flex h-screen items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-gold" />
-      </div>
-    </AppLayout>
-  );
-
   return (
     <AppLayout>
       <Head title="Clients" />
@@ -637,7 +629,7 @@ export default function Clients() {
 
       <div className="px-8 py-6 space-y-4">
         {/* Stats — click any card to drill down */}
-        <div className="grid grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
           {KPI_DEFS.map((kpi) => (
             <Card
               key={kpi.key}
@@ -698,7 +690,14 @@ export default function Clients() {
                     </tr>
                   </thead>
                   <tbody>
-                    {clients.map((c: any) => {
+                    {loading && (
+                      <tr>
+                        <td colSpan={9} className="px-4 py-12 text-center">
+                          <Loader2 className="h-6 w-6 animate-spin text-gold mx-auto" />
+                        </td>
+                      </tr>
+                    )}
+                    {!loading && clients.map((c: any) => {
                       const gm = GST_META[c.gst_type ?? ""] ?? null;
                       return (
                         <tr key={c.id} className="border-t border-border hover:bg-muted/20">
@@ -738,7 +737,7 @@ export default function Clients() {
                         </tr>
                       );
                     })}
-                    {clients.length===0 && <tr><td colSpan={9} className="px-4 py-10 text-center text-sm text-muted-foreground">No clients found.</td></tr>}
+                    {!loading && clients.length===0 && <tr><td colSpan={9} className="px-4 py-10 text-center text-sm text-muted-foreground">No clients found.</td></tr>}
                   </tbody>
                 </table>
               </CardContent>
@@ -976,7 +975,7 @@ export default function Clients() {
                     <Lbl>Client Manager</Lbl>
                     <select value={form.account_manager_id} onChange={(e)=>set("account_manager_id",e.target.value)} className={ic}>
                       <option value="">Select manager…</option>
-                      {users.map((u)=><option key={u.id} value={u.id}>{u.name} ({u.role})</option>)}
+                      {users.map((u)=><option key={u.id} value={u.id}>{u.name}</option>)}
                     </select>
                   </div>
                   <div>

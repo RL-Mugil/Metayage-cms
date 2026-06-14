@@ -111,15 +111,54 @@ class DashboardController extends Controller
 
         $stagesDist = $stagesQuery->get();
 
+        // Month-over-month deltas
+        $now        = Carbon::now();
+        $thisMonth  = $now->month;
+        $thisYear   = $now->year;
+        $lastMonth  = $now->copy()->subMonth();
+
+        $mattersThisMonth = Project::where('status', 'Active')
+            ->whereMonth('created_at', $thisMonth)->whereYear('created_at', $thisYear)->count();
+        $mattersLastMonth = Project::where('status', 'Active')
+            ->whereMonth('created_at', $lastMonth->month)->whereYear('created_at', $lastMonth->year)->count();
+
+        $clientsThisMonth = Client::where('status', 'Active')
+            ->whereMonth('created_at', $thisMonth)->whereYear('created_at', $thisYear)->count();
+        $clientsLastMonth = Client::where('status', 'Active')
+            ->whereMonth('created_at', $lastMonth->month)->whereYear('created_at', $lastMonth->year)->count();
+
+        $receivedThisMonth = $canSeeFinancials ? Invoice::whereMonth('updated_at', $thisMonth)
+            ->whereYear('updated_at', $thisYear)->where('status', 'Paid')->sum('total_amount') : 0;
+        $receivedLastMonth = $canSeeFinancials ? Invoice::whereMonth('updated_at', $lastMonth->month)
+            ->whereYear('updated_at', $lastMonth->year)->where('status', 'Paid')->sum('total_amount') : 0;
+
+        $fmtDelta = function (int $curr, int $prev, string $unit = '') {
+            $diff = $curr - $prev;
+            return $diff >= 0 ? "+{$diff}{$unit} this month" : "{$diff}{$unit} this month";
+        };
+        $fmtPctDelta = function (float $curr, float $prev) {
+            if ($prev == 0) return null;
+            $pct = round((($curr - $prev) / $prev) * 100, 1);
+            return $pct >= 0 ? "+{$pct}% vs last month" : "{$pct}% vs last month";
+        };
+
         return response()->json([
             'metrics' => [
-                'active_matters' => $activeMattersCount,
-                'clients' => $clientsCount,
-                'pending_tasks' => $tasksCount,
-                'wip_balance' => $wipAmount,
-                'received_payments' => $receivedAmount,
-                'invoiced_total' => $invoicedAmount,
-                'realization_rate' => $invoicedAmount > 0 ? round(($receivedAmount / $invoicedAmount) * 100, 1) : 100,
+                'active_matters'        => $activeMattersCount,
+                'clients'               => $clientsCount,
+                'pending_tasks'         => $tasksCount,
+                'wip_balance'           => $wipAmount,
+                'received_payments'     => $receivedAmount,
+                'invoiced_total'        => $invoicedAmount,
+                'realization_rate'      => $invoicedAmount > 0 ? round(($receivedAmount / $invoicedAmount) * 100, 1) : 100,
+                'active_matters_delta'  => $fmtDelta($mattersThisMonth, $mattersLastMonth),
+                'active_matters_delta_trend' => $mattersThisMonth >= $mattersLastMonth ? 'up' : 'down',
+                'clients_delta'         => $fmtDelta($clientsThisMonth, $clientsLastMonth),
+                'clients_delta_trend'   => $clientsThisMonth >= $clientsLastMonth ? 'up' : 'down',
+                'wip_delta'             => null,
+                'wip_delta_trend'       => 'neutral',
+                'revenue_delta'         => $fmtPctDelta((float)$receivedThisMonth, (float)$receivedLastMonth),
+                'revenue_delta_trend'   => $receivedThisMonth >= $receivedLastMonth ? 'up' : 'down',
             ],
             'charts' => [
                 'stage_distribution' => $stagesDist,

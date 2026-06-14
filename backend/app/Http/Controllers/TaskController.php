@@ -49,11 +49,26 @@ class TaskController extends Controller
         $this->authorize('create', \App\Models\Task::class);
         $validated = $request->validated();
 
-        $validated['assignee_id'] = $validated['assignee_id'] ?? $user->id;
-        $validated['reviewer_id'] = $validated['reviewer_id'] ?? $user->id;
+        $validated['assignee_id']   = $validated['assignee_id'] ?? $user->id;
+        $validated['reviewer_id']   = $validated['reviewer_id'] ?? $user->id;
+        $validated['assigned_by_id'] = $user->id;
         $validated['status'] = 'Pending';
 
         $task = Task::create($validated);
+
+        // In-app notification for the assignee (skip if assigning to self)
+        if ($task->assignee_id && $task->assignee_id !== $user->id) {
+            \DB::table('ip_notifications')->insert([
+                'user_id'    => $task->assignee_id,
+                'title'      => 'Task Assigned',
+                'message'    => "{$user->name} assigned you: {$task->title}",
+                'type'       => 'task_assigned',
+                'action_url' => '/tasks',
+                'is_read'    => false,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        }
 
         // Audit Log
         AuditLog::create([

@@ -17,7 +17,7 @@ class BulkController extends Controller
     /** Per-entity allowed status values for bulk Change Status. */
     private const STATUS_WHITELIST = [
         'clients'  => ['Active', 'Inactive', 'Prospect', 'On Hold'],
-        'projects' => ['Active', 'On Hold', 'Completed', 'Archived'],
+        'projects' => ['Open', 'In Progress', 'Active', 'On Hold', 'Completed', 'Archived'],
         'tasks'    => ['Not Started', 'Pending', 'In Progress', 'Review', 'Awaiting Review', 'Completed', 'Cancelled', 'Blocked'],
     ];
 
@@ -38,8 +38,9 @@ class BulkController extends Controller
             'entity' => 'required|in:clients,projects,tasks',
             'ids' => 'required|array|min:1|max:500',
             'ids.*' => 'integer',
-            'action' => 'required|in:change_status,archive,notify',
+            'action' => 'required|in:change_status,archive,notify,delete,change_stage',
             'status' => 'required_if:action,change_status|string',
+            'stage'  => 'required_if:action,change_stage|string',
         ]);
 
         $entity = $validated['entity'];
@@ -111,6 +112,36 @@ class BulkController extends Controller
                 if ($rows) {
                     DB::table('ip_notifications')->insert($rows);
                 }
+                break;
+
+            case 'delete':
+                // Only super_admin can bulk delete
+                if ($user->role !== 'super_admin') {
+                    return response()->json(['message' => 'Only super admins can bulk delete.'], 403);
+                }
+                $affected = $model::whereIn('id', $ids)->delete();
+                break;
+
+            case 'change_stage':
+                if ($entity !== 'projects') {
+                    return response()->json(['message' => 'change_stage is only valid for projects.'], 422);
+                }
+                $stageName = $validated['stage'];
+                foreach ($ids as $projectId) {
+                    $stage = \App\Models\ProjectStage::where('project_id', $projectId)
+                        ->where('stage_name', $stageName)
+                        ->first();
+                    if ($stage) {
+                        \App\Models\ProjectStage::where('project_id', $projectId)
+                            ->where('sequence_order', '<', $stage->sequence_order)
+                            ->update(['status' => 'Completed']);
+                        $stage->update(['status' => 'In Progress']);
+                        \App\Models\ProjectStage::where('project_id', $projectId)
+                            ->where('sequence_order', '>', $stage->sequence_order)
+                            ->update(['status' => 'Pending']);
+                    }
+                }
+                $affected = count($ids);
                 break;
         }
 

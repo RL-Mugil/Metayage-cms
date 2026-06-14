@@ -119,6 +119,8 @@ Route::middleware(['auth:sanctum', 'throttle:60,1'])->group(function () {
     Route::get('/discussions', [\App\Http\Controllers\DiscussionController::class, 'index']);
     Route::post('/discussions', [\App\Http\Controllers\DiscussionController::class, 'store']);
     Route::post('/discussions/{id}/reply', [\App\Http\Controllers\DiscussionController::class, 'reply']);
+    Route::put('/discussions/{id}', [\App\Http\Controllers\DiscussionController::class, 'update']);
+    Route::delete('/discussions/{id}', [\App\Http\Controllers\DiscussionController::class, 'destroy']);
 
     // Settings
     Route::get('/settings',               [\App\Http\Controllers\SettingsController::class, 'getSettings']);

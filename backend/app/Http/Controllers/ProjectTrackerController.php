@@ -109,7 +109,7 @@ class ProjectTrackerController extends Controller implements HasMiddleware
     public function projects(Request $request)
     {
         $q = $request->q ?? '';
-        $query = Project::with(['client:id,company_name', 'partner:id,name', 'manager:id,name', 'patentEngineer:id,name'])
+        $query = Project::with(['client:id,company_name', 'partner:id,name', 'manager:id,name', 'secondaryManager:id,name', 'patentEngineer:id,name'])
             ->whereNull('deleted_at');
 
         if ($q) {
@@ -130,12 +130,12 @@ class ProjectTrackerController extends Controller implements HasMiddleware
                     'project_code'  => $p->project_code,
                     'docket_number' => $p->docket_number,
                     'client_name'   => $p->client?->company_name,
-                    'partner_id'    => $p->partner_id,
-                    'partner_name'  => $p->partner?->name,
-                    'manager_id'    => $p->manager_id,
-                    'manager_name'  => $p->manager?->name,
-                    'engineer_id'   => $p->patent_engineer_id,
-                    'engineer_name' => $p->patentEngineer?->name,
+                    'pcm_id'        => $p->assigned_manager_id,
+                    'pcm_name'      => $p->manager?->name,
+                    'scm_id'        => $p->secondary_manager_id,
+                    'scm_name'      => $p->secondaryManager?->name,
+                    'pr_id'         => $p->patent_engineer_id,
+                    'pr_name'       => $p->patentEngineer?->name,
                     'start_date'    => $p->start_date?->toDateString(),
                     'record_type'   => $p->case_type,
                 ])
@@ -199,7 +199,7 @@ class ProjectTrackerController extends Controller implements HasMiddleware
 
         $row->update($data);
 
-        // Sync pipeline stage on linked project
+        // Sync pipeline stage and project status on linked project
         if (isset($data['status'])) {
             $projectId = $row->project_id;
             if ($projectId) {
@@ -207,6 +207,18 @@ class ProjectTrackerController extends Controller implements HasMiddleware
                 if ($stage) {
                     $this->syncProjectStage($projectId, $stage);
                 }
+
+                // Map tracker row status to project.status
+                if ($data['status'] === 'Completed') {
+                    $projStatus = 'Completed';
+                } elseif ($data['status'] === 'On Hold') {
+                    $projStatus = 'On Hold';
+                } elseif (in_array($data['status'], ['Not Started', 'Allocated'])) {
+                    $projStatus = 'Open';
+                } else {
+                    $projStatus = 'In Progress';
+                }
+                Project::where('id', $projectId)->update(['status' => $projStatus]);
             }
         }
 

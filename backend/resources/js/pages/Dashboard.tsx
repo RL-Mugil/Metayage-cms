@@ -1,6 +1,6 @@
 import { Head, Link } from "@inertiajs/react";
 import { useEffect, useState, useCallback } from "react";
-import { Briefcase, Users, Wallet, Clock, ArrowUpRight, TrendingUp, Loader2, Plus, Download, X, Search, ChevronLeft, ChevronRight } from "lucide-react";
+import { Briefcase, Users, Wallet, Clock, ArrowUpRight, TrendingUp, Loader2, Download, X, Search, ChevronLeft, ChevronRight } from "lucide-react";
 import AppLayout from "@/layouts/AppLayout";
 import { PageHeader } from "@/components/page-header";
 import { StatCard } from "@/components/stat-card";
@@ -16,12 +16,6 @@ function formatCurrency(val: number) {
   if (val >= 100000) return `₹ ${(val / 100000).toFixed(1)}L`;
   return `₹ ${val.toLocaleString()}`;
 }
-
-const PROJECT_TYPES = [
-  "Patent Filing (Utility)", "Patent Filing (Design)", "PCT Filing",
-  "Trademark Filing", "Copyright Registration", "Patent Drafting",
-  "IP Litigation", "IP Audit", "Technology Transfer",
-];
 
 type DrillKey = "active_cases" | "active_clients" | "wip" | "revenue";
 
@@ -130,31 +124,20 @@ export default function Dashboard() {
   const [projects, setProjects] = useState<any[]>([]);
   const [tasks, setTasks]       = useState<any[]>([]);
   const [invoices, setInvoices] = useState<any[]>([]);
-  const [clients, setClients]   = useState<any[]>([]);
   const [loading, setLoading]   = useState(true);
   const [drillKey, setDrillKey] = useState<DrillKey | null>(null);
-
-  // New Case modal
-  const [showNewCase, setShowNewCase] = useState(false);
-  const [caseForm, setCaseForm] = useState({
-    project_name: "", project_type: "Patent Filing (Utility)",
-    client_id: "", urgency: "Normal", hard_deadline: "",
-  });
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState("");
 
   useEffect(() => {
     const load = async () => {
       try {
-        const [m, p, t, i, c] = await Promise.all([
+        const [m, p, t, i] = await Promise.all([
           api.getDashboardMetrics(), api.getProjects(),
-          api.getTasks(), api.getInvoices(), api.getClients(),
+          api.getTasks(), api.getInvoices(),
         ]);
         setMetrics(m.metrics);
         setProjects(Array.isArray(p) ? p : (p as any).data || []);
         setTasks(Array.isArray(t) ? t : (t as any).data || []);
         setInvoices(Array.isArray(i) ? i : (i as any).data || []);
-        setClients(Array.isArray(c) ? c : (c as any).data || []);
       } catch (e) { console.error(e); }
       finally { setLoading(false); }
     };
@@ -167,21 +150,6 @@ export default function Dashboard() {
       Type: p.project_type, Status: p.status, Urgency: p.urgency, Deadline: p.hard_deadline ?? "",
     }));
     downloadCSV(`dashboard-cases-${new Date().toISOString().slice(0,10)}.csv`, rows);
-  };
-
-  const handleCreateCase = async () => {
-    if (!caseForm.project_name.trim() || !caseForm.client_id) {
-      setSaveError("Case name and client are required."); return;
-    }
-    setSaving(true); setSaveError("");
-    try {
-      const created = await api.createProject(caseForm as any);
-      setProjects(prev => [created, ...prev]);
-      setShowNewCase(false);
-      setCaseForm({ project_name: "", project_type: "Patent Filing (Utility)", client_id: "", urgency: "Normal", hard_deadline: "" });
-    } catch (e: any) {
-      setSaveError(e.message || "Failed to create case.");
-    } finally { setSaving(false); }
   };
 
   if (loading || !metrics) {
@@ -208,7 +176,7 @@ export default function Dashboard() {
       title: "Active Cases",
       subtitle: "Open & In Progress",
       fetchFn: (params) => {
-        params.set("status", "Open");
+        params.set("status", "Active");
         return api.getProjectsPaged(params);
       },
       columns: [
@@ -274,70 +242,9 @@ export default function Dashboard() {
         title={`Good morning, ${welcomeName}`}
         description={`${metrics.active_matters} cases need attention · ${metrics.clients} clients · WIP ${formatCurrency(metrics.wip_balance)}`}
         actions={
-          <>
-            <Button variant="outline" onClick={handleExport}><Download className="h-4 w-4 mr-2" />Export CSV</Button>
-            <Button onClick={() => setShowNewCase(true)}><Plus className="h-4 w-4 mr-2" />New Case</Button>
-          </>
+          <Button variant="outline" onClick={handleExport}><Download className="h-4 w-4 mr-2" />Export CSV</Button>
         }
       />
-
-      {/* New Case modal */}
-      {showNewCase && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-lg p-6 m-4">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="font-display text-lg font-semibold">New Case</h2>
-              <button onClick={() => setShowNewCase(false)}><X className="h-5 w-5 text-muted-foreground" /></button>
-            </div>
-            {saveError && <div className="rounded-md bg-destructive/15 border border-destructive/30 p-3 text-xs text-destructive mb-3">{saveError}</div>}
-            <div className="space-y-3">
-              <div>
-                <label className="block text-xs text-muted-foreground mb-1">Case Name *</label>
-                <input value={caseForm.project_name} onChange={e => setCaseForm(p => ({ ...p, project_name: e.target.value }))}
-                  placeholder="e.g. Compact Lithium Cell Patent"
-                  className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs text-muted-foreground mb-1">Client *</label>
-                  <select value={caseForm.client_id} onChange={e => setCaseForm(p => ({ ...p, client_id: e.target.value }))}
-                    className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold">
-                    <option value="">Select client</option>
-                    {clients.map(c => <option key={c.id} value={c.id}>{c.company_name}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs text-muted-foreground mb-1">Type</label>
-                  <select value={caseForm.project_type} onChange={e => setCaseForm(p => ({ ...p, project_type: e.target.value }))}
-                    className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold">
-                    {PROJECT_TYPES.map(t => <option key={t}>{t}</option>)}
-                  </select>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs text-muted-foreground mb-1">Urgency</label>
-                  <select value={caseForm.urgency} onChange={e => setCaseForm(p => ({ ...p, urgency: e.target.value }))}
-                    className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold">
-                    {["Low","Normal","High","Critical"].map(u => <option key={u}>{u}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs text-muted-foreground mb-1">Hard Deadline</label>
-                  <input type="date" value={caseForm.hard_deadline} onChange={e => setCaseForm(p => ({ ...p, hard_deadline: e.target.value }))}
-                    className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
-                </div>
-              </div>
-            </div>
-            <div className="flex gap-2 mt-5">
-              <Button className="bg-gold hover:bg-gold/90 text-black flex-1" onClick={handleCreateCase} disabled={saving}>
-                {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}Create Case
-              </Button>
-              <Button variant="outline" onClick={() => setShowNewCase(false)}>Cancel</Button>
-            </div>
-          </div>
-        </div>
-      )}
 
       <div className="px-8 py-6 space-y-6">
         {drillKey && (
@@ -345,10 +252,10 @@ export default function Dashboard() {
         )}
 
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <StatCard label="Active Cases" value={metrics.active_matters.toString()} delta="+2 this month" trend="up" icon={Briefcase} accent="primary" onClick={() => setDrillKey("active_cases")} />
-          <StatCard label="Active Clients" value={metrics.clients.toString()} delta="+1 this month" trend="up" icon={Users} accent="gold" onClick={() => setDrillKey("active_clients")} />
-          <StatCard label="WIP (unbilled)" value={formatCurrency(metrics.wip_balance)} delta="-3.1% vs last week" trend="down" icon={Clock} accent="info" onClick={() => setDrillKey("wip")} />
-          <StatCard label="MTD Revenue" value={formatCurrency(metrics.received_payments)} delta="+12.6% YoY" trend="up" icon={Wallet} accent="success" onClick={() => setDrillKey("revenue")} />
+          <StatCard label="Active Cases" value={metrics.active_matters.toString()} delta={metrics.active_matters_delta ?? undefined} trend={metrics.active_matters_delta_trend ?? "up"} icon={Briefcase} accent="primary" onClick={() => setDrillKey("active_cases")} />
+          <StatCard label="Active Clients" value={metrics.clients.toString()} delta={metrics.clients_delta ?? undefined} trend={metrics.clients_delta_trend ?? "up"} icon={Users} accent="gold" onClick={() => setDrillKey("active_clients")} />
+          <StatCard label="WIP (unbilled)" value={formatCurrency(metrics.wip_balance)} delta={metrics.wip_delta ?? undefined} trend={metrics.wip_delta_trend ?? "neutral"} icon={Clock} accent="info" onClick={() => setDrillKey("wip")} />
+          <StatCard label="MTD Revenue" value={formatCurrency(metrics.received_payments)} delta={metrics.revenue_delta ?? undefined} trend={metrics.revenue_delta_trend ?? "up"} icon={Wallet} accent="success" onClick={() => setDrillKey("revenue")} />
         </div>
 
         <div className="grid gap-6 lg:grid-cols-3">
@@ -425,12 +332,12 @@ export default function Dashboard() {
           <Card className="border-border">
             <CardHeader>
               <CardTitle className="font-display flex items-center gap-2">
-                <TrendingUp className="h-4 w-4 text-gold" /> Realization rate
+                <TrendingUp className="h-4 w-4 text-gold" /> Collection Rate
               </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="font-display text-4xl font-semibold">{metrics.realization_rate}%</div>
-              <p className="text-xs text-muted-foreground mt-2">Billed vs. worked, 30-day rolling</p>
+              <p className="text-xs text-muted-foreground mt-2">Paid vs. Billed ratio</p>
               <div className="mt-4 h-2 w-full rounded-full bg-muted overflow-hidden">
                 <div className="h-full rounded-full bg-gradient-to-r from-primary to-gold"
                   style={{ width: `${Math.min(metrics.realization_rate, 100)}%` }} />

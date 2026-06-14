@@ -72,7 +72,7 @@ class ProjectController extends Controller
     public function index(Request $request)
     {
         $user = $request->user();
-        $query = Project::with('client', 'partner', 'manager', 'stages');
+        $query = Project::with('client', 'partner', 'manager', 'patentEngineer', 'stages');
 
         // RBAC access filter
         if ($user->role === 'client') {

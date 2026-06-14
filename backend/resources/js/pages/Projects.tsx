@@ -500,6 +500,8 @@ export default function Projects() {
 
   const [delTarget, setDelTarget] = useState<any>(null);
   const [deleting, setDeleting]  = useState(false);
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [bulkAction, setBulkAction]   = useState("");
 
   const [stageMenu, setStageMenu] = useState<{ projectId: number; stages: string[]; rect: DOMRect } | null>(null);
 
@@ -640,8 +642,9 @@ export default function Projects() {
 
   const statuses     = ["All", "Open", "In Progress", "On Hold", "Closed", "Completed"];
   const userName     = (id: any) => users.find((u) => u.id === id)?.name ?? "—";
-  const managerName  = (p: any) => p.manager?.name   ?? userName(p.assigned_manager_id);
-  const partnerName  = (p: any) => p.partner?.name   ?? userName(p.assigned_partner_id);
+  const managerName       = (p: any) => p.manager?.name        ?? userName(p.assigned_manager_id);
+  const partnerName       = (p: any) => p.partner?.name        ?? userName(p.assigned_partner_id);
+  const patentEngineerName = (p: any) => p.patent_engineer?.name ?? userName(p.patent_engineer_id);
   const activeStage  = (p: any) =>
     p.stages?.find((s: any) => s.status === "In Progress")?.stage_name
     ?? p.stages?.[0]?.stage_name
@@ -666,7 +669,7 @@ export default function Projects() {
                   "Status":         p.status,
                   "Workflow Stage": activeStage(p),
                   "Client Manager": managerName(p),
-                  "Person Responsible": partnerName(p),
+                  "Person Responsible": patentEngineerName(p),
                 }))
               )}>
               <Download className="h-4 w-4 mr-2" />Export CSV
@@ -721,7 +724,11 @@ export default function Projects() {
                     <Combobox
                       value={form.client_id}
                       options={clientOptions}
-                      onSelect={(v) => sf("client_id", v)}
+                      onSelect={(v) => {
+                        sf("client_id", v);
+                        const cl = clients.find((c) => String(c.id) === v);
+                        if (cl?.account_manager_id) sf("assigned_manager_id", String(cl.account_manager_id));
+                      }}
                       placeholder="Search client code or name…"
                     />
                   </div>
@@ -1007,6 +1014,11 @@ export default function Projects() {
                 <table className="w-full text-sm min-w-[1100px]">
                   <thead className="bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground">
                     <tr>
+                      <th className="px-4 py-3 w-8">
+                        <input type="checkbox" className="rounded border-border"
+                          checked={paginated.length > 0 && paginated.every(p => selectedIds.includes(p.id))}
+                          onChange={(e) => setSelectedIds(e.target.checked ? paginated.map(p => p.id) : [])} />
+                      </th>
                       <th className="px-4 py-3 text-left">Case ID</th>
                       <th className="px-4 py-3 text-left">Patent Title</th>
                       <th className="px-4 py-3 text-left">Country</th>
@@ -1024,7 +1036,12 @@ export default function Projects() {
                       const stage = activeStage(p);
                       const isOverdue = p.hard_deadline && new Date(p.hard_deadline) < new Date();
                       return (
-                        <tr key={p.id} className="border-t border-border hover:bg-muted/30">
+                        <tr key={p.id} className={`border-t border-border hover:bg-muted/30 ${selectedIds.includes(p.id) ? "bg-gold/5" : ""}`}>
+                          <td className="px-4 py-3 w-8">
+                            <input type="checkbox" className="rounded border-border"
+                              checked={selectedIds.includes(p.id)}
+                              onChange={(e) => setSelectedIds(prev => e.target.checked ? [...prev, p.id] : prev.filter(id => id !== p.id))} />
+                          </td>
                           <td className="px-4 py-3">
                             <div className="font-mono text-xs text-gold font-semibold">
                               {p.docket_number ?? p.project_code ?? "—"}
@@ -1074,7 +1091,7 @@ export default function Projects() {
                             {managerName(p)}
                           </td>
                           <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
-                            {partnerName(p)}
+                            {patentEngineerName(p)}
                           </td>
                           <td className="px-4 py-3">
                             <div className="flex gap-1">
@@ -1134,6 +1151,46 @@ export default function Projects() {
           </Card>
         )}
       </div>
+
+      {/* Floating bulk action bar */}
+      {selectedIds.length > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-5 py-3 rounded-xl bg-background border border-gold/40 shadow-2xl backdrop-blur">
+          <span className="text-sm font-medium text-gold">{selectedIds.length} selected</span>
+          <div className="w-px h-5 bg-border" />
+          <select className="h-8 rounded-md border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold"
+            value={bulkAction} onChange={(e) => setBulkAction(e.target.value)}>
+            <option value="">Choose action…</option>
+            <option value="change_status:Active">Set Active</option>
+            <option value="change_status:On Hold">Set On Hold</option>
+            <option value="change_status:Completed">Set Completed</option>
+            <option value="change_stage:Drafting">Move → Drafting</option>
+            <option value="change_stage:Filing">Move → Filing</option>
+            <option value="change_stage:Examination">Move → Examination</option>
+            <option value="notify">Notify Managers</option>
+            <option value="delete">Delete</option>
+          </select>
+          <Button size="sm" className="h-8 bg-gold hover:bg-gold/90 text-black text-xs"
+            disabled={!bulkAction}
+            onClick={async () => {
+              if (!bulkAction) return;
+              const [action, value] = bulkAction.split(":");
+              const body: any = { entity: "projects", ids: selectedIds, action };
+              if (action === "change_status") body.status = value;
+              if (action === "change_stage") body.stage = value;
+              if (action === "delete" && !confirm(`Delete ${selectedIds.length} case(s)? This cannot be undone.`)) return;
+              try {
+                await api.bulkExecute(body);
+                setSelectedIds([]);
+                setBulkAction("");
+                const p = await api.getProjects();
+                setProjects(Array.isArray(p) ? p : (p as any).data || []);
+              } catch (e: any) { alert(e.message ?? "Bulk action failed."); }
+            }}>Apply</Button>
+          <button className="text-muted-foreground hover:text-foreground text-xs" onClick={() => { setSelectedIds([]); setBulkAction(""); }}>
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
     </AppLayout>
   );
 }

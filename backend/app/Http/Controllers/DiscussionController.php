@@ -125,4 +125,48 @@ class DiscussionController extends Controller
             'text'   => $message->content,
         ], 201);
     }
+
+    public function update(Request $request, $id)
+    {
+        if ($deny = $this->denyClients($request)) return $deny;
+
+        $user   = $request->user();
+        $thread = DiscussionThread::findOrFail($id);
+
+        // Only the creator (first message author) or super_admin/partner can edit
+        $firstAuthorId = $thread->messages()->orderBy('id')->value('author_id');
+        if ($user->id !== $firstAuthorId && !in_array($user->role, ['super_admin', 'partner'])) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        $validated = $request->validate([
+            'title'  => 'sometimes|string|max:255',
+            'tag'    => 'sometimes|nullable|in:General,Project,HR,Finance',
+            'status' => 'sometimes|in:Open,Closed',
+        ]);
+
+        $thread->update($validated);
+
+        return response()->json(['ok' => true]);
+    }
+
+    public function destroy(Request $request, $id)
+    {
+        if ($deny = $this->denyClients($request)) return $deny;
+
+        $user   = $request->user();
+        $thread = DiscussionThread::findOrFail($id);
+
+        $firstAuthorId = $thread->messages()->orderBy('id')->value('author_id');
+        if ($user->id !== $firstAuthorId && !in_array($user->role, ['super_admin', 'partner'])) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        DB::transaction(function () use ($thread) {
+            $thread->messages()->delete();
+            $thread->delete();
+        });
+
+        return response()->json(['ok' => true]);
+    }
 }

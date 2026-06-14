@@ -309,6 +309,12 @@ export const api = {
   async replyDiscussion(threadId: number, message: string): Promise<Record<string, unknown>> {
     return this.request(`/discussions/${threadId}/reply`, { method: 'POST', body: JSON.stringify({ message }) })
   },
+  async updateDiscussion(threadId: number, data: { title?: string; tag?: string; status?: string }): Promise<any> {
+    return this.request(`/discussions/${threadId}`, { method: 'PUT', body: JSON.stringify(data) })
+  },
+  async deleteDiscussion(threadId: number): Promise<any> {
+    return this.request(`/discussions/${threadId}`, { method: 'DELETE' })
+  },
 
   // ── Settings ──
   async getSettings(): Promise<Record<string, unknown>> {
@@ -421,7 +427,7 @@ export const api = {
   },
 
   // ── Bulk operations ──
-  async bulkExecute(data: { entity: string; ids: number[]; action: string; status?: string }): Promise<{ ok: boolean; affected: number }> {
+  async bulkExecute(data: { entity: string; ids: number[]; action: string; status?: string; stage?: string }): Promise<{ ok: boolean; affected: number }> {
     return this.request('/bulk/execute', { method: 'POST', body: JSON.stringify(data) })
   },
 
