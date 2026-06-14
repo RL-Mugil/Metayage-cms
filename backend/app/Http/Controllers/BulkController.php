@@ -18,7 +18,7 @@ class BulkController extends Controller
     private const STATUS_WHITELIST = [
         'clients'  => ['Active', 'Inactive', 'Prospect', 'On Hold'],
         'projects' => ['Active', 'On Hold', 'Completed', 'Archived'],
-        'tasks'    => ['Pending', 'In Progress', 'Awaiting Review', 'Completed', 'Cancelled'],
+        'tasks'    => ['Not Started', 'Pending', 'In Progress', 'Review', 'Awaiting Review', 'Completed', 'Cancelled', 'Blocked'],
     ];
 
     /** What "Archive" means per entity. */

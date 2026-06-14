@@ -57,7 +57,7 @@ class ClientController extends Controller
             $base = 'C00';
         } else {
             $letter = $last[0];
-            $num    = (int) substr($last, 1, 2);
+            $num = (int) substr($last, 1, 2);
 
             if ($num < 99) {
                 $base = $letter . str_pad($num + 1, 2, '0', STR_PAD_LEFT);
@@ -80,9 +80,12 @@ class ClientController extends Controller
      */
     private function computeGstType(string $nationality, bool $hasGstin, string $clientType): string
     {
-        if (strtolower(trim($nationality)) !== 'india') return 'Export';
-        if ($hasGstin) return 'B2B';
-        if ($clientType === 'individual') return 'B2C';
+        if (strtolower(trim($nationality)) !== 'india')
+            return 'Export';
+        if ($hasGstin)
+            return 'B2B';
+        if ($clientType === 'individual')
+            return 'B2C';
         return 'Unregistered';
     }
 
@@ -110,13 +113,13 @@ class ClientController extends Controller
                 SUM(CASE WHEN gst_type = 'Unregistered' THEN 1 ELSE 0 END) as unregistered
             ")->first();
             return [
-                'total'        => (int) ($row?->total        ?? 0),
-                'active'       => (int) ($row?->active       ?? 0),
-                'inactive'     => (int) ($row?->inactive     ?? 0),
-                'prospect'     => (int) ($row?->prospect     ?? 0),
-                'b2b'          => (int) ($row?->b2b          ?? 0),
-                'b2c'          => (int) ($row?->b2c          ?? 0),
-                'export'       => (int) ($row?->export       ?? 0),
+                'total' => (int) ($row?->total ?? 0),
+                'active' => (int) ($row?->active ?? 0),
+                'inactive' => (int) ($row?->inactive ?? 0),
+                'prospect' => (int) ($row?->prospect ?? 0),
+                'b2b' => (int) ($row?->b2b ?? 0),
+                'b2c' => (int) ($row?->b2c ?? 0),
+                'export' => (int) ($row?->export ?? 0),
                 'unregistered' => (int) ($row?->unregistered ?? 0),
             ];
         });
@@ -126,7 +129,7 @@ class ClientController extends Controller
 
     public function index(Request $request)
     {
-        $user  = $request->user();
+        $user = $request->user();
         $query = Client::with('accountManager');
 
         if ($user->role === 'client') {
@@ -137,9 +140,9 @@ class ClientController extends Controller
             $s = str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $request->search);
             $query->where(function ($q) use ($s) {
                 $q->where('company_name', 'like', "%{$s}%")
-                  ->orWhere('client_code', 'like', "%{$s}%")
-                  ->orWhere('legal_name',  'like', "%{$s}%")
-                  ->orWhere('pan_number',  'like', "%{$s}%");
+                    ->orWhere('client_code', 'like', "%{$s}%")
+                    ->orWhere('legal_name', 'like', "%{$s}%")
+                    ->orWhere('pan_number', 'like', "%{$s}%");
             });
         }
 
@@ -151,7 +154,7 @@ class ClientController extends Controller
             $query->where('gst_type', $request->gst_type);
         }
 
-        $sortBy  = in_array($request->sort_by, ['company_name', 'legal_name', 'client_code', 'status', 'gst_type', 'date_onboarded'])
+        $sortBy = in_array($request->sort_by, ['company_name', 'legal_name', 'client_code', 'status', 'gst_type', 'date_onboarded'])
             ? $request->sort_by : 'company_name';
         $sortDir = $request->sort_dir === 'desc' ? 'desc' : 'asc';
         $query->orderBy($sortBy, $sortDir);
@@ -161,7 +164,7 @@ class ClientController extends Controller
 
     public function show(Request $request, $id)
     {
-        $user   = $request->user();
+        $user = $request->user();
         $client = Client::with('contacts', 'accountManager', 'projects')->findOrFail($id);
 
         if ($user->role === 'client' && !$client->contacts()->where('email', $user->email)->exists()) {
@@ -174,45 +177,45 @@ class ClientController extends Controller
     public function store(StoreClientRequest $request)
     {
         $user = $request->user();
-        $v    = $request->validated();
+        $v = $request->validated();
 
         $nationality = $v['nationality'] ?? 'India';
-        $hasGstin    = (bool) ($v['has_gstin'] ?? false);
-        $clientType  = $v['client_type'];
+        $hasGstin = (bool) ($v['has_gstin'] ?? false);
+        $clientType = $v['client_type'];
 
         $client = \DB::transaction(function () use ($v, $nationality, $hasGstin, $clientType, $user, $request) {
-            $v['client_code']        = $this->generateClientCode($nationality);
-            $v['nationality']        = $nationality;
-            $v['has_gstin']          = $hasGstin;
-            $v['gst_type']           = $this->computeGstType($nationality, $hasGstin, $clientType);
-            $v['company_name']       = $v['legal_name'];
+            $v['client_code'] = $this->generateClientCode($nationality);
+            $v['nationality'] = $nationality;
+            $v['has_gstin'] = $hasGstin;
+            $v['gst_type'] = $this->computeGstType($nationality, $hasGstin, $clientType);
+            $v['company_name'] = $v['legal_name'];
             $v['account_manager_id'] = $v['account_manager_id'] ?? $user->id;
-            $v['date_onboarded']     = now()->toDateString();
-            $v['status']             = $v['status'] ?? 'Active';
+            $v['date_onboarded'] = now()->toDateString();
+            $v['status'] = $v['status'] ?? 'Active';
 
             $client = Client::create($v);
 
             // Seed a zero-balance opening entry so concurrent invoice/payment
             // creation always has a row to lockForUpdate() against.
             ClientLedger::create([
-                'client_id'          => $client->id,
-                'transaction_date'   => now()->toDateString(),
-                'document_type'      => 'Opening Balance',
+                'client_id' => $client->id,
+                'transaction_date' => now()->toDateString(),
+                'document_type' => 'Opening Balance',
                 'document_reference' => $client->client_code,
-                'debit'              => 0,
-                'credit'             => 0,
-                'balance'            => 0,
-                'notes'              => 'Auto-seeded on client creation',
+                'debit' => 0,
+                'credit' => 0,
+                'balance' => 0,
+                'notes' => 'Auto-seeded on client creation',
             ]);
 
             AuditLog::create([
-                'user_id'      => $user->id,
-                'action'       => 'create',
+                'user_id' => $user->id,
+                'action' => 'create',
                 'subject_type' => 'Client',
-                'subject_id'   => $client->id,
-                'metadata'     => ['legal_name' => $client->legal_name, 'client_code' => $client->client_code],
-                'ip_address'   => $request->ip(),
-                'user_agent'   => $request->userAgent(),
+                'subject_id' => $client->id,
+                'metadata' => ['legal_name' => $client->legal_name, 'client_code' => $client->client_code],
+                'ip_address' => $request->ip(),
+                'user_agent' => $request->userAgent(),
             ]);
 
             return $client;
@@ -228,10 +231,10 @@ class ClientController extends Controller
         $v = $request->validated();
 
         $nationality = $v['nationality'] ?? $client->nationality ?? 'India';
-        $hasGstin    = array_key_exists('has_gstin', $v) ? (bool) $v['has_gstin'] : (bool) $client->has_gstin;
-        $clientType  = $v['client_type'] ?? $client->client_type ?? 'organization';
+        $hasGstin = array_key_exists('has_gstin', $v) ? (bool) $v['has_gstin'] : (bool) $client->has_gstin;
+        $clientType = $v['client_type'] ?? $client->client_type ?? 'organization';
 
-        $v['gst_type']    = $this->computeGstType($nationality, $hasGstin, $clientType);
+        $v['gst_type'] = $this->computeGstType($nationality, $hasGstin, $clientType);
         $v['nationality'] = $nationality;
 
         if (isset($v['legal_name'])) {
@@ -241,13 +244,13 @@ class ClientController extends Controller
         $client->update($v);
 
         AuditLog::create([
-            'user_id'      => $user->id,
-            'action'       => 'update',
+            'user_id' => $user->id,
+            'action' => 'update',
             'subject_type' => 'Client',
-            'subject_id'   => $client->id,
-            'metadata'     => array_keys($v),
-            'ip_address'   => $request->ip(),
-            'user_agent'   => $request->userAgent(),
+            'subject_id' => $client->id,
+            'metadata' => array_keys($v),
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
         ]);
 
         return response()->json($client->fresh()->load('accountManager'));
@@ -255,7 +258,7 @@ class ClientController extends Controller
 
     public function destroy(Request $request, $id)
     {
-        $user   = $request->user();
+        $user = $request->user();
         $client = Client::findOrFail($id);
         $this->authorize('delete', $client);
 
@@ -272,13 +275,13 @@ class ClientController extends Controller
         $client->delete();
 
         AuditLog::create([
-            'user_id'      => $user->id,
-            'action'       => 'delete',
+            'user_id' => $user->id,
+            'action' => 'delete',
             'subject_type' => 'Client',
-            'subject_id'   => $id,
-            'metadata'     => ['name' => $name],
-            'ip_address'   => $request->ip(),
-            'user_agent'   => $request->userAgent(),
+            'subject_id' => $id,
+            'metadata' => ['name' => $name],
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
         ]);
 
         return response()->json(['message' => 'Client deleted']);
@@ -294,7 +297,7 @@ class ClientController extends Controller
         }
 
         $request->validate([
-            'file'             => 'required_without:google_sheet_url|nullable|file|mimes:csv,xlsx,xls|max:5120',
+            'file' => 'required_without:google_sheet_url|nullable|file|mimes:csv,xlsx,xls|max:5120',
             'google_sheet_url' => 'required_without:file|nullable|string',
         ]);
 
@@ -309,8 +312,8 @@ class ClientController extends Controller
         }
 
         $imported = 0;
-        $skipped  = 0;
-        $errors   = [];
+        $skipped = 0;
+        $errors = [];
 
         \DB::transaction(function () use ($rows, $user, &$imported, &$skipped, &$errors) {
             foreach ($rows as $index => $row) {
@@ -322,40 +325,40 @@ class ClientController extends Controller
 
                 try {
                     $nationality = trim((string) ($row['nationality'] ?? 'India')) ?: 'India';
-                    $hasGstin    = filter_var($row['has_gstin'] ?? false, FILTER_VALIDATE_BOOLEAN);
-                    $clientType  = in_array($row['client_type'] ?? '', ['individual', 'organization'])
-                                   ? (string) $row['client_type'] : 'organization';
+                    $hasGstin = filter_var($row['has_gstin'] ?? false, FILTER_VALIDATE_BOOLEAN);
+                    $clientType = in_array($row['client_type'] ?? '', ['individual', 'organization'])
+                        ? (string) $row['client_type'] : 'organization';
 
                     $email = isset($row['contact_email']) && filter_var($row['contact_email'], FILTER_VALIDATE_EMAIL)
-                             ? (string) $row['contact_email'] : null;
+                        ? (string) $row['contact_email'] : null;
 
                     $validStatuses = ['Active', 'Inactive', 'Prospect', 'On Hold'];
                     $status = in_array($row['status'] ?? '', $validStatuses) ? (string) $row['status'] : 'Active';
 
                     Client::create([
-                        'client_code'    => $this->generateClientCode($nationality),
-                        'legal_name'     => $legalName,
-                        'company_name'   => $legalName,
-                        'client_type'    => $clientType,
-                        'nationality'    => $nationality,
-                        'has_gstin'      => $hasGstin,
-                        'gst_type'       => $this->computeGstType($nationality, $hasGstin, $clientType),
-                        'pan_number'     => isset($row['pan_number'])     ? strtoupper(trim((string) $row['pan_number'])) : null,
-                        'cin_number'     => isset($row['cin_number'])     ? strtoupper(trim((string) $row['cin_number'])) : null,
+                        'client_code' => $this->generateClientCode($nationality),
+                        'legal_name' => $legalName,
+                        'company_name' => $legalName,
+                        'client_type' => $clientType,
+                        'nationality' => $nationality,
+                        'has_gstin' => $hasGstin,
+                        'gst_type' => $this->computeGstType($nationality, $hasGstin, $clientType),
+                        'pan_number' => isset($row['pan_number']) ? strtoupper(trim((string) $row['pan_number'])) : null,
+                        'cin_number' => isset($row['cin_number']) ? strtoupper(trim((string) $row['cin_number'])) : null,
                         'entity_subtype' => $row['entity_subtype'] ?? null,
-                        'trade_name'     => $row['trade_name']    ?? null,
-                        'website'        => $row['website']       ?? null,
-                        'contact_name'   => $row['contact_name']  ?? null,
-                        'contact_email'  => $email,
-                        'phone'          => $row['phone']         ?? null,
-                        'address'        => $row['address']       ?? null,
-                        'state'          => $row['state']         ?? null,
-                        'industry'       => $row['industry']      ?? null,
-                        'payment_terms'  => $row['payment_terms'] ?? 'Net 30',
+                        'trade_name' => $row['trade_name'] ?? null,
+                        'website' => $row['website'] ?? null,
+                        'contact_name' => $row['contact_name'] ?? null,
+                        'contact_email' => $email,
+                        'phone' => $row['phone'] ?? null,
+                        'address' => $row['address'] ?? null,
+                        'state' => $row['state'] ?? null,
+                        'industry' => $row['industry'] ?? null,
+                        'payment_terms' => $row['payment_terms'] ?? 'Net 30',
                         'account_manager_id' => $user->id,
                         'date_onboarded' => now()->toDateString(),
-                        'status'         => $status,
-                        'remarks'        => $row['remarks']       ?? null,
+                        'status' => $status,
+                        'remarks' => $row['remarks'] ?? null,
                     ]);
                     $imported++;
                 } catch (\Exception $e) {
@@ -367,8 +370,8 @@ class ClientController extends Controller
 
         return response()->json([
             'imported' => $imported,
-            'skipped'  => $skipped,
-            'errors'   => $errors,
+            'skipped' => $skipped,
+            'errors' => $errors,
         ]);
     }
 
@@ -383,7 +386,7 @@ class ClientController extends Controller
 
     private function parseCsvFile(string $path): array
     {
-        $rows    = [];
+        $rows = [];
         $headers = null;
 
         if (($handle = fopen($path, 'r')) !== false) {
@@ -408,10 +411,11 @@ class ClientController extends Controller
     private function parseXlsx(string $path): array
     {
         $spreadsheet = \PhpOffice\PhpSpreadsheet\IOFactory::load($path);
-        $sheet       = $spreadsheet->getActiveSheet();
-        $rawRows     = $sheet->toArray(null, true, true, false);
+        $sheet = $spreadsheet->getActiveSheet();
+        $rawRows = $sheet->toArray(null, true, true, false);
 
-        if (empty($rawRows)) return [];
+        if (empty($rawRows))
+            return [];
 
         $headers = array_map(
             fn($h) => strtolower(str_replace([' ', '-'], '_', trim((string) ($h ?? '')))),
@@ -438,12 +442,12 @@ class ClientController extends Controller
         }
 
         $sheetId = $m[1];
-        $gid     = '0';
+        $gid = '0';
         if (preg_match('/[?&]gid=(\d+)/', $url, $gm)) {
             $gid = $gm[1];
         }
 
-        $csvUrl   = "https://docs.google.com/spreadsheets/d/{$sheetId}/export?format=csv&gid={$gid}";
+        $csvUrl = "https://docs.google.com/spreadsheets/d/{$sheetId}/export?format=csv&gid={$gid}";
         $response = Http::timeout(15)->get($csvUrl);
 
         if (!$response->ok()) {
@@ -467,12 +471,12 @@ class ClientController extends Controller
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
-        $client    = Client::findOrFail($id);
+        $client = Client::findOrFail($id);
         $validated = $request->validate([
-            'name'      => 'required|string|max:255',
-            'title'     => 'nullable|string|max:255',
-            'email'     => 'required|email|unique:client_contacts,email',
-            'phone'     => 'nullable|string',
+            'name' => 'required|string|max:255',
+            'title' => 'nullable|string|max:255',
+            'email' => 'required|email|unique:client_contacts,email',
+            'phone' => 'nullable|string',
             'role_type' => 'nullable|string',
         ]);
 

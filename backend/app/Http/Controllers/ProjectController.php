@@ -138,7 +138,7 @@ class ProjectController extends Controller
             // Redis atomic counter for project codes — no table-wide lock.
             $year = date('Y');
             $projKey = "seq:project:{$year}";
-            if (! Redis::exists($projKey)) {
+            if (!Redis::exists($projKey)) {
                 $last = Project::where('project_code', 'like', "PRJ-{$year}-%")
                     ->orderBy('project_code', 'desc')->value('project_code');
                 Redis::setnx($projKey, $last ? (int) substr($last, -5) : 9999);
@@ -150,12 +150,13 @@ class ProjectController extends Controller
             $client = Client::findOrFail($validated['client_id']);
             $clientCode = $client->client_code ?? '';
             $docketKey = "seq:docket:client:{$client->id}";
-            if (! Redis::exists($docketKey)) {
+            if (!Redis::exists($docketKey)) {
                 $maxSeq = 0;
                 foreach (Project::where('client_id', $client->id)->whereNotNull('docket_number')->pluck('docket_number') as $dn) {
                     if (strlen($dn) >= strlen($clientCode) + 3) {
                         $n = (int) substr($dn, strlen($clientCode), 3);
-                        if ($n > $maxSeq) $maxSeq = $n;
+                        if ($n > $maxSeq)
+                            $maxSeq = $n;
                     }
                 }
                 Redis::setnx($docketKey, $maxSeq);

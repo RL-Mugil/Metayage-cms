@@ -46,12 +46,12 @@ class FinancialController extends Controller
                 SUM(CASE WHEN status = 'Paid' THEN 1 ELSE 0 END) as paid_count
             ")->first();
             return [
-                'total_billed'      => (float) ($row?->total_billed      ?? 0),
-                'total_received'    => (float) ($row?->total_received    ?? 0),
+                'total_billed' => (float) ($row?->total_billed ?? 0),
+                'total_received' => (float) ($row?->total_received ?? 0),
                 'total_outstanding' => (float) ($row?->total_outstanding ?? 0),
-                'overdue_count'     => (int)   ($row?->overdue_count     ?? 0),
-                'draft_count'       => (int)   ($row?->draft_count       ?? 0),
-                'paid_count'        => (int)   ($row?->paid_count        ?? 0),
+                'overdue_count' => (int) ($row?->overdue_count ?? 0),
+                'draft_count' => (int) ($row?->draft_count ?? 0),
+                'paid_count' => (int) ($row?->paid_count ?? 0),
             ];
         });
 
@@ -102,25 +102,25 @@ class FinancialController extends Controller
         $this->authorize('create', \App\Models\Invoice::class);
 
         $validated = $request->validate([
-            'client_id'    => 'required|exists:clients,id',
-            'project_id'   => 'nullable|exists:projects,id',
-            'due_date'     => 'required|date',
-            'items'        => 'required|array|min:1',
+            'client_id' => 'required|exists:clients,id',
+            'project_id' => 'nullable|exists:projects,id',
+            'due_date' => 'required|date',
+            'items' => 'required|array|min:1',
             'items.*.description' => 'required|string',
-            'items.*.amount'      => 'required|numeric|min:0',
-            'currency'     => 'nullable|string|max:5',
-            'payment_terms'=> 'nullable|string',
-            'notes'        => 'nullable|string',
+            'items.*.amount' => 'required|numeric|min:0',
+            'currency' => 'nullable|string|max:5',
+            'payment_terms' => 'nullable|string',
+            'notes' => 'nullable|string',
         ]);
 
         // Determine applicable GST rate: 0% for Export clients, standard rate otherwise.
-        $client   = Client::findOrFail($validated['client_id']);
-        $taxRate  = $client->gst_type === 'Export'
+        $client = Client::findOrFail($validated['client_id']);
+        $taxRate = $client->gst_type === 'Export'
             ? config('services.gst.export_rate', 0)
             : config('services.gst.standard_rate', 18);
 
-        $subtotal    = collect($validated['items'])->sum('amount');
-        $taxAmount   = round($subtotal * ($taxRate / 100), 2);
+        $subtotal = collect($validated['items'])->sum('amount');
+        $taxAmount = round($subtotal * ($taxRate / 100), 2);
         $totalAmount = $subtotal + $taxAmount;
 
         $invoice = \DB::transaction(function () use ($validated, $subtotal, $taxAmount, $taxRate, $totalAmount) {
@@ -128,37 +128,37 @@ class FinancialController extends Controller
             // On first use (or after Redis restart) we seed from the DB max.
             $year = date('Y');
             $redisKey = "seq:invoice:{$year}";
-            if (! Redis::exists($redisKey)) {
+            if (!Redis::exists($redisKey)) {
                 $last = Invoice::where('invoice_code', 'like', "INV-{$year}-%")
                     ->orderBy('invoice_code', 'desc')->value('invoice_code');
                 Redis::setnx($redisKey, $last ? (int) substr($last, -5) : 0);
             }
-            $seq  = Redis::incr($redisKey);
+            $seq = Redis::incr($redisKey);
             $code = sprintf('INV-%s-%05d', $year, $seq);
 
             $invoice = Invoice::create([
-                'invoice_code'  => $code,
-                'client_id'     => $validated['client_id'],
-                'project_id'    => $validated['project_id'] ?? null,
-                'issue_date'    => now()->toDateString(),
-                'due_date'      => $validated['due_date'],
-                'currency'      => $validated['currency'] ?? 'INR',
-                'subtotal'      => $subtotal,
-                'tax_amount'    => $taxAmount,
-                'total_amount'  => $totalAmount,
-                'balance_due'   => $totalAmount,
+                'invoice_code' => $code,
+                'client_id' => $validated['client_id'],
+                'project_id' => $validated['project_id'] ?? null,
+                'issue_date' => now()->toDateString(),
+                'due_date' => $validated['due_date'],
+                'currency' => $validated['currency'] ?? 'INR',
+                'subtotal' => $subtotal,
+                'tax_amount' => $taxAmount,
+                'total_amount' => $totalAmount,
+                'balance_due' => $totalAmount,
                 'payment_terms' => $validated['payment_terms'] ?? 'Net 30',
-                'status'        => 'Draft',
+                'status' => 'Draft',
             ]);
 
             foreach ($validated['items'] as $item) {
                 InvoiceItem::create([
-                    'invoice_id'  => $invoice->id,
+                    'invoice_id' => $invoice->id,
                     'description' => $item['description'],
-                    'quantity'    => 1,
-                    'unit_rate'   => $item['amount'],
-                    'amount'      => $item['amount'],
-                    'tax_rate'    => $taxRate,
+                    'quantity' => 1,
+                    'unit_rate' => $item['amount'],
+                    'amount' => $item['amount'],
+                    'tax_rate' => $taxRate,
                 ]);
             }
 
@@ -168,24 +168,27 @@ class FinancialController extends Controller
             $runningBalance = ($latestLedger ? $latestLedger->balance : 0.00) + $totalAmount;
 
             ClientLedger::create([
-                'client_id'          => $validated['client_id'],
-                'transaction_date'   => now()->toDateString(),
-                'document_type'      => 'Invoice',
+                'client_id' => $validated['client_id'],
+                'transaction_date' => now()->toDateString(),
+                'document_type' => 'Invoice',
                 'document_reference' => $code,
-                'debit'              => $totalAmount,
-                'credit'             => 0,
-                'balance'            => $runningBalance,
-                'notes'              => $validated['notes'] ?? null,
+                'debit' => $totalAmount,
+                'credit' => 0,
+                'balance' => $runningBalance,
+                'notes' => $validated['notes'] ?? null,
             ]);
 
             return $invoice;
         });
 
         AuditLog::create([
-            'user_id' => $user->id, 'action' => 'create_invoice',
-            'subject_type' => 'Invoice', 'subject_id' => $invoice->id,
+            'user_id' => $user->id,
+            'action' => 'create_invoice',
+            'subject_type' => 'Invoice',
+            'subject_id' => $invoice->id,
             'metadata' => ['code' => $invoice->invoice_code, 'total' => $totalAmount],
-            'ip_address' => $request->ip(), 'user_agent' => $request->userAgent(),
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
         ]);
 
         Cache::increment('dashboard_v');
@@ -198,9 +201,9 @@ class FinancialController extends Controller
         $invoice = Invoice::findOrFail($id);
         $this->authorize('update', $invoice);
         $validated = $request->validate([
-            'status'       => 'sometimes|in:Draft,Pending Approval,Sent,Viewed,Partially Paid,Paid,Overdue,Cancelled',
-            'due_date'     => 'sometimes|date',
-            'payment_terms'=> 'sometimes|string',
+            'status' => 'sometimes|in:Draft,Pending Approval,Sent,Viewed,Partially Paid,Paid,Overdue,Cancelled',
+            'due_date' => 'sometimes|date',
+            'payment_terms' => 'sometimes|string',
         ]);
 
         // Route cancellations through the dedicated transaction so the ledger is reversed correctly.
@@ -237,24 +240,24 @@ class FinancialController extends Controller
             $runningBalance = ($latestLedger ? $latestLedger->balance : 0.00) - $amountToReverse;
 
             ClientLedger::create([
-                'client_id'          => $invoice->client_id,
-                'transaction_date'   => now()->toDateString(),
-                'document_type'      => 'Credit Note',
+                'client_id' => $invoice->client_id,
+                'transaction_date' => now()->toDateString(),
+                'document_type' => 'Credit Note',
                 'document_reference' => $invoice->invoice_code,
-                'debit'              => 0,
-                'credit'             => $amountToReverse,
-                'balance'            => $runningBalance,
-                'notes'              => 'Invoice cancelled',
+                'debit' => 0,
+                'credit' => $amountToReverse,
+                'balance' => $runningBalance,
+                'notes' => 'Invoice cancelled',
             ]);
 
             AuditLog::create([
-                'user_id'      => $user->id,
-                'action'       => 'cancel_invoice',
+                'user_id' => $user->id,
+                'action' => 'cancel_invoice',
                 'subject_type' => 'Invoice',
-                'subject_id'   => $invoice->id,
-                'metadata'     => ['invoice_code' => $invoice->invoice_code],
-                'ip_address'   => $request->ip(),
-                'user_agent'   => $request->userAgent(),
+                'subject_id' => $invoice->id,
+                'metadata' => ['invoice_code' => $invoice->invoice_code],
+                'ip_address' => $request->ip(),
+                'user_agent' => $request->userAgent(),
             ]);
         });
 
@@ -291,7 +294,7 @@ class FinancialController extends Controller
             // Redis atomic counter for receipt codes.
             $year = date('Y');
             $recKey = "seq:receipt:{$year}";
-            if (! Redis::exists($recKey)) {
+            if (!Redis::exists($recKey)) {
                 $last = Payment::where('receipt_code', 'like', "REC-{$year}-%")
                     ->orderBy('receipt_code', 'desc')->value('receipt_code');
                 Redis::setnx($recKey, $last ? (int) substr($last, -5) : 0);
@@ -300,15 +303,15 @@ class FinancialController extends Controller
 
             // 1. Create Payment record
             $payment = Payment::create([
-                'client_id'             => $client->id,
-                'invoice_id'            => $invoice->id,
-                'receipt_code'          => $receiptCode,
-                'payment_date'          => Carbon::now()->toDateString(),
-                'amount'                => $validated['amount'],
-                'payment_method'        => $validated['payment_method'],
+                'client_id' => $client->id,
+                'invoice_id' => $invoice->id,
+                'receipt_code' => $receiptCode,
+                'payment_date' => Carbon::now()->toDateString(),
+                'amount' => $validated['amount'],
+                'payment_method' => $validated['payment_method'],
                 'transaction_reference' => $validated['transaction_reference'] ?? null,
-                'status'                => 'Completed',
-                'notes'                 => $validated['notes'] ?? null,
+                'status' => 'Completed',
+                'notes' => $validated['notes'] ?? null,
             ]);
 
             // 2. Update Invoice balance
@@ -316,7 +319,7 @@ class FinancialController extends Controller
             $newStatus = $newBalance <= 0.00 ? 'Paid' : 'Partially Paid';
             $invoice->update([
                 'balance_due' => $newBalance,
-                'status'      => $newStatus,
+                'status' => $newStatus,
             ]);
 
             // 3. Create client ledger record (payment received)
@@ -325,14 +328,14 @@ class FinancialController extends Controller
             $runningBalance = ($latestLedger ? $latestLedger->balance : 0.00) - $validated['amount'];
 
             ClientLedger::create([
-                'client_id'          => $client->id,
-                'transaction_date'   => Carbon::now()->toDateString(),
-                'document_type'      => 'Payment',
+                'client_id' => $client->id,
+                'transaction_date' => Carbon::now()->toDateString(),
+                'document_type' => 'Payment',
                 'document_reference' => $receiptCode,
-                'debit'              => 0.00,
-                'credit'             => $validated['amount'],
-                'balance'            => $runningBalance,
-                'notes'              => $validated['notes'] ?? null,
+                'debit' => 0.00,
+                'credit' => $validated['amount'],
+                'balance' => $runningBalance,
+                'notes' => $validated['notes'] ?? null,
             ]);
 
             return $payment;
@@ -341,13 +344,13 @@ class FinancialController extends Controller
         $invoice = Invoice::find($validated['invoice_id']);
 
         AuditLog::create([
-            'user_id'      => $user->id,
-            'action'       => 'record_payment',
+            'user_id' => $user->id,
+            'action' => 'record_payment',
             'subject_type' => 'Payment',
-            'subject_id'   => $payment->id,
-            'metadata'     => ['amount' => $payment->amount, 'invoice_code' => $invoice->invoice_code],
-            'ip_address'   => $request->ip(),
-            'user_agent'   => $request->userAgent(),
+            'subject_id' => $payment->id,
+            'metadata' => ['amount' => $payment->amount, 'invoice_code' => $invoice->invoice_code],
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
         ]);
 
         Cache::increment('dashboard_v');
