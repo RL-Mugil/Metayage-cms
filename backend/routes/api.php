@@ -58,6 +58,7 @@ Route::middleware(['auth:sanctum', 'throttle:60,1'])->group(function () {
     // Enterprise HRMS
     Route::get('/hrms/stats', [HRMSController::class, 'stats']);
     Route::get('/hrms/employees', [HRMSController::class, 'employees']);
+    Route::get('/hrms/employees/workload', [HRMSController::class, 'employeeWorkload']);
     Route::post('/hrms/employees', [HRMSController::class, 'createEmployee']);
     Route::put('/hrms/employees/{id}', [HRMSController::class, 'updateEmployee']);
     Route::delete('/hrms/employees/{id}', [HRMSController::class, 'deleteEmployee']);
@@ -139,6 +140,7 @@ Route::middleware(['auth:sanctum', 'throttle:60,1'])->group(function () {
     Route::get('/reminders', [\App\Http\Controllers\ReminderController::class, 'index']);
     Route::post('/reminders', [\App\Http\Controllers\ReminderController::class, 'store']);
     Route::put('/reminders/{id}', [\App\Http\Controllers\ReminderController::class, 'update']);
+    Route::delete('/reminders/{id}', [\App\Http\Controllers\ReminderController::class, 'destroy']);
 
     // Feedback / CSAT
     Route::get('/feedback', [\App\Http\Controllers\FeedbackController::class, 'index']);

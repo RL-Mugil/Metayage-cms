@@ -81,4 +81,18 @@ class ReminderController extends Controller
 
         return response()->json(['ok' => true]);
     }
+
+    public function destroy(Request $request, $id)
+    {
+        if ($deny = $this->denyClients($request)) return $deny;
+
+        $user = $request->user();
+        $reminder = Reminder::where('id', $id)
+            ->where('user_id', $user->id)
+            ->firstOrFail();
+
+        $reminder->delete();
+
+        return response()->json(['message' => 'Reminder deleted']);
+    }
 }

@@ -1,11 +1,10 @@
 import { Head } from "@inertiajs/react";
 import { useEffect, useState } from "react";
-import { Bell, BellOff, CheckCircle2, Clock, Calendar, Plus, AlertCircle, Loader2 } from "lucide-react";
+import { Bell, BellOff, CheckCircle2, Clock, Calendar, Plus, AlertCircle, Loader2, Trash2 } from "lucide-react";
 import { api } from "@/lib/api-client";
 import AppLayout from "@/layouts/AppLayout";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { fmtDate } from "@/lib/date-utils";
 
@@ -23,6 +22,11 @@ interface Reminder {
   section: "today" | "week" | "upcoming";
 }
 
+interface EmployeeOption {
+  id: number;
+  name: string;
+}
+
 const CATEGORY_COLORS: Record<Category, string> = {
   Deadline: "bg-red-100 text-red-700 border-red-200",
   Meeting: "bg-blue-100 text-blue-700 border-blue-200",
@@ -37,17 +41,32 @@ export default function Reminders() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showForm, setShowForm] = useState(false);
+  const [employees, setEmployees] = useState<EmployeeOption[]>([]);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
   const [newReminder, setNewReminder] = useState({
     title: "",
     description: "",
     dueDate: "",
     dueTime: "",
     category: "Deadline" as Category,
-    assignedTo: "self",
+    remindTo: "self",
   });
 
   const load = () => api.getReminders().then((d) => setReminders(d as unknown as Reminder[])).catch(() => {}).finally(() => setLoading(false));
-  useEffect(() => { load(); }, []);
+
+  useEffect(() => {
+    load();
+    api.getEmployees()
+      .then((list) => {
+        setEmployees(
+          list.map((e: any) => ({
+            id: e.user_id ?? e.id,
+            name: e.user?.name ?? e.full_name ?? `Employee #${e.id}`,
+          }))
+        );
+      })
+      .catch(() => {});
+  }, []);
 
   function toggleComplete(id: number) {
     const target = reminders.find((r) => r.id === id);
@@ -57,19 +76,32 @@ export default function Reminders() {
     api.updateReminder(id, { completed: next }).catch(() => load());
   }
 
+  async function deleteReminder(id: number) {
+    setDeletingId(id);
+    try {
+      await api.deleteReminder(id);
+      setReminders((prev) => prev.filter((r) => r.id !== id));
+    } catch {
+      load();
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
   async function saveReminder() {
     if (!newReminder.title || !newReminder.dueDate) return;
     setSaving(true);
     try {
+      const scope = newReminder.remindTo === "self" ? "self" : "team";
       await api.createReminder({
         title: newReminder.title,
         description: newReminder.description || null,
         category: newReminder.category,
         due_date: newReminder.dueDate,
         due_time: newReminder.dueTime || null,
-        scope: newReminder.assignedTo === "self" ? "self" : "team",
+        scope,
       });
-      setNewReminder({ title: "", description: "", dueDate: "", dueTime: "", category: "Deadline", assignedTo: "self" });
+      setNewReminder({ title: "", description: "", dueDate: "", dueTime: "", category: "Deadline", remindTo: "self" });
       setShowForm(false);
       load();
     } catch { /* validation errors keep the form open */ }
@@ -80,7 +112,12 @@ export default function Reminders() {
   const dueToday = reminders.filter(
     (r) => !r.completed && r.section === "today"
   ).length;
-  const overdue = 0; // For demo purposes
+
+  const overdueCount = reminders.filter((r) => {
+    if (r.completed) return false;
+    const due = new Date(r.dueDate + "T00:00:00");
+    return due < new Date(new Date().toDateString());
+  }).length;
 
   const bySection = (section: "today" | "week" | "upcoming") =>
     reminders.filter((r) => r.section === section);
@@ -143,11 +180,11 @@ export default function Reminders() {
           </Card>
           <Card className="border-border">
             <CardContent className="flex items-center gap-3 py-4">
-              <AlertCircle className={`h-5 w-5 ${overdue > 0 ? "text-red-500" : "text-muted-foreground"}`} />
+              <AlertCircle className={`h-5 w-5 ${overdueCount > 0 ? "text-red-500" : "text-muted-foreground"}`} />
               <div>
                 <p className="text-xs text-muted-foreground">Overdue</p>
-                <p className={`text-2xl font-bold ${overdue > 0 ? "text-red-500" : "text-foreground"}`}>
-                  {overdue}
+                <p className={`text-2xl font-bold ${overdueCount > 0 ? "text-red-500" : "text-foreground"}`}>
+                  {overdueCount}
                 </p>
               </div>
             </CardContent>
@@ -211,14 +248,18 @@ export default function Reminders() {
                   </select>
                 </div>
                 <div className="space-y-1">
-                  <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Assign To</label>
+                  <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Remind To</label>
                   <select
                     className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold/40"
-                    value={newReminder.assignedTo}
-                    onChange={(e) => setNewReminder({ ...newReminder, assignedTo: e.target.value })}
+                    value={newReminder.remindTo}
+                    onChange={(e) => setNewReminder({ ...newReminder, remindTo: e.target.value })}
                   >
                     <option value="self">Myself</option>
-                    <option value="team">Team</option>
+                    {employees.map((emp) => (
+                      <option key={emp.id} value={String(emp.id)}>
+                        {emp.name}
+                      </option>
+                    ))}
                   </select>
                 </div>
               </div>
@@ -288,6 +329,17 @@ export default function Reminders() {
                           </span>
                         </div>
                       </div>
+                      {/* Delete button */}
+                      <button
+                        onClick={() => deleteReminder(reminder.id)}
+                        disabled={deletingId === reminder.id}
+                        className="flex-shrink-0 p-1.5 rounded hover:bg-destructive/20 text-muted-foreground hover:text-destructive transition-colors"
+                        title="Delete reminder"
+                      >
+                        {deletingId === reminder.id
+                          ? <Loader2 className="h-4 w-4 animate-spin" />
+                          : <Trash2 className="h-4 w-4" />}
+                      </button>
                     </CardContent>
                   </Card>
                 ))}
@@ -295,6 +347,13 @@ export default function Reminders() {
             </div>
           );
         })}
+
+        {reminders.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-16 gap-3 text-muted-foreground">
+            <Bell className="h-10 w-10 opacity-30" />
+            <p className="text-sm">No reminders yet. Create one above.</p>
+          </div>
+        )}
       </div>
     </AppLayout>
   );

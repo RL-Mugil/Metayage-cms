@@ -363,6 +363,12 @@ export const api = {
   async updateReminder(id: number | string, data: { completed: boolean }): Promise<Record<string, unknown>> {
     return this.request(`/reminders/${id}`, { method: 'PUT', body: JSON.stringify(data) })
   },
+  async deleteReminder(id: number | string): Promise<{ message: string }> {
+    return this.request(`/reminders/${id}`, { method: 'DELETE' })
+  },
+  async getEmployeeWorkload(): Promise<{ user_id: number; project_count: number; tracker_count: number; total: number }[]> {
+    return this.request('/hrms/employees/workload')
+  },
 
   // ── Feedback / CSAT ──
   async getFeedback(): Promise<Record<string, unknown>[]> {

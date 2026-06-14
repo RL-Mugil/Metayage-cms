@@ -205,4 +205,48 @@ class HRMSController extends Controller
         return response()->json(['message' => 'Employee deactivated']);
     }
 
+    public function employeeWorkload(Request $request)
+    {
+        $projectCounts = \DB::table('projects')
+            ->select('patent_engineer_id as user_id', \DB::raw('COUNT(*) as project_count'))
+            ->whereNull('deleted_at')
+            ->whereNotNull('patent_engineer_id')
+            ->whereNotIn('status', ['Completed', 'Archived'])
+            ->groupBy('patent_engineer_id')
+            ->get()
+            ->keyBy('user_id');
+
+        $trackerCounts = \DB::select("
+            SELECT uid AS user_id, COUNT(*) AS tracker_count
+            FROM (
+                SELECT pcm_id AS uid FROM tracker_rows WHERE pcm_id IS NOT NULL
+                UNION ALL
+                SELECT scm_id FROM tracker_rows WHERE scm_id IS NOT NULL
+                UNION ALL
+                SELECT pr_id FROM tracker_rows WHERE pr_id IS NOT NULL
+            ) t
+            GROUP BY uid
+        ");
+
+        $trackerByUser = [];
+        foreach ($trackerCounts as $tc) {
+            $trackerByUser[(int) $tc->user_id] = (int) $tc->tracker_count;
+        }
+
+        $allUserIds = array_unique(array_merge(
+            $projectCounts->keys()->toArray(),
+            array_keys($trackerByUser)
+        ));
+
+        $result = [];
+        foreach ($allUserIds as $uid) {
+            $uid = (int) $uid;
+            $pCount = isset($projectCounts[$uid]) ? (int) $projectCounts[$uid]->project_count : 0;
+            $tCount = $trackerByUser[$uid] ?? 0;
+            $result[] = ['user_id' => $uid, 'project_count' => $pCount, 'tracker_count' => $tCount, 'total' => $pCount + $tCount];
+        }
+
+        return response()->json($result);
+    }
+
 }

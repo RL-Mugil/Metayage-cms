@@ -1,24 +1,12 @@
 import { Head } from "@inertiajs/react";
-import { useEffect, useState } from "react";
-import { Star, MessageSquare, Send, Filter, Loader2 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Star, MessageSquare, Send, Filter, Loader2, Search, X } from "lucide-react";
 import { api } from "@/lib/api-client";
 import AppLayout from "@/layouts/AppLayout";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { fmtDate } from "@/lib/date-utils";
-
-const CLIENTS = [
-  "Acme Corporation",
-  "Tech Solutions Ltd",
-  "InnovateTech Inc",
-  "GlobalPatent Group",
-  "BioMed Research",
-  "StartupLabs",
-  "Enterprise Corp",
-  "FutureMark LLC",
-];
 
 const CATEGORY_COLORS: Record<string, string> = {
   Service: "bg-blue-100 text-blue-700 border-blue-200",
@@ -37,6 +25,112 @@ function StarDisplay({ rating, size = "sm" }: { rating: number; size?: "sm" | "l
         </span>
       ))}
     </span>
+  );
+}
+
+interface ClientOption {
+  id: number;
+  label: string;
+}
+
+function ClientCombobox({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const [options, setOptions] = useState<ClientOption[]>([]);
+  const [query, setQuery] = useState(value);
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setLoading(true);
+    const params = new URLSearchParams({ per_page: "200" });
+    api.getClients(params)
+      .then((res) => {
+        const list = res.data ?? (Array.isArray(res) ? res : []);
+        setOptions(
+          (list as any[]).map((c) => ({
+            id: c.id,
+            label: c.company_name || c.legal_name || `Client #${c.id}`,
+          }))
+        );
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const filtered = query
+    ? options.filter((o) => o.label.toLowerCase().includes(query.toLowerCase()))
+    : options;
+
+  function select(opt: ClientOption) {
+    setQuery(opt.label);
+    onChange(opt.label);
+    setOpen(false);
+  }
+
+  function clear() {
+    setQuery("");
+    onChange("");
+    setOpen(false);
+  }
+
+  return (
+    <div ref={ref} className="relative">
+      <div className="relative flex items-center">
+        <Search className="absolute left-3 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+        <input
+          className="w-full rounded-md border border-border bg-background pl-8 pr-8 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold/40"
+          placeholder="Search clients..."
+          value={query}
+          onChange={(e) => { setQuery(e.target.value); onChange(""); setOpen(true); }}
+          onFocus={() => setOpen(true)}
+        />
+        {query && (
+          <button
+            className="absolute right-2 text-muted-foreground hover:text-foreground"
+            onClick={clear}
+            type="button"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </div>
+      {open && (
+        <div className="absolute z-50 mt-1 w-full max-h-48 overflow-y-auto rounded-md border border-border bg-popover shadow-lg">
+          {loading ? (
+            <div className="flex items-center justify-center py-4">
+              <Loader2 className="h-4 w-4 animate-spin text-gold" />
+            </div>
+          ) : filtered.length === 0 ? (
+            <div className="px-3 py-2 text-sm text-muted-foreground">No clients found.</div>
+          ) : (
+            filtered.slice(0, 50).map((opt) => (
+              <button
+                key={opt.id}
+                type="button"
+                className="w-full text-left px-3 py-2 text-sm hover:bg-muted/50 transition-colors"
+                onMouseDown={(e) => { e.preventDefault(); select(opt); }}
+              >
+                {opt.label}
+              </button>
+            ))
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -125,18 +219,10 @@ export default function Feedback() {
                   <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                     Select Client
                   </label>
-                  <select
-                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold/40"
+                  <ClientCombobox
                     value={formData.client}
-                    onChange={(e) => setFormData({ ...formData, client: e.target.value })}
-                  >
-                    <option value="">-- Select a client --</option>
-                    {CLIENTS.map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(v) => setFormData({ ...formData, client: v })}
+                  />
                 </div>
                 <div className="space-y-1">
                   <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
@@ -155,7 +241,7 @@ export default function Feedback() {
                 <Button
                   onClick={handleSend}
                   className="bg-gold text-background hover:bg-gold/90"
-                  disabled={formSent}
+                  disabled={formSent || !formData.client || !formData.subject}
                 >
                   <Send className="mr-2 h-4 w-4" />
                   {formSent ? "Sent!" : "Send Request"}

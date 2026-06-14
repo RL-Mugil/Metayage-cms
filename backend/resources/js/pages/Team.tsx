@@ -1,6 +1,6 @@
-import { Head, Link } from "@inertiajs/react";
+import { Head } from "@inertiajs/react";
 import { useEffect, useState } from "react";
-import { Users, Grid, List, Search, Mail, Briefcase, Loader2, Plus, X } from "lucide-react";
+import { Users, Grid, List, Search, Mail, Briefcase, Loader2, Plus, X, FolderOpen } from "lucide-react";
 import AppLayout from "@/layouts/AppLayout";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent } from "@/components/ui/card";
@@ -22,9 +22,26 @@ function getInitials(name: string) {
     .slice(0, 2);
 }
 
-// Stable pseudo-random workload per employee id (40–90%)
-function workloadPct(id: number) {
-  return 40 + (id * 17) % 51;
+interface WorkloadEntry {
+  user_id: number;
+  project_count: number;
+  tracker_count: number;
+  total: number;
+}
+
+const MAX_WORKLOAD = 20; // total >= 20 cases = 100%
+
+function calcWorkloadPct(total: number) {
+  return Math.min(100, Math.round((total / MAX_WORKLOAD) * 100));
+}
+
+interface AssignedProject {
+  id: number;
+  project_code: string;
+  docket_number: string | null;
+  client_name: string | null;
+  status: string | null;
+  hard_deadline: string | null;
 }
 
 export default function Team() {
@@ -32,6 +49,7 @@ export default function Team() {
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [search, setSearch] = useState("");
+  const [workload, setWorkload] = useState<Record<number, WorkloadEntry>>({});
 
   const [showAddModal, setShowAddModal] = useState(false);
   const [showInviteModal, setShowInviteModal] = useState(false);
@@ -40,8 +58,19 @@ export default function Team() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
 
+  // Assigned projects modal
+  const [assignedModal, setAssignedModal] = useState<{ emp: any; projects: AssignedProject[]; loading: boolean } | null>(null);
+
   useEffect(() => {
-    api.getEmployees().then(setEmployees).catch(() => {}).finally(() => setLoading(false));
+    Promise.all([
+      api.getEmployees(),
+      api.getEmployeeWorkload().catch(() => [] as WorkloadEntry[]),
+    ]).then(([emps, wl]) => {
+      setEmployees(emps);
+      const map: Record<number, WorkloadEntry> = {};
+      (wl as WorkloadEntry[]).forEach((w) => { map[w.user_id] = w; });
+      setWorkload(map);
+    }).catch(() => {}).finally(() => setLoading(false));
   }, []);
 
   async function handleAddEmployee() {
@@ -52,6 +81,12 @@ export default function Team() {
       setEmployees(prev => [created, ...prev]);
       setShowAddModal(false);
       setAddForm({ full_name: "", work_email: "", department_name: "", designation_title: "", work_location: "Mumbai", date_of_joining: "" });
+      // Refresh workload after adding
+      api.getEmployeeWorkload().then((wl) => {
+        const map: Record<number, WorkloadEntry> = {};
+        (wl as WorkloadEntry[]).forEach((w) => { map[w.user_id] = w; });
+        setWorkload(map);
+      }).catch(() => {});
     } catch (e: any) { setSaveError(e.message || "Failed to add employee."); }
     finally { setSaving(false); }
   }
@@ -61,6 +96,27 @@ export default function Team() {
     alert(`Invitation sent to ${inviteEmail}`);
     setInviteEmail("");
     setShowInviteModal(false);
+  }
+
+  async function openAssignedProjects(emp: any) {
+    const userId = emp.user_id ?? emp.user?.id;
+    if (!userId) return;
+    setAssignedModal({ emp, projects: [], loading: true });
+    try {
+      const params = new URLSearchParams({ patent_engineer_id: String(userId), per_page: "100" });
+      const res = await api.getProjectsPaged(params) as any;
+      const list: AssignedProject[] = (Array.isArray(res) ? res : (res?.data ?? [])).map((p: any) => ({
+        id: p.id,
+        project_code: p.project_code,
+        docket_number: p.docket_number ?? null,
+        client_name: p.client?.company_name ?? p.client_name ?? null,
+        status: p.status ?? null,
+        hard_deadline: p.hard_deadline ?? null,
+      }));
+      setAssignedModal({ emp, projects: list, loading: false });
+    } catch {
+      setAssignedModal((prev) => prev ? { ...prev, loading: false } : null);
+    }
   }
 
   const filtered = employees.filter((e) => {
@@ -75,6 +131,14 @@ export default function Team() {
     (e) => (e.employment_status ?? "").toLowerCase() === "active"
   ).length;
   const departments = new Set(employees.map((e) => e.department?.name).filter(Boolean)).size;
+
+  function getWorkloadForEmp(emp: any) {
+    const userId = emp.user_id ?? emp.user?.id;
+    if (!userId) return { total: 0, pct: 0 };
+    const w = workload[userId];
+    if (!w) return { total: 0, pct: 0 };
+    return { total: w.total, pct: calcWorkloadPct(w.total) };
+  }
 
   if (loading) {
     return (
@@ -162,6 +226,67 @@ export default function Team() {
             <div className="flex gap-2 mt-4">
               <Button className="bg-gold hover:bg-gold/90 text-black flex-1" onClick={handleInvite}><Mail className="h-4 w-4 mr-2" />Send Invite</Button>
               <Button variant="outline" onClick={() => setShowInviteModal(false)}>Cancel</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Assigned Projects Modal */}
+      {assignedModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col">
+            <div className="flex items-center justify-between p-5 border-b border-border">
+              <div>
+                <h2 className="font-display text-base font-semibold">
+                  Assigned Projects — {assignedModal.emp.user?.name ?? assignedModal.emp.full_name ?? "Employee"}
+                </h2>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Cases where this employee is Patent Engineer (Projects) or PR (Tracker)
+                </p>
+              </div>
+              <button onClick={() => setAssignedModal(null)}><X className="h-5 w-5 text-muted-foreground" /></button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-5">
+              {assignedModal.loading ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="h-6 w-6 animate-spin text-gold" />
+                </div>
+              ) : assignedModal.projects.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 gap-3 text-muted-foreground">
+                  <FolderOpen className="h-10 w-10 opacity-30" />
+                  <p className="text-sm">No projects assigned as Patent Engineer.</p>
+                </div>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead className="text-xs uppercase tracking-wider text-muted-foreground">
+                    <tr className="border-b border-border">
+                      <th className="pb-2 text-left">Code</th>
+                      <th className="pb-2 text-left">Docket</th>
+                      <th className="pb-2 text-left">Client</th>
+                      <th className="pb-2 text-left">Status</th>
+                      <th className="pb-2 text-left">Hard Deadline</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {assignedModal.projects.map((p) => (
+                      <tr key={p.id} className="border-b border-border/50 hover:bg-muted/20">
+                        <td className="py-2.5 font-mono text-xs">{p.project_code}</td>
+                        <td className="py-2.5 font-mono text-xs text-muted-foreground">{p.docket_number ?? "—"}</td>
+                        <td className="py-2.5 text-xs truncate max-w-[160px]">{p.client_name ?? "—"}</td>
+                        <td className="py-2.5">
+                          <Badge variant="outline" className="text-[10px]">{p.status ?? "—"}</Badge>
+                        </td>
+                        <td className="py-2.5 text-xs text-muted-foreground font-mono">
+                          {p.hard_deadline ? new Date(p.hard_deadline + "T00:00:00").toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+            <div className="p-4 border-t border-border text-right">
+              <Button variant="outline" onClick={() => setAssignedModal(null)}>Close</Button>
             </div>
           </div>
         </div>
@@ -258,7 +383,7 @@ export default function Team() {
               const role = emp.designation?.title ?? "—";
               const dept = emp.department?.name ?? "—";
               const status = emp.employment_status ?? "Active";
-              const pct = workloadPct(emp.id);
+              const { total, pct } = getWorkloadForEmp(emp);
 
               return (
                 <Card key={emp.id} className="border-border hover:shadow-md transition-shadow">
@@ -280,7 +405,7 @@ export default function Team() {
                     <div className="w-full">
                       <div className="flex justify-between text-[10px] text-muted-foreground mb-1">
                         <span>Workload</span>
-                        <span className="text-gold">{pct}%</span>
+                        <span className="text-gold">{total} cases ({pct}%)</span>
                       </div>
                       <div className="w-full h-1.5 bg-muted rounded-full">
                         <div className="h-full bg-gold rounded-full" style={{ width: `${pct}%` }} />
@@ -292,8 +417,14 @@ export default function Team() {
                     >
                       {status}
                     </Badge>
-                    <Button asChild size="sm" variant="outline" className="w-full mt-1 text-xs">
-                      <Link href="/projects">View Projects</Link>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="w-full mt-1 text-xs"
+                      onClick={() => openAssignedProjects(emp)}
+                    >
+                      <FolderOpen className="h-3.5 w-3.5 mr-1.5" />
+                      Assigned Projects
                     </Button>
                   </CardContent>
                 </Card>
@@ -330,7 +461,7 @@ export default function Team() {
                     const role = emp.designation?.title ?? "—";
                     const dept = emp.department?.name ?? "—";
                     const status = emp.employment_status ?? "Active";
-                    const pct = workloadPct(emp.id);
+                    const { total, pct } = getWorkloadForEmp(emp);
 
                     return (
                       <tr key={emp.id} className="border-t border-border hover:bg-muted/30">
@@ -365,12 +496,18 @@ export default function Team() {
                                 style={{ width: `${pct}%` }}
                               />
                             </div>
-                            <span className="text-xs text-muted-foreground">{pct}%</span>
+                            <span className="text-xs text-muted-foreground">{total} ({pct}%)</span>
                           </div>
                         </td>
                         <td className="px-4 py-3">
-                          <Button asChild size="sm" variant="outline" className="text-xs h-7">
-                            <Link href="/projects">View Projects</Link>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-xs h-7"
+                            onClick={() => openAssignedProjects(emp)}
+                          >
+                            <FolderOpen className="h-3 w-3 mr-1" />
+                            Assigned Projects
                           </Button>
                         </td>
                       </tr>

@@ -108,6 +108,10 @@ class ProjectController extends Controller
                 ->whereNotIn('status', ['Closed', 'Completed']);
         }
 
+        if ($request->filled('patent_engineer_id')) {
+            $query->where('patent_engineer_id', (int) $request->patent_engineer_id);
+        }
+
         $sortBy = in_array($request->sort_by, ['project_name', 'docket_number', 'status', 'hard_deadline', 'filing_date'])
             ? $request->sort_by : 'hard_deadline';
         $sortDir = $request->sort_dir === 'desc' ? 'desc' : 'asc';
