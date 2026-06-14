@@ -126,6 +126,16 @@ class LeaveController extends Controller
         $this->authorize('approveLeave', \App\Models\Employee::class);
 
         $leave = LeaveRequest::findOrFail($id);
+
+        if ($user->role === 'manager') {
+            $allowed = Employee::where('reporting_manager_id', $user->id)
+                ->orWhere('dotted_line_manager_id', $user->id)
+                ->pluck('id')->all();
+            if (! in_array($leave->employee_id, $allowed)) {
+                return response()->json(['message' => 'Forbidden'], 403);
+            }
+        }
+
         $request->validate(['status' => 'required|in:Approved,Rejected,Cancelled']);
 
         $leave = app(\App\Services\LeaveApprovalService::class)

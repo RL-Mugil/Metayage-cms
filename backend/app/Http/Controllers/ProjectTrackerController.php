@@ -142,8 +142,18 @@ class ProjectTrackerController extends Controller implements HasMiddleware
         );
     }
 
+    private function denyNonManagement(Request $request): ?\Illuminate\Http\JsonResponse
+    {
+        if (! in_array($request->user()->role, ['super_admin', 'partner', 'manager'])) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+        return null;
+    }
+
     public function createRow(Request $request)
     {
+        if ($deny = $this->denyNonManagement($request)) return $deny;
+
         $circle = TrackerCircle::where('slug', $request->circle_slug ?? 'a')->firstOrFail();
 
         $row = TrackerRow::create([
@@ -159,6 +169,8 @@ class ProjectTrackerController extends Controller implements HasMiddleware
 
     public function updateRow(Request $request, $id)
     {
+        if ($deny = $this->denyNonManagement($request)) return $deny;
+
         $row = TrackerRow::findOrFail($id);
 
         $allowed = [
@@ -201,8 +213,10 @@ class ProjectTrackerController extends Controller implements HasMiddleware
         return response()->json($row->fresh());
     }
 
-    public function deleteRow($id)
+    public function deleteRow(Request $request, $id)
     {
+        if ($deny = $this->denyNonManagement($request)) return $deny;
+
         TrackerRow::findOrFail($id)->delete();
         return response()->json(['message' => 'Deleted']);
     }
@@ -327,14 +341,18 @@ class ProjectTrackerController extends Controller implements HasMiddleware
 
     public function addMember(Request $request, $id)
     {
+        if ($deny = $this->denyNonManagement($request)) return $deny;
+
         $circle = TrackerCircle::findOrFail($id);
         $request->validate(['user_id' => 'required|exists:users,id']);
         $circle->members()->syncWithoutDetaching([$request->user_id]);
         return response()->json($circle->load('members:id,name,email,role'));
     }
 
-    public function removeMember($id, $userId)
+    public function removeMember(Request $request, $id, $userId)
     {
+        if ($deny = $this->denyNonManagement($request)) return $deny;
+
         $circle = TrackerCircle::findOrFail($id);
         $circle->members()->detach($userId);
         return response()->json($circle->load('members:id,name,email,role'));

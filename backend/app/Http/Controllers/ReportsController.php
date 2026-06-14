@@ -74,8 +74,11 @@ class ReportsController extends Controller
                 return $this->paginatedResponse($type, $rows, $paginator, $perPage);
 
             case 'financial-summary':
-                $paginator = Invoice::with('client')
-                    ->paginate($perPage, ['*'], 'page', $page);
+                $invoiceQuery = Invoice::with('client');
+                if ($user->role === 'manager') {
+                    $invoiceQuery->whereHas('project', fn ($q) => $q->where('assigned_manager_id', $user->id));
+                }
+                $paginator = $invoiceQuery->paginate($perPage, ['*'], 'page', $page);
                 $rows = $paginator->getCollection()->map(fn($i) => [
                     'invoice_code'  => $i->invoice_code,
                     'client'        => $i->client?->company_name,

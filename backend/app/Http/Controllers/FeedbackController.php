@@ -4,7 +4,9 @@ namespace App\Http\Controllers;
 
 use App\Http\PaginationHelper;
 use App\Models\Client;
+use App\Models\ClientContact;
 use App\Models\FeedbackEntry;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -74,11 +76,21 @@ class FeedbackController extends Controller
             'subject' => 'required|string|max:255',
         ]);
 
+        // Resolve the client's portal user so the notification lands on their dashboard.
+        $clientUser = Client::where('company_name', $validated['client'])
+            ->first()
+            ?->contacts()
+            ->join('users', 'users.email', '=', 'client_contacts.email')
+            ->select('users.id')
+            ->first();
+
+        $notifyUserId = $clientUser?->id ?? $request->user()->id;
+
         DB::table('ip_notifications')->insert([
-            'user_id' => $request->user()->id,
+            'user_id' => $notifyUserId,
             'type' => 'feedback_request',
-            'title' => 'Feedback request sent',
-            'description' => "CSAT survey \"{$validated['subject']}\" sent to {$validated['client']}",
+            'title' => 'Feedback request received',
+            'description' => "CSAT survey \"{$validated['subject']}\" has been sent to you by {$request->user()->name}",
             'meta' => json_encode($validated),
             'created_at' => now(),
             'updated_at' => now(),

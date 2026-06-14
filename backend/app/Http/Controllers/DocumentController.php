@@ -159,15 +159,14 @@ class DocumentController extends Controller
 
         $doc = Document::where('storage_path', $path)->first();
         if ($doc) {
-            foreach ($doc->versions as $version) {
-                Storage::disk('local')->delete($version->storage_path);
-            }
-        }
-
-        Storage::disk('local')->delete($path);
-
-        if ($doc) {
-            $doc->delete();
+            // Hard-delete version records (DocumentVersion has no SoftDeletes).
+            // Physical files are preserved so the document can be restored from
+            // the soft-deleted Document record if needed.
+            $doc->versions()->delete();
+            $doc->delete(); // soft-delete: sets deleted_at, leaves files on disk
+        } else {
+            // No DB record — delete the orphaned file directly.
+            Storage::disk('local')->delete($path);
         }
 
         AuditLog::create([

@@ -26,11 +26,16 @@ class DiscussionController extends Controller
         $query = DiscussionThread::with(['messages.author:id,name'])->orderByDesc('updated_at');
 
         if (in_array($user->role, ['associate', 'paralegal'])) {
-            $query->whereHas('project', function ($q) use ($user) {
-                $q->where('assigned_manager_id', $user->id)
-                  ->orWhere('assigned_partner_id', $user->id)
-                  ->orWhere('patent_engineer_id', $user->id)
-                  ->orWhereHas('tasks', fn ($t) => $t->where('assignee_id', $user->id));
+            // General threads (no project) are visible to all staff.
+            // Project threads are visible only if the user is assigned to that project.
+            $query->where(function ($q) use ($user) {
+                $q->whereNull('project_id')
+                  ->orWhereHas('project', function ($pq) use ($user) {
+                      $pq->where('assigned_manager_id', $user->id)
+                         ->orWhere('assigned_partner_id', $user->id)
+                         ->orWhere('patent_engineer_id', $user->id)
+                         ->orWhereHas('tasks', fn ($t) => $t->where('assignee_id', $user->id));
+                  });
             });
         }
         $paginated = PaginationHelper::paginate($query, $request);
@@ -84,7 +89,22 @@ class DiscussionController extends Controller
     {
         if ($deny = $this->denyClients($request)) return $deny;
 
+        $user   = $request->user();
         $thread = DiscussionThread::findOrFail($id);
+
+        if (in_array($user->role, ['associate', 'paralegal']) && $thread->project_id !== null) {
+            $project = $thread->project;
+            $canReply = $project && (
+                $project->assigned_manager_id === $user->id ||
+                $project->assigned_partner_id === $user->id ||
+                $project->patent_engineer_id  === $user->id ||
+                $project->tasks()->where('assignee_id', $user->id)->exists()
+            );
+            if (! $canReply) {
+                return response()->json(['message' => 'Forbidden'], 403);
+            }
+        }
+
         $validated = $request->validate(['message' => 'required|string']);
 
         $message = DiscussionMessage::create([

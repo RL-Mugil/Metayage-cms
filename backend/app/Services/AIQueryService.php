@@ -96,9 +96,9 @@ class AIQueryService
             throw new \RuntimeException('Live data queries are not available for client accounts.');
         }
 
-        // Associates and paralegals have no Financial access per RBAC matrix.
+        // Associates, paralegals, and managers cannot access financial or payroll data.
         // Block programmatically — do not rely on LLM prompt instructions alone.
-        if (in_array($role, ['associate', 'paralegal'])) {
+        if (in_array($role, ['associate', 'paralegal', 'manager'])) {
             foreach (self::FINANCIAL_TABLES as $table) {
                 if (preg_match('/\b' . preg_quote($table, '/') . '\b/i', $sql)) {
                     throw new \RuntimeException("Access to financial data ({$table}) is not permitted for your role.");
