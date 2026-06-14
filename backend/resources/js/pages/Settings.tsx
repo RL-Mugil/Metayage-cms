@@ -45,11 +45,11 @@ export default function Settings() {
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [profile, setProfile] = useState({ name: user?.name || "", email: user?.email || "", timezone: "Asia/Kolkata", language: "English" });
-  const [notifs, setNotifs] = useState(() => loadPrefs("ipflow.notifs", { taskAssigned: true, deadlineEmail: true, paymentReceived: true, pushNotif: false, weeklyDigest: true, monthlyReport: true }));
+  const [notifs, setNotifs] = useState({ taskAssigned: true, deadlineEmail: true, paymentReceived: true, pushNotif: false, weeklyDigest: true, monthlyReport: true });
   const [theme, setTheme] = useState<"light" | "dark" | "system">(() => loadPrefs("ipflow.appearance", { theme: "dark" as const }).theme);
   const [accentColor, setAccentColor] = useState(() => loadPrefs("ipflow.appearance", { accent: "gold" }).accent);
   const [pwForm, setPwForm] = useState({ current: "", next: "", confirm: "" });
-  const [system, setSystem] = useState(() => loadPrefs("ipflow.system", { company: "My IP Law Firm", timezone: "Asia/Kolkata", currency: "INR", fiscalMonth: "April", maxUploadMB: "50" }));
+  const [system, setSystem] = useState({ company: "My IP Law Firm", currency: "INR", fiscalMonth: "April", maxUploadMB: "50" });
 
   useEffect(() => {
     api.getSettings().then((data) => {
@@ -105,7 +105,6 @@ export default function Settings() {
     setError("");
     try {
       await api.updateNotifications(notifs);
-      localStorage.setItem("ipflow.notifs", JSON.stringify(notifs));
       flashSaved();
     } catch (e: any) {
       setError(e.message || "Failed to save notification preferences.");
@@ -318,7 +317,6 @@ export default function Settings() {
               <CardContent className="space-y-4">
                 {[
                   { label: "Company / Firm Name", key: "company" },
-                  { label: "Default Timezone", key: "timezone" },
                   { label: "Currency", key: "currency" },
                   { label: "Fiscal Year Start Month", key: "fiscalMonth" },
                   { label: "Max File Upload (MB)", key: "maxUploadMB" },
