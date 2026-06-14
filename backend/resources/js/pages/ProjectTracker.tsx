@@ -99,12 +99,12 @@ interface TrackerProject {
   project_code: string;
   docket_number: string | null;
   client_name: string | null;
-  partner_id: number | null;
-  partner_name: string | null;
-  manager_id: number | null;
-  manager_name: string | null;
-  engineer_id: number | null;
-  engineer_name: string | null;
+  pcm_id: number | null;
+  pcm_name: string | null;
+  scm_id: number | null;
+  scm_name: string | null;
+  pr_id: number | null;
+  pr_name: string | null;
   start_date: string | null;
   record_type: string | null;
 }
@@ -248,12 +248,12 @@ export default function ProjectTracker() {
       project_id:    project.id,
       docket_number: display,
       client_name:   project.client_name || null,
-      pcm_id:        project.partner_id || null,
-      pcm:           project.partner_name || null,
-      scm_id:        project.manager_id || null,
-      scm:           project.manager_name || null,
-      pr_id:         project.engineer_id || null,
-      pr:            project.engineer_name || null,
+      pcm_id:        project.pcm_id || null,
+      pcm:           project.pcm_name || null,
+      scm_id:        project.scm_id || null,
+      scm:           project.scm_name || null,
+      pr_id:         project.pr_id || null,
+      pr:            project.pr_name || null,
       uin:           display,
       record_type:   project.record_type || null,
     };
