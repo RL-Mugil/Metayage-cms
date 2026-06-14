@@ -36,7 +36,10 @@ class LeaveApprovalService
             // Cancellation of an already-approved leave: restore balance then mark Cancelled.
             if ($locked->status === 'Approved' && $status === 'Cancelled') {
                 $column      = self::TYPE_COLUMN[$locked->leave_type] ?? 'casual_leave';
-                $leaveYear   = Carbon::parse($locked->from_date)->year;
+                // from_date is cast to 'date' in the model, so it's already a Carbon instance
+                $leaveYear   = $locked->from_date instanceof Carbon
+                    ? $locked->from_date->year
+                    : Carbon::parse($locked->from_date)->year;
                 $balance     = LeaveBalance::where('employee_id', $locked->employee_id)
                     ->where('year', $leaveYear)
                     ->lockForUpdate()
