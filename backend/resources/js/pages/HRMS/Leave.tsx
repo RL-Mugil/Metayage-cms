@@ -24,11 +24,16 @@ const BALANCE_CONFIG = [
   { type: "Personal", column: "casual_leave", total: 8, color: "bg-purple-500" },
 ];
 
-function daysBetween(from: string, to: string): number {
-  const a = new Date(from);
-  const b = new Date(to);
-  const diff = Math.round((b.getTime() - a.getTime()) / 86400000);
-  return diff >= 0 ? diff + 1 : 0;
+function countWorkingDays(from: string, to: string): number {
+  const a = new Date(from + "T00:00:00");
+  const b = new Date(to + "T00:00:00");
+  if (isNaN(a.getTime()) || isNaN(b.getTime()) || a > b) return 0;
+  let count = 0;
+  for (const d = new Date(a); d <= b; d.setDate(d.getDate() + 1)) {
+    const dow = d.getDay();
+    if (dow !== 0 && dow !== 6) count++;
+  }
+  return count;
 }
 
 
@@ -206,7 +211,8 @@ export default function HRMSLeave() {
                 </div>
                 {form.from_date && form.to_date && (
                   <div className="md:col-span-2 text-xs text-muted-foreground">
-                    Duration: <span className="text-gold font-semibold">{daysBetween(form.from_date, form.to_date)} day(s)</span>
+                    Duration: <span className="text-gold font-semibold">{countWorkingDays(form.from_date, form.to_date)} working day(s)</span>
+                    <span className="ml-1 text-muted-foreground/60">(weekends excluded)</span>
                   </div>
                 )}
                 <div className="md:col-span-2 flex gap-2 justify-end pt-1">
@@ -231,14 +237,16 @@ export default function HRMSLeave() {
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-7 gap-1 text-center text-xs mb-1">
-              {["Su","Mo","Tu","We","Th","Fr","Sa"].map((d) => (
-                <div key={d} className="text-muted-foreground font-semibold py-1">{d}</div>
+              {["Su","Mo","Tu","We","Th","Fr","Sa"].map((d, idx) => (
+                <div key={d} className={`font-semibold py-1 ${idx === 0 || idx === 6 ? "text-muted-foreground/40" : "text-muted-foreground"}`}>{d}</div>
               ))}
             </div>
             <div className="grid grid-cols-7 gap-1 text-center text-xs">
               {Array.from({ length: startDayOfWeek }).map((_, i) => <div key={`pad-${i}`} />)}
               {Array.from({ length: daysInMonth }).map((_, i) => {
                 const day = i + 1;
+                const colIdx = (startDayOfWeek + i) % 7;
+                const isWeekend = colIdx === 0 || colIdx === 6;
                 const isLeave = approvedDays.has(day);
                 const isToday = day === now.getDate();
                 return (
@@ -249,6 +257,8 @@ export default function HRMSLeave() {
                         ? "bg-amber-500/20 text-amber-400 font-semibold"
                         : isToday
                         ? "bg-gold/20 text-gold font-semibold ring-1 ring-gold/40"
+                        : isWeekend
+                        ? "text-muted-foreground/30 bg-muted/20"
                         : "text-muted-foreground hover:bg-muted/40"
                     }`}
                   >
@@ -265,6 +275,10 @@ export default function HRMSLeave() {
               <span className="flex items-center gap-1.5">
                 <span className="inline-block w-3 h-3 rounded bg-gold/20 border border-gold/40" />
                 Today
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="inline-block w-3 h-3 rounded bg-muted/20 border border-border" />
+                Weekend (not counted)
               </span>
             </div>
           </CardContent>
@@ -340,7 +354,7 @@ export default function HRMSLeave() {
                         <td className="px-4 py-3 font-mono text-xs whitespace-nowrap">{fmtDate(r.from_date)}</td>
                         <td className="px-4 py-3 font-mono text-xs whitespace-nowrap">{fmtDate(r.to_date)}</td>
                         <td className="px-4 py-3 text-center font-semibold">
-                          {r.from_date && r.to_date ? daysBetween(r.from_date, r.to_date) : "—"}
+                          {r.total_days ?? "—"}
                         </td>
                         <td className="px-4 py-3 text-muted-foreground max-w-[160px] truncate" title={r.reason}>
                           {r.reason || "—"}
