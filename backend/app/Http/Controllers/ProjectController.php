@@ -39,7 +39,7 @@ class ProjectController extends Controller
         } elseif (in_array($user->role, ['associate', 'paralegal'])) {
             $base->where(function ($q) use ($user) {
                 $q->where('assigned_manager_id', $user->id)
-                  ->orWhere('assigned_partner_id', $user->id);
+                    ->orWhere('assigned_partner_id', $user->id);
             });
         }
 
@@ -55,11 +55,11 @@ class ProjectController extends Controller
                 SUM(CASE WHEN hard_deadline IS NOT NULL AND hard_deadline < ? AND status NOT IN ('Closed', 'Completed') THEN 1 ELSE 0 END) as overdue
             ", [$today])->first();
             return [
-                'total'       => (int) ($row?->total       ?? 0),
-                'open'        => (int) ($row?->open        ?? 0),
+                'total' => (int) ($row?->total ?? 0),
+                'open' => (int) ($row?->open ?? 0),
                 'in_progress' => (int) ($row?->in_progress ?? 0),
-                'on_hold'     => (int) ($row?->on_hold     ?? 0),
-                'overdue'     => (int) ($row?->overdue     ?? 0),
+                'on_hold' => (int) ($row?->on_hold ?? 0),
+                'overdue' => (int) ($row?->overdue ?? 0),
             ];
         });
 
@@ -80,8 +80,8 @@ class ProjectController extends Controller
             // Associates can see projects assigned to them or their department
             $query->where(function ($q) use ($user) {
                 $q->where('assigned_manager_id', $user->id)
-                  ->orWhere('assigned_partner_id', $user->id)
-                  ->orWhereJsonContains('assigned_team', $user->id);
+                    ->orWhere('assigned_partner_id', $user->id)
+                    ->orWhereJsonContains('assigned_team', $user->id);
             });
         }
 
@@ -90,8 +90,8 @@ class ProjectController extends Controller
             $query->where(function ($q) use ($search) {
                 $sl = strtolower($search);
                 $q->whereRaw('LOWER(project_name) LIKE ?', ["%{$sl}%"])
-                  ->orWhereRaw('LOWER(project_code) LIKE ?', ["%{$sl}%"])
-                  ->orWhereRaw('LOWER(invention_title) LIKE ?', ["%{$sl}%"]);
+                    ->orWhereRaw('LOWER(project_code) LIKE ?', ["%{$sl}%"])
+                    ->orWhereRaw('LOWER(invention_title) LIKE ?', ["%{$sl}%"]);
             });
         }
 
@@ -102,11 +102,11 @@ class ProjectController extends Controller
         if ($request->boolean('overdue')) {
             $today = now()->toDateString();
             $query->whereNotNull('hard_deadline')
-                  ->where('hard_deadline', '<', $today)
-                  ->whereNotIn('status', ['Closed', 'Completed']);
+                ->where('hard_deadline', '<', $today)
+                ->whereNotIn('status', ['Closed', 'Completed']);
         }
 
-        $sortBy  = in_array($request->sort_by, ['project_name', 'docket_number', 'status', 'hard_deadline', 'filing_date'])
+        $sortBy = in_array($request->sort_by, ['project_name', 'docket_number', 'status', 'hard_deadline', 'filing_date'])
             ? $request->sort_by : 'hard_deadline';
         $sortDir = $request->sort_dir === 'desc' ? 'desc' : 'asc';
         $query->orderBy($sortBy, $sortDir);
@@ -150,12 +150,13 @@ class ProjectController extends Controller
             foreach (Project::where('client_id', $validated['client_id'])->whereNotNull('docket_number')->lockForUpdate()->pluck('docket_number') as $dn) {
                 if (strlen($dn) >= strlen($clientCode) + 3) {
                     $seq = (int) substr($dn, strlen($clientCode), 3);
-                    if ($seq > $maxSeq) $maxSeq = $seq;
+                    if ($seq > $maxSeq)
+                        $maxSeq = $seq;
                 }
             }
-            $seq        = str_pad($maxSeq + 1, 3, '0', STR_PAD_LEFT);
-            $office     = strtoupper($validated['patent_office_code'] ?? '');
-            $service    = strtoupper($validated['service_code'] ?? '');
+            $seq = str_pad($maxSeq + 1, 3, '0', STR_PAD_LEFT);
+            $office = strtoupper($validated['patent_office_code'] ?? '');
+            $service = strtoupper($validated['service_code'] ?? '');
             $validated['docket_number'] = $clientCode . $seq . $office . $service;
 
             $project = Project::create($validated);
@@ -222,7 +223,7 @@ class ProjectController extends Controller
         $this->authorize('update', $project);
 
         // Status-only update (no pipeline stage change): update the project's top-level status field.
-        if ($request->filled('status') && ! $request->filled('stage_name')) {
+        if ($request->filled('status') && !$request->filled('stage_name')) {
             $request->validate(['status' => 'required|string|in:Draft,Open,Active,In Progress,On Hold,Closed,Completed']);
             $project->update(['status' => $request->status]);
 
@@ -287,15 +288,15 @@ class ProjectController extends Controller
         // Notify assigned manager via ip_notifications (the table the UI reads from)
         if ($project->assigned_manager_id) {
             DB::table('ip_notifications')->insert([
-                'user_id'     => $project->assigned_manager_id,
-                'type'        => 'system',
-                'title'       => 'Case Stage Updated',
+                'user_id' => $project->assigned_manager_id,
+                'type' => 'system',
+                'title' => 'Case Stage Updated',
                 'description' => "Case '{$project->project_name}' has been moved to '{$stageName}' stage.",
-                'meta'        => json_encode(['project_id' => $project->id, 'stage' => $stageName]),
-                'action_url'  => "/projects/{$project->id}",
-                'read_at'     => null,
-                'created_at'  => now(),
-                'updated_at'  => now(),
+                'meta' => json_encode(['project_id' => $project->id, 'stage' => $stageName]),
+                'action_url' => "/projects/{$project->id}",
+                'read_at' => null,
+                'created_at' => now(),
+                'updated_at' => now(),
             ]);
         }
 
