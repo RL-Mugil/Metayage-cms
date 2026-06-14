@@ -181,7 +181,7 @@ class SettingsController extends Controller
         $request->validate(['password' => 'required|string|min:6']);
 
         $target = User::findOrFail($id);
-        $target->password = $request->input('password');
+        $target->password = Hash::make($request->input('password'));
         $target->save();
         $target->tokens()->delete(); // revoke compromised sessions immediately
 
