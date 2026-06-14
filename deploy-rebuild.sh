@@ -55,10 +55,16 @@ if ! grep -q "SANCTUM_STATEFUL_DOMAINS" .env; then
     echo "SESSION_LIFETIME=120" >> .env
 fi
 
-echo "--- Updating .env: Groq AI key ---"
+echo "--- Groq AI key ---"
+# Groq API key must be set in production .env manually or via deployment secrets.
+# NEVER hardcode credentials in version control. If GROQ_API_KEY is not set,
+# the AI module will fail gracefully at runtime (read-only operations continue).
 if ! grep -q "GROQ_API_KEY" .env; then
+    echo "⚠️  WARNING: GROQ_API_KEY not found in .env. AI queries will fail."
+    echo "   Set GROQ_API_KEY in production .env before enabling AI features."
+fi
+if ! grep -q "GROQ_MODEL" .env; then
     echo "" >> .env
-    echo "GROQ_API_KEY=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" >> .env
     echo "GROQ_MODEL=meta-llama/llama-4-scout-17b-16e-instruct" >> .env
 fi
 

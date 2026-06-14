@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class ComplianceItem extends Model
 {
-    protected $guarded = [];
+    protected $fillable = ['matter', 'type', 'jurisdiction', 'deadline', 'action_required', 'assignee', 'assignee_id', 'status', 'notes', 'resolved_at'];
 
     protected $casts = [
         'deadline' => 'date:Y-m-d',

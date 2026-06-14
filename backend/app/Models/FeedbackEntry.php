@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 
 class FeedbackEntry extends Model
 {
-    protected $guarded = [];
+    protected $fillable = ['client_name', 'rating', 'comment', 'category', 'entry_date'];
 
     protected $casts = [
         'entry_date' => 'date:Y-m-d',

@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class PerformanceGoal extends Model
 {
-    protected $guarded = [];
+    protected $fillable = ['title', 'employee', 'employee_id', 'due_label', 'progress', 'status'];
 
     protected $casts = [
         'progress' => 'integer',

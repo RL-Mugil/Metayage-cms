@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Reminder extends Model
 {
-    protected $guarded = [];
+    protected $fillable = ['user_id', 'title', 'description', 'category', 'due_date', 'due_time', 'scope', 'completed', 'source'];
 
     protected $casts = [
         'due_date' => 'date:Y-m-d',

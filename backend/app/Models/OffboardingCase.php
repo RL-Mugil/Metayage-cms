@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class OffboardingCase extends Model
 {
-    protected $guarded = [];
+    protected $fillable = ['employee', 'employee_id', 'dept', 'last_day', 'exit_type', 'status', 'checklist', 'assigned_hr', 'assigned_hr_id', 'completed_label'];
 
     protected $casts = [
         'checklist' => 'array',

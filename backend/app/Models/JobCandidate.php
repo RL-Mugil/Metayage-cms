@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class JobCandidate extends Model
 {
-    protected $guarded = [];
+    protected $fillable = ['job_posting_id', 'name', 'role', 'email', 'phone', 'resume_url', 'stage', 'applied_label'];
 
     public function jobPosting(): BelongsTo
     {

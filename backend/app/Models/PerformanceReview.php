@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class PerformanceReview extends Model
 {
-    protected $guarded = [];
+    protected $fillable = ['employee', 'employee_id', 'reviewer', 'reviewer_id', 'period', 'rating', 'status', 'scores', 'comments'];
 
     protected $casts = [
         'scores' => 'array',

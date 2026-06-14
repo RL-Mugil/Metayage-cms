@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class JobPosting extends Model
 {
-    protected $guarded = [];
+    protected $fillable = ['title', 'dept', 'posted_date', 'applicants', 'status', 'description', 'employment_type'];
 
     protected $casts = [
         'posted_date' => 'date:Y-m-d',
