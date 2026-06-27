@@ -3,8 +3,11 @@
 namespace App\Http\Controllers;
 
 use App\Models\Client;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
 
 class PortalController extends Controller
 {
@@ -24,11 +27,12 @@ class PortalController extends Controller
 
         return response()->json(
             Client::orderBy('company_name')->limit(500)->get()->map(fn ($c) => [
-                'id' => $c->id,
-                'client_code' => $c->client_code,
-                'company_name' => $c->company_name ?? $c->legal_name,
-                'portal_enabled' => (bool) $c->portal_enabled,
-                'portal_invited_at' => $c->portal_invited_at?->toDateTimeString(),
+                'id'               => $c->id,
+                'client_code'      => $c->client_code,
+                'company_name'     => $c->company_name ?? $c->legal_name,
+                'portal_enabled'   => (bool) $c->portal_enabled,
+                'portal_invited_at'=> $c->portal_invited_at?->toDateTimeString(),
+                'portal_user_id'   => $c->portal_user_id,
             ])
         );
     }
@@ -58,42 +62,90 @@ class PortalController extends Controller
         ]);
 
         DB::table('ip_notifications')->insert([
-            'user_id' => $request->user()->id,
-            'type' => 'portal_invite',
-            'title' => 'Portal invitations sent',
+            'user_id'     => $request->user()->id,
+            'type'        => 'portal_invite',
+            'title'       => 'Portal invitations sent',
             'description' => "Invitations recorded for {$count} inactive clients",
-            'meta' => json_encode(['count' => $count]),
-            'created_at' => now(),
-            'updated_at' => now(),
+            'meta'        => json_encode(['count' => $count]),
+            'created_at'  => now(),
+            'updated_at'  => now(),
         ]);
 
         return response()->json(['ok' => true, 'invited' => $count]);
     }
 
+    /**
+     * Create or reset a client portal account.
+     * Returns the generated password in the response (since SMTP is not configured).
+     */
     public function create(Request $request)
     {
         if ($deny = $this->denyUnauthorized($request)) return $deny;
 
         $validated = $request->validate([
             'client_id' => 'required|integer|exists:clients,id',
-            'email' => 'required|email|max:255',
+            'email'     => 'required|email|max:255',
         ]);
 
         $client = Client::findOrFail($validated['client_id']);
-        $client->portal_enabled = true;
+        $name   = $client->company_name ?? $client->legal_name ?? 'Client';
+
+        // Generate a readable temp password
+        $tempPassword = 'Portal@' . rand(1000, 9999);
+
+        // Create or update the portal user
+        $portalUser = User::updateOrCreate(
+            ['email' => $validated['email']],
+            [
+                'name'     => $name,
+                'password' => Hash::make($tempPassword),
+                'role'     => 'client',
+                'status'   => 'Active',
+            ]
+        );
+
+        // Link user to client and enable portal
+        $client->portal_user_id  = $portalUser->id;
+        $client->portal_enabled  = true;
         $client->portal_invited_at = now();
         $client->save();
 
         DB::table('ip_notifications')->insert([
-            'user_id' => $request->user()->id,
-            'type' => 'portal_invite',
-            'title' => 'Client portal created',
-            'description' => "Portal enabled for {$client->company_name}; credentials noted for {$validated['email']}",
-            'meta' => json_encode($validated),
-            'created_at' => now(),
-            'updated_at' => now(),
+            'user_id'     => $request->user()->id,
+            'type'        => 'portal_invite',
+            'title'       => 'Client portal created',
+            'description' => "Portal account created for {$name} ({$validated['email']})",
+            'meta'        => json_encode(['client_id' => $client->id, 'email' => $validated['email']]),
+            'created_at'  => now(),
+            'updated_at'  => now(),
         ]);
 
-        return response()->json(['ok' => true], 201);
+        return response()->json([
+            'ok'           => true,
+            'email'        => $validated['email'],
+            'password'     => $tempPassword,
+            'portal_user_id' => $portalUser->id,
+        ], 201);
+    }
+
+    /** Reset password for a portal user directly by client ID. */
+    public function resetPassword(Request $request, $clientId)
+    {
+        if ($deny = $this->denyUnauthorized($request)) return $deny;
+
+        $request->validate(['password' => 'required|string|min:6']);
+
+        $client = Client::findOrFail($clientId);
+
+        if (! $client->portal_user_id) {
+            return response()->json(['message' => 'No portal user linked to this client. Create the portal first.'], 422);
+        }
+
+        $user = User::findOrFail($client->portal_user_id);
+        $user->password = Hash::make($request->input('password'));
+        $user->save();
+        $user->tokens()->delete();
+
+        return response()->json(['ok' => true]);
     }
 }

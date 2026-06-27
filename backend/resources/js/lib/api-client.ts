@@ -431,6 +431,9 @@ export const api = {
   async resetUserPassword(userId: number | string, password: string): Promise<{ ok: boolean }> {
     return this.request(`/users/${userId}/reset-password`, { method: 'PUT', body: JSON.stringify({ password }) })
   },
+  async resetPortalPassword(clientId: number | string, password: string): Promise<{ ok: boolean }> {
+    return this.request(`/portal/clients/${clientId}/reset-password`, { method: 'POST', body: JSON.stringify({ password }) })
+  },
 
   // ── Bulk operations ──
   async bulkExecute(data: { entity: string; ids: number[]; action: string; status?: string; stage?: string }): Promise<{ ok: boolean; affected: number }> {

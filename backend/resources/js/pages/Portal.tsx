@@ -95,6 +95,7 @@ export default function Portal() {
   const [selectedClient, setSelectedClient] = useState<any | null>(null);
   const [newPortalEmail, setNewPortalEmail] = useState("");
   const [portalCreated, setPortalCreated] = useState(false);
+  const [createdCreds, setCreatedCreds] = useState<{ email: string; password: string } | null>(null);
   const [saving, setSaving] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -136,7 +137,8 @@ export default function Portal() {
     if (!selectedClient || !newPortalEmail) return;
     setSaving(true);
     try {
-      await api.createPortal({ client_id: selectedClient.id, email: newPortalEmail });
+      const res = await api.createPortal({ client_id: selectedClient.id, email: newPortalEmail });
+      setCreatedCreds({ email: res.email, password: res.password });
       setPortalCreated(true);
       loadPortal();
     } catch { /* keep modal open */ }
@@ -156,10 +158,14 @@ export default function Portal() {
   async function resetPassword() {
     if (!resetTarget || !resetPw) return;
     if (resetPw.length < 6) { setResetError("Password must be at least 6 characters."); return; }
+    if (!resetTarget.portal_user_id) {
+      setResetError("No portal account linked. Create the portal first using the + New Portal button.");
+      return;
+    }
     setResetSaving(true);
     setResetError("");
     try {
-      await api.resetUserPassword(resetTarget.user_id ?? resetTarget.id, resetPw);
+      await api.resetPortalPassword(resetTarget.id, resetPw);
       setResetDone(true);
     } catch (e: any) {
       setResetError(e.message || "Failed to reset password.");
@@ -226,11 +232,29 @@ export default function Portal() {
               <button onClick={() => setShowNewPortal(false)}><X className="h-5 w-5 text-muted-foreground" /></button>
             </div>
             {portalCreated ? (
-              <div className="text-center py-4">
-                <CheckCircle className="h-10 w-10 text-green-500 mx-auto mb-3" />
-                <div className="font-semibold">Portal Created!</div>
-                <div className="text-sm text-muted-foreground mt-1">Credentials sent to {newPortalEmail}</div>
-                <Button className="mt-4" variant="outline" onClick={() => setShowNewPortal(false)}>Close</Button>
+              <div className="py-4 space-y-4">
+                <div className="text-center">
+                  <CheckCircle className="h-10 w-10 text-green-500 mx-auto mb-3" />
+                  <div className="font-semibold">Portal Account Created!</div>
+                  <div className="text-sm text-muted-foreground mt-1">Share these credentials with the client.</div>
+                </div>
+                {createdCreds && (
+                  <div className="rounded-lg border border-gold/30 bg-gold/5 p-4 space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Email</span>
+                      <span className="font-mono font-medium">{createdCreds.email}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Password</span>
+                      <span className="font-mono font-medium text-gold">{createdCreds.password}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Login URL</span>
+                      <span className="font-mono text-xs text-muted-foreground">mypl-cms.139-59-85-216.sslip.io</span>
+                    </div>
+                  </div>
+                )}
+                <Button className="w-full" variant="outline" onClick={() => { setShowNewPortal(false); setCreatedCreds(null); setPortalCreated(false); }}>Close</Button>
               </div>
             ) : (
               <>

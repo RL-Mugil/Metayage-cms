@@ -37,6 +37,8 @@ class Client extends Model
         // Admin
         'referred_by_code', 'accounts_person', 'remarks',
         'status',
+        // Portal
+        'portal_enabled', 'portal_invited_at', 'portal_user_id',
     ];
 
     protected $casts = [
