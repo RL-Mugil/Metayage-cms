@@ -455,7 +455,11 @@ export default function Portal() {
           {/* Bulk action bar */}
           {someSelected && (
             <div className="mx-4 mb-3 flex items-center gap-2 rounded-lg border border-gold/30 bg-gold/5 px-4 py-2.5">
-              <span className="text-xs text-muted-foreground mr-1">{selected.size} row{selected.size !== 1 ? "s" : ""} selected</span>
+              <span className="text-xs text-muted-foreground mr-1">
+                {selected.size === filteredClients.length
+                  ? `All ${selected.size} portals selected`
+                  : `${selected.size} of ${filteredClients.length} selected`}
+              </span>
               <div className="flex-1" />
               <Button size="sm" variant="outline" className="h-7 text-xs gap-1.5" disabled={bulkLoading}
                 onClick={() => runBulk('enable')}>
@@ -496,14 +500,12 @@ export default function Portal() {
                     <input
                       type="checkbox"
                       className="h-4 w-4 rounded border-border accent-gold cursor-pointer"
-                      checked={pagedClients.length > 0 && pagedClients.every(c => selected.has(c.id))}
+                      checked={filteredClients.length > 0 && filteredClients.every(c => selected.has(c.id))}
+                      ref={el => { if (el) el.indeterminate = someSelected && !filteredClients.every(c => selected.has(c.id)); }}
                       onChange={() => {
-                        const allSel = pagedClients.every(c => selected.has(c.id));
-                        setSelected(prev => {
-                          const n = new Set(prev);
-                          pagedClients.forEach(c => allSel ? n.delete(c.id) : n.add(c.id));
-                          return n;
-                        });
+                        const allSel = filteredClients.every(c => selected.has(c.id));
+                        setSelected(allSel ? new Set() : new Set(filteredClients.map(c => c.id)));
+                        setConfirmBulkDelete(false);
                       }}
                     />
                   </th>
