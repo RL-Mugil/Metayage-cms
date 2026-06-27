@@ -1,6 +1,6 @@
 import { Head } from "@inertiajs/react";
 import { useEffect, useState, useRef } from "react";
-import { Globe, Eye, EyeOff, Mail, Loader2, Plus, X, CheckCircle, Search, KeyRound, ChevronLeft, ChevronRight, AlertCircle } from "lucide-react";
+import { Globe, Eye, EyeOff, Mail, Loader2, Plus, X, CheckCircle, Search, KeyRound, ChevronLeft, ChevronRight, AlertCircle, Trash2, ToggleLeft, ToggleRight } from "lucide-react";
 import AppLayout from "@/layouts/AppLayout";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -105,6 +105,11 @@ export default function Portal() {
 
   const [kpiModal, setKpiModal] = useState<PortalKpiKey | null>(null);
 
+  // Bulk selection
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [bulkLoading, setBulkLoading] = useState(false);
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
+
   // Reset Password modal
   const [resetTarget, setResetTarget] = useState<any | null>(null);
   const [resetPw, setResetPw] = useState("");
@@ -173,6 +178,23 @@ export default function Portal() {
       setResetSaving(false);
     }
   }
+
+  async function runBulk(action: 'enable' | 'disable' | 'delete') {
+    if (selected.size === 0) return;
+    setBulkLoading(true);
+    try {
+      await api.portalBulk(action, Array.from(selected));
+      setSelected(new Set());
+      setConfirmBulkDelete(false);
+      await loadPortal();
+    } catch { /* keep selection */ }
+    finally { setBulkLoading(false); }
+  }
+
+  const toggleRow = (id: number) =>
+    setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+
+  const someSelected = selected.size > 0;
 
   const activePortals = clients.filter((c) => c.portal_enabled).length;
   const pendingInvites = clients.filter((c) => !c.portal_enabled && c.portal_invited_at).length;
@@ -409,8 +431,15 @@ export default function Portal() {
 
         {/* Client portal table */}
         <Card className="border-border">
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="font-display">Client Portals</CardTitle>
+          <CardHeader className="flex flex-row items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <CardTitle className="font-display">Client Portals</CardTitle>
+              {someSelected && (
+                <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-gold/15 text-gold border border-gold/30">
+                  {selected.size} selected
+                </span>
+              )}
+            </div>
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
               <input
@@ -422,10 +451,62 @@ export default function Portal() {
               />
             </div>
           </CardHeader>
+
+          {/* Bulk action bar */}
+          {someSelected && (
+            <div className="mx-4 mb-3 flex items-center gap-2 rounded-lg border border-gold/30 bg-gold/5 px-4 py-2.5">
+              <span className="text-xs text-muted-foreground mr-1">{selected.size} row{selected.size !== 1 ? "s" : ""} selected</span>
+              <div className="flex-1" />
+              <Button size="sm" variant="outline" className="h-7 text-xs gap-1.5" disabled={bulkLoading}
+                onClick={() => runBulk('enable')}>
+                <ToggleRight className="h-3.5 w-3.5 text-green-500" /> Enable
+              </Button>
+              <Button size="sm" variant="outline" className="h-7 text-xs gap-1.5" disabled={bulkLoading}
+                onClick={() => runBulk('disable')}>
+                <ToggleLeft className="h-3.5 w-3.5 text-muted-foreground" /> Disable
+              </Button>
+              {!confirmBulkDelete ? (
+                <Button size="sm" variant="outline" className="h-7 text-xs gap-1.5 text-destructive border-destructive/40 hover:bg-destructive/10"
+                  disabled={bulkLoading} onClick={() => setConfirmBulkDelete(true)}>
+                  <Trash2 className="h-3.5 w-3.5" /> Delete Portal
+                </Button>
+              ) : (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs text-destructive font-medium">Delete {selected.size} portal{selected.size !== 1 ? "s" : ""}?</span>
+                  <Button size="sm" className="h-7 text-xs bg-destructive text-white hover:bg-destructive/90" disabled={bulkLoading}
+                    onClick={() => runBulk('delete')}>
+                    {bulkLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Confirm"}
+                  </Button>
+                  <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setConfirmBulkDelete(false)}>
+                    Cancel
+                  </Button>
+                </div>
+              )}
+              <Button size="sm" variant="ghost" className="h-7 w-7 p-0 ml-1" onClick={() => { setSelected(new Set()); setConfirmBulkDelete(false); }}>
+                <X className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          )}
+
           <CardContent className="p-0">
             <table className="w-full text-sm">
               <thead className="bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground">
                 <tr>
+                  <th className="px-4 py-3 w-10">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 rounded border-border accent-gold cursor-pointer"
+                      checked={pagedClients.length > 0 && pagedClients.every(c => selected.has(c.id))}
+                      onChange={() => {
+                        const allSel = pagedClients.every(c => selected.has(c.id));
+                        setSelected(prev => {
+                          const n = new Set(prev);
+                          pagedClients.forEach(c => allSel ? n.delete(c.id) : n.add(c.id));
+                          return n;
+                        });
+                      }}
+                    />
+                  </th>
                   <th className="px-4 py-3 text-left">Client</th>
                   <th className="px-4 py-3 text-left">Code</th>
                   <th className="px-4 py-3 text-left">Portal Status</th>
@@ -435,8 +516,17 @@ export default function Portal() {
               <tbody>
                 {pagedClients.map((client) => {
                   const isActive = !!client.portal_enabled;
+                  const isSelected = selected.has(client.id);
                   return (
-                    <tr key={client.id} className="border-t border-border hover:bg-muted/30">
+                    <tr key={client.id} className={`border-t border-border hover:bg-muted/30 ${isSelected ? "bg-gold/5" : ""}`}>
+                      <td className="px-4 py-3">
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 rounded border-border accent-gold cursor-pointer"
+                          checked={isSelected}
+                          onChange={() => toggleRow(client.id)}
+                        />
+                      </td>
                       <td className="px-4 py-3 font-medium">{client.company_name ?? "—"}</td>
                       <td className="px-4 py-3 text-muted-foreground font-mono text-xs">{client.client_code}</td>
                       <td className="px-4 py-3">
@@ -486,6 +576,7 @@ export default function Portal() {
               <div className="flex items-center justify-between px-4 py-3 border-t border-border">
                 <span className="text-xs text-muted-foreground">
                   {filteredClients.length} clients · Page {page} of {totalPages}
+                  {someSelected && ` · ${selected.size} selected`}
                 </span>
                 <div className="flex items-center gap-1">
                   <Button size="sm" variant="outline" className="h-7 w-7 p-0" disabled={page === 1} onClick={() => setPage(p => p - 1)}>

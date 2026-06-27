@@ -434,6 +434,9 @@ export const api = {
   async resetPortalPassword(clientId: number | string, password: string): Promise<{ ok: boolean }> {
     return this.request(`/portal/clients/${clientId}/reset-password`, { method: 'POST', body: JSON.stringify({ password }) })
   },
+  async portalBulk(action: 'enable' | 'disable' | 'delete', ids: number[]): Promise<{ ok: boolean; affected: number }> {
+    return this.request('/portal/bulk', { method: 'POST', body: JSON.stringify({ action, ids }) })
+  },
 
   // ── Bulk operations ──
   async bulkExecute(data: { entity: string; ids: number[]; action: string; status?: string; stage?: string }): Promise<{ ok: boolean; affected: number }> {

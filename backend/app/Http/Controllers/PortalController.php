@@ -143,6 +143,56 @@ class PortalController extends Controller
         ], 201);
     }
 
+    /**
+     * Bulk action on portal clients.
+     * action: 'enable' | 'disable' | 'delete'
+     * ids: client IDs
+     */
+    public function bulk(Request $request)
+    {
+        if ($deny = $this->denyUnauthorized($request)) return $deny;
+
+        $validated = $request->validate([
+            'action' => 'required|in:enable,disable,delete',
+            'ids'    => 'required|array|min:1',
+            'ids.*'  => 'integer|exists:clients,id',
+        ]);
+
+        $ids    = $validated['ids'];
+        $action = $validated['action'];
+
+        if ($action === 'enable') {
+            Client::whereIn('id', $ids)->update([
+                'portal_enabled'    => true,
+                'portal_invited_at' => now(),
+            ]);
+        } elseif ($action === 'disable') {
+            Client::whereIn('id', $ids)->update(['portal_enabled' => false]);
+        } elseif ($action === 'delete') {
+            $clients = Client::whereIn('id', $ids)->get();
+
+            // Delete the linked portal User accounts
+            $userIds = $clients->pluck('portal_user_id')->filter()->values()->all();
+            if (count($userIds)) {
+                // Revoke tokens first
+                DB::table('personal_access_tokens')
+                    ->where('tokenable_type', 'App\\Models\\User')
+                    ->whereIn('tokenable_id', $userIds)
+                    ->delete();
+                User::whereIn('id', $userIds)->delete();
+            }
+
+            // Strip portal data from client records
+            Client::whereIn('id', $ids)->update([
+                'portal_enabled'    => false,
+                'portal_invited_at' => null,
+                'portal_user_id'    => null,
+            ]);
+        }
+
+        return response()->json(['ok' => true, 'affected' => count($ids)]);
+    }
+
     /** Reset password for a portal user directly by client ID. */
     public function resetPassword(Request $request, $clientId)
     {
