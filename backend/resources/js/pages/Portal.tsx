@@ -95,7 +95,7 @@ export default function Portal() {
   const [selectedClient, setSelectedClient] = useState<any | null>(null);
   const [newPortalEmail, setNewPortalEmail] = useState("");
   const [portalCreated, setPortalCreated] = useState(false);
-  const [createdCreds, setCreatedCreds] = useState<{ email: string; password: string } | null>(null);
+  const [createdCreds, setCreatedCreds] = useState<{ email: string; password: string; mail_sent: boolean } | null>(null);
   const [saving, setSaving] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -138,7 +138,7 @@ export default function Portal() {
     setSaving(true);
     try {
       const res = await api.createPortal({ client_id: selectedClient.id, email: newPortalEmail });
-      setCreatedCreds({ email: res.email, password: res.password });
+      setCreatedCreds({ email: res.email, password: res.password, mail_sent: res.mail_sent });
       setPortalCreated(true);
       loadPortal();
     } catch { /* keep modal open */ }
@@ -236,7 +236,11 @@ export default function Portal() {
                 <div className="text-center">
                   <CheckCircle className="h-10 w-10 text-green-500 mx-auto mb-3" />
                   <div className="font-semibold">Portal Account Created!</div>
-                  <div className="text-sm text-muted-foreground mt-1">Share these credentials with the client.</div>
+                  <div className="text-sm mt-1">
+                    {createdCreds?.mail_sent
+                      ? <span className="text-green-500">Invite email sent to {createdCreds.email}</span>
+                      : <span className="text-amber-500">Email delivery failed — share credentials below manually</span>}
+                  </div>
                 </div>
                 {createdCreds && (
                   <div className="rounded-lg border border-gold/30 bg-gold/5 p-4 space-y-2 text-sm">

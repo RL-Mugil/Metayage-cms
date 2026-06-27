@@ -2,11 +2,13 @@
 
 namespace App\Http\Controllers;
 
+use App\Mail\PortalInviteMail;
 use App\Models\Client;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 
 class PortalController extends Controller
@@ -110,21 +112,34 @@ class PortalController extends Controller
         $client->portal_invited_at = now();
         $client->save();
 
+        // Send invite email (Brevo SMTP) — fail silently so the portal still gets created
+        $mailSent = false;
+        try {
+            Mail::to($validated['email'])->send(new PortalInviteMail(
+                clientName: $name,
+                email:      $validated['email'],
+                password:   $tempPassword,
+                loginUrl:   config('app.url') . '/login',
+            ));
+            $mailSent = true;
+        } catch (\Throwable) {}
+
         DB::table('ip_notifications')->insert([
             'user_id'     => $request->user()->id,
             'type'        => 'portal_invite',
             'title'       => 'Client portal created',
-            'description' => "Portal account created for {$name} ({$validated['email']})",
+            'description' => "Portal account created for {$name} ({$validated['email']})" . ($mailSent ? ' — invite email sent' : ' — email failed, share credentials manually'),
             'meta'        => json_encode(['client_id' => $client->id, 'email' => $validated['email']]),
             'created_at'  => now(),
             'updated_at'  => now(),
         ]);
 
         return response()->json([
-            'ok'           => true,
-            'email'        => $validated['email'],
-            'password'     => $tempPassword,
+            'ok'             => true,
+            'email'          => $validated['email'],
+            'password'       => $tempPassword,
             'portal_user_id' => $portalUser->id,
+            'mail_sent'      => $mailSent,
         ], 201);
     }
 
