@@ -6,11 +6,11 @@ import { useState } from "react";
 
 const TEST_USERS = [
   { role: "Super Admin",  email: "test.superadmin@myipstrategy.com", password: "Test@1234", color: "text-red-400" },
-  { role: "Partner",      email: "test.partner@myipstrategy.com",    password: "Test@1234", color: "text-orange-400" },
-  { role: "Manager",      email: "test.manager@myipstrategy.com",    password: "Test@1234", color: "text-amber-400" },
+  { role: "Director",     email: "test.partner@myipstrategy.com",    password: "Test@1234", color: "text-orange-400" },
+  { role: "Patent Attorney", email: "test.manager@myipstrategy.com",    password: "Test@1234", color: "text-amber-400" },
   { role: "HR",           email: "test.hr@myipstrategy.com",         password: "Test@1234", color: "text-purple-400" },
-  { role: "Finance",      email: "test.finance@myipstrategy.com",    password: "Test@1234", color: "text-blue-400" },
-  { role: "Associate",    email: "test.associate@myipstrategy.com",  password: "Test@1234", color: "text-green-400" },
+  { role: "Accountant",   email: "test.finance@myipstrategy.com",    password: "Test@1234", color: "text-blue-400" },
+  { role: "Patent Analyst", email: "test.associate@myipstrategy.com",  password: "Test@1234", color: "text-green-400" },
   { role: "Paralegal",    email: "test.paralegal@myipstrategy.com",  password: "Test@1234", color: "text-teal-400" },
   { role: "Client Admin", email: "test.clientadmin@myipstrategy.com", password: "Test@1234", color: "text-gold" },
   { role: "Client",       email: "test.client@myipstrategy.com",     password: "Test@1234", color: "text-zinc-400" },

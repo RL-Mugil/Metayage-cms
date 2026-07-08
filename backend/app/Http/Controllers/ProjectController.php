@@ -36,12 +36,12 @@ class ProjectController extends Controller
             $base->whereHas('client', function ($q) use ($user) {
                 $q->visibleToUser($user);
             });
-        } elseif (in_array($user->role, ['associate', 'paralegal'])) {
+        } elseif ($user->role === 'associate') {
+            // Patent Analysts see only cases where they are PR, CM or SCM.
             $base->where(function ($q) use ($user) {
-                $q->where('assigned_manager_id', $user->id)
-                    ->orWhere('assigned_partner_id', $user->id)
-                    ->orWhere('patent_engineer_id', $user->id)
-                    ->orWhereJsonContains('assigned_team', (string) $user->id);
+                $q->where('patent_engineer_id', $user->id)
+                    ->orWhere('assigned_manager_id', $user->id)
+                    ->orWhere('secondary_manager_id', $user->id);
             });
         }
 
@@ -78,14 +78,12 @@ class ProjectController extends Controller
             $query->whereHas('client', function ($q) use ($user) {
                 $q->visibleToUser($user);
             });
-        } elseif (in_array($user->role, ['associate', 'paralegal'])) {
-            // Associates can see projects assigned to them or their department
+        } elseif ($user->role === 'associate') {
+            // Patent Analysts see only cases where they are PR, CM or SCM.
             $query->where(function ($q) use ($user) {
-                $q->where('assigned_manager_id', $user->id)
-                    ->orWhere('assigned_partner_id', $user->id)
-                    ->orWhere('patent_engineer_id', $user->id)
-                    ->orWhereHas('tasks', fn ($taskQuery) => $taskQuery->where('assignee_id', $user->id))
-                    ->orWhereJsonContains('assigned_team', $user->id);
+                $q->where('patent_engineer_id', $user->id)
+                    ->orWhere('assigned_manager_id', $user->id)
+                    ->orWhere('secondary_manager_id', $user->id);
             });
         }
 

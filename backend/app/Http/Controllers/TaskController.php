@@ -30,8 +30,8 @@ class TaskController extends Controller
             $query->whereHas('project.client.contacts', function ($q) use ($user) {
                 $q->where('email', $user->email);
             });
-        } elseif (in_array($user->role, ['associate', 'paralegal'])) {
-            // Associates see their assigned tasks
+        } elseif ($user->role === 'associate') {
+            // Patent Analysts see their assigned tasks
             $query->where('assignee_id', $user->id);
         }
 

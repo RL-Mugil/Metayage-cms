@@ -19,8 +19,8 @@ interface StaffUser {
 
 const STAFF_ROLES = ["super_admin", "partner", "manager", "hr", "finance", "associate", "paralegal"];
 const ROLE_LABEL: Record<string, string> = {
-  super_admin: "System Admin", partner: "Partner", manager: "Manager",
-  hr: "HR", finance: "Finance", associate: "Associate", paralegal: "Paralegal",
+  super_admin: "System Admin", partner: "Director", manager: "Patent Attorney",
+  hr: "HR", finance: "Accountant", associate: "Patent Analyst", paralegal: "Paralegal",
 };
 const ROLE_COLOR: Record<string, string> = {
   super_admin: "bg-red-500/10 text-red-500 border-red-500/30",

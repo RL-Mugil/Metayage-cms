@@ -36,16 +36,15 @@ class DiscussionController extends Controller
             $client = $this->clientFor($request);
             if (! $client) return response()->json(['message' => 'Forbidden'], 403);
             $query->where('client_id', $client->id);
-        } elseif (in_array($user->role, ['associate', 'paralegal'])) {
+        } elseif ($user->role === 'associate') {
             // General threads (no project) are visible to all staff.
-            // Project threads are visible only if the user is assigned to that project.
+            // Case threads only where the analyst is PR, CM or SCM.
             $query->where(function ($q) use ($user) {
                 $q->whereNull('project_id')
                   ->orWhereHas('project', function ($pq) use ($user) {
-                      $pq->where('assigned_manager_id', $user->id)
-                         ->orWhere('assigned_partner_id', $user->id)
-                         ->orWhere('patent_engineer_id', $user->id)
-                         ->orWhereHas('tasks', fn ($t) => $t->where('assignee_id', $user->id));
+                      $pq->where('patent_engineer_id', $user->id)
+                         ->orWhere('assigned_manager_id', $user->id)
+                         ->orWhere('secondary_manager_id', $user->id);
                   });
             });
         }
@@ -131,13 +130,12 @@ class DiscussionController extends Controller
             }
         }
 
-        if (in_array($user->role, ['associate', 'paralegal']) && $thread->project_id !== null) {
+        if ($user->role === 'associate' && $thread->project_id !== null) {
             $project = $thread->project;
             $canReply = $project && (
-                $project->assigned_manager_id === $user->id ||
-                $project->assigned_partner_id === $user->id ||
                 $project->patent_engineer_id  === $user->id ||
-                $project->tasks()->where('assignee_id', $user->id)->exists()
+                $project->assigned_manager_id === $user->id ||
+                $project->secondary_manager_id === $user->id
             );
             if (! $canReply) {
                 return response()->json(['message' => 'Forbidden'], 403);

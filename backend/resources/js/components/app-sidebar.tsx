@@ -41,6 +41,12 @@ const clientGroups = (isAdmin: boolean) => [
   },
 ];
 
+const ROLE_LABEL: Record<string, string> = {
+  super_admin: "System Admin", partner: "Director", manager: "Patent Attorney",
+  hr: "HR", finance: "Accountant", associate: "Patent Analyst", paralegal: "Paralegal",
+  client: "Client", client_admin: "Client Admin",
+};
+
 const groups = [
   {
     label: "Overview",
@@ -188,7 +194,7 @@ export function AppSidebar() {
             <div className="h-8 w-8 rounded-full bg-gold text-gold-foreground flex items-center justify-center text-xs font-semibold">{initials}</div>
             <div className="flex flex-col leading-tight">
               <span className="text-xs font-medium text-sidebar-foreground">{user?.name || "User"}</span>
-              <span className="text-[10px] text-sidebar-foreground/60 capitalize">{user?.role || "Associate"}</span>
+              <span className="text-[10px] text-sidebar-foreground/60">{ROLE_LABEL[user?.role] ?? user?.role ?? ""}</span>
             </div>
           </div>
           <Button variant="ghost" size="icon" className="h-8 w-8 text-sidebar-foreground/60 hover:text-destructive" onClick={handleLogout}>
