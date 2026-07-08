@@ -494,6 +494,22 @@ export const api = {
   async getLifecycleStats(): Promise<Record<string, number>> {
     return this.request('/projects/lifecycle-stats')
   },
+  async importProjects(clientId: number, file: File): Promise<{ imported: number; skipped: number; errors: string[]; dockets: string[]; client: string }> {
+    const formData = new FormData()
+    formData.append('client_id', String(clientId))
+    formData.append('file', file)
+    const response = await fetch('/api/projects/import', {
+      method: 'POST',
+      headers: { 'X-XSRF-TOKEN': getCsrfToken(), Accept: 'application/json' },
+      credentials: 'same-origin',
+      body: formData,
+    })
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}))
+      throw new Error((err as { message?: string }).message || `Import failed: ${response.status}`)
+    }
+    return response.json()
+  },
   async getPatentPortfolioStats(clientId?: number | null): Promise<any> {
     const q = clientId ? `?client_id=${clientId}` : ''
     return this.request(`/patent-portfolio/stats${q}`)

@@ -22,10 +22,12 @@ class ProjectPolicy
         // Mirrors the scope in ProjectController::index() exactly to prevent
         // policy/controller divergence causing spurious 403s.
         if ($user->role === 'associate') {
-            // Patent Analysts: only cases where they are PR, CM or SCM.
+            // Patent Analysts: cases where they are PR, CM or SCM,
+            // or have a task assigned on the case.
             if ($project->patent_engineer_id === $user->id) return true;
             if ($project->assigned_manager_id === $user->id) return true;
             if ($project->secondary_manager_id === $user->id) return true;
+            if ($project->tasks()->where('assignee_id', $user->id)->exists()) return true;
             return false;
         }
 

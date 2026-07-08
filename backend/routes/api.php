@@ -50,6 +50,8 @@ Route::middleware(['auth:sanctum', 'throttle:60,1'])->group(function () {
     // Cases / Projects
     Route::get('/projects/stats', [ProjectController::class, 'stats']);
     Route::get('/projects/lifecycle-stats', [ProjectController::class, 'lifecycleStats']);
+    Route::get('/projects/import-template', [\App\Http\Controllers\ProjectImportController::class, 'template']);
+    Route::post('/projects/import', [\App\Http\Controllers\ProjectImportController::class, 'import'])->middleware('throttle:10,1');
     Route::get('/projects', [ProjectController::class, 'index']);
     Route::post('/projects', [ProjectController::class, 'store']);
     Route::get('/projects/{id}', [ProjectController::class, 'show']);

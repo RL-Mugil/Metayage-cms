@@ -189,7 +189,8 @@ class DocumentController extends Controller
                 $canAccess = $project && (
                     $project->patent_engineer_id  === $user->id ||
                     $project->assigned_manager_id === $user->id ||
-                    $project->secondary_manager_id === $user->id
+                    $project->secondary_manager_id === $user->id ||
+                    $project->tasks()->where('assignee_id', $user->id)->exists()
                 );
                 if (! $canAccess) {
                     return response()->json(['message' => 'Forbidden'], 403);

@@ -44,7 +44,8 @@ class DiscussionController extends Controller
                   ->orWhereHas('project', function ($pq) use ($user) {
                       $pq->where('patent_engineer_id', $user->id)
                          ->orWhere('assigned_manager_id', $user->id)
-                         ->orWhere('secondary_manager_id', $user->id);
+                         ->orWhere('secondary_manager_id', $user->id)
+                         ->orWhereHas('tasks', fn ($t) => $t->where('assignee_id', $user->id));
                   });
             });
         }
@@ -135,7 +136,8 @@ class DiscussionController extends Controller
             $canReply = $project && (
                 $project->patent_engineer_id  === $user->id ||
                 $project->assigned_manager_id === $user->id ||
-                $project->secondary_manager_id === $user->id
+                $project->secondary_manager_id === $user->id ||
+                $project->tasks()->where('assignee_id', $user->id)->exists()
             );
             if (! $canReply) {
                 return response()->json(['message' => 'Forbidden'], 403);

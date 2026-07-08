@@ -4,6 +4,7 @@ import { createPortal } from "react-dom";
 import {
   Plus, Search, Loader2, X, Download, Pencil, Trash2, AlertCircle,
   ChevronDown, ChevronUp, Eye, ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown,
+  Upload, FileSpreadsheet, CheckCircle,
 } from "lucide-react";
 import AppLayout from "@/layouts/AppLayout";
 import { PageHeader } from "@/components/page-header";
@@ -483,6 +484,15 @@ function ProjectKpiModal({ kpi, onClose }: { kpi: KpiDef; onClose: () => void })
 export default function Projects() {
   const [projects, setProjects]  = useState<any[]>([]);
   const [clients, setClients]    = useState<any[]>([]);
+
+  // Bulk import modal
+  const [showImport, setShowImport] = useState(false);
+  const [importClientId, setImportClientId] = useState("");
+  const [importClientSearch, setImportClientSearch] = useState("");
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState("");
+  const [importResult, setImportResult] = useState<{ imported: number; skipped: number; errors: string[]; dockets: string[]; client: string } | null>(null);
   const [users, setUsers]        = useState<any[]>([]);
   const [loading, setLoading]    = useState(true);
   const [search, setSearch]      = useState("");
@@ -674,12 +684,128 @@ export default function Projects() {
               )}>
               <Download className="h-4 w-4 mr-2" />Export CSV
             </Button>
+            <Button variant="outline" onClick={() => {
+              setShowImport(true); setImportClientId(""); setImportClientSearch("");
+              setImportFile(null); setImportError(""); setImportResult(null);
+            }}>
+              <Upload className="h-4 w-4 mr-2" />Bulk Import
+            </Button>
             <Button className="bg-gold hover:bg-gold/90 text-black" onClick={openCreate}>
               <Plus className="h-4 w-4 mr-2" />New Case
             </Button>
           </>
         }
       />
+
+      {/* Bulk Import Modal */}
+      {showImport && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-lg p-6 m-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-display text-lg font-semibold">Bulk Import Cases</h2>
+              <button onClick={() => setShowImport(false)}><X className="h-5 w-5 text-muted-foreground" /></button>
+            </div>
+
+            {importResult ? (
+              <div className="space-y-4">
+                <div className="text-center py-2">
+                  <CheckCircle className="h-10 w-10 text-green-500 mx-auto mb-2" />
+                  <div className="font-semibold">
+                    {importResult.imported} case{importResult.imported !== 1 ? "s" : ""} imported for {importResult.client}
+                  </div>
+                  {importResult.skipped > 0 && (
+                    <div className="text-xs text-amber-500 mt-1">{importResult.skipped} row{importResult.skipped !== 1 ? "s" : ""} skipped</div>
+                  )}
+                </div>
+                {importResult.errors.length > 0 && (
+                  <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-600 space-y-1 max-h-40 overflow-y-auto">
+                    {importResult.errors.map((e, i) => <div key={i}>{e}</div>)}
+                  </div>
+                )}
+                {importResult.dockets.length > 0 && (
+                  <div className="rounded-lg border border-border p-3 max-h-40 overflow-y-auto">
+                    <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5">Created dockets</div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {importResult.dockets.map((d, i) => (
+                        <span key={i} className="font-mono text-xs px-1.5 py-0.5 rounded bg-gold/10 text-gold border border-gold/30">{d}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <Button className="w-full" variant="outline"
+                  onClick={() => { setShowImport(false); api.getProjects().then((p: any) => setProjects(Array.isArray(p) ? p : (p?.data ?? []))).catch(() => {}); }}>
+                  Close
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1.5">
+                    1. Select Client (import is limited to one client)
+                  </label>
+                  <input type="text" placeholder="Filter by client code or name…" value={importClientSearch}
+                    onChange={(e) => setImportClientSearch(e.target.value)}
+                    className="w-full h-8 rounded-md border border-border bg-background px-3 text-xs focus:outline-none focus:ring-1 focus:ring-gold mb-1.5" />
+                  <select value={importClientId} onChange={(e) => setImportClientId(e.target.value)}
+                    className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold">
+                    <option value="">Choose client…</option>
+                    {clients.filter((c: any) => {
+                      const q = importClientSearch.toLowerCase();
+                      return !q || (c.client_code ?? "").toLowerCase().includes(q) || (c.company_name ?? c.legal_name ?? "").toLowerCase().includes(q);
+                    }).slice(0, 50).map((c: any) => (
+                      <option key={c.id} value={c.id}>{c.client_code} — {c.company_name ?? c.legal_name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1.5">
+                    2. Fill the Excel template
+                  </label>
+                  <a href="/api/projects/import-template"
+                    className="flex items-center gap-2 rounded-lg border border-border px-3 py-2.5 text-sm hover:border-gold/50 hover:bg-muted/30 transition-colors">
+                    <FileSpreadsheet className="h-4 w-4 text-green-500" />
+                    <span className="flex-1">Download template (.xlsx)</span>
+                    <Download className="h-3.5 w-3.5 text-muted-foreground" />
+                  </a>
+                  <p className="text-[10px] text-muted-foreground mt-1">
+                    Dropdown columns are built in (case type, office, service, urgency, fee, status). Dates as YYYY-MM-DD. See the Reference sheet for code descriptions.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1.5">
+                    3. Upload the filled sheet
+                  </label>
+                  <input type="file" accept=".xlsx,.xls,.csv"
+                    onChange={(e) => setImportFile(e.target.files?.[0] ?? null)}
+                    className="w-full text-sm text-muted-foreground file:mr-3 file:rounded-md file:border-0 file:bg-gold/15 file:text-gold file:px-3 file:py-1.5 file:text-xs file:font-medium hover:file:bg-gold/25 file:cursor-pointer" />
+                </div>
+
+                {importError && <p className="text-xs text-red-500">{importError}</p>}
+
+                <div className="flex gap-2">
+                  <Button className="bg-gold hover:bg-gold/90 text-black flex-1"
+                    disabled={!importClientId || !importFile || importing}
+                    onClick={async () => {
+                      if (!importClientId || !importFile) return;
+                      setImporting(true); setImportError("");
+                      try {
+                        const res = await api.importProjects(Number(importClientId), importFile);
+                        setImportResult(res);
+                      } catch (e: any) {
+                        setImportError(e?.message || "Import failed.");
+                      } finally { setImporting(false); }
+                    }}>
+                    {importing ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Importing…</> : <><Upload className="h-4 w-4 mr-2" />Import Cases</>}
+                  </Button>
+                  <Button variant="outline" onClick={() => setShowImport(false)}>Cancel</Button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ── Case Form Modal ─────────────────────────────────────────────────── */}
       {showModal && (

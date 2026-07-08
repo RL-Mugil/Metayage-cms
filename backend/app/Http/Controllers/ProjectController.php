@@ -37,11 +37,13 @@ class ProjectController extends Controller
                 $q->visibleToUser($user);
             });
         } elseif ($user->role === 'associate') {
-            // Patent Analysts see only cases where they are PR, CM or SCM.
+            // Patent Analysts see cases where they are PR, CM or SCM,
+            // or have a task assigned on the case.
             $base->where(function ($q) use ($user) {
                 $q->where('patent_engineer_id', $user->id)
                     ->orWhere('assigned_manager_id', $user->id)
-                    ->orWhere('secondary_manager_id', $user->id);
+                    ->orWhere('secondary_manager_id', $user->id)
+                    ->orWhereHas('tasks', fn ($t) => $t->where('assignee_id', $user->id));
             });
         }
 
@@ -79,11 +81,13 @@ class ProjectController extends Controller
                 $q->visibleToUser($user);
             });
         } elseif ($user->role === 'associate') {
-            // Patent Analysts see only cases where they are PR, CM or SCM.
+            // Patent Analysts see cases where they are PR, CM or SCM,
+            // or have a task assigned on the case.
             $query->where(function ($q) use ($user) {
                 $q->where('patent_engineer_id', $user->id)
                     ->orWhere('assigned_manager_id', $user->id)
-                    ->orWhere('secondary_manager_id', $user->id);
+                    ->orWhere('secondary_manager_id', $user->id)
+                    ->orWhereHas('tasks', fn ($t) => $t->where('assignee_id', $user->id));
             });
         }
 
@@ -171,55 +175,7 @@ class ProjectController extends Controller
         $validated['assigned_partner_id'] = $validated['assigned_partner_id'] ?? $user->id;
         $validated['assigned_manager_id'] = $validated['assigned_manager_id'] ?? $user->id;
 
-        $project = \DB::transaction(function () use ($validated) {
-            $year = date('Y');
-
-            $lastProject = Project::where('project_code', 'like', "PRJ-{$year}-%")
-                ->orderBy('project_code', 'desc')
-                ->lockForUpdate()
-                ->value('project_code');
-            $seq = $lastProject ? ((int) substr($lastProject, -5)) + 1 : 1;
-            $validated['project_code'] = sprintf('PRJ-%s-%05d', $year, $seq);
-            $validated['status'] = 'Open';
-
-            $client = Client::findOrFail($validated['client_id']);
-            $clientCode = $client->client_code ?? '';
-            $maxSeq = Project::where('client_id', $client->id)
-                ->whereNotNull('docket_number')
-                ->lockForUpdate()
-                ->get()
-                ->map(fn($p) => strlen($p->docket_number) >= strlen($clientCode) + 3
-                    ? (int) substr($p->docket_number, strlen($clientCode), 3) : 0)
-                ->max() ?? 0;
-            $docketSeq = str_pad($maxSeq + 1, 3, '0', STR_PAD_LEFT);
-            $office = strtoupper($validated['patent_office_code'] ?? '');
-            $service = strtoupper($validated['service_code'] ?? '');
-            $validated['docket_number'] = $clientCode . $docketSeq . $office . $service;
-
-            $project = Project::create($validated);
-
-            // Seed default pipeline stages for new projects
-            $defaultStages = [
-                "Invention Disclosure", "Patent Search", "Search Report",
-                "Provisional Application", "Provisional Filing",
-                "Patent Drafting", "Applicant/Inventor Review", "Filing with Patent Office",
-                "First Examination Report", "FER Response Preparation", "FER Response Filing",
-                "Hearing with Examiner", "Hearing Response Preparation", "Hearing Response Filing",
-                "Granted", "Renewal",
-            ];
-            foreach ($defaultStages as $index => $stageName) {
-                ProjectStage::create([
-                    'project_id' => $project->id,
-                    'stage_name' => $stageName,
-                    'status' => $index === 0 ? 'In Progress' : 'Pending',
-                    'sequence_order' => $index,
-                    'duration_days' => 15,
-                    'due_date' => Carbon::now()->addDays(($index + 1) * 15),
-                ]);
-            }
-
-            return $project;
-        });
+        $project = \DB::transaction(fn () => $this->createProjectWithCodes($validated));
 
         // Audit Log
         AuditLog::create([
@@ -234,6 +190,67 @@ class ProjectController extends Controller
 
         Cache::increment('dashboard_v');
         return response()->json($project, 201);
+    }
+
+    /** Entry point for bulk import (must already be inside a transaction). */
+    public function createFromImport(array $validated): Project
+    {
+        return $this->createProjectWithCodes($validated);
+    }
+
+    /**
+     * Create a project with generated project_code + docket_number and
+     * seeded lifecycle stages. Must be called inside a DB transaction.
+     */
+    private function createProjectWithCodes(array $validated): Project
+    {
+        $year = date('Y');
+
+        $lastProject = Project::where('project_code', 'like', "PRJ-{$year}-%")
+            ->orderBy('project_code', 'desc')
+            ->lockForUpdate()
+            ->value('project_code');
+        $seq = $lastProject ? ((int) substr($lastProject, -5)) + 1 : 1;
+        $validated['project_code'] = sprintf('PRJ-%s-%05d', $year, $seq);
+        $validated['status'] = $validated['status'] ?? 'Open';
+
+        $client = Client::findOrFail($validated['client_id']);
+        $clientCode = $client->client_code ?? '';
+        $maxSeq = Project::where('client_id', $client->id)
+            ->whereNotNull('docket_number')
+            ->lockForUpdate()
+            ->get()
+            ->map(fn($p) => strlen($p->docket_number) >= strlen($clientCode) + 3
+                ? (int) substr($p->docket_number, strlen($clientCode), 3) : 0)
+            ->max() ?? 0;
+        $docketSeq = str_pad($maxSeq + 1, 3, '0', STR_PAD_LEFT);
+        $office = strtoupper($validated['patent_office_code'] ?? '');
+        $service = strtoupper($validated['service_code'] ?? '');
+        $validated['docket_number'] = $clientCode . $docketSeq . $office . $service;
+
+        $project = Project::create($validated);
+
+        // Seed default pipeline stages for new projects
+        $defaultStages = [
+            "Invention Disclosure", "Patent Search", "Search Report",
+            "Provisional Application", "Provisional Filing",
+            "Patent Drafting", "Applicant/Inventor Review", "Filing with Patent Office",
+            "First Examination Report", "FER Response Preparation", "FER Response Filing",
+            "Hearing with Examiner", "Hearing Response Preparation", "Hearing Response Filing",
+            "Granted", "Renewal",
+        ];
+        foreach ($defaultStages as $index => $stageName) {
+            ProjectStage::create([
+                'project_id' => $project->id,
+                'stage_name' => $stageName,
+                'status' => $index === 0 ? 'In Progress' : 'Pending',
+                'sequence_order' => $index,
+                'duration_days' => 15,
+                'due_date' => Carbon::now()->addDays(($index + 1) * 15),
+            ]);
+        }
+
+        return $project;
     }
 
     public function update(UpdateProjectRequest $request, $id)
