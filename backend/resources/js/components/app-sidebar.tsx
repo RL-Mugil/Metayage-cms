@@ -93,6 +93,7 @@ const groups = [
       { to: "/bulk", title: "Bulk Operations", icon: Layers },
       { to: "/compliance", title: "Compliance", icon: ShieldCheck },
       { to: "/integrations", title: "Integrations", icon: Plug },
+      { to: "/staff-users", title: "Staff Users", icon: Users, adminOnly: true },
       { to: "/settings", title: "Settings", icon: Settings },
     ],
   },
@@ -165,7 +166,7 @@ export function AppSidebar() {
               </SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu>
-                  {g.items.map((it) => (
+                  {g.items.filter((it: any) => !it.adminOnly || user?.role === "super_admin").map((it) => (
                     <SidebarMenuItem key={it.to}>
                       <SidebarMenuButton asChild isActive={isActive(it.to)} tooltip={it.title}>
                         <Link href={it.to}>

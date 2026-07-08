@@ -28,6 +28,12 @@ Route::middleware(['auth:sanctum', 'throttle:60,1'])->group(function () {
     Route::get('/users', [AuthController::class, 'users']);
     Route::put('/users/{id}/reset-password', [\App\Http\Controllers\SettingsController::class, 'resetUserPassword']);
 
+    // Staff user administration (system admin only)
+    Route::get('/staff-users', [\App\Http\Controllers\StaffUserController::class, 'index']);
+    Route::post('/staff-users', [\App\Http\Controllers\StaffUserController::class, 'store']);
+    Route::put('/staff-users/{id}', [\App\Http\Controllers\StaffUserController::class, 'update']);
+    Route::delete('/staff-users/{id}', [\App\Http\Controllers\StaffUserController::class, 'destroy']);
+
     // Dashboard
     Route::get('/dashboard/metrics', [DashboardController::class, 'metrics']);
 

@@ -54,6 +54,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/patent-portfolio', fn () => Inertia::render('PatentPortfolio'))->name('patent-portfolio');
     Route::get('/patent-lifecycle', fn () => Inertia::render('PatentLifecycle'))->name('patent-lifecycle');
     Route::get('/portal-users', fn () => Inertia::render('PortalUsers'))->name('portal-users');
+    Route::get('/staff-users', fn () => Inertia::render('StaffUsers'))->name('staff-users');
 
     // HRMS sub-routes
     Route::get('/hrms', [HRMSController::class, 'inertiaIndex'])->name('hrms.index');

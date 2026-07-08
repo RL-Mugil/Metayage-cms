@@ -533,7 +533,7 @@ export default function Projects() {
     })), [clients]);
 
   const staffOptions = useMemo(() =>
-    users.map((u) => ({ id: String(u.id), label: `${u.name} (${u.role})` })), [users]);
+    users.map((u) => ({ id: String(u.id), label: u.name })), [users]);
 
   const officeOptions = PATENT_OFFICES.map((o) => ({ id: o.code, label: o.label }));
   const serviceOptions = SERVICE_CODES.map((s) => ({ id: s.code, label: s.label }));

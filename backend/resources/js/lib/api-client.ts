@@ -501,6 +501,18 @@ export const api = {
   async getMyPortalUsers(): Promise<any[]> {
     return this.request('/my-portal/users')
   },
+  async getStaffUsers(search?: string): Promise<any[]> {
+    return this.request(`/staff-users${search ? `?search=${encodeURIComponent(search)}` : ''}`)
+  },
+  async createStaffUser(data: { name: string; email: string; role: string; password: string }): Promise<any> {
+    return this.request('/staff-users', { method: 'POST', body: JSON.stringify(data) })
+  },
+  async updateStaffUser(id: number, data: Partial<{ name: string; email: string; role: string; status: string }>): Promise<any> {
+    return this.request(`/staff-users/${id}`, { method: 'PUT', body: JSON.stringify(data) })
+  },
+  async deleteStaffUser(id: number): Promise<{ ok: boolean }> {
+    return this.request(`/staff-users/${id}`, { method: 'DELETE' })
+  },
   async createMyPortalUser(data: { name: string; email: string; password: string }): Promise<any> {
     return this.request('/my-portal/users', { method: 'POST', body: JSON.stringify(data) })
   },
