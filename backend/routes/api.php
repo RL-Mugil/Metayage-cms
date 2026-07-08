@@ -17,8 +17,9 @@ use App\Http\Controllers\ProjectTrackerController;
 use App\Http\Controllers\ReportsController;
 use App\Http\Controllers\PatentPortfolioController;
 
-// Public routes
-Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:10,1');
+// Login happens through the web route (session-based, see routes/web.php).
+// The old public POST /api/login pointed at the same session login and
+// always 500'd outside a browser — removed.
 
 // Authenticated routes protected by Sanctum
 Route::middleware(['auth:sanctum', 'throttle:60,1'])->group(function () {
