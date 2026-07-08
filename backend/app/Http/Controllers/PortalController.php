@@ -138,6 +138,7 @@ class PortalController extends Controller
             'client_id' => 'required|integer|exists:clients,id',
             'emails'    => 'required|array|min:1',
             'emails.*'  => 'required|email|max:255',
+            'password'  => 'required|string|min:6|max:100',
         ]);
 
         $client  = Client::findOrFail($validated['client_id']);
@@ -146,13 +147,13 @@ class PortalController extends Controller
         $primaryUserId = null;
 
         foreach ($validated['emails'] as $i => $email) {
-            $tempPassword = 'Portal@' . rand(1000, 9999);
-
+            // Creator sets the password manually; clients can change it later
+            // in Settings → Security.
             $portalUser = User::updateOrCreate(
                 ['email' => $email],
                 [
                     'name'     => $name,
-                    'password' => Hash::make($tempPassword),
+                    'password' => Hash::make($validated['password']),
                     // First email is the primary contact → client_admin
                     // (manages their company's portal users, approves/rejects).
                     'role'     => $i === 0 ? 'client_admin' : 'client',
@@ -171,18 +172,18 @@ class PortalController extends Controller
                 $primaryUserId = $portalUser->id;
             }
 
-            $mailSent = false;
-            try {
-                Mail::to($email)->send(new PortalInviteMail(
-                    clientName: $name,
-                    email:      $email,
-                    password:   $tempPassword,
-                    loginUrl:   config('app.url') . '/login',
-                ));
-                $mailSent = true;
-            } catch (\Throwable) {}
+            // Credential emails disabled for now — the creator shares the
+            // password directly. Re-enable by uncommenting.
+            // try {
+            //     Mail::to($email)->send(new PortalInviteMail(
+            //         clientName: $name,
+            //         email:      $email,
+            //         password:   $validated['password'],
+            //         loginUrl:   config('app.url') . '/login',
+            //     ));
+            // } catch (\Throwable) {}
 
-            $results[] = ['email' => $email, 'password' => $tempPassword, 'mail_sent' => $mailSent];
+            $results[] = ['email' => $email];
         }
 
         $client->portal_user_id   = $primaryUserId;

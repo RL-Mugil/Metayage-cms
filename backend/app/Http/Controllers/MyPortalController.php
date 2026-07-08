@@ -47,7 +47,10 @@ class MyPortalController extends Controller
                 }
             })
             ->whereIn('role', User::CLIENT_ROLES)
-            ->orderByRaw("CASE WHEN role = 'client_admin' THEN 0 ELSE 1 END")
+            // Postgres: DISTINCT + ORDER BY raw expression is invalid — plain
+            // column ordering ('client_admin' sorts after 'client', so desc
+            // puts admins first) keeps both.
+            ->orderByDesc('role')
             ->orderBy('name')
             ->distinct()
             ->get(['id', 'name', 'email', 'role', 'status', 'created_at']);
@@ -61,16 +64,15 @@ class MyPortalController extends Controller
         if ($client instanceof \Illuminate\Http\JsonResponse) return $client;
 
         $validated = $request->validate([
-            'name'  => 'required|string|max:255',
-            'email' => 'required|email|max:255|unique:users,email',
+            'name'     => 'required|string|max:255',
+            'email'    => 'required|email|max:255|unique:users,email',
+            'password' => 'required|string|min:6|max:100',
         ]);
-
-        $tempPassword = 'Portal@' . rand(1000, 9999);
 
         $newUser = User::create([
             'name'     => $validated['name'],
             'email'    => $validated['email'],
-            'password' => Hash::make($tempPassword),
+            'password' => Hash::make($validated['password']),
             'role'     => 'client',
             'status'   => 'Active',
         ]);
@@ -82,16 +84,16 @@ class MyPortalController extends Controller
             ['client_id', 'name', 'updated_at']
         );
 
-        $mailSent = false;
-        try {
-            Mail::to($validated['email'])->send(new PortalInviteMail(
-                clientName: $validated['name'],
-                email:      $validated['email'],
-                password:   $tempPassword,
-                loginUrl:   config('app.url') . '/login',
-            ));
-            $mailSent = true;
-        } catch (\Throwable) {}
+        // Credential emails disabled for now — the admin shares the password
+        // directly. Re-enable by uncommenting.
+        // try {
+        //     Mail::to($validated['email'])->send(new PortalInviteMail(
+        //         clientName: $validated['name'],
+        //         email:      $validated['email'],
+        //         password:   $validated['password'],
+        //         loginUrl:   config('app.url') . '/login',
+        //     ));
+        // } catch (\Throwable) {}
 
         DB::table('ip_notifications')->insert([
             'user_id'     => $request->user()->id,
@@ -104,10 +106,8 @@ class MyPortalController extends Controller
         ]);
 
         return response()->json([
-            'ok'        => true,
-            'user'      => $newUser->only(['id', 'name', 'email', 'role', 'status', 'created_at']),
-            'password'  => $tempPassword,
-            'mail_sent' => $mailSent,
+            'ok'   => true,
+            'user' => $newUser->only(['id', 'name', 'email', 'role', 'status', 'created_at']),
         ], 201);
     }
 

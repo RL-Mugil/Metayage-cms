@@ -449,7 +449,7 @@ export const api = {
   async portalInviteAll(): Promise<{ ok: boolean; invited: number }> {
     return this.request('/portal/invite-all', { method: 'POST' })
   },
-  async createPortal(data: { client_id: number; emails: string[] }): Promise<any> {
+  async createPortal(data: { client_id: number; emails: string[]; password: string }): Promise<any> {
     return this.request('/portal/create', { method: 'POST', body: JSON.stringify(data) })
   },
   async resetUserPassword(userId: number | string, password: string): Promise<{ ok: boolean }> {
@@ -501,7 +501,7 @@ export const api = {
   async getMyPortalUsers(): Promise<any[]> {
     return this.request('/my-portal/users')
   },
-  async createMyPortalUser(data: { name: string; email: string }): Promise<any> {
+  async createMyPortalUser(data: { name: string; email: string; password: string }): Promise<any> {
     return this.request('/my-portal/users', { method: 'POST', body: JSON.stringify(data) })
   },
   async deleteMyPortalUser(userId: number): Promise<{ ok: boolean }> {

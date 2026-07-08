@@ -24,10 +24,10 @@ export default function PortalUsers() {
 
   // Add user modal
   const [showAdd, setShowAdd] = useState(false);
-  const [form, setForm] = useState({ name: "", email: "" });
+  const [form, setForm] = useState({ name: "", email: "", password: "" });
   const [saving, setSaving] = useState(false);
   const [addError, setAddError] = useState("");
-  const [created, setCreated] = useState<{ email: string; password: string; mail_sent: boolean } | null>(null);
+  const [created, setCreated] = useState<{ email: string } | null>(null);
 
   // Remove confirm
   const [confirmRemove, setConfirmRemove] = useState<PortalUser | null>(null);
@@ -42,12 +42,12 @@ export default function PortalUsers() {
   useEffect(() => { load(); }, []);
 
   async function addUser() {
-    if (!form.name.trim() || !form.email.trim()) return;
+    if (!form.name.trim() || !form.email.trim() || form.password.length < 6) return;
     setSaving(true);
     setAddError("");
     try {
-      const res = await api.createMyPortalUser({ name: form.name.trim(), email: form.email.trim() });
-      setCreated({ email: res.user?.email ?? form.email, password: res.password, mail_sent: res.mail_sent });
+      const res = await api.createMyPortalUser({ name: form.name.trim(), email: form.email.trim(), password: form.password });
+      setCreated({ email: res.user?.email ?? form.email });
       load();
     } catch (e: any) {
       setAddError(e?.message || "Failed to add user.");
@@ -79,7 +79,7 @@ export default function PortalUsers() {
         title="Portal Users"
         description="Add or remove people from your company who can access this portal."
         actions={
-          <Button onClick={() => { setShowAdd(true); setForm({ name: "", email: "" }); setCreated(null); setAddError(""); }}>
+          <Button onClick={() => { setShowAdd(true); setForm({ name: "", email: "", password: "" }); setCreated(null); setAddError(""); }}>
             <Plus className="h-4 w-4 mr-2" /> Add User
           </Button>
         }
@@ -98,21 +98,14 @@ export default function PortalUsers() {
                 <div className="text-center">
                   <CheckCircle className="h-10 w-10 text-green-500 mx-auto mb-3" />
                   <div className="font-semibold">User Added!</div>
-                  <div className="text-sm mt-1">
-                    {created.mail_sent
-                      ? <span className="text-green-500">Invite email sent to {created.email}</span>
-                      : <span className="text-amber-500">Email failed — share the credentials below manually</span>}
-                  </div>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Share the password you set with them directly.<br />
+                    They can change it later in Settings → Security.
+                  </p>
                 </div>
-                <div className="rounded-lg border border-gold/30 bg-gold/5 p-4 space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Email</span>
-                    <span className="font-mono font-medium">{created.email}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Password</span>
-                    <span className="font-mono font-medium text-gold">{created.password}</span>
-                  </div>
+                <div className="rounded-lg border border-gold/30 bg-gold/5 px-4 py-2.5 flex justify-between text-sm">
+                  <span className="text-muted-foreground">Login email</span>
+                  <span className="font-mono font-medium">{created.email}</span>
                 </div>
                 <Button className="w-full" variant="outline" onClick={() => setShowAdd(false)}>Close</Button>
               </div>
@@ -132,11 +125,18 @@ export default function PortalUsers() {
                       placeholder="jane@yourcompany.com"
                       className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
                   </div>
+                  <div>
+                    <label className="block text-xs text-muted-foreground mb-1">Set Password</label>
+                    <input type="text" value={form.password} onChange={e => setForm(p => ({ ...p, password: e.target.value }))}
+                      placeholder="Min. 6 characters — share it with them"
+                      className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-gold" />
+                    <p className="text-[10px] text-muted-foreground mt-1">They can change it later in Settings → Security.</p>
+                  </div>
                 </div>
                 <div className="flex gap-2 mt-5">
                   <Button className="bg-gold hover:bg-gold/90 text-black flex-1"
-                    disabled={!form.name.trim() || !form.email.trim() || saving} onClick={addUser}>
-                    {saving ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Adding…</> : <>Add &amp; Send Invite</>}
+                    disabled={!form.name.trim() || !form.email.trim() || form.password.length < 6 || saving} onClick={addUser}>
+                    {saving ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Adding…</> : <>Add User</>}
                   </Button>
                   <Button variant="outline" onClick={() => setShowAdd(false)}>Cancel</Button>
                 </div>

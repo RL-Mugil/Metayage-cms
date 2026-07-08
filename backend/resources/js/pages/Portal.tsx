@@ -94,8 +94,10 @@ export default function Portal() {
   const [showDropdown, setShowDropdown] = useState(false);
   const [selectedClient, setSelectedClient] = useState<any | null>(null);
   const [emailList, setEmailList] = useState<string[]>([""]);
+  const [newPortalPw, setNewPortalPw] = useState("");
   const [portalCreated, setPortalCreated] = useState(false);
-  const [createdCreds, setCreatedCreds] = useState<{ email: string; password: string; mail_sent: boolean }[] | null>(null);
+  const [createdCreds, setCreatedCreds] = useState<{ email: string }[] | null>(null);
+  const [createError, setCreateError] = useState("");
   const [saving, setSaving] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -145,6 +147,8 @@ export default function Portal() {
     setPortalSearch("");
     setPortalCreated(false);
     setCreatedCreds(null);
+    setNewPortalPw("");
+    setCreateError("");
     setShowNewPortal(true);
     // contact_email is already on the client object from the allClients list
     const pre = client?.contact_email ? [client.contact_email] : [""];
@@ -153,14 +157,15 @@ export default function Portal() {
 
   async function createPortal() {
     const emails = emailList.map(e => e.trim()).filter(Boolean);
-    if (!selectedClient || emails.length === 0) return;
+    if (!selectedClient || emails.length === 0 || newPortalPw.length < 6) return;
     setSaving(true);
+    setCreateError("");
     try {
-      const res = await api.createPortal({ client_id: selectedClient.id, emails });
+      const res = await api.createPortal({ client_id: selectedClient.id, emails, password: newPortalPw });
       setCreatedCreds(res.results ?? []);
       setPortalCreated(true);
       loadPortal();
-    } catch { /* keep modal open */ }
+    } catch (e: any) { setCreateError(e?.message || "Failed to create portal."); }
     finally { setSaving(false); }
   }
 
@@ -265,7 +270,7 @@ export default function Portal() {
             <Button variant="outline" onClick={() => { setShowInviteAll(true); setInviteAllDone(false); }}>
               <Mail className="h-4 w-4 mr-2" />Invite All Inactive
             </Button>
-            <Button onClick={() => { setShowNewPortal(true); setPortalCreated(false); setSelectedClient(null); setPortalSearch(""); setEmailList([""]); }}>
+            <Button onClick={() => { setShowNewPortal(true); setPortalCreated(false); setSelectedClient(null); setPortalSearch(""); setEmailList([""]); setNewPortalPw(""); setCreateError(""); }}>
               <Globe className="h-4 w-4 mr-2" />New Portal
             </Button>
           </>
@@ -285,22 +290,15 @@ export default function Portal() {
                 <div className="text-center">
                   <CheckCircle className="h-10 w-10 text-green-500 mx-auto mb-3" />
                   <div className="font-semibold">Portal Account{(createdCreds?.length ?? 0) > 1 ? "s" : ""} Created!</div>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Share the password you set with the client directly.<br />
+                    They can change it later in Settings → Security.
+                  </p>
                 </div>
                 {createdCreds && createdCreds.map((cred, i) => (
-                  <div key={i} className="rounded-lg border border-gold/30 bg-gold/5 p-4 space-y-2 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Email</span>
-                      <span className="font-mono font-medium">{cred.email}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Password</span>
-                      <span className="font-mono font-medium text-gold">{cred.password}</span>
-                    </div>
-                    <div className="text-xs mt-1">
-                      {cred.mail_sent
-                        ? <span className="text-green-600">✓ Invite email sent</span>
-                        : <span className="text-amber-500">⚠ Email failed — share manually</span>}
-                    </div>
+                  <div key={i} className="rounded-lg border border-gold/30 bg-gold/5 px-4 py-2.5 flex justify-between text-sm">
+                    <span className="text-muted-foreground">Login email</span>
+                    <span className="font-mono font-medium">{cred.email}</span>
                   </div>
                 ))}
                 <div className="text-xs text-muted-foreground text-center">Login: mypl-cms.139-59-85-216.sslip.io</div>
@@ -374,12 +372,26 @@ export default function Portal() {
                       </button>
                     </div>
                   </div>
+                  <div>
+                    <label className="block text-xs text-muted-foreground mb-1">Set Password</label>
+                    <input
+                      type="text"
+                      value={newPortalPw}
+                      onChange={e => setNewPortalPw(e.target.value)}
+                      placeholder="Min. 6 characters — share this with the client"
+                      className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-gold"
+                    />
+                    <p className="text-[10px] text-muted-foreground mt-1">The client can change it later in Settings → Security.</p>
+                  </div>
+                  {createError && (
+                    <p className="text-xs text-red-500">{createError}</p>
+                  )}
                 </div>
                 <div className="flex gap-2 mt-5">
                   <Button className="bg-gold hover:bg-gold/90 text-black flex-1"
-                    disabled={!selectedClient || emailList.every(e => !e.trim()) || saving}
+                    disabled={!selectedClient || emailList.every(e => !e.trim()) || newPortalPw.length < 6 || saving}
                     onClick={createPortal}>
-                    {saving ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Creating…</> : <>Create &amp; Send Credentials</>}
+                    {saving ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Creating…</> : <>Create Portal</>}
                   </Button>
                   <Button variant="outline" onClick={() => setShowNewPortal(false)}>Cancel</Button>
                 </div>
