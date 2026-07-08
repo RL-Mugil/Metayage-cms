@@ -6,6 +6,7 @@ use App\Http\PaginationHelper;
 use App\Models\Client;
 use App\Models\ClientContact;
 use App\Models\FeedbackEntry;
+use App\Models\FeedbackRequest;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -14,7 +15,7 @@ class FeedbackController extends Controller
 {
     private function denyClients(Request $request): ?\Illuminate\Http\JsonResponse
     {
-        if ($request->user()->role === 'client') {
+        if ($request->user()->isClientRole()) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
         return null;
@@ -49,9 +50,9 @@ class FeedbackController extends Controller
             'category'    => 'nullable|string|max:100',
         ]);
 
-        if ($user->role === 'client') {
+        if ($user->isClientRole()) {
             // Pin the client name from the DB — prevents spoofing.
-            $client = Client::whereHas('contacts', fn ($q) => $q->where('email', $user->email))->first();
+            $client = $this->clientFor($request);
             $validated['client_name'] = $client ? $client->company_name : $user->name;
         } else {
             // Staff must reference a real client company name to prevent fake entries.
@@ -80,30 +81,141 @@ class FeedbackController extends Controller
         if ($deny = $this->denyClients($request)) return $deny;
 
         $validated = $request->validate([
-            'client' => 'required|string|max:255',
-            'subject' => 'required|string|max:255',
+            'project_id' => 'required|integer|exists:projects,id',
+            'subject'    => 'nullable|string|max:255',
         ]);
 
-        // Resolve the client's portal user so the notification lands on their dashboard.
-        $clientUser = Client::where('company_name', $validated['client'])
-            ->first()
-            ?->contacts()
-            ->join('users', 'users.email', '=', 'client_contacts.email')
-            ->select('users.id')
-            ->first();
+        $project = \App\Models\Project::with('client')->findOrFail($validated['project_id']);
+        if (! $project->client) {
+            return response()->json(['message' => 'This case has no client attached.'], 422);
+        }
 
-        $notifyUserId = $clientUser?->id ?? $request->user()->id;
+        // One open request per case — avoid spamming the client.
+        $existing = FeedbackRequest::where('project_id', $project->id)->where('status', 'Pending')->exists();
+        if ($existing) {
+            return response()->json(['message' => "A feedback request for {$project->docket_number} is already pending with the client."], 422);
+        }
 
+        $fr = FeedbackRequest::create([
+            'project_id'      => $project->id,
+            'client_id'       => $project->client_id,
+            'docket_number'   => $project->docket_number,
+            'subject'         => ($validated['subject'] ?? null) ?: "Case experience — {$project->docket_number}",
+            'requested_by_id' => $request->user()->id,
+            'status'          => 'Pending',
+        ]);
+
+        // Notify every portal user of this client
+        $portalUserIds = collect($project->client->portalUserIds());
+        $now = now();
+        $rows = $portalUserIds->map(fn ($uid) => [
+            'user_id'     => $uid,
+            'type'        => 'feedback_request',
+            'title'       => 'Feedback requested',
+            'description' => "{$request->user()->name} requested your feedback on case {$project->docket_number}",
+            'meta'        => json_encode(['feedback_request_id' => $fr->id, 'project_id' => $project->id]),
+            'action_url'  => '/feedback',
+            'created_at'  => $now,
+            'updated_at'  => $now,
+        ])->all();
+        if ($rows) {
+            DB::table('ip_notifications')->insert($rows);
+        }
+
+        return response()->json($fr, 201);
+    }
+
+    /** Resolve the client record for a portal user. */
+    private function clientFor(Request $request): ?Client
+    {
+        $user = $request->user();
+        if (! $user->isClientRole()) return null;
+        return $request->attributes->get('portal_client') ?? Client::forUser($user);
+    }
+
+    /** List feedback requests — firm sees all (managers: own), clients see their own client's. */
+    public function requests(Request $request)
+    {
+        $user  = $request->user();
+        $query = FeedbackRequest::with('requester:id,name', 'client:id,company_name')
+            ->orderByDesc('created_at');
+
+        if ($user->isClientRole()) {
+            $client = $this->clientFor($request);
+            if (! $client) return response()->json(['message' => 'Forbidden'], 403);
+            $query->where('client_id', $client->id);
+        } elseif ($user->role === 'manager') {
+            $query->where('requested_by_id', $user->id);
+        }
+
+        $canRate = $user->role === 'client_admin';
+
+        return response()->json($query->limit(200)->get()->map(fn ($r) => [
+            'id'            => $r->id,
+            'docket_number' => $r->docket_number,
+            'subject'       => $r->subject,
+            'client'        => $r->client?->company_name,
+            'requester'     => $r->requester?->name,
+            'status'        => $r->status,
+            'rating'        => $r->rating,
+            'comment'       => $r->comment,
+            'requested_at'  => $r->created_at?->toDateString(),
+            'completed_at'  => $r->completed_at?->toDateString(),
+            'can_rate'      => $canRate && $r->status === 'Pending',
+        ]));
+    }
+
+    /** client_admin rates a pending feedback request for their own client. */
+    public function rate(Request $request, $id)
+    {
+        $user = $request->user();
+        if ($user->role !== 'client_admin') {
+            return response()->json(['message' => 'Only your portal admin can submit the case rating.'], 403);
+        }
+
+        $client = $this->clientFor($request);
+        $fr = FeedbackRequest::findOrFail($id);
+        if (! $client || (int) $fr->client_id !== (int) $client->id) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+        if ($fr->status !== 'Pending') {
+            return response()->json(['message' => 'This request has already been rated.'], 422);
+        }
+
+        $validated = $request->validate([
+            'rating'  => 'required|integer|min:1|max:5',
+            'comment' => 'nullable|string|max:2000',
+        ]);
+
+        $fr->update([
+            'rating'          => $validated['rating'],
+            'comment'         => $validated['comment'] ?? null,
+            'status'          => 'Completed',
+            'completed_by_id' => $user->id,
+            'completed_at'    => now(),
+        ]);
+
+        // Feed the CSAT dashboard
+        FeedbackEntry::create([
+            'client_name' => $client->company_name ?? $client->legal_name,
+            'rating'      => $validated['rating'],
+            'comment'     => trim(($fr->docket_number ? "[{$fr->docket_number}] " : '') . ($validated['comment'] ?? '')),
+            'category'    => 'Overall',
+            'entry_date'  => now()->toDateString(),
+        ]);
+
+        // Notify the requesting client manager
         DB::table('ip_notifications')->insert([
-            'user_id' => $notifyUserId,
-            'type' => 'feedback_request',
-            'title' => 'Feedback request received',
-            'description' => "CSAT survey \"{$validated['subject']}\" has been sent to you by {$request->user()->name}",
-            'meta' => json_encode($validated),
-            'created_at' => now(),
-            'updated_at' => now(),
+            'user_id'     => $fr->requested_by_id,
+            'type'        => 'feedback_request',
+            'title'       => 'Case feedback received',
+            'description' => "{$client->company_name} rated case {$fr->docket_number}: {$validated['rating']}/5",
+            'meta'        => json_encode(['feedback_request_id' => $fr->id, 'rating' => $validated['rating']]),
+            'action_url'  => '/feedback',
+            'created_at'  => now(),
+            'updated_at'  => now(),
         ]);
 
-        return response()->json(['ok' => true], 201);
+        return response()->json(['ok' => true]);
     }
 }

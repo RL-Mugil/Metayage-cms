@@ -191,7 +191,7 @@ const CASE_TYPES = [
 const URGENCIES = ["Low", "Normal", "High", "Critical"];
 const STATUSES  = ["Open", "In Progress", "On Hold", "Closed", "Completed"];
 const FEE_TYPES = ["Fixed Fee", "Hourly", "Retainer", "Contingency", "Pro Bono"];
-const PIPELINE_STAGES = ["Intake", "Drafting", "Filing", "Examination", "Object received", "Granted", "Renewal"];
+const PIPELINE_STAGES = ["Invention Disclosure", "Patent Search", "Search Report", "Provisional Application", "Provisional Filing", "Patent Drafting", "Applicant/Inventor Review", "Filing with Patent Office", "First Examination Report", "FER Response Preparation", "FER Response Filing", "Hearing with Examiner", "Hearing Response Preparation", "Hearing Response Filing", "Granted", "Renewal"];
 
 // ── Shared UI ─────────────────────────────────────────────────────────────────
 

@@ -1,15 +1,45 @@
+import { useRef, useEffect } from "react";
 import { Link, usePage, router } from "@inertiajs/react";
 import {
   LayoutDashboard, Users, Briefcase, GitBranch, ListChecks,
   BellRing, UserCircle2, FolderLock, MessagesSquare, CheckCircle2,
   Bell, BarChart3, FileBarChart2, Wallet, Sparkles, Building2, Star, Layers,
-  CalendarDays, Plug, Settings, IdCard, Scale, LogOut, TableProperties, ShieldCheck,
+  CalendarDays, Plug, Settings, IdCard, Scale, LogOut, TableProperties, ShieldCheck, Award,
 } from "lucide-react";
 import {
   Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel,
   SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarFooter,
 } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
+
+// Dedicated nav for external client portal users (client / client_admin).
+const clientGroups = (isAdmin: boolean) => [
+  {
+    label: "Overview",
+    items: [
+      { to: "/", title: "Dashboard", icon: LayoutDashboard },
+      { to: "/patent-portfolio", title: "Patent Portfolio", icon: Award },
+    ],
+  },
+  {
+    label: "Workspace",
+    items: [
+      { to: "/documents", title: "Documents", icon: FolderLock },
+      { to: "/discussions", title: "Discussions", icon: MessagesSquare },
+      { to: "/approvals", title: "Approvals", icon: CheckCircle2 },
+      { to: "/financial", title: "Invoices & Payments", icon: Wallet },
+    ],
+  },
+  {
+    label: "Account",
+    items: [
+      ...(isAdmin ? [{ to: "/portal-users", title: "Portal Users", icon: Users }] : []),
+      { to: "/feedback", title: "Feedback", icon: Star },
+      { to: "/notifications", title: "Notifications", icon: Bell },
+      { to: "/settings", title: "Settings", icon: Settings },
+    ],
+  },
+];
 
 const groups = [
   {
@@ -26,6 +56,8 @@ const groups = [
       { to: "/project-tracker", title: "Project Tracker", icon: TableProperties },
       { to: "/tasks", title: "Tasks", icon: ListChecks },
       { to: "/calendar", title: "Calendar", icon: CalendarDays },
+      { to: "/patent-portfolio", title: "Patent Portfolio", icon: Award },
+      { to: "/patent-lifecycle", title: "Patent Lifecycle", icon: GitBranch },
     ],
   },
   {
@@ -82,6 +114,7 @@ const groups = [
 export function AppSidebar() {
   const { url, props } = usePage() as any;
   const user = props.auth?.user;
+  const contentRef = useRef<HTMLDivElement>(null);
 
   const isActive = (p: string) =>
     p === "/" ? url === "/" : url === p || url.startsWith(p + "/");
@@ -93,6 +126,19 @@ export function AppSidebar() {
   const handleLogout = () => {
     router.post("/logout");
   };
+
+  useEffect(() => {
+    const saved = sessionStorage.getItem("sidebar-scroll");
+    if (saved && contentRef.current) {
+      contentRef.current.scrollTop = parseInt(saved, 10);
+    }
+    const off = router.on("before", () => {
+      if (contentRef.current) {
+        sessionStorage.setItem("sidebar-scroll", String(contentRef.current.scrollTop));
+      }
+    });
+    return () => off();
+  }, []);
 
   return (
     <Sidebar collapsible="icon">
@@ -107,11 +153,11 @@ export function AppSidebar() {
           </div>
         </Link>
       </SidebarHeader>
-      <SidebarContent>
-        {groups.map((g) => {
-          if (user?.role === "client" && ["Practice", "Operations", "HRMS"].includes(g.label)) {
-            return null;
-          }
+      <SidebarContent ref={contentRef}>
+        {(["client", "client_admin"].includes(user?.role)
+          ? clientGroups(user?.role === "client_admin")
+          : groups
+        ).map((g) => {
           return (
             <SidebarGroup key={g.label}>
               <SidebarGroupLabel className="text-sidebar-foreground/50 uppercase tracking-wider text-[10px]">

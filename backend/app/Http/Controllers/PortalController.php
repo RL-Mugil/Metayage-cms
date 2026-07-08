@@ -23,12 +23,57 @@ class PortalController extends Controller
         return null;
     }
 
+    /**
+     * Resolve every portal account tied to a client set, including the
+     * primary admin on clients.portal_user_id and any secondary contact users.
+     */
+    private function portalUserIdsForClients(array $clientIds): array
+    {
+        $contactEmails = DB::table('client_contacts')
+            ->whereIn('client_id', $clientIds)
+            ->pluck('email')
+            ->filter();
+
+        $ids = User::query()
+            ->whereIn('role', User::CLIENT_ROLES)
+            ->when($contactEmails->isNotEmpty(), fn ($query) => $query->whereIn('email', $contactEmails))
+            ->pluck('id');
+
+        $primaryIds = Client::whereIn('id', $clientIds)
+            ->whereNotNull('portal_user_id')
+            ->pluck('portal_user_id');
+
+        return $ids
+            ->merge($primaryIds)
+            ->filter()
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Immediately log out all portal users of the given clients:
+     * revoke Sanctum tokens and kill their DB-backed sessions.
+     */
+    private function revokePortalAccess(array $clientIds): void
+    {
+        $userIds = $this->portalUserIdsForClients($clientIds);
+        if ($userIds === []) return;
+
+        DB::table('personal_access_tokens')
+            ->where('tokenable_type', 'App\\Models\\User')
+            ->whereIn('tokenable_id', $userIds)
+            ->delete();
+        DB::table('sessions')->whereIn('user_id', $userIds)->delete();
+    }
+
     public function clients(Request $request)
     {
         if ($deny = $this->denyUnauthorized($request)) return $deny;
 
         return response()->json(
-            Client::orderBy('company_name')->limit(500)->get()->map(fn ($c) => [
+            Client::whereNotNull('portal_user_id')->orderBy('company_name')->limit(500)->get()->map(fn ($c) => [
                 'id'               => $c->id,
                 'client_code'      => $c->client_code,
                 'company_name'     => $c->company_name ?? $c->legal_name,
@@ -49,6 +94,11 @@ class PortalController extends Controller
             $client->portal_invited_at = now();
         }
         $client->save();
+
+        // Disabling a portal logs its users out immediately.
+        if (! $client->portal_enabled) {
+            $this->revokePortalAccess([$client->id]);
+        }
 
         return response()->json(['ok' => true, 'portal_enabled' => $client->portal_enabled]);
     }
@@ -86,60 +136,75 @@ class PortalController extends Controller
 
         $validated = $request->validate([
             'client_id' => 'required|integer|exists:clients,id',
-            'email'     => 'required|email|max:255',
+            'emails'    => 'required|array|min:1',
+            'emails.*'  => 'required|email|max:255',
         ]);
 
-        $client = Client::findOrFail($validated['client_id']);
-        $name   = $client->company_name ?? $client->legal_name ?? 'Client';
+        $client  = Client::findOrFail($validated['client_id']);
+        $name    = $client->company_name ?? $client->legal_name ?? 'Client';
+        $results = [];
+        $primaryUserId = null;
 
-        // Generate a readable temp password
-        $tempPassword = 'Portal@' . rand(1000, 9999);
+        foreach ($validated['emails'] as $i => $email) {
+            $tempPassword = 'Portal@' . rand(1000, 9999);
 
-        // Create or update the portal user
-        $portalUser = User::updateOrCreate(
-            ['email' => $validated['email']],
-            [
-                'name'     => $name,
-                'password' => Hash::make($tempPassword),
-                'role'     => 'client',
-                'status'   => 'Active',
-            ]
-        );
+            $portalUser = User::updateOrCreate(
+                ['email' => $email],
+                [
+                    'name'     => $name,
+                    'password' => Hash::make($tempPassword),
+                    // First email is the primary contact → client_admin
+                    // (manages their company's portal users, approves/rejects).
+                    'role'     => $i === 0 ? 'client_admin' : 'client',
+                    'status'   => 'Active',
+                ]
+            );
 
-        // Link user to client and enable portal
-        $client->portal_user_id  = $portalUser->id;
-        $client->portal_enabled  = true;
+            // Ensure a client_contact record exists so RBAC data scoping works
+            DB::table('client_contacts')->upsert(
+                [['client_id' => $client->id, 'email' => $email, 'name' => $name, 'created_at' => now(), 'updated_at' => now()]],
+                ['email'],
+                ['client_id', 'name', 'updated_at']
+            );
+
+            if ($primaryUserId === null) {
+                $primaryUserId = $portalUser->id;
+            }
+
+            $mailSent = false;
+            try {
+                Mail::to($email)->send(new PortalInviteMail(
+                    clientName: $name,
+                    email:      $email,
+                    password:   $tempPassword,
+                    loginUrl:   config('app.url') . '/login',
+                ));
+                $mailSent = true;
+            } catch (\Throwable) {}
+
+            $results[] = ['email' => $email, 'password' => $tempPassword, 'mail_sent' => $mailSent];
+        }
+
+        $client->portal_user_id   = $primaryUserId;
+        $client->portal_enabled   = true;
         $client->portal_invited_at = now();
         $client->save();
 
-        // Send invite email (Brevo SMTP) — fail silently so the portal still gets created
-        $mailSent = false;
-        try {
-            Mail::to($validated['email'])->send(new PortalInviteMail(
-                clientName: $name,
-                email:      $validated['email'],
-                password:   $tempPassword,
-                loginUrl:   config('app.url') . '/login',
-            ));
-            $mailSent = true;
-        } catch (\Throwable) {}
-
+        $emailList = implode(', ', array_column($results, 'email'));
         DB::table('ip_notifications')->insert([
             'user_id'     => $request->user()->id,
             'type'        => 'portal_invite',
             'title'       => 'Client portal created',
-            'description' => "Portal account created for {$name} ({$validated['email']})" . ($mailSent ? ' — invite email sent' : ' — email failed, share credentials manually'),
-            'meta'        => json_encode(['client_id' => $client->id, 'email' => $validated['email']]),
+            'description' => "Created by {$request->user()->name} for {$name} ({$emailList})",
+            'meta'        => json_encode(['client_id' => $client->id, 'emails' => array_column($results, 'email')]),
             'created_at'  => now(),
             'updated_at'  => now(),
         ]);
 
         return response()->json([
             'ok'             => true,
-            'email'          => $validated['email'],
-            'password'       => $tempPassword,
-            'portal_user_id' => $portalUser->id,
-            'mail_sent'      => $mailSent,
+            'results'        => $results,
+            'portal_user_id' => $primaryUserId,
         ], 201);
     }
 
@@ -168,17 +233,11 @@ class PortalController extends Controller
             ]);
         } elseif ($action === 'disable') {
             Client::whereIn('id', $ids)->update(['portal_enabled' => false]);
+            $this->revokePortalAccess($ids);
         } elseif ($action === 'delete') {
-            $clients = Client::whereIn('id', $ids)->get();
-
-            // Delete the linked portal User accounts
-            $userIds = $clients->pluck('portal_user_id')->filter()->values()->all();
-            if (count($userIds)) {
-                // Revoke tokens first
-                DB::table('personal_access_tokens')
-                    ->where('tokenable_type', 'App\\Models\\User')
-                    ->whereIn('tokenable_id', $userIds)
-                    ->delete();
+            $userIds = $this->portalUserIdsForClients($ids);
+            if ($userIds !== []) {
+                $this->revokePortalAccess($ids);
                 User::whereIn('id', $userIds)->delete();
             }
 

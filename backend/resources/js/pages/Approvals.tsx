@@ -1,6 +1,6 @@
-import { Head } from "@inertiajs/react";
+import { Head, usePage } from "@inertiajs/react";
 import { useEffect, useState } from "react";
-import { CheckCircle, XCircle, Clock, DollarSign, Calendar, AlertTriangle, Filter, Loader2 } from "lucide-react";
+import { CheckCircle, XCircle, Clock, DollarSign, Calendar, AlertTriangle, Filter, Loader2, Plus, X, Search } from "lucide-react";
 import AppLayout from "@/layouts/AppLayout";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent } from "@/components/ui/card";
@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api-client";
 
-type ApprovalType = "Leave" | "Expense";
+type ApprovalType = "Leave" | "Expense" | "Client";
 type ApprovalStatus = "pending" | "approved" | "rejected";
 
 interface Approval {
@@ -22,27 +22,57 @@ interface Approval {
   submitted: string;
   urgency: "High" | "Normal";
   status: ApprovalStatus;
+  comments?: string | null;
+  can_resolve?: boolean;
 }
 
 const typeColors: Record<ApprovalType, string> = {
   Leave: "bg-blue-500/10 text-blue-600 border-blue-200",
   Expense: "bg-amber-500/10 text-amber-600 border-amber-200",
+  Client: "bg-purple-500/10 text-purple-600 border-purple-200",
 };
 
-const filterTypes: (ApprovalType | "All")[] = ["All", "Leave", "Expense"];
-
 export default function Approvals() {
+  const { props: pageProps } = usePage() as any;
+  const role: string = pageProps.auth?.user?.role ?? "";
+  const isClientUser = ["client", "client_admin"].includes(role);
+  const isClientAdmin = role === "client_admin";
+  const canCreateClientApproval = ["super_admin", "partner", "manager"].includes(role);
+  // Internal approvers act on Leave/Expense; client_admin acts on Client type
+  const canActInternal = ["super_admin", "hr", "manager", "partner"].includes(role);
+
   const [items, setItems] = useState<Approval[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [activeTab, setActiveTab] = useState<"pending" | "approved" | "rejected">("pending");
   const [filterType, setFilterType] = useState<ApprovalType | "All">("All");
 
-  useEffect(() => {
+  // New client approval modal (firm side)
+  const [showNew, setShowNew] = useState(false);
+  const [clients, setClients] = useState<any[]>([]);
+  const [form, setForm] = useState({ client_id: "", title: "", description: "" });
+  const [clientSearch, setClientSearch] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [newError, setNewError] = useState("");
+
+  const filterTypes: (ApprovalType | "All")[] = isClientUser
+    ? ["All"]
+    : ["All", "Leave", "Expense", "Client"];
+
+  const load = () => {
     api.getApprovals()
       .then((data) => setItems(data as unknown as Approval[]))
       .catch((e) => setError(e.message || "Failed to load approvals."))
       .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    load();
+    if (canCreateClientApproval) {
+      api.getClients(new URLSearchParams({ per_page: "2000" }))
+        .then((res: any) => setClients(Array.isArray(res) ? res : res?.data ?? []))
+        .catch(() => {});
+    }
   }, []);
 
   const resolve = async (item: Approval, action: "Approved" | "Rejected") => {
@@ -61,6 +91,32 @@ export default function Approvals() {
     }
   };
 
+  async function createApproval() {
+    if (!form.client_id || !form.title.trim()) return;
+    setSaving(true);
+    setNewError("");
+    try {
+      await api.createApproval({
+        client_id: Number(form.client_id),
+        title: form.title.trim(),
+        description: form.description.trim() || undefined,
+      });
+      setShowNew(false);
+      setForm({ client_id: "", title: "", description: "" });
+      load();
+    } catch (e: any) {
+      setNewError(e?.message || "Failed to create approval request.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // Can the current user act on this row?
+  const canAct = (a: Approval) => {
+    if (a.type === "Client") return isClientAdmin && (a.can_resolve ?? true);
+    return canActInternal && !isClientUser;
+  };
+
   const filtered = items.filter(
     (a) => a.status === activeTab && (filterType === "All" || a.type === filterType)
   );
@@ -69,14 +125,77 @@ export default function Approvals() {
   const approvedWeek = items.filter((a) => a.status === "approved").length;
   const rejectedWeek = items.filter((a) => a.status === "rejected").length;
 
+  const filteredClients = clients.filter((c: any) => {
+    const q = clientSearch.toLowerCase();
+    return !q || (c.company_name ?? "").toLowerCase().includes(q) || (c.client_code ?? "").toLowerCase().includes(q);
+  }).slice(0, 15);
+
   return (
     <AppLayout>
       <Head title="Approvals" />
       <PageHeader
         eyebrow="Engagement"
         title="Approvals"
-        description="Manage leave requests, expense claims, and project proposals"
+        description={isClientUser
+          ? "Review and act on approval requests from your legal team"
+          : "Manage leave requests, expense claims, and client approvals"}
+        actions={canCreateClientApproval ? (
+          <Button onClick={() => { setShowNew(true); setNewError(""); }}>
+            <Plus className="h-4 w-4 mr-2" /> New Client Approval
+          </Button>
+        ) : undefined}
       />
+
+      {/* New Client Approval modal */}
+      {showNew && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-md p-6 m-4">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-display text-lg font-semibold">Request Client Approval</h2>
+              <button onClick={() => setShowNew(false)}><X className="h-5 w-5 text-muted-foreground" /></button>
+            </div>
+            {newError && <p className="text-xs text-red-500 mb-3">{newError}</p>}
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1">Client</label>
+                <div className="relative mb-1">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
+                  <input type="text" placeholder="Filter clients…" value={clientSearch}
+                    onChange={(e) => setClientSearch(e.target.value)}
+                    className="w-full h-8 pl-7 pr-3 rounded-md border border-border bg-background text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
+                </div>
+                <select value={form.client_id} onChange={e => setForm(p => ({ ...p, client_id: e.target.value }))}
+                  className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold">
+                  <option value="">Select client…</option>
+                  {filteredClients.map((c: any) => (
+                    <option key={c.id} value={c.id}>{c.company_name ?? c.legal_name} ({c.client_code})</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1">Title</label>
+                <input type="text" value={form.title} onChange={e => setForm(p => ({ ...p, title: e.target.value }))}
+                  placeholder="e.g., Approve draft patent specification"
+                  className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+              </div>
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1">Description (optional)</label>
+                <textarea value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))}
+                  rows={3} placeholder="Details of what needs approval…"
+                  className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gold resize-none" />
+              </div>
+            </div>
+            <div className="flex gap-2 mt-5">
+              <Button className="bg-gold hover:bg-gold/90 text-black flex-1"
+                disabled={!form.client_id || !form.title.trim() || saving} onClick={createApproval}>
+                {saving ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Sending…</> : "Send to Client"}
+              </Button>
+              <Button variant="outline" onClick={() => setShowNew(false)}>Cancel</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="px-8 py-6 space-y-6">
         {error && (
           <div className="rounded-md border border-red-500/40 bg-red-500/10 px-4 py-2 text-sm text-red-400">
@@ -134,20 +253,22 @@ export default function Approvals() {
               </button>
             ))}
           </div>
-          <div className="flex items-center gap-2">
-            <Filter className="h-4 w-4 text-muted-foreground" />
-            {filterTypes.map((t) => (
-              <button
-                key={t}
-                onClick={() => setFilterType(t)}
-                className={`px-3 py-1 rounded text-xs font-medium border transition-colors ${
-                  filterType === t ? "bg-gold text-black border-gold" : "border-border text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                {t}
-              </button>
-            ))}
-          </div>
+          {filterTypes.length > 1 && (
+            <div className="flex items-center gap-2">
+              <Filter className="h-4 w-4 text-muted-foreground" />
+              {filterTypes.map((t) => (
+                <button
+                  key={t}
+                  onClick={() => setFilterType(t)}
+                  className={`px-3 py-1 rounded text-xs font-medium border transition-colors ${
+                    filterType === t ? "bg-gold text-black border-gold" : "border-border text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Table */}
@@ -177,7 +298,7 @@ export default function Approvals() {
                 </thead>
                 <tbody>
                   {filtered.map((a) => (
-                    <tr key={a.id} className="border-t border-border hover:bg-muted/30">
+                    <tr key={`${a.type}-${a.id}`} className="border-t border-border hover:bg-muted/30">
                       <td className="px-4 py-3">
                         <span className={`px-2 py-0.5 rounded text-xs font-medium border ${typeColors[a.type]}`}>
                           {a.type}
@@ -196,6 +317,9 @@ export default function Approvals() {
                             <Calendar className="h-3 w-3" />{String(a.from_date).slice(0, 10)} → {String(a.to_date).slice(0, 10)}
                           </div>
                         )}
+                        {a.comments && (
+                          <div className="text-xs text-muted-foreground mt-0.5 italic">"{a.comments}"</div>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-muted-foreground text-xs">{a.submitted}</td>
                       <td className="px-4 py-3">
@@ -209,14 +333,20 @@ export default function Approvals() {
                       </td>
                       {activeTab === "pending" ? (
                         <td className="px-4 py-3">
-                          <div className="flex gap-2">
-                            <Button size="sm" className="h-7 px-3 bg-green-600 hover:bg-green-700 text-white text-xs" onClick={() => resolve(a, "Approved")}>
-                              <CheckCircle className="h-3 w-3 mr-1" /> Approve
-                            </Button>
-                            <Button size="sm" variant="outline" className="h-7 px-3 text-xs border-red-200 text-red-600 hover:bg-red-50" onClick={() => resolve(a, "Rejected")}>
-                              <XCircle className="h-3 w-3 mr-1" /> Reject
-                            </Button>
-                          </div>
+                          {canAct(a) ? (
+                            <div className="flex gap-2">
+                              <Button size="sm" className="h-7 px-3 bg-green-600 hover:bg-green-700 text-white text-xs" onClick={() => resolve(a, "Approved")}>
+                                <CheckCircle className="h-3 w-3 mr-1" /> Approve
+                              </Button>
+                              <Button size="sm" variant="outline" className="h-7 px-3 text-xs border-red-200 text-red-600 hover:bg-red-50" onClick={() => resolve(a, "Rejected")}>
+                                <XCircle className="h-3 w-3 mr-1" /> Reject
+                              </Button>
+                            </div>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">
+                              {a.type === "Client" && !isClientUser ? "Awaiting client" : "View only"}
+                            </span>
+                          )}
                         </td>
                       ) : (
                         <td className="px-4 py-3 text-xs text-muted-foreground capitalize">

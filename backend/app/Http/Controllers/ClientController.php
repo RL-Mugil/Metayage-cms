@@ -96,8 +96,8 @@ class ClientController extends Controller
         $user = $request->user();
         $base = Client::query();
 
-        if ($user->role === 'client') {
-            $base->whereHas('contacts', fn($q) => $q->where('email', $user->email));
+        if ($user->isClientRole()) {
+            $base->visibleToUser($user);
         }
 
         $cacheKey = "client_stats_{$user->id}_{$user->role}";
@@ -132,8 +132,8 @@ class ClientController extends Controller
         $user = $request->user();
         $query = Client::with('accountManager');
 
-        if ($user->role === 'client') {
-            $query->whereHas('contacts', fn($q) => $q->where('email', $user->email));
+        if ($user->isClientRole()) {
+            $query->visibleToUser($user);
         }
 
         if ($request->filled('search')) {
@@ -148,6 +148,10 @@ class ClientController extends Controller
 
         if ($request->filled('status') && $request->status !== 'All') {
             $query->where('status', $request->status);
+        }
+
+        if ($request->filled('account_manager_id')) {
+            $query->where('account_manager_id', (int) $request->account_manager_id);
         }
 
         if ($request->filled('gst_type')) {
@@ -167,7 +171,7 @@ class ClientController extends Controller
         $user = $request->user();
         $client = Client::with('contacts', 'accountManager', 'projects')->findOrFail($id);
 
-        if ($user->role === 'client' && !$client->contacts()->where('email', $user->email)->exists()) {
+        if ($user->isClientRole() && ! $client->isVisibleToUser($user)) {
             return response()->json(['message' => 'Unauthorized Access'], 403);
         }
 

@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Casts\EncryptedSafe;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -57,6 +58,61 @@ class Client extends Model
     public function contacts(): HasMany
     {
         return $this->hasMany(ClientContact::class);
+    }
+
+    public function scopeVisibleToUser(Builder $query, User $user): Builder
+    {
+        if (! $user->isClientRole()) {
+            return $query;
+        }
+
+        return $query->where(function (Builder $scoped) use ($user) {
+            $scoped->where('portal_user_id', $user->id)
+                ->orWhereHas('contacts', fn (Builder $contactQuery) => $contactQuery->where('email', $user->email));
+        });
+    }
+
+    public function isVisibleToUser(User $user): bool
+    {
+        if (! $user->isClientRole()) {
+            return true;
+        }
+
+        if ((int) $this->portal_user_id === (int) $user->id) {
+            return true;
+        }
+
+        return $this->contacts()->where('email', $user->email)->exists();
+    }
+
+    /** Resolve the Client a portal user belongs to. */
+    public static function forUser(User $user): ?self
+    {
+        return self::visibleToUser($user)
+            ->first();
+    }
+
+    public function portalUserIds(): array
+    {
+        $emails = $this->contacts()->pluck('email')->filter();
+
+        return User::query()
+            ->whereIn('role', User::CLIENT_ROLES)
+            ->where(function (Builder $query) use ($emails) {
+                if ($this->portal_user_id) {
+                    $query->where('id', $this->portal_user_id);
+                }
+
+                if ($emails->isNotEmpty()) {
+                    $method = $this->portal_user_id ? 'orWhereIn' : 'whereIn';
+                    $query->{$method}('email', $emails);
+                }
+            })
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
     }
 
     public function accountManager(): BelongsTo

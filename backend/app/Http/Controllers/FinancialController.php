@@ -29,9 +29,9 @@ class FinancialController extends Controller
         $this->authorize('viewAny', \App\Models\Invoice::class);
         $base = Invoice::query();
 
-        if ($user->role === 'client') {
-            $base->whereHas('client.contacts', function ($q) use ($user) {
-                $q->where('email', $user->email);
+        if ($user->isClientRole()) {
+            $base->whereHas('client', function ($q) use ($user) {
+                $q->visibleToUser($user);
             });
         }
 
@@ -64,9 +64,9 @@ class FinancialController extends Controller
         $this->authorize('viewAny', \App\Models\Invoice::class);
         $query = Invoice::with('client', 'project');
 
-        if ($user->role === 'client') {
-            $query->whereHas('client.contacts', function ($q) use ($user) {
-                $q->where('email', $user->email);
+        if ($user->isClientRole()) {
+            $query->whereHas('client', function ($q) use ($user) {
+                $q->visibleToUser($user);
             });
         }
 
@@ -87,9 +87,9 @@ class FinancialController extends Controller
         $this->authorize('viewAny', \App\Models\Invoice::class);
         $query = Quotation::with('client', 'project');
 
-        if ($user->role === 'client') {
-            $query->whereHas('client.contacts', function ($q) use ($user) {
-                $q->where('email', $user->email);
+        if ($user->isClientRole()) {
+            $query->whereHas('client', function ($q) use ($user) {
+                $q->visibleToUser($user);
             });
         }
 

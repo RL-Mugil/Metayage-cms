@@ -52,9 +52,9 @@ export default function Notifications() {
         id: n.id,
         type: (n as any).type ?? "system",
         title: n.title,
-        description: n.message,
+        description: (n as any).description ?? (n as any).message ?? "",
         meta: (n as any).meta,
-        read: n.is_read,
+        read: (n as any).read ?? n.is_read ?? false,
         created_at: n.created_at,
       }) as Notif)))
       .catch(() => {})

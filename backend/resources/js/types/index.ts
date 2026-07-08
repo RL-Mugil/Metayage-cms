@@ -3,7 +3,7 @@
 
 export type UserRole =
   | 'super_admin' | 'partner' | 'manager' | 'hr'
-  | 'finance' | 'associate' | 'paralegal' | 'client'
+  | 'finance' | 'associate' | 'paralegal' | 'client' | 'client_admin'
 
 export type UserStatus = 'Active' | 'Inactive'
 

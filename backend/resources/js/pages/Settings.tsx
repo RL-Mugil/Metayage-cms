@@ -40,6 +40,7 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
 export default function Settings() {
   const { props } = usePage() as any;
   const user = props.auth?.user;
+  const canManageSystem = ["super_admin", "partner"].includes(user?.role ?? "");
   const [tab, setTab] = useState<Tab>("profile");
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
@@ -50,6 +51,7 @@ export default function Settings() {
   const [accentColor, setAccentColor] = useState(() => loadPrefs("ipflow.appearance", { accent: "gold" }).accent);
   const [pwForm, setPwForm] = useState({ current: "", next: "", confirm: "" });
   const [system, setSystem] = useState({ company: "My IP Law Firm", currency: "INR", fiscalMonth: "April", maxUploadMB: "50" });
+  const visibleTabs = canManageSystem ? tabs : tabs.filter((item) => item.id !== "system");
 
   useEffect(() => {
     api.getSettings().then((data) => {
@@ -64,6 +66,12 @@ export default function Settings() {
       }
     }).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!canManageSystem && tab === "system") {
+      setTab("profile");
+    }
+  }, [canManageSystem, tab]);
 
   const flashSaved = () => { setError(""); setSaved(true); setTimeout(() => setSaved(false), 2500); };
 
@@ -148,7 +156,7 @@ export default function Settings() {
       <div className="flex min-h-[calc(100vh-180px)]">
         {/* Sidebar */}
         <div className="w-56 border-r border-border flex-shrink-0 py-4">
-          {tabs.map(({ id, label, icon: Icon }) => (
+          {visibleTabs.map(({ id, label, icon: Icon }) => (
             <button key={id} onClick={() => setTab(id)}
               className={`w-full flex items-center gap-3 px-6 py-2.5 text-sm transition-colors ${tab === id ? "text-gold font-semibold bg-gold/10 border-r-2 border-gold" : "text-muted-foreground hover:text-foreground hover:bg-muted/30"}`}>
               <Icon className="h-4 w-4" />{label}

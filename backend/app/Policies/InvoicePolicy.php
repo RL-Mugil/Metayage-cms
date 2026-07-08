@@ -9,13 +9,13 @@ class InvoicePolicy
 {
     public function viewAny(User $user): bool
     {
-        return in_array($user->role, ['super_admin', 'partner', 'finance', 'manager', 'client']);
+        return in_array($user->role, ['super_admin', 'partner', 'finance', 'manager', 'client', 'client_admin']);
     }
 
     public function view(User $user, Invoice $invoice): bool
     {
-        if ($user->role === 'client') {
-            return $invoice->client->contacts()->where('email', $user->email)->exists();
+        if ($user->isClientRole()) {
+            return $invoice->client && $invoice->client->isVisibleToUser($user);
         }
         return in_array($user->role, ['super_admin', 'partner', 'finance', 'manager']);
     }

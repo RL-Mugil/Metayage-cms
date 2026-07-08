@@ -26,7 +26,7 @@ class TaskController extends Controller
         $user = $request->user();
         $query = Task::with('project', 'assignee');
 
-        if ($user->role === 'client') {
+        if ($user->isClientRole()) {
             $query->whereHas('project.client.contacts', function ($q) use ($user) {
                 $q->where('email', $user->email);
             });
@@ -112,7 +112,7 @@ class TaskController extends Controller
     public function addTimeEntry(Request $request)
     {
         $user = $request->user();
-        if ($user->role === 'client') {
+        if ($user->isClientRole()) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
         $validated = $request->validate([

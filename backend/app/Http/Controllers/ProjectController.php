@@ -32,9 +32,9 @@ class ProjectController extends Controller
         $user = $request->user();
         $base = Project::query();
 
-        if ($user->role === 'client') {
-            $base->whereHas('client.contacts', function ($q) use ($user) {
-                $q->where('email', $user->email);
+        if ($user->isClientRole()) {
+            $base->whereHas('client', function ($q) use ($user) {
+                $q->visibleToUser($user);
             });
         } elseif (in_array($user->role, ['associate', 'paralegal'])) {
             $base->where(function ($q) use ($user) {
@@ -74,15 +74,17 @@ class ProjectController extends Controller
         $query = Project::with('client', 'partner', 'manager', 'patentEngineer', 'stages');
 
         // RBAC access filter
-        if ($user->role === 'client') {
-            $query->whereHas('client.contacts', function ($q) use ($user) {
-                $q->where('email', $user->email);
+        if ($user->isClientRole()) {
+            $query->whereHas('client', function ($q) use ($user) {
+                $q->visibleToUser($user);
             });
         } elseif (in_array($user->role, ['associate', 'paralegal'])) {
             // Associates can see projects assigned to them or their department
             $query->where(function ($q) use ($user) {
                 $q->where('assigned_manager_id', $user->id)
                     ->orWhere('assigned_partner_id', $user->id)
+                    ->orWhere('patent_engineer_id', $user->id)
+                    ->orWhereHas('tasks', fn ($taskQuery) => $taskQuery->where('assignee_id', $user->id))
                     ->orWhereJsonContains('assigned_team', $user->id);
             });
         }
@@ -93,6 +95,7 @@ class ProjectController extends Controller
                 $sl = strtolower($search);
                 $q->whereRaw('LOWER(project_name) LIKE ?', ["%{$sl}%"])
                     ->orWhereRaw('LOWER(project_code) LIKE ?', ["%{$sl}%"])
+                    ->orWhereRaw('LOWER(docket_number) LIKE ?', ["%{$sl}%"])
                     ->orWhereRaw('LOWER(invention_title) LIKE ?', ["%{$sl}%"]);
             });
         }
@@ -112,12 +115,45 @@ class ProjectController extends Controller
             $query->where('patent_engineer_id', (int) $request->patent_engineer_id);
         }
 
+        if ($request->filled('assigned_manager_id')) {
+            $query->where('assigned_manager_id', (int) $request->assigned_manager_id);
+        }
+
+        // Filter by current lifecycle stage (the stage currently In Progress)
+        if ($request->filled('lifecycle_stage')) {
+            $stage = $request->lifecycle_stage;
+            $query->whereHas('stages', fn ($q) => $q->where('stage_name', $stage)->where('status', 'In Progress'));
+        }
+
         $sortBy = in_array($request->sort_by, ['project_name', 'docket_number', 'status', 'hard_deadline', 'filing_date'])
             ? $request->sort_by : 'hard_deadline';
         $sortDir = $request->sort_dir === 'desc' ? 'desc' : 'asc';
         $query->orderBy($sortBy, $sortDir);
 
         return response()->json(PaginationHelper::paginate($query, $request));
+    }
+
+    /** Count of projects currently sitting in each lifecycle stage. */
+    public function lifecycleStats(Request $request)
+    {
+        $user = $request->user();
+
+        $q = DB::table('project_stages as ps')
+            ->join('projects as p', 'ps.project_id', '=', 'p.id')
+            ->whereNull('p.deleted_at')
+            ->where('ps.status', 'In Progress');
+
+        if ($user->isClientRole()) {
+            $client = $request->attributes->get('portal_client') ?? Client::forUser($user);
+            if (! $client) return response()->json([]);
+            $q->where('p.client_id', $client->id);
+        }
+
+        $counts = $q->selectRaw('ps.stage_name, COUNT(*) as count')
+            ->groupBy('ps.stage_name')
+            ->pluck('count', 'stage_name');
+
+        return response()->json($counts);
     }
 
     public function show(Request $request, $id)
@@ -165,7 +201,14 @@ class ProjectController extends Controller
             $project = Project::create($validated);
 
             // Seed default pipeline stages for new projects
-            $defaultStages = ["Intake", "Drafting", "Filing", "Examination", "Object received", "Granted", "Renewal"];
+            $defaultStages = [
+                "Invention Disclosure", "Patent Search", "Search Report",
+                "Provisional Application", "Provisional Filing",
+                "Patent Drafting", "Applicant/Inventor Review", "Filing with Patent Office",
+                "First Examination Report", "FER Response Preparation", "FER Response Filing",
+                "Hearing with Examiner", "Hearing Response Preparation", "Hearing Response Filing",
+                "Granted", "Renewal",
+            ];
             foreach ($defaultStages as $index => $stageName) {
                 ProjectStage::create([
                     'project_id' => $project->id,

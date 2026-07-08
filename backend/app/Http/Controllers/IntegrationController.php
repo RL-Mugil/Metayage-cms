@@ -42,11 +42,23 @@ class IntegrationController extends Controller
         if ($deny = $this->gate($request)) return $deny;
 
         $integration = Integration::where('slug', $slug)->firstOrFail();
+        $hasKey = ! empty(($integration->config ?? [])['api_key'] ?? null);
+
+        if (! $integration->connected && ! $hasKey) {
+            return response()->json([
+                'message' => 'Save the API key or credentials before connecting this integration.',
+            ], 422);
+        }
+
         $integration->connected = ! $integration->connected;
         $integration->last_sync = $integration->connected ? now()->toIso8601String() : null;
         $integration->save();
 
-        return response()->json(['ok' => true, 'connected' => $integration->connected]);
+        return response()->json([
+            'ok' => true,
+            'connected' => $integration->connected,
+            'message' => $integration->connected ? 'Integration connected.' : 'Integration disconnected.',
+        ]);
     }
 
     public function saveConfig(Request $request, string $slug)
@@ -61,7 +73,7 @@ class IntegrationController extends Controller
         $integration->config = $config;
         $integration->save();
 
-        return response()->json(['ok' => true]);
+        return response()->json(['ok' => true, 'message' => 'Integration credentials saved.']);
     }
 
     /** Connectivity check: real for integrations with public endpoints, config-presence otherwise. */
@@ -71,10 +83,16 @@ class IntegrationController extends Controller
 
         $integration = Integration::where('slug', $slug)->firstOrFail();
 
-        $ok = $integration->connected;
+        $hasKey = ! empty(($integration->config ?? [])['api_key'] ?? null);
+        $ok = $integration->connected && $hasKey;
         $integration->last_sync = $ok ? now()->toIso8601String() : $integration->last_sync;
         $integration->save();
 
-        return response()->json(['ok' => $ok]);
+        return response()->json([
+            'ok' => $ok,
+            'message' => $ok
+                ? 'Integration credentials are present and the connection is enabled.'
+                : 'Integration is not fully configured yet.',
+        ]);
     }
 }

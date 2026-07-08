@@ -223,7 +223,7 @@ class PayrollController extends Controller
     public function mySlips(Request $request)
     {
         $user = $request->user();
-        if ($user->role === 'client') {
+        if ($user->isClientRole()) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
 

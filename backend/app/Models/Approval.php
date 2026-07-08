@@ -11,6 +11,10 @@ class Approval extends Model
     protected $fillable = [
         'requester_id',
         'approver_id',
+        'client_id',
+        'type',
+        'title',
+        'description',
         'subject_type',
         'subject_id',
         'status',
@@ -30,5 +34,10 @@ class Approval extends Model
     public function subject(): MorphTo
     {
         return $this->morphTo();
+    }
+
+    public function client(): BelongsTo
+    {
+        return $this->belongsTo(Client::class);
     }
 }

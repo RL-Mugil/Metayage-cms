@@ -58,10 +58,13 @@ export default function AI() {
         results: res.results,
       };
       setMessages((prev) => [...prev, assistantMessage]);
-    } catch {
+    } catch (error) {
+      const message = error instanceof Error && error.message
+        ? error.message
+        : "Sorry, I encountered an error processing your request. Please try again.";
       setMessages((prev) => [
         ...prev,
-        { role: "assistant", content: "Sorry, I encountered an error processing your request. Please try again." },
+        { role: "assistant", content: message },
       ]);
     } finally {
       setLoading(false);

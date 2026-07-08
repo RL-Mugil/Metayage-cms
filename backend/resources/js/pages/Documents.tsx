@@ -1,4 +1,4 @@
-import { Head } from "@inertiajs/react";
+import { Head, usePage } from "@inertiajs/react";
 import { useEffect, useRef, useState } from "react";
 import {
   FolderOpen,
@@ -57,6 +57,11 @@ function FileIcon({ name }: { name: string }) {
 }
 
 export default function Documents() {
+  const { props: pageProps } = usePage() as any;
+  const role = pageProps.auth?.user?.role;
+  const isClientUser = ["client", "client_admin"].includes(role);
+  const canDelete = ["super_admin", "partner", "manager"].includes(role);
+
   const [activeFolder, setActiveFolder] = useState("All Documents");
   const [search, setSearch] = useState("");
   const [files, setFiles] = useState<DocFile[]>([]);
@@ -64,6 +69,18 @@ export default function Documents() {
   const [uploading, setUploading] = useState(false);
   const [banner, setBanner] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // "Share with client" — internal users can tag an upload to a client
+  const [clients, setClients] = useState<any[]>([]);
+  const [shareClientId, setShareClientId] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!isClientUser) {
+      api.getClients(new URLSearchParams({ per_page: "2000" }))
+        .then((res: any) => setClients(Array.isArray(res) ? res : res?.data ?? []))
+        .catch(() => {});
+    }
+  }, [isClientUser]);
 
   function showBanner(kind: "ok" | "err", text: string) {
     setBanner({ kind, text });
@@ -97,8 +114,8 @@ export default function Documents() {
     setUploading(true);
     try {
       const folder = activeFolder === "All Documents" ? "General" : activeFolder;
-      const uploaded = await api.uploadDocument(file, folder);
-      showBanner("ok", `Uploaded: ${uploaded.name}`);
+      const uploaded = await api.uploadDocument(file, folder, isClientUser ? null : shareClientId);
+      showBanner("ok", `Uploaded: ${uploaded.name}${shareClientId && !isClientUser ? " (shared with client)" : ""}`);
       refresh();
     } catch (err: any) {
       showBanner("err", err.message || "Upload failed");
@@ -142,6 +159,19 @@ export default function Documents() {
               onChange={handleFileChange}
               accept=".pdf,.docx,.doc,.xlsx,.xls,.pptx,.ppt,.txt,.csv,.png,.jpg,.jpeg,.gif,.zip"
             />
+            {!isClientUser && (
+              <select
+                value={shareClientId ?? ""}
+                onChange={(e) => setShareClientId(e.target.value ? Number(e.target.value) : null)}
+                title="Tag the next upload to a client so they can see it in their portal"
+                className="h-9 rounded-md border border-border bg-background px-2 text-xs text-muted-foreground focus:outline-none focus:ring-1 focus:ring-gold max-w-[180px]"
+              >
+                <option value="">Internal only</option>
+                {clients.map((c: any) => (
+                  <option key={c.id} value={c.id}>Share: {c.company_name ?? c.legal_name}</option>
+                ))}
+              </select>
+            )}
             <Button onClick={() => fileInputRef.current?.click()} disabled={uploading}>
               {uploading
                 ? <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -262,15 +292,17 @@ export default function Documents() {
                             >
                               <Download className="h-4 w-4 text-muted-foreground" />
                             </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-8 w-8 p-0"
-                              title="Delete"
-                              onClick={() => handleDelete(file)}
-                            >
-                              <Trash2 className="h-4 w-4 text-red-400" />
-                            </Button>
+                            {canDelete && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 w-8 p-0"
+                                title="Delete"
+                                onClick={() => handleDelete(file)}
+                              >
+                                <Trash2 className="h-4 w-4 text-red-400" />
+                              </Button>
+                            )}
                           </div>
                         </td>
                       </tr>

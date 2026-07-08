@@ -30,4 +30,12 @@ class User extends Authenticatable
             'notification_prefs' => 'array',
         ];
     }
+
+    /** Roles that belong to the external client portal. */
+    public const CLIENT_ROLES = ['client', 'client_admin'];
+
+    public function isClientRole(): bool
+    {
+        return in_array($this->role, self::CLIENT_ROLES, true);
+    }
 }

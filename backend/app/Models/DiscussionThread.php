@@ -10,6 +10,7 @@ class DiscussionThread extends Model
 {
     protected $fillable = [
         'project_id',
+        'client_id',
         'title',
         'tag',
         'is_private',

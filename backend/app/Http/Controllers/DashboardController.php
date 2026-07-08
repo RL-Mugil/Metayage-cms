@@ -31,31 +31,21 @@ class DashboardController extends Controller
 
         // RBAC client filter — also enforce portal_enabled so disabling the portal
         // immediately blocks all data access, not just the UI.
-        if ($user->role === 'client') {
+        if ($user->isClientRole()) {
             $activeMattersQuery
-                ->whereHas('client', fn ($q) => $q->where('portal_enabled', true))
-                ->whereHas('client.contacts', function ($q) use ($user) {
-                    $q->where('email', $user->email);
-                });
+                ->whereHas('client', fn ($q) => $q->where('portal_enabled', true)->visibleToUser($user));
             $clientsQuery
                 ->where('portal_enabled', true)
-                ->whereHas('contacts', function ($q) use ($user) {
-                    $q->where('email', $user->email);
-                });
+                ->visibleToUser($user);
             $invoicesQuery
-                ->whereHas('client', fn ($q) => $q->where('portal_enabled', true))
-                ->whereHas('client.contacts', function ($q) use ($user) {
-                    $q->where('email', $user->email);
-                });
+                ->whereHas('client', fn ($q) => $q->where('portal_enabled', true)->visibleToUser($user));
             $tasksQuery
-                ->whereHas('project.client', fn ($q) => $q->where('portal_enabled', true))
-                ->whereHas('project.client.contacts', function ($q) use ($user) {
-                    $q->where('email', $user->email);
-                });
+                ->whereHas('project.client', fn ($q) => $q->where('portal_enabled', true)->visibleToUser($user));
         } elseif (in_array($user->role, ['associate', 'paralegal'])) {
             $activeMattersQuery->where(function ($q) use ($user) {
                 $q->where('assigned_manager_id', $user->id)
                   ->orWhere('assigned_partner_id', $user->id)
+                  ->orWhere('patent_engineer_id', $user->id)
                   ->orWhereJsonContains('assigned_team', $user->id);
             });
             $tasksQuery->where('assignee_id', $user->id);
@@ -74,7 +64,7 @@ class DashboardController extends Controller
 
         // Financial aggregates — only for roles with financial visibility per RBAC matrix.
         // associate, paralegal, hr have Financial = ❌; zeroing out prevents firm-wide data leaks.
-        $canSeeFinancials = in_array($user->role, ['super_admin', 'partner', 'manager', 'finance', 'client']);
+        $canSeeFinancials = in_array($user->role, ['super_admin', 'partner', 'manager', 'finance', 'client', 'client_admin']);
 
         $wipAmount      = 0;
         $invoicedAmount = 0;
@@ -82,7 +72,7 @@ class DashboardController extends Controller
 
         if ($canSeeFinancials) {
             $wipQuery = TimeEntry::where('status', 'Approved')->where('billable', true);
-            if ($user->role === 'client') {
+            if ($user->isClientRole()) {
                 $wipQuery->whereHas('project.client.contacts', fn ($q) => $q->where('email', $user->email));
             }
             $wipAmount = $wipQuery->sum(\DB::raw('duration_hours * 150'));
@@ -103,7 +93,7 @@ class DashboardController extends Controller
             ->groupBy('stage_name')
             ->orderBy('stage_name');
 
-        if ($user->role === 'client') {
+        if ($user->isClientRole()) {
             $stagesQuery->whereIn('project_id', (clone $activeMattersQuery)->pluck('id'));
         } elseif (in_array($user->role, ['associate', 'paralegal'])) {
             $stagesQuery->whereIn('project_id', (clone $activeMattersQuery)->pluck('id'));
@@ -117,20 +107,36 @@ class DashboardController extends Controller
         $thisYear   = $now->year;
         $lastMonth  = $now->copy()->subMonth();
 
-        $mattersThisMonth = Project::where('status', 'Active')
-            ->whereMonth('created_at', $thisMonth)->whereYear('created_at', $thisYear)->count();
-        $mattersLastMonth = Project::where('status', 'Active')
-            ->whereMonth('created_at', $lastMonth->month)->whereYear('created_at', $lastMonth->year)->count();
+        $mattersThisMonth = (clone $activeMattersQuery)
+            ->whereMonth('created_at', $thisMonth)
+            ->whereYear('created_at', $thisYear)
+            ->count();
+        $mattersLastMonth = (clone $activeMattersQuery)
+            ->whereMonth('created_at', $lastMonth->month)
+            ->whereYear('created_at', $lastMonth->year)
+            ->count();
 
-        $clientsThisMonth = Client::where('status', 'Active')
-            ->whereMonth('created_at', $thisMonth)->whereYear('created_at', $thisYear)->count();
-        $clientsLastMonth = Client::where('status', 'Active')
-            ->whereMonth('created_at', $lastMonth->month)->whereYear('created_at', $lastMonth->year)->count();
+        $clientsThisMonth = (clone $clientsQuery)
+            ->whereMonth('created_at', $thisMonth)
+            ->whereYear('created_at', $thisYear)
+            ->count();
+        $clientsLastMonth = (clone $clientsQuery)
+            ->whereMonth('created_at', $lastMonth->month)
+            ->whereYear('created_at', $lastMonth->year)
+            ->count();
 
-        $receivedThisMonth = $canSeeFinancials ? Invoice::whereMonth('updated_at', $thisMonth)
-            ->whereYear('updated_at', $thisYear)->where('status', 'Paid')->sum('total_amount') : 0;
-        $receivedLastMonth = $canSeeFinancials ? Invoice::whereMonth('updated_at', $lastMonth->month)
-            ->whereYear('updated_at', $lastMonth->year)->where('status', 'Paid')->sum('total_amount') : 0;
+        $receivedThisMonth = $canSeeFinancials
+            ? (clone $invoicesQuery)->whereMonth('updated_at', $thisMonth)
+                ->whereYear('updated_at', $thisYear)
+                ->where('status', 'Paid')
+                ->sum('total_amount')
+            : 0;
+        $receivedLastMonth = $canSeeFinancials
+            ? (clone $invoicesQuery)->whereMonth('updated_at', $lastMonth->month)
+                ->whereYear('updated_at', $lastMonth->year)
+                ->where('status', 'Paid')
+                ->sum('total_amount')
+            : 0;
 
         $fmtDelta = function (int $curr, int $prev, string $unit = '') {
             $diff = $curr - $prev;

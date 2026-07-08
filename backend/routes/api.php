@@ -15,6 +15,7 @@ use App\Http\Controllers\AIController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\ProjectTrackerController;
 use App\Http\Controllers\ReportsController;
+use App\Http\Controllers\PatentPortfolioController;
 
 // Public routes
 Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:10,1');
@@ -41,6 +42,7 @@ Route::middleware(['auth:sanctum', 'throttle:60,1'])->group(function () {
 
     // Cases / Projects
     Route::get('/projects/stats', [ProjectController::class, 'stats']);
+    Route::get('/projects/lifecycle-stats', [ProjectController::class, 'lifecycleStats']);
     Route::get('/projects', [ProjectController::class, 'index']);
     Route::post('/projects', [ProjectController::class, 'store']);
     Route::get('/projects/{id}', [ProjectController::class, 'show']);
@@ -60,6 +62,7 @@ Route::middleware(['auth:sanctum', 'throttle:60,1'])->group(function () {
     Route::get('/hrms/employees', [HRMSController::class, 'employees']);
     Route::get('/hrms/employees/workload', [HRMSController::class, 'employeeWorkload']);
     Route::post('/hrms/employees', [HRMSController::class, 'createEmployee']);
+    Route::post('/hrms/invitations', [HRMSController::class, 'inviteMember']);
     Route::put('/hrms/employees/{id}', [HRMSController::class, 'updateEmployee']);
     Route::delete('/hrms/employees/{id}', [HRMSController::class, 'deleteEmployee']);
     Route::get('/hrms/attendance', [AttendanceController::class, 'index']);
@@ -80,6 +83,17 @@ Route::middleware(['auth:sanctum', 'throttle:60,1'])->group(function () {
 
     // Reports
     Route::get('/reports/data', [ReportsController::class, 'getData']);
+    Route::post('/reports/generate', [ReportsController::class, 'generate']);
+    Route::get('/reports/history', [ReportsController::class, 'history']);
+    Route::get('/reports/history/{id}', [ReportsController::class, 'showHistory']);
+
+    // Patent Portfolio
+    Route::get('/patent-portfolio/stats', [PatentPortfolioController::class, 'stats']);
+
+    // My Portal (client_admin self-service user management)
+    Route::get('/my-portal/users', [\App\Http\Controllers\MyPortalController::class, 'users']);
+    Route::post('/my-portal/users', [\App\Http\Controllers\MyPortalController::class, 'store']);
+    Route::delete('/my-portal/users/{userId}', [\App\Http\Controllers\MyPortalController::class, 'destroy']);
 
     // AI Chat — stricter limit: 10 requests per minute
     Route::post('/ai/query', [AIController::class, 'query'])->middleware('throttle:10,1');
@@ -114,6 +128,7 @@ Route::middleware(['auth:sanctum', 'throttle:60,1'])->group(function () {
 
     // Approvals
     Route::get('/approvals', [\App\Http\Controllers\ApprovalController::class, 'index']);
+    Route::post('/approvals', [\App\Http\Controllers\ApprovalController::class, 'store']);
     Route::post('/approvals/resolve', [\App\Http\Controllers\ApprovalController::class, 'resolve']);
 
     // Discussions
@@ -146,6 +161,8 @@ Route::middleware(['auth:sanctum', 'throttle:60,1'])->group(function () {
     Route::get('/feedback', [\App\Http\Controllers\FeedbackController::class, 'index']);
     Route::post('/feedback', [\App\Http\Controllers\FeedbackController::class, 'storeEntry']);
     Route::post('/feedback/request', [\App\Http\Controllers\FeedbackController::class, 'requestFeedback']);
+    Route::get('/feedback/requests', [\App\Http\Controllers\FeedbackController::class, 'requests']);
+    Route::post('/feedback/requests/{id}/rate', [\App\Http\Controllers\FeedbackController::class, 'rate']);
 
     // Performance
     Route::get('/performance', [\App\Http\Controllers\PerformanceController::class, 'index']);

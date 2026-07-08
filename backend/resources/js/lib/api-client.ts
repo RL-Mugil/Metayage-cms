@@ -148,6 +148,9 @@ export const api = {
   async createEmployee(data: Partial<Employee>): Promise<Employee> {
     return this.request('/hrms/employees', { method: 'POST', body: JSON.stringify(data) })
   },
+  async inviteTeamMember(data: { name: string; email: string }): Promise<{ ok: boolean; message: string; user: User }> {
+    return this.request('/hrms/invitations', { method: 'POST', body: JSON.stringify(data) })
+  },
   async updateEmployee(id: number | string, data: Partial<Employee>): Promise<Employee> {
     return this.request(`/hrms/employees/${id}`, { method: 'PUT', body: JSON.stringify(data) })
   },
@@ -206,6 +209,20 @@ export const api = {
     const extra = params ? '&' + params.toString() : ''
     return this.request(`/reports/data?type=${encodeURIComponent(type)}${extra}`)
   },
+  async generateReport(data: { type: string; format: "PDF" | "Excel" | "CSV"; fromDate?: string; toDate?: string }): Promise<ReportResponse & { export_id: number }> {
+    return this.request('/reports/generate', { method: 'POST', body: JSON.stringify({
+      type: data.type,
+      format: data.format,
+      from_date: data.fromDate || null,
+      to_date: data.toDate || null,
+    }) })
+  },
+  async getReportHistory(): Promise<Array<{ id: number; name: string; type: string; generated_by: string; generated_at: string; format: string; row_count: number; filters: Record<string, string | null> }>> {
+    return this.request('/reports/history')
+  },
+  async getReportHistoryItem(id: number): Promise<{ id: number; name: string; type: string; format: string; generated_at: string; rows: Record<string, unknown>[]; filters: Record<string, string | null> }> {
+    return this.request(`/reports/history/${id}`)
+  },
 
   // ── AI ──
   async queryAI(query: string): Promise<AIResponse> {
@@ -256,10 +273,11 @@ export const api = {
     const res = await this.request<PaginatedResponse<Record<string, unknown>> | Record<string, unknown>[]>('/documents')
     return Array.isArray(res) ? res : ((res as PaginatedResponse<Record<string, unknown>>).data ?? [])
   },
-  async uploadDocument(file: File, folder?: string): Promise<Record<string, unknown>> {
+  async uploadDocument(file: File, folder?: string, clientId?: number | null): Promise<Record<string, unknown>> {
     const formData = new FormData()
     formData.append('file', file)
     if (folder) formData.append('folder', folder)
+    if (clientId) formData.append('client_id', String(clientId))
     const response = await fetch('/api/documents', {
       method: 'POST',
       headers: { 'X-XSRF-TOKEN': getCsrfToken(), Accept: 'application/json' },
@@ -303,7 +321,7 @@ export const api = {
     const res = await this.request<PaginatedResponse<Record<string, unknown>> | Record<string, unknown>[]>('/discussions')
     return Array.isArray(res) ? res : ((res as PaginatedResponse<Record<string, unknown>>).data ?? [])
   },
-  async createDiscussion(data: { title: string; tag: string; message: string }): Promise<Record<string, unknown>> {
+  async createDiscussion(data: { title: string; tag: string; message: string; client_id?: number | null }): Promise<Record<string, unknown>> {
     return this.request('/discussions', { method: 'POST', body: JSON.stringify(data) })
   },
   async replyDiscussion(threadId: number, message: string): Promise<Record<string, unknown>> {
@@ -375,8 +393,14 @@ export const api = {
     const res = await this.request<PaginatedResponse<Record<string, unknown>> | Record<string, unknown>[]>('/feedback')
     return Array.isArray(res) ? res : ((res as PaginatedResponse<Record<string, unknown>>).data ?? [])
   },
-  async requestFeedback(data: { client: string; subject: string }): Promise<{ message: string }> {
+  async requestFeedback(data: { project_id: number; subject?: string }): Promise<{ message: string }> {
     return this.request('/feedback/request', { method: 'POST', body: JSON.stringify(data) })
+  },
+  async getFeedbackRequests(): Promise<any[]> {
+    return this.request('/feedback/requests')
+  },
+  async rateFeedbackRequest(id: number, data: { rating: number; comment?: string }): Promise<{ ok: boolean }> {
+    return this.request(`/feedback/requests/${id}/rate`, { method: 'POST', body: JSON.stringify(data) })
   },
 
   // ── Performance ──
@@ -407,13 +431,13 @@ export const api = {
 
   // ── Integrations ──
   async getIntegrations(): Promise<Record<string, unknown>[]> { return this.request('/integrations') },
-  async toggleIntegration(slug: string): Promise<{ message: string }> {
+  async toggleIntegration(slug: string): Promise<{ ok: boolean; connected: boolean; message: string }> {
     return this.request(`/integrations/${slug}/toggle`, { method: 'POST' })
   },
-  async saveIntegrationConfig(slug: string, apiKey: string): Promise<{ message: string }> {
+  async saveIntegrationConfig(slug: string, apiKey: string): Promise<{ ok: boolean; message: string }> {
     return this.request(`/integrations/${slug}/config`, { method: 'POST', body: JSON.stringify({ api_key: apiKey }) })
   },
-  async testIntegration(slug: string): Promise<{ ok: boolean }> {
+  async testIntegration(slug: string): Promise<{ ok: boolean; message: string }> {
     return this.request(`/integrations/${slug}/test`, { method: 'POST' })
   },
 
@@ -425,7 +449,7 @@ export const api = {
   async portalInviteAll(): Promise<{ ok: boolean; invited: number }> {
     return this.request('/portal/invite-all', { method: 'POST' })
   },
-  async createPortal(data: { client_id: number; email: string }): Promise<any> {
+  async createPortal(data: { client_id: number; emails: string[] }): Promise<any> {
     return this.request('/portal/create', { method: 'POST', body: JSON.stringify(data) })
   },
   async resetUserPassword(userId: number | string, password: string): Promise<{ ok: boolean }> {
@@ -466,6 +490,25 @@ export const api = {
   async getMyPayslips(): Promise<Payslip[]> {
     const res = await this.request<PaginatedResponse<Payslip> | Payslip[]>('/payroll/my-slips')
     return Array.isArray(res) ? res : ((res as PaginatedResponse<Payslip>).data ?? [])
+  },
+  async getLifecycleStats(): Promise<Record<string, number>> {
+    return this.request('/projects/lifecycle-stats')
+  },
+  async getPatentPortfolioStats(clientId?: number | null): Promise<any> {
+    const q = clientId ? `?client_id=${clientId}` : ''
+    return this.request(`/patent-portfolio/stats${q}`)
+  },
+  async getMyPortalUsers(): Promise<any[]> {
+    return this.request('/my-portal/users')
+  },
+  async createMyPortalUser(data: { name: string; email: string }): Promise<any> {
+    return this.request('/my-portal/users', { method: 'POST', body: JSON.stringify(data) })
+  },
+  async deleteMyPortalUser(userId: number): Promise<{ ok: boolean }> {
+    return this.request(`/my-portal/users/${userId}`, { method: 'DELETE' })
+  },
+  async createApproval(data: { client_id: number; title: string; description?: string }): Promise<any> {
+    return this.request('/approvals', { method: 'POST', body: JSON.stringify(data) })
   },
 }
 

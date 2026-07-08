@@ -12,20 +12,31 @@ class DiscussionController extends Controller
 {
     private function denyClients(Request $request)
     {
-        if ($request->user()->role === 'client') {
+        if ($request->user()->isClientRole()) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
         return null;
     }
 
+    /** Resolve the client record for a portal user (null for internal staff). */
+    private function clientFor(Request $request): ?\App\Models\Client
+    {
+        $user = $request->user();
+        if (! $user->isClientRole()) return null;
+        return $request->attributes->get('portal_client') ?? \App\Models\Client::forUser($user);
+    }
+
     public function index(Request $request)
     {
-        if ($deny = $this->denyClients($request)) return $deny;
-
         $user = $request->user();
         $query = DiscussionThread::with(['messages.author:id,name'])->orderByDesc('updated_at');
 
-        if (in_array($user->role, ['associate', 'paralegal'])) {
+        if ($user->isClientRole()) {
+            // Portal users see only threads shared with their client.
+            $client = $this->clientFor($request);
+            if (! $client) return response()->json(['message' => 'Forbidden'], 403);
+            $query->where('client_id', $client->id);
+        } elseif (in_array($user->role, ['associate', 'paralegal'])) {
             // General threads (no project) are visible to all staff.
             // Project threads are visible only if the user is assigned to that project.
             $query->where(function ($q) use ($user) {
@@ -40,14 +51,19 @@ class DiscussionController extends Controller
         }
         $paginated = PaginationHelper::paginate($query, $request);
 
+        $clientNames = \App\Models\Client::whereIn('id', collect($paginated['data'])->pluck('client_id')->filter()->unique())
+            ->pluck('company_name', 'id');
+
         $paginated['data'] = $paginated['data']->map(fn ($t) => [
-            'id'         => $t->id,
-            'title'      => $t->title,
-            'tag'        => $t->tag ?? 'General',
-            'status'     => $t->status,
-            'author'     => $t->messages->first()?->author?->name ?? '—',
-            'last_reply' => $t->updated_at?->diffForHumans(),
-            'messages'   => $t->messages->map(fn ($m) => [
+            'id'          => $t->id,
+            'title'       => $t->title,
+            'tag'         => $t->tag ?? 'General',
+            'status'      => $t->status,
+            'client_id'   => $t->client_id,
+            'client_name' => $t->client_id ? ($clientNames[$t->client_id] ?? null) : null,
+            'author'      => $t->messages->first()?->author?->name ?? '—',
+            'last_reply'  => $t->updated_at?->diffForHumans(),
+            'messages'    => $t->messages->map(fn ($m) => [
                 'id'     => $m->id,
                 'author' => $m->author?->name ?? '—',
                 'time'   => $m->created_at?->diffForHumans(),
@@ -60,19 +76,32 @@ class DiscussionController extends Controller
 
     public function store(Request $request)
     {
-        if ($deny = $this->denyClients($request)) return $deny;
+        $user = $request->user();
 
         $validated = $request->validate([
-            'title'   => 'required|string|max:255',
-            'tag'     => 'nullable|in:General,Project,HR,Finance',
-            'message' => 'required|string',
+            'title'     => 'required|string|max:255',
+            'tag'       => 'nullable|in:General,Project,HR,Finance',
+            'message'   => 'required|string',
+            'client_id' => 'nullable|integer|exists:clients,id',
         ]);
+
+        if ($user->isClientRole()) {
+            // Portal users always post into their own client's space.
+            $client = $this->clientFor($request);
+            if (! $client) return response()->json(['message' => 'Forbidden'], 403);
+            $validated['client_id'] = $client->id;
+            // Clients cannot use internal HR/Finance tags.
+            if (in_array($validated['tag'] ?? 'General', ['HR', 'Finance'])) {
+                $validated['tag'] = 'General';
+            }
+        }
 
         $thread = DB::transaction(function () use ($validated, $request) {
             $thread = DiscussionThread::create([
-                'title'  => $validated['title'],
-                'tag'    => $validated['tag'] ?? 'General',
-                'status' => 'Open',
+                'title'     => $validated['title'],
+                'tag'       => $validated['tag'] ?? 'General',
+                'client_id' => $validated['client_id'] ?? null,
+                'status'    => 'Open',
             ]);
             DiscussionMessage::create([
                 'thread_id' => $thread->id,
@@ -87,13 +116,19 @@ class DiscussionController extends Controller
 
     public function reply(Request $request, $id)
     {
-        if ($deny = $this->denyClients($request)) return $deny;
-
         $user   = $request->user();
         $thread = DiscussionThread::findOrFail($id);
 
         if ($thread->status === 'Closed') {
             return response()->json(['message' => 'Cannot reply to a closed discussion.'], 422);
+        }
+
+        // Portal users may only reply within their own client's threads.
+        if ($user->isClientRole()) {
+            $client = $this->clientFor($request);
+            if (! $client || (int) $thread->client_id !== (int) $client->id) {
+                return response()->json(['message' => 'Forbidden'], 403);
+            }
         }
 
         if (in_array($user->role, ['associate', 'paralegal']) && $thread->project_id !== null) {
@@ -128,10 +163,16 @@ class DiscussionController extends Controller
 
     public function update(Request $request, $id)
     {
-        if ($deny = $this->denyClients($request)) return $deny;
-
         $user   = $request->user();
         $thread = DiscussionThread::findOrFail($id);
+
+        // Portal users may only touch threads in their own client space.
+        if ($user->isClientRole()) {
+            $client = $this->clientFor($request);
+            if (! $client || (int) $thread->client_id !== (int) $client->id) {
+                return response()->json(['message' => 'Forbidden'], 403);
+            }
+        }
 
         // Only the creator (first message author) or super_admin/partner can edit
         $firstAuthorId = $thread->messages()->orderBy('id')->value('author_id');
@@ -152,10 +193,15 @@ class DiscussionController extends Controller
 
     public function destroy(Request $request, $id)
     {
-        if ($deny = $this->denyClients($request)) return $deny;
-
         $user   = $request->user();
         $thread = DiscussionThread::findOrFail($id);
+
+        if ($user->isClientRole()) {
+            $client = $this->clientFor($request);
+            if (! $client || (int) $thread->client_id !== (int) $client->id) {
+                return response()->json(['message' => 'Forbidden'], 403);
+            }
+        }
 
         $firstAuthorId = $thread->messages()->orderBy('id')->value('author_id');
         if ($user->id !== $firstAuthorId && !in_array($user->role, ['super_admin', 'partner'])) {

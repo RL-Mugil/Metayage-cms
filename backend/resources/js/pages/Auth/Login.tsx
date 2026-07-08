@@ -12,6 +12,7 @@ const TEST_USERS = [
   { role: "Finance",      email: "test.finance@myipstrategy.com",    password: "Test@1234", color: "text-blue-400" },
   { role: "Associate",    email: "test.associate@myipstrategy.com",  password: "Test@1234", color: "text-green-400" },
   { role: "Paralegal",    email: "test.paralegal@myipstrategy.com",  password: "Test@1234", color: "text-teal-400" },
+  { role: "Client Admin", email: "test.clientadmin@myipstrategy.com", password: "Test@1234", color: "text-gold" },
   { role: "Client",       email: "test.client@myipstrategy.com",     password: "Test@1234", color: "text-zinc-400" },
 ];
 

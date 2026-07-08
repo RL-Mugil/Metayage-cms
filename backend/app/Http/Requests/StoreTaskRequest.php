@@ -8,7 +8,7 @@ class StoreTaskRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return $this->user()->role !== 'client';
+        return ! $this->user()->isClientRole();
     }
 
     public function rules(): array

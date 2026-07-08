@@ -16,7 +16,7 @@ class LeaveController extends Controller
     public function index(Request $request)
     {
         $user = $request->user();
-        if ($user->role === 'client') return response()->json(['message' => 'Forbidden'], 403);
+        if ($user->isClientRole()) return response()->json(['message' => 'Forbidden'], 403);
 
         $employee   = Employee::where('user_id', $user->id)->first();
         $isApprover = in_array($user->role, ['super_admin', 'hr', 'manager', 'partner']);

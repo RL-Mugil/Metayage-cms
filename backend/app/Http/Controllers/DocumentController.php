@@ -10,8 +10,6 @@ use Illuminate\Support\Facades\Storage;
 
 class DocumentController extends Controller
 {
-    // Document storage is firm-wide and unscoped, so client portal users
-    // must not reach it until per-client scoping exists.
     private const INTERNAL_ROLES = ['super_admin', 'partner', 'manager', 'associate', 'paralegal', 'finance', 'hr'];
 
     private function denyNonInternal(Request $request)
@@ -22,16 +20,35 @@ class DocumentController extends Controller
         return null;
     }
 
+    /** Resolve the client record for a portal user, or null for internal users. */
+    private function clientFor(Request $request): ?\App\Models\Client
+    {
+        $user = $request->user();
+        if (! $user->isClientRole()) return null;
+        return $request->attributes->get('portal_client') ?? \App\Models\Client::forUser($user);
+    }
+
     public const FOLDERS = ['General', 'Patents', 'Trademarks', 'Contracts', 'Correspondence', 'Invoices'];
 
     public function index(Request $request)
     {
-        if ($deny = $this->denyNonInternal($request)) return $deny;
+        $user = $request->user();
+        if ($user->isClientRole()) {
+            // Client portal users see only documents tagged to their client.
+            $client = $this->clientFor($request);
+            if (! $client) return response()->json(['message' => 'Forbidden'], 403);
+        } elseif ($deny = $this->denyNonInternal($request)) {
+            return $deny;
+        }
 
         $perPage = max(1, min(500, (int) $request->query('per_page', 50)));
         $folder  = $request->query('folder');
 
         $query = Document::with('uploader:id,name')->orderBy('updated_at', 'desc');
+
+        if ($user->isClientRole()) {
+            $query->where('client_id', $client->id);
+        }
 
         if ($folder && in_array($folder, self::FOLDERS)) {
             $query->where('category', $folder);
@@ -59,7 +76,14 @@ class DocumentController extends Controller
 
     public function store(Request $request)
     {
-        if ($deny = $this->denyNonInternal($request)) return $deny;
+        $user = $request->user();
+        $ownClient = null;
+        if ($user->isClientRole()) {
+            $ownClient = $this->clientFor($request);
+            if (! $ownClient) return response()->json(['message' => 'Forbidden'], 403);
+        } elseif ($deny = $this->denyNonInternal($request)) {
+            return $deny;
+        }
 
         $request->validate([
             'file'       => 'required|file|max:51200|mimes:pdf,doc,docx,xls,xlsx,ppt,pptx,txt,csv,png,jpg,jpeg,gif,zip',
@@ -67,6 +91,11 @@ class DocumentController extends Controller
             'project_id' => 'nullable|exists:projects,id',
             'client_id'  => 'nullable|exists:clients,id',
         ]);
+
+        // Client uploads are always tagged to their own client record.
+        if ($ownClient) {
+            $request->merge(['client_id' => $ownClient->id, 'project_id' => null]);
+        }
 
         $file   = $request->file('file');
         $folder = $request->input('folder', 'General');
@@ -129,7 +158,13 @@ class DocumentController extends Controller
 
     public function download(Request $request)
     {
-        if ($deny = $this->denyNonInternal($request)) return $deny;
+        $user = $request->user();
+        if ($user->isClientRole()) {
+            $client = $this->clientFor($request);
+            if (! $client) return response()->json(['message' => 'Forbidden'], 403);
+        } elseif ($deny = $this->denyNonInternal($request)) {
+            return $deny;
+        }
 
         $request->validate(['path' => 'required|string']);
         $path = $request->input('path');
@@ -137,9 +172,16 @@ class DocumentController extends Controller
             return response()->json(['message' => 'Invalid path'], 422);
         }
 
+        // Clients may only download documents tagged to their own client.
+        if ($user->isClientRole()) {
+            $doc = Document::where('storage_path', $path)->first();
+            if (! $doc || (int) $doc->client_id !== (int) $client->id) {
+                return response()->json(['message' => 'Forbidden'], 403);
+            }
+        }
+
         // Scope check: associates/paralegals may only download documents whose
         // project they are assigned to. Managers/partners/admins are unrestricted.
-        $user = $request->user();
         if (in_array($user->role, ['associate', 'paralegal'])) {
             $doc = Document::where('storage_path', $path)->first();
             if ($doc && $doc->project_id) {

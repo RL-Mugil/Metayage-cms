@@ -88,8 +88,7 @@ class AuthController extends Controller
 
     public function users(Request $request)
     {
-        $role = $request->user()->role;
-        if ($role === 'client') {
+        if ($request->user()->isClientRole()) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
@@ -172,6 +171,18 @@ class AuthController extends Controller
                 'tasks'     => 'self_only',
                 'documents' => 'self_only',
                 'financial' => 'self_only',
+                'approvals' => 'view',
+                'hrms'      => 'none',
+            ],
+            'client_admin' => [
+                'clients'   => 'self_only',
+                'projects'  => 'self_only',
+                'kanban'    => 'self_only',
+                'tasks'     => 'self_only',
+                'documents' => 'self_only',
+                'financial' => 'self_only',
+                'approvals' => 'approve',
+                'portal_users' => 'view_edit',
                 'hrms'      => 'none',
             ],
         ];

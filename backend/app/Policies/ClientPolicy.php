@@ -14,8 +14,8 @@ class ClientPolicy
 
     public function view(User $user, Client $client): bool
     {
-        if ($user->role === 'client') {
-            return $client->contacts()->where('email', $user->email)->exists();
+        if ($user->isClientRole()) {
+            return $client->isVisibleToUser($user);
         }
         return true;
     }

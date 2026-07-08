@@ -1,6 +1,6 @@
 import { Head } from "@inertiajs/react";
 import { useEffect, useState, useRef } from "react";
-import { Globe, Eye, EyeOff, Mail, Loader2, Plus, X, CheckCircle, Search, KeyRound, ChevronLeft, ChevronRight, AlertCircle, Trash2, ToggleLeft, ToggleRight } from "lucide-react";
+import { Globe, Eye, EyeOff, Mail, Loader2, Plus, X, CheckCircle, Search, KeyRound, ChevronLeft, ChevronRight, AlertCircle, Trash2, ToggleLeft, ToggleRight, CheckCheck, Minus } from "lucide-react";
 import AppLayout from "@/layouts/AppLayout";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -93,9 +93,9 @@ export default function Portal() {
   const [portalSearch, setPortalSearch] = useState("");
   const [showDropdown, setShowDropdown] = useState(false);
   const [selectedClient, setSelectedClient] = useState<any | null>(null);
-  const [newPortalEmail, setNewPortalEmail] = useState("");
+  const [emailList, setEmailList] = useState<string[]>([""]);
   const [portalCreated, setPortalCreated] = useState(false);
-  const [createdCreds, setCreatedCreds] = useState<{ email: string; password: string; mail_sent: boolean } | null>(null);
+  const [createdCreds, setCreatedCreds] = useState<{ email: string; password: string; mail_sent: boolean }[] | null>(null);
   const [saving, setSaving] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -109,6 +109,8 @@ export default function Portal() {
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [bulkLoading, setBulkLoading] = useState(false);
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
+  const [bulkError, setBulkError] = useState("");
+  const [bulkSuccess, setBulkSuccess] = useState("");
 
   // Reset Password modal
   const [resetTarget, setResetTarget] = useState<any | null>(null);
@@ -138,12 +140,24 @@ export default function Portal() {
     api.togglePortal(id).catch(() => loadPortal());
   }
 
+  function openInviteModal(client: any) {
+    setSelectedClient(client);
+    setPortalSearch("");
+    setPortalCreated(false);
+    setCreatedCreds(null);
+    setShowNewPortal(true);
+    // contact_email is already on the client object from the allClients list
+    const pre = client?.contact_email ? [client.contact_email] : [""];
+    setEmailList(pre);
+  }
+
   async function createPortal() {
-    if (!selectedClient || !newPortalEmail) return;
+    const emails = emailList.map(e => e.trim()).filter(Boolean);
+    if (!selectedClient || emails.length === 0) return;
     setSaving(true);
     try {
-      const res = await api.createPortal({ client_id: selectedClient.id, email: newPortalEmail });
-      setCreatedCreds({ email: res.email, password: res.password, mail_sent: res.mail_sent });
+      const res = await api.createPortal({ client_id: selectedClient.id, emails });
+      setCreatedCreds(res.results ?? []);
       setPortalCreated(true);
       loadPortal();
     } catch { /* keep modal open */ }
@@ -181,18 +195,31 @@ export default function Portal() {
 
   async function runBulk(action: 'enable' | 'disable' | 'delete') {
     if (selected.size === 0) return;
+    const count = selected.size;
     setBulkLoading(true);
+    setBulkError("");
+    setBulkSuccess("");
     try {
-      await api.portalBulk(action, Array.from(selected));
+      const ids = Array.from(selected).map(Number);
+      await api.portalBulk(action, ids);
       setSelected(new Set());
       setConfirmBulkDelete(false);
       await loadPortal();
-    } catch { /* keep selection */ }
-    finally { setBulkLoading(false); }
+      const label = action === 'enable' ? 'enabled' : action === 'disable' ? 'disabled' : 'deleted';
+      setBulkSuccess(`${count} portal${count !== 1 ? 's' : ''} ${label} successfully.`);
+      setTimeout(() => setBulkSuccess(""), 4000);
+    } catch (e: any) {
+      setBulkError(e?.message || "Bulk action failed. Please try again.");
+    } finally {
+      setBulkLoading(false);
+    }
   }
 
-  const toggleRow = (id: number) =>
+  const toggleRow = (id: number) => {
+    setBulkError("");
+    setBulkSuccess("");
     setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  };
 
   const someSelected = selected.size > 0;
 
@@ -238,7 +265,7 @@ export default function Portal() {
             <Button variant="outline" onClick={() => { setShowInviteAll(true); setInviteAllDone(false); }}>
               <Mail className="h-4 w-4 mr-2" />Invite All Inactive
             </Button>
-            <Button onClick={() => { setShowNewPortal(true); setPortalCreated(false); setSelectedClient(null); setPortalSearch(""); setNewPortalEmail(""); }}>
+            <Button onClick={() => { setShowNewPortal(true); setPortalCreated(false); setSelectedClient(null); setPortalSearch(""); setEmailList([""]); }}>
               <Globe className="h-4 w-4 mr-2" />New Portal
             </Button>
           </>
@@ -257,29 +284,26 @@ export default function Portal() {
               <div className="py-4 space-y-4">
                 <div className="text-center">
                   <CheckCircle className="h-10 w-10 text-green-500 mx-auto mb-3" />
-                  <div className="font-semibold">Portal Account Created!</div>
-                  <div className="text-sm mt-1">
-                    {createdCreds?.mail_sent
-                      ? <span className="text-green-500">Invite email sent to {createdCreds.email}</span>
-                      : <span className="text-amber-500">Email delivery failed — share credentials below manually</span>}
-                  </div>
+                  <div className="font-semibold">Portal Account{(createdCreds?.length ?? 0) > 1 ? "s" : ""} Created!</div>
                 </div>
-                {createdCreds && (
-                  <div className="rounded-lg border border-gold/30 bg-gold/5 p-4 space-y-2 text-sm">
+                {createdCreds && createdCreds.map((cred, i) => (
+                  <div key={i} className="rounded-lg border border-gold/30 bg-gold/5 p-4 space-y-2 text-sm">
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Email</span>
-                      <span className="font-mono font-medium">{createdCreds.email}</span>
+                      <span className="font-mono font-medium">{cred.email}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Password</span>
-                      <span className="font-mono font-medium text-gold">{createdCreds.password}</span>
+                      <span className="font-mono font-medium text-gold">{cred.password}</span>
                     </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Login URL</span>
-                      <span className="font-mono text-xs text-muted-foreground">mypl-cms.139-59-85-216.sslip.io</span>
+                    <div className="text-xs mt-1">
+                      {cred.mail_sent
+                        ? <span className="text-green-600">✓ Invite email sent</span>
+                        : <span className="text-amber-500">⚠ Email failed — share manually</span>}
                     </div>
                   </div>
-                )}
+                ))}
+                <div className="text-xs text-muted-foreground text-center">Login: mypl-cms.139-59-85-216.sslip.io</div>
                 <Button className="w-full" variant="outline" onClick={() => { setShowNewPortal(false); setCreatedCreds(null); setPortalCreated(false); }}>Close</Button>
               </div>
             ) : (
@@ -304,7 +328,7 @@ export default function Portal() {
                           <div className="px-3 py-2 text-sm text-muted-foreground">No clients found</div>
                         ) : filteredDropdown.map((c) => (
                           <button key={c.id} className="w-full text-left px-3 py-2 text-sm hover:bg-muted/40 flex items-center gap-2"
-                            onClick={() => { setSelectedClient(c); setPortalSearch(""); setShowDropdown(false); }}>
+                            onClick={() => { setSelectedClient(c); setPortalSearch(""); setShowDropdown(false); setEmailList(c.contact_email ? [c.contact_email] : [""]); }}>
                             <span className="font-medium">{c.company_name}</span>
                             <span className="text-xs text-muted-foreground ml-auto">{c.client_code}</span>
                           </button>
@@ -313,14 +337,47 @@ export default function Portal() {
                     )}
                   </div>
                   <div>
-                    <label className="block text-xs text-muted-foreground mb-1">Contact Email</label>
-                    <input type="email" value={newPortalEmail} onChange={e => setNewPortalEmail(e.target.value)}
-                      placeholder="client@company.com"
-                      className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-xs text-muted-foreground">Contact Email{emailList.length > 1 ? "s" : ""}</label>
+                    </div>
+                    <div className="space-y-2">
+                      {emailList.map((email, idx) => (
+                        <div key={idx} className="flex gap-2">
+                          <input
+                            type="email"
+                            value={email}
+                            onChange={e => {
+                              const next = [...emailList];
+                              next[idx] = e.target.value;
+                              setEmailList(next);
+                            }}
+                            placeholder="client@company.com"
+                            className="flex-1 h-9 rounded-md border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold"
+                          />
+                          {emailList.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => setEmailList(emailList.filter((_, i) => i !== idx))}
+                              className="h-9 w-9 flex items-center justify-center rounded-md border border-border hover:bg-destructive/10 hover:border-destructive/40 text-muted-foreground hover:text-destructive transition-colors"
+                            >
+                              <Minus className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={() => setEmailList([...emailList, ""])}
+                        className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        <Plus className="h-3.5 w-3.5" /> Add another email
+                      </button>
+                    </div>
                   </div>
                 </div>
                 <div className="flex gap-2 mt-5">
-                  <Button className="bg-gold hover:bg-gold/90 text-black flex-1" disabled={!selectedClient || !newPortalEmail || saving}
+                  <Button className="bg-gold hover:bg-gold/90 text-black flex-1"
+                    disabled={!selectedClient || emailList.every(e => !e.trim()) || saving}
                     onClick={createPortal}>
                     {saving ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Creating…</> : <>Create &amp; Send Credentials</>}
                   </Button>
@@ -429,6 +486,14 @@ export default function Portal() {
           ))}
         </div>
 
+        {/* Bulk success toast */}
+        {bulkSuccess && (
+          <div className="flex items-center gap-2 rounded-lg border border-green-500/30 bg-green-500/10 px-4 py-3 text-sm text-green-600">
+            <CheckCheck className="h-4 w-4 flex-shrink-0" />
+            {bulkSuccess}
+          </div>
+        )}
+
         {/* Client portal table */}
         <Card className="border-border">
           <CardHeader className="flex flex-row items-center justify-between gap-4">
@@ -454,7 +519,14 @@ export default function Portal() {
 
           {/* Bulk action bar */}
           {someSelected && (
-            <div className="mx-4 mb-3 flex items-center gap-2 rounded-lg border border-gold/30 bg-gold/5 px-4 py-2.5">
+            <div className="mx-4 mb-3 space-y-2">
+              {bulkError && (
+                <div className="flex items-center gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                  <AlertCircle className="h-3.5 w-3.5 flex-shrink-0" />
+                  {bulkError}
+                </div>
+              )}
+              <div className="flex items-center gap-2 rounded-lg border border-gold/30 bg-gold/5 px-4 py-2.5">
               <span className="text-xs text-muted-foreground mr-1">
                 {selected.size === filteredClients.length
                   ? `All ${selected.size} portals selected`
@@ -472,11 +544,11 @@ export default function Portal() {
               {!confirmBulkDelete ? (
                 <Button size="sm" variant="outline" className="h-7 text-xs gap-1.5 text-destructive border-destructive/40 hover:bg-destructive/10"
                   disabled={bulkLoading} onClick={() => setConfirmBulkDelete(true)}>
-                  <Trash2 className="h-3.5 w-3.5" /> Delete Portal
+                  <Trash2 className="h-3.5 w-3.5" /> Remove Access
                 </Button>
               ) : (
                 <div className="flex items-center gap-1.5">
-                  <span className="text-xs text-destructive font-medium">Delete {selected.size} portal{selected.size !== 1 ? "s" : ""}?</span>
+                  <span className="text-xs text-destructive font-medium">Remove access for {selected.size} portal{selected.size !== 1 ? "s" : ""}?</span>
                   <Button size="sm" className="h-7 text-xs bg-destructive text-white hover:bg-destructive/90" disabled={bulkLoading}
                     onClick={() => runBulk('delete')}>
                     {bulkLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Confirm"}
@@ -486,9 +558,10 @@ export default function Portal() {
                   </Button>
                 </div>
               )}
-              <Button size="sm" variant="ghost" className="h-7 w-7 p-0 ml-1" onClick={() => { setSelected(new Set()); setConfirmBulkDelete(false); }}>
+              <Button size="sm" variant="ghost" className="h-7 w-7 p-0 ml-1" onClick={() => { setSelected(new Set()); setConfirmBulkDelete(false); setBulkError(""); }}>
                 <X className="h-3.5 w-3.5" />
               </Button>
+            </div>
             </div>
           )}
 
@@ -551,16 +624,23 @@ export default function Portal() {
                               onClick={() => toggleStatus(client.id)}>
                               Disable
                             </Button>
-                          ) : (
+                          ) : client.portal_user_id ? (
                             <Button size="sm" variant="outline" className="text-xs h-7"
                               onClick={() => toggleStatus(client.id)}>
+                              Enable
+                            </Button>
+                          ) : (
+                            <Button size="sm" variant="outline" className="text-xs h-7"
+                              onClick={() => openInviteModal(client)}>
                               <Mail className="h-3 w-3 mr-1" /> Invite
                             </Button>
                           )}
-                          <Button size="sm" variant="outline" className="text-xs h-7"
-                            onClick={() => { setResetTarget(client); setResetPw(""); setResetDone(false); setResetError(""); }}>
-                            <KeyRound className="h-3 w-3 mr-1" /> Reset PW
-                          </Button>
+                          {client.portal_user_id && (
+                            <Button size="sm" variant="outline" className="text-xs h-7"
+                              onClick={() => { setResetTarget(client); setResetPw(""); setResetDone(false); setResetError(""); }}>
+                              <KeyRound className="h-3 w-3 mr-1" /> Reset PW
+                            </Button>
+                          )}
                         </div>
                       </td>
                     </tr>

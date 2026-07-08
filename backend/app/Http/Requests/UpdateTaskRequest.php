@@ -9,7 +9,7 @@ class UpdateTaskRequest extends FormRequest
     public function authorize(): bool
     {
         $user = $this->user();
-        if ($user->role === 'client') return false;
+        if ($user->isClientRole()) return false;
         if (in_array($user->role, ['associate', 'paralegal'])) {
             $task = \App\Models\Task::find($this->route('id'));
             return $task && $task->assignee_id === $user->id;

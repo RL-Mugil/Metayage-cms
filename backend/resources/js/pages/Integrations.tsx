@@ -21,19 +21,6 @@ interface Integration {
   hasKey?: boolean;
 }
 
-const webhookLogs = [
-  { id: 1, source: "USPTO API", event: "patent.status_update", status: 200, time: "2026-06-04 14:32:01", size: "1.2 KB" },
-  { id: 2, source: "Slack", event: "notification.sent", status: 200, time: "2026-06-04 14:28:45", size: "0.4 KB" },
-  { id: 3, source: "Google Calendar", event: "event.created", status: 200, time: "2026-06-04 14:15:12", size: "2.1 KB" },
-  { id: 4, source: "EPO OPS", event: "patent.family_fetch", status: 200, time: "2026-06-04 13:00:00", size: "8.7 KB" },
-  { id: 5, source: "Gmail", event: "email.sent", status: 200, time: "2026-06-04 12:45:33", size: "3.2 KB" },
-  { id: 6, source: "USPTO API", event: "patent.status_update", status: 429, time: "2026-06-04 11:00:15", size: "0.2 KB" },
-  { id: 7, source: "Google Calendar", event: "event.sync", status: 200, time: "2026-06-04 10:30:00", size: "4.5 KB" },
-  { id: 8, source: "Slack", event: "notification.sent", status: 200, time: "2026-06-04 09:15:22", size: "0.3 KB" },
-  { id: 9, source: "EPO OPS", event: "patent.search", status: 200, time: "2026-06-04 08:00:00", size: "12.4 KB" },
-  { id: 10, source: "Gmail", event: "email.bounced", status: 422, time: "2026-06-04 07:45:01", size: "0.8 KB" },
-];
-
 export default function Integrations() {
   const [list, setList] = useState<Integration[]>([]);
   const [loading, setLoading] = useState(true);
@@ -41,20 +28,40 @@ export default function Integrations() {
   const [testResult, setTestResult] = useState<Record<string, "ok" | "fail" | null>>({});
   const [apiKeys, setApiKeys] = useState<Record<string, string>>({});
   const [keySaved, setKeySaved] = useState<Record<string, boolean>>({});
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [banner, setBanner] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
-  const load = () => api.getIntegrations().then((d) => setList(d as unknown as Integration[])).catch(() => {}).finally(() => setLoading(false));
+  const load = () => api.getIntegrations()
+    .then((d) => setList(d as unknown as Integration[]))
+    .catch((error) => setBanner({ kind: "err", text: error instanceof Error ? error.message : "Failed to load integrations." }))
+    .finally(() => setLoading(false));
   useEffect(() => { load(); }, []);
 
-  const toggle = (id: string) => {
-    setList((prev) => prev.map((i) => i.id === id ? { ...i, connected: !i.connected, lastSync: !i.connected ? "just now" : undefined } : i));
-    api.toggleIntegration(id).catch(() => load());
+  const toggle = async (id: string) => {
+    setBusyId(id);
+    setBanner(null);
+    try {
+      const response = await api.toggleIntegration(id);
+      setBanner({ kind: "ok", text: response.message });
+      load();
+    } catch (error) {
+      setBanner({ kind: "err", text: error instanceof Error ? error.message : "Failed to update integration." });
+    } finally {
+      setBusyId(null);
+    }
   };
 
   const testConnection = (id: string) => {
     setTestResult((prev) => ({ ...prev, [id]: null }));
     api.testIntegration(id)
-      .then((r) => setTestResult((prev) => ({ ...prev, [id]: r.ok ? "ok" : "fail" })))
-      .catch(() => setTestResult((prev) => ({ ...prev, [id]: "fail" })));
+      .then((r) => {
+        setTestResult((prev) => ({ ...prev, [id]: r.ok ? "ok" : "fail" }));
+        setBanner({ kind: r.ok ? "ok" : "err", text: r.message ?? (r.ok ? "Integration test passed." : "Integration test failed.") });
+      })
+      .catch((error) => {
+        setTestResult((prev) => ({ ...prev, [id]: "fail" }));
+        setBanner({ kind: "err", text: error instanceof Error ? error.message : "Integration test failed." });
+      });
   };
 
   const saveKey = (id: string) => {
@@ -64,9 +71,11 @@ export default function Integrations() {
       .then(() => {
         setKeySaved((p) => ({ ...p, [id]: true }));
         setApiKeys((p) => ({ ...p, [id]: "" }));
+        setList((prev) => prev.map((item) => item.id === id ? { ...item, hasKey: true } : item));
+        setBanner({ kind: "ok", text: "Integration credentials saved." });
         setTimeout(() => setKeySaved((p) => ({ ...p, [id]: false })), 3000);
       })
-      .catch(() => {});
+      .catch((error) => setBanner({ kind: "err", text: error instanceof Error ? error.message : "Failed to save integration credentials." }));
   };
 
   const connected = list.filter((i) => i.connected).length;
@@ -86,6 +95,12 @@ export default function Integrations() {
       <PageHeader eyebrow="Operations" title="Integrations"
         description={`${connected} of ${list.length} integrations active`} />
       <div className="px-8 py-6 space-y-8">
+        {banner && (
+          <div className={`rounded-lg border px-4 py-3 text-sm ${banner.kind === "ok" ? "border-green-200 bg-green-50 text-green-700" : "border-red-200 bg-red-50 text-red-700"}`}>
+            {banner.text}
+          </div>
+        )}
+
         {/* Integration cards */}
         <div className="grid grid-cols-3 gap-4">
           {list.map((intg) => (
@@ -117,18 +132,21 @@ export default function Integrations() {
                   {intg.connected ? (
                     <>
                       <Button size="sm" variant="outline" className="h-7 text-xs flex-1"
-                        onClick={() => setConfigOpen(configOpen === intg.id ? null : intg.id)}>
+                        onClick={() => setConfigOpen(configOpen === intg.id ? null : intg.id)}
+                        disabled={busyId === intg.id}>
                         <Settings className="h-3 w-3 mr-1" /> Configure
                       </Button>
                       <Button size="sm" variant="outline" className="h-7 text-xs border-red-200 text-red-600 hover:bg-red-50"
-                        onClick={() => toggle(intg.id)}>
+                        onClick={() => toggle(intg.id)}
+                        disabled={busyId === intg.id}>
                         <X className="h-3 w-3 mr-1" /> Disconnect
                       </Button>
                     </>
                   ) : (
                     <Button size="sm" className="h-7 text-xs flex-1 bg-gold hover:bg-gold/90 text-black"
-                      onClick={() => toggle(intg.id)}>
-                      <Plug className="h-3 w-3 mr-1" /> Connect
+                      onClick={() => toggle(intg.id)}
+                      disabled={busyId === intg.id}>
+                      {busyId === intg.id ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Plug className="h-3 w-3 mr-1" />} Connect
                     </Button>
                   )}
                 </div>
@@ -170,36 +188,10 @@ export default function Integrations() {
           ))}
         </div>
 
-        {/* Webhook logs */}
         <Card className="border-border">
-          <CardHeader><CardTitle className="font-display text-base">Webhook Logs</CardTitle></CardHeader>
-          <CardContent className="p-0">
-            <table className="w-full text-xs">
-              <thead className="bg-muted/40 text-[11px] uppercase tracking-wider text-muted-foreground">
-                <tr>
-                  <th className="px-4 py-2.5 text-left">Source</th>
-                  <th className="px-4 py-2.5 text-left">Event</th>
-                  <th className="px-4 py-2.5 text-left">Status</th>
-                  <th className="px-4 py-2.5 text-left">Time</th>
-                  <th className="px-4 py-2.5 text-left">Size</th>
-                </tr>
-              </thead>
-              <tbody>
-                {webhookLogs.map((log) => (
-                  <tr key={log.id} className="border-t border-border hover:bg-muted/20">
-                    <td className="px-4 py-2 font-medium">{log.source}</td>
-                    <td className="px-4 py-2 font-mono text-muted-foreground">{log.event}</td>
-                    <td className="px-4 py-2">
-                      <span className={`px-1.5 py-0.5 rounded font-mono font-bold ${log.status === 200 ? "text-green-600 bg-green-50" : "text-red-600 bg-red-50"}`}>
-                        {log.status}
-                      </span>
-                    </td>
-                    <td className="px-4 py-2 text-muted-foreground">{log.time}</td>
-                    <td className="px-4 py-2 text-muted-foreground">{log.size}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <CardHeader><CardTitle className="font-display text-base">Integration Telemetry</CardTitle></CardHeader>
+          <CardContent className="text-sm text-muted-foreground">
+            Live webhook and sync logs are not wired to a database table yet, so this screen only shows actual integration configuration state from the `integrations` table.
           </CardContent>
         </Card>
       </div>

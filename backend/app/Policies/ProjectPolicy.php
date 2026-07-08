@@ -14,8 +14,8 @@ class ProjectPolicy
 
     public function view(User $user, Project $project): bool
     {
-        if ($user->role === 'client') {
-            return $project->client && $project->client->contacts()->where('email', $user->email)->exists();
+        if ($user->isClientRole()) {
+            return $project->client && $project->client->isVisibleToUser($user);
         }
 
         // Associates and paralegals may only view projects they are directly assigned to.

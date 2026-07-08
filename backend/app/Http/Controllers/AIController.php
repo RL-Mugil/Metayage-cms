@@ -5,16 +5,20 @@ namespace App\Http\Controllers;
 use App\Models\AuditLog;
 use App\Services\AIQueryService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 class AIController extends Controller
 {
     public function query(Request $request)
     {
+        $user = $request->user();
+        if ($user->isClientRole()) {
+            return response()->json(['message' => 'AI Assistant is not available for portal accounts.'], 403);
+        }
+
         $request->validate([
             'query' => 'required|string|max:1000',
         ]);
-
-        $user = $request->user();
 
         AuditLog::create([
             'user_id'    => $user->id,
@@ -34,8 +38,16 @@ class AIController extends Controller
 
             return response()->json($result);
 
-        } catch (\Exception $e) {
-            return response()->json(['message' => 'AI service error. Please try again.'], 500);
+        } catch (\Throwable $e) {
+            Log::error('AI query failed', [
+                'user_id' => $user->id,
+                'query' => $request->input('query'),
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'message' => $e->getMessage() !== '' ? $e->getMessage() : 'AI service error. Please try again.',
+            ], 500);
         }
     }
 }

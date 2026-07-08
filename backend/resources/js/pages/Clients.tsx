@@ -502,6 +502,7 @@ export default function Clients() {
     const params = new URLSearchParams();
     params.set('page', String(p));
     if (search) params.set('search', search);
+    if (statusF !== 'All') params.set('status', statusF);
     api.getClients(params)
       .then(setPaginatedResult)
       .catch(() => setLoading(false))
@@ -516,7 +517,7 @@ export default function Clients() {
     setLoading(true);
     fetchClients(1);
     api.getUsers().then(setUsers).catch(() => {});
-  }, [search]);
+  }, [search, statusF]);
 
   const isOrg    = form.client_type === "organization";
   const isIndian = form.nationality.toLowerCase() === "india";

@@ -282,7 +282,7 @@ export default function Dashboard() {
                 </thead>
                 <tbody>
                   {projects.slice(0, 5).map((p) => {
-                    const activeStage = p.stages?.find((s: any) => s.status === "In Progress")?.stage_name || "Intake";
+                    const activeStage = p.stages?.find((s: any) => s.status === "In Progress")?.stage_name || "Invention Disclosure";
                     return (
                       <tr key={p.id} className="border-t border-border hover:bg-muted/30">
                         <td className="px-4 py-3">

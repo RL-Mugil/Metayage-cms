@@ -21,6 +21,8 @@ interface Thread {
   author: string;
   last_reply: string;
   tag: Tag;
+  client_id?: number | null;
+  client_name?: string | null;
   messages: Message[];
 }
 
@@ -41,10 +43,19 @@ const TAG_COLORS: Record<Tag, string> = {
 };
 
 const ALL_TAGS: Array<"All" | Tag> = ["All", "General", "Project", "HR", "Finance"];
+const CLIENT_TAGS: Array<"All" | Tag> = ["All", "General", "Project"];
 
 export default function Discussions() {
   const { props } = usePage() as any;
   const myName = props.auth?.user?.name || "You";
+  const role: string = props.auth?.user?.role ?? "";
+  const isClientUser = ["client", "client_admin"].includes(role);
+  const isAdminRole = ["super_admin", "partner"].includes(role);
+  const tagOptions: Tag[] = isClientUser ? ["General", "Project"] : ["General", "Project", "HR", "Finance"];
+
+  // Share-with-client picker (internal users)
+  const [clients, setClients] = useState<any[]>([]);
+  const [newClientId, setNewClientId] = useState<string>("");
 
   const [threads, setThreads] = useState<Thread[]>([]);
   const [loading, setLoading] = useState(true);
@@ -73,6 +84,11 @@ export default function Discussions() {
       .then((data) => setThreads(data as unknown as Thread[]))
       .catch((e) => setError(e.message || "Failed to load discussions."))
       .finally(() => setLoading(false));
+    if (!isClientUser) {
+      api.getClients(new URLSearchParams({ per_page: "2000" }))
+        .then((res: any) => setClients(Array.isArray(res) ? res : res?.data ?? []))
+        .catch(() => {});
+    }
   }, []);
 
   const filteredThreads =
@@ -110,11 +126,14 @@ export default function Discussions() {
         title: newTitle.trim(),
         tag: newTag,
         message: newMessage.trim(),
+        client_id: !isClientUser && newClientId ? Number(newClientId) : undefined,
       }) as any;
       const thread: Thread = {
         id: created.id,
         title: created.title,
         tag: (created.tag || "General") as Tag,
+        client_id: created.client_id ?? null,
+        client_name: created.client_id ? (clients.find((c: any) => c.id === created.client_id)?.company_name ?? null) : null,
         author: myName,
         last_reply: "Just now",
         messages: (created.messages || []).map((m: any) => ({
@@ -129,6 +148,7 @@ export default function Discussions() {
       setNewTitle("");
       setNewTag("General");
       setNewMessage("");
+      setNewClientId("");
       setShowNewForm(false);
     } catch (e: any) {
       setError(e.message || "Failed to create discussion.");
@@ -205,7 +225,7 @@ export default function Discussions() {
           {/* Left panel — thread list */}
           <div className="w-72 flex-shrink-0 flex flex-col border-r border-border">
             <div className="flex flex-wrap gap-1 p-3 border-b border-border bg-muted/20">
-              {ALL_TAGS.map((tag) => (
+              {(isClientUser ? CLIENT_TAGS : ALL_TAGS).map((tag) => (
                 <button
                   key={tag}
                   onClick={() => setTagFilter(tag)}
@@ -251,15 +271,21 @@ export default function Discussions() {
                             {thread.last_reply}
                           </span>
                         </div>
-                        <div className="mt-1.5">
+                        <div className="mt-1.5 flex items-center gap-1">
                           <span
                             className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium border ${TAG_COLORS[thread.tag] || TAG_COLORS.General}`}
                           >
                             {thread.tag}
                           </span>
+                          {thread.client_name && !isClientUser && (
+                            <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-medium border bg-gold/10 text-gold border-gold/30 truncate max-w-[110px]">
+                              {thread.client_name}
+                            </span>
+                          )}
                         </div>
                       </button>
-                      {/* Edit / Delete icons — show on hover */}
+                      {/* Edit / Delete icons — only the author or firm admins */}
+                      {(isAdminRole || thread.author === myName) && (
                       <div className="absolute top-2 right-2 hidden group-hover:flex items-center gap-0.5">
                         <button
                           title="Edit thread"
@@ -276,6 +302,7 @@ export default function Discussions() {
                           <Trash2 className="h-3 w-3" />
                         </button>
                       </div>
+                      )}
                     </div>
                   ))}
                   {filteredThreads.length === 0 && (
@@ -300,16 +327,29 @@ export default function Discussions() {
                   onChange={(e) => setNewTitle(e.target.value)}
                   className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gold"
                 />
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 flex-wrap">
                   <select
                     value={newTag}
                     onChange={(e) => setNewTag(e.target.value as Tag)}
                     className="rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gold"
                   >
-                    {(["General", "Project", "HR", "Finance"] as Tag[]).map((t) => (
+                    {tagOptions.map((t) => (
                       <option key={t} value={t}>{t}</option>
                     ))}
                   </select>
+                  {!isClientUser && (
+                    <select
+                      value={newClientId}
+                      onChange={(e) => setNewClientId(e.target.value)}
+                      title="Share this discussion with a client's portal"
+                      className="rounded-md border border-border bg-background px-3 py-2 text-sm text-muted-foreground focus:outline-none focus:ring-1 focus:ring-gold max-w-[220px]"
+                    >
+                      <option value="">Internal only</option>
+                      {clients.map((c: any) => (
+                        <option key={c.id} value={c.id}>Share with: {c.company_name ?? c.legal_name}</option>
+                      ))}
+                    </select>
+                  )}
                 </div>
                 <textarea
                   rows={3}
@@ -371,7 +411,7 @@ export default function Discussions() {
                         onChange={(e) => setEditTag(e.target.value as Tag)}
                         className="rounded-md border border-border bg-background px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold"
                       >
-                        {(["General", "Project", "HR", "Finance"] as Tag[]).map((t) => (
+                        {tagOptions.map((t) => (
                           <option key={t} value={t}>{t}</option>
                         ))}
                       </select>
@@ -407,6 +447,7 @@ export default function Discussions() {
                           </span>
                         </div>
                       </div>
+                      {(isAdminRole || selectedThread.author === myName) && (
                       <div className="flex items-center gap-1 flex-shrink-0">
                         <button
                           title="Edit thread"
@@ -423,6 +464,7 @@ export default function Discussions() {
                           <Trash2 className="h-4 w-4" />
                         </button>
                       </div>
+                      )}
                     </div>
                   )}
                 </div>

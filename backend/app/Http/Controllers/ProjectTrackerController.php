@@ -22,7 +22,7 @@ class ProjectTrackerController extends Controller implements HasMiddleware
     {
         return [
             function (Request $request, $next) {
-                if ($request->user() && $request->user()->role === 'client') {
+                if ($request->user() && $request->user()->isClientRole()) {
                     return response()->json(['message' => 'Forbidden'], 403);
                 }
                 return $next($request);
@@ -54,26 +54,26 @@ class ProjectTrackerController extends Controller implements HasMiddleware
         'Completed'                               => 100,
     ];
 
-    // Status → pipeline stage mapping
+    // Status → lifecycle stage mapping (Patent Process Lifecycle)
     const STATUS_STAGE = [
-        'Not Started'                             => 'Intake',
-        'Allocated'                               => 'Intake',
-        'Conducting search'                       => 'Intake',
-        'Shared search report'                    => 'Intake',
-        'Shared key features'                     => 'Intake',
-        'Awaiting the draft from the client'      => 'Intake',
-        'To schedule call'                        => 'Intake',
-        'Scheduled call with client'              => 'Intake',
-        'Patent Drafting'                         => 'Drafting',
-        'shared draft & drawings'                 => 'Drafting',
-        'To share the claims with client'         => 'Drafting',
-        'Internal Review'                         => 'Drafting',
-        'Client Review'                           => 'Drafting',
-        'Awaiting feedback'                       => 'Drafting',
-        'received Comments from client - to Update' => 'Drafting',
-        'Awaiting signed forms'                   => 'Filing',
-        'To file'                                 => 'Filing',
-        'Awaiting payment'                        => 'Examination',
+        'Not Started'                             => 'Invention Disclosure',
+        'Allocated'                               => 'Invention Disclosure',
+        'To schedule call'                        => 'Invention Disclosure',
+        'Scheduled call with client'              => 'Invention Disclosure',
+        'Conducting search'                       => 'Patent Search',
+        'Shared search report'                    => 'Search Report',
+        'Shared key features'                     => 'Search Report',
+        'Awaiting the draft from the client'      => 'Patent Drafting',
+        'Patent Drafting'                         => 'Patent Drafting',
+        'Internal Review'                         => 'Patent Drafting',
+        'shared draft & drawings'                 => 'Applicant/Inventor Review',
+        'To share the claims with client'         => 'Applicant/Inventor Review',
+        'Client Review'                           => 'Applicant/Inventor Review',
+        'Awaiting feedback'                       => 'Applicant/Inventor Review',
+        'received Comments from client - to Update' => 'Applicant/Inventor Review',
+        'Awaiting signed forms'                   => 'Filing with Patent Office',
+        'To file'                                 => 'Filing with Patent Office',
+        'Awaiting payment'                        => 'Filing with Patent Office',
         'On Hold'                                 => null, // don't change stage
         'Completed'                               => 'Granted',
     ];

@@ -11,7 +11,7 @@ class ReminderController extends Controller
 {
     private function denyClients(Request $request): ?\Illuminate\Http\JsonResponse
     {
-        if ($request->user()->role === 'client') {
+        if ($request->user()->isClientRole()) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
         return null;

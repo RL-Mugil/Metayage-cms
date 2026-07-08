@@ -10,10 +10,10 @@ import { api, downloadCSV } from "@/lib/api-client";
 import { statusColor } from "@/lib/utils";
 
 const DEPTS = ["Legal", "Operations", "HR", "Finance", "Engineering", "Business Development", "Administration"];
-const ROLES = ["Partner", "Senior Attorney", "Associate Attorney", "Paralegal", "Patent Analyst", "Technical Writer", "HR Executive", "Finance Manager", "Business Developer", "Admin"];
-const LOCATIONS = ["Mumbai", "Delhi", "Bangalore", "Chennai", "Hyderabad", "Pune", "Kolkata", "Ahmedabad", "Noida", "Gurugram", "Coimbatore", "Jaipur", "Kochi", "Chandigarh", "Indore", "Remote"];
+const ROLES = ["Director", "HR", "Patent Attorney", "Patent Analyst", "Patent Engineer", "Finance Manager", "Paralegal", "Consultant", "System Admin"];
+const LOCATIONS = ["Remote", "Coimbatore", "Chennai", "Bengaluru", "Hyderabad", "Pollachi"];
 
-const blankForm = { full_name: "", work_email: "", department_name: "", designation_title: "", work_location: "Mumbai", date_of_joining: "", employment_type: "Full-time", salary: "" };
+const blankForm = { full_name: "", work_email: "", department_name: "", designation_title: "", work_location: "Coimbatore", date_of_joining: "", employment_type: "Full-time", salary: "" };
 
 export default function HRMSEmployees() {
   const [employees, setEmployees] = useState<any[]>([]);
@@ -52,7 +52,7 @@ export default function HRMSEmployees() {
       work_email: e.user?.email || e.work_email || "",
       department_name: e.department?.name || "",
       designation_title: e.designation?.title || "",
-      work_location: e.work_location || "Mumbai",
+      work_location: e.work_location || "Coimbatore",
       date_of_joining: e.date_of_joining || "",
       employment_type: e.employment_type || "Full-time",
       salary: e.salary?.toString() || "",

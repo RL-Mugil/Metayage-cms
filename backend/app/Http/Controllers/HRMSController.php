@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Mail\TeamInviteMail;
 use App\Models\Employee;
 use App\Models\Department;
 use App\Models\Designation;
@@ -15,7 +16,10 @@ use App\Http\Requests\StoreEmployeeRequest;
 use App\Http\Requests\UpdateEmployeeRequest;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Str;
 use Inertia\Inertia;
 
 class HRMSController extends Controller
@@ -79,19 +83,18 @@ class HRMSController extends Controller
         $validated = $request->validated();
 
         // Resolve department by name if ID not provided.
-        // Normalize to title-case to prevent duplicates like "IP Law" vs "ip law".
+        // Values come from a fixed dropdown, so store them exactly as given
+        // (title-casing would mangle acronyms like "HR" → "Hr").
         $deptId = $validated['department_id'] ?? null;
         if (!$deptId && !empty($validated['department_name'])) {
-            $deptName = mb_convert_case(trim($validated['department_name']), MB_CASE_TITLE, 'UTF-8');
-            $dept = Department::firstOrCreate(['name' => $deptName]);
+            $dept = Department::firstOrCreate(['name' => trim($validated['department_name'])]);
             $deptId = $dept->id;
         }
 
         // Resolve designation by title if ID not provided.
         $desigId = $validated['designation_id'] ?? null;
         if (!$desigId && !empty($validated['designation_title'])) {
-            $desigTitle = mb_convert_case(trim($validated['designation_title']), MB_CASE_TITLE, 'UTF-8');
-            $desig = Designation::firstOrCreate(['title' => $desigTitle]);
+            $desig = Designation::firstOrCreate(['title' => trim($validated['designation_title'])]);
             $desigId = $desig->id;
         }
 
@@ -157,6 +160,62 @@ class HRMSController extends Controller
         return response()->json($employee->load('department', 'designation', 'user'), 201);
     }
 
+    public function inviteMember(Request $request)
+    {
+        $actor = $request->user();
+        $validated = $request->validate([
+            'name' => 'required|string|max:255',
+            'email' => 'required|email|max:255|unique:users,email',
+        ]);
+
+        $temporaryPassword = Str::random(14);
+        $user = null;
+
+        DB::transaction(function () use ($validated, $temporaryPassword, &$user) {
+            $user = User::create([
+                'name' => $validated['name'],
+                'email' => $validated['email'],
+                'password' => Hash::make($temporaryPassword),
+                'role' => 'associate',
+                'status' => 'Active',
+            ]);
+        });
+
+        try {
+            Mail::to($user->email)->send(new TeamInviteMail(
+                $user->name,
+                $user->email,
+                $temporaryPassword,
+                url('/login'),
+            ));
+        } catch (\Throwable $e) {
+            $user?->delete();
+            throw $e;
+        }
+
+        AuditLog::create([
+            'user_id' => $actor->id,
+            'action' => 'invite_team_member',
+            'subject_type' => 'User',
+            'subject_id' => $user->id,
+            'metadata' => ['email' => $user->email, 'role' => $user->role],
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+        ]);
+
+        return response()->json([
+            'ok' => true,
+            'message' => 'Workspace invite email sent successfully.',
+            'user' => [
+                'id' => $user->id,
+                'name' => $user->name,
+                'email' => $user->email,
+                'status' => $user->status,
+                'role' => $user->role,
+            ],
+        ], 201);
+    }
+
     public function updateEmployee(UpdateEmployeeRequest $request, $id)
     {
         $employee = Employee::findOrFail($id);
@@ -171,6 +230,16 @@ class HRMSController extends Controller
             $validated['designation_id'] = $desig->id;
         }
         unset($validated['department_name'], $validated['designation_title']);
+
+        // Sync work_email to the linked login account — but never steal an
+        // email already used by another account.
+        if (!empty($validated['work_email']) && $employee->user && $validated['work_email'] !== $employee->user->email) {
+            $taken = User::where('email', $validated['work_email'])->where('id', '!=', $employee->user->id)->exists();
+            if ($taken) {
+                return response()->json(['message' => 'That email is already used by another account.'], 422);
+            }
+            $employee->user->update(['email' => $validated['work_email']]);
+        }
 
         $employee->update($validated);
 

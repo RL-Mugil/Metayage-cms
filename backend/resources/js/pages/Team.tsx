@@ -1,6 +1,6 @@
 import { Head } from "@inertiajs/react";
 import { useEffect, useState } from "react";
-import { Users, Grid, List, Search, Mail, Briefcase, Loader2, Plus, X, FolderOpen } from "lucide-react";
+import { Users, Grid, List, Search, Mail, Briefcase, Loader2, Plus, X, FolderOpen, Building2 } from "lucide-react";
 import AppLayout from "@/layouts/AppLayout";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent } from "@/components/ui/card";
@@ -9,8 +9,8 @@ import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api-client";
 
 const DEPTS = ["Legal", "Operations", "HR", "Finance", "Engineering", "Business Development", "Administration"];
-const ROLES = ["Partner", "Senior Attorney", "Associate Attorney", "Paralegal", "Patent Analyst", "Technical Writer", "HR Executive", "Finance Manager", "Business Developer"];
-const LOCATIONS = ["Chennai", "Coimbatore", "Hyderabad", "Bangalore", "Remote"];
+const ROLES = ["Director", "HR", "Patent Attorney", "Patent Analyst", "Patent Engineer", "Finance Manager", "Paralegal", "Consultant", "System Admin"];
+const LOCATIONS = ["Remote", "Coimbatore", "Chennai", "Bengaluru", "Hyderabad", "Pollachi"];
 const inputCls = "w-full h-9 rounded-md border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold";
 
 function getInitials(name: string) {
@@ -44,22 +44,34 @@ interface AssignedProject {
   hard_deadline: string | null;
 }
 
+interface ManagedClient {
+  id: number;
+  client_code: string;
+  company_name: string | null;
+  status: string | null;
+  gst_type: string | null;
+}
+
 export default function Team() {
   const [employees, setEmployees] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [search, setSearch] = useState("");
   const [workload, setWorkload] = useState<Record<number, WorkloadEntry>>({});
+  const [notice, setNotice] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
   const [showAddModal, setShowAddModal] = useState(false);
   const [showInviteModal, setShowInviteModal] = useState(false);
-  const [addForm, setAddForm] = useState({ full_name: "", work_email: "", department_name: "", designation_title: "", work_location: "Chennai", date_of_joining: "" });
-  const [inviteEmail, setInviteEmail] = useState("");
+  const [addForm, setAddForm] = useState({ full_name: "", work_email: "", department_name: "", designation_title: "", work_location: "Coimbatore", date_of_joining: "" });
+  const [inviteForm, setInviteForm] = useState({ name: "", email: "" });
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
 
   // Assigned projects modal
   const [assignedModal, setAssignedModal] = useState<{ emp: any; projects: AssignedProject[]; loading: boolean } | null>(null);
+
+  // Client Manager modal
+  const [clientMgrModal, setClientMgrModal] = useState<{ emp: any; clients: ManagedClient[]; loading: boolean } | null>(null);
 
   useEffect(() => {
     Promise.all([
@@ -80,7 +92,7 @@ export default function Team() {
       const created = await api.createEmployee(addForm);
       setEmployees(prev => [created, ...prev]);
       setShowAddModal(false);
-      setAddForm({ full_name: "", work_email: "", department_name: "", designation_title: "", work_location: "Mumbai", date_of_joining: "" });
+      setAddForm({ full_name: "", work_email: "", department_name: "", designation_title: "", work_location: "Coimbatore", date_of_joining: "" });
       // Refresh workload after adding
       api.getEmployeeWorkload().then((wl) => {
         const map: Record<number, WorkloadEntry> = {};
@@ -91,11 +103,23 @@ export default function Team() {
     finally { setSaving(false); }
   }
 
-  function handleInvite() {
-    if (!inviteEmail.trim()) return;
-    alert(`Invitation sent to ${inviteEmail}`);
-    setInviteEmail("");
-    setShowInviteModal(false);
+  async function handleInvite() {
+    if (!inviteForm.name.trim() || !inviteForm.email.trim()) {
+      setSaveError("Name and email are required.");
+      return;
+    }
+    setSaving(true);
+    setSaveError("");
+    try {
+      const response = await api.inviteTeamMember(inviteForm);
+      setNotice({ kind: "ok", text: response.message });
+      setInviteForm({ name: "", email: "" });
+      setShowInviteModal(false);
+    } catch (e: any) {
+      setSaveError(e.message || "Failed to create invitation record.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function openAssignedProjects(emp: any) {
@@ -116,6 +140,39 @@ export default function Team() {
       setAssignedModal({ emp, projects: list, loading: false });
     } catch {
       setAssignedModal((prev) => prev ? { ...prev, loading: false } : null);
+    }
+  }
+
+  async function openClientManagerModal(emp: any) {
+    const userId = emp.user_id ?? emp.user?.id;
+    if (!userId) return;
+    setClientMgrModal({ emp, clients: [], loading: true });
+    try {
+      // Fetch all projects where this employee is the assigned manager (client manager role)
+      const params = new URLSearchParams({ assigned_manager_id: String(userId), per_page: "500" });
+      const res = await api.getProjectsPaged(params) as any;
+      const projects: any[] = Array.isArray(res) ? res : (res?.data ?? []);
+
+      // Deduplicate clients from those projects
+      const seen = new Set<number>();
+      const list: ManagedClient[] = [];
+      for (const p of projects) {
+        const c = p.client;
+        if (!c) continue;
+        if (seen.has(c.id)) continue;
+        seen.add(c.id);
+        list.push({
+          id: c.id,
+          client_code: c.client_code ?? "—",
+          company_name: c.company_name ?? c.legal_name ?? "—",
+          status: c.status ?? null,
+          gst_type: c.gst_type ?? null,
+        });
+      }
+      list.sort((a, b) => (a.company_name ?? "").localeCompare(b.company_name ?? ""));
+      setClientMgrModal({ emp, clients: list, loading: false });
+    } catch {
+      setClientMgrModal((prev) => prev ? { ...prev, loading: false } : null);
     }
   }
 
@@ -221,10 +278,16 @@ export default function Team() {
               <h2 className="font-display text-lg font-semibold">Invite Team Member</h2>
               <button onClick={() => setShowInviteModal(false)}><X className="h-5 w-5 text-muted-foreground" /></button>
             </div>
-            <p className="text-sm text-muted-foreground mb-4">Enter the email address of the person you'd like to invite to the platform.</p>
-            <input type="email" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} placeholder="colleague@firm.com" className={inputCls} />
+            {saveError && <div className="rounded-md bg-destructive/15 border border-destructive/30 p-3 text-xs text-destructive mb-3">{saveError}</div>}
+            <p className="text-sm text-muted-foreground mb-4">Create a workspace account and send the access email immediately.</p>
+            <div className="space-y-3">
+              <input value={inviteForm.name} onChange={e => setInviteForm(p => ({ ...p, name: e.target.value }))} placeholder="Priya Sharma" className={inputCls} />
+              <input type="email" value={inviteForm.email} onChange={e => setInviteForm(p => ({ ...p, email: e.target.value }))} placeholder="colleague@firm.com" className={inputCls} />
+            </div>
             <div className="flex gap-2 mt-4">
-              <Button className="bg-gold hover:bg-gold/90 text-black flex-1" onClick={handleInvite}><Mail className="h-4 w-4 mr-2" />Send Invite</Button>
+              <Button className="bg-gold hover:bg-gold/90 text-black flex-1" onClick={handleInvite} disabled={saving}>
+                {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Mail className="h-4 w-4 mr-2" />}Create Invite
+              </Button>
               <Button variant="outline" onClick={() => setShowInviteModal(false)}>Cancel</Button>
             </div>
           </div>
@@ -292,7 +355,73 @@ export default function Team() {
         </div>
       )}
 
+      {/* Client Manager Modal */}
+      {clientMgrModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col">
+            <div className="flex items-center justify-between p-5 border-b border-border">
+              <div>
+                <h2 className="font-display text-base font-semibold">
+                  Client Manager — {clientMgrModal.emp.user?.name ?? clientMgrModal.emp.full_name ?? "Employee"}
+                </h2>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Clients where this employee is the Account Manager
+                </p>
+              </div>
+              <button onClick={() => setClientMgrModal(null)}><X className="h-5 w-5 text-muted-foreground" /></button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-5">
+              {clientMgrModal.loading ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="h-6 w-6 animate-spin text-gold" />
+                </div>
+              ) : clientMgrModal.clients.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 gap-3 text-muted-foreground">
+                  <Building2 className="h-10 w-10 opacity-30" />
+                  <p className="text-sm">No clients assigned as Account Manager.</p>
+                </div>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead className="text-xs uppercase tracking-wider text-muted-foreground">
+                    <tr className="border-b border-border">
+                      <th className="pb-2 text-left">Code</th>
+                      <th className="pb-2 text-left">Client Name</th>
+                      <th className="pb-2 text-left">Status</th>
+                      <th className="pb-2 text-left">GST Type</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {clientMgrModal.clients.map((c) => (
+                      <tr key={c.id} className="border-b border-border/50 hover:bg-muted/20">
+                        <td className="py-2.5 font-mono text-xs text-gold">{c.client_code}</td>
+                        <td className="py-2.5 text-xs font-medium">{c.company_name}</td>
+                        <td className="py-2.5">
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded border ${c.status === 'Active' ? 'border-green-200 text-green-600 bg-green-50' : 'border-border text-muted-foreground'}`}>
+                            {c.status ?? "—"}
+                          </span>
+                        </td>
+                        <td className="py-2.5 text-xs text-muted-foreground">{c.gst_type ?? "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+            <div className="p-4 border-t border-border flex items-center justify-between">
+              <span className="text-xs text-muted-foreground">{clientMgrModal.clients.length} client{clientMgrModal.clients.length !== 1 ? "s" : ""}</span>
+              <Button variant="outline" onClick={() => setClientMgrModal(null)}>Close</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="px-8 py-6 space-y-6">
+        {notice && (
+          <div className={`rounded-md border px-4 py-3 text-sm ${notice.kind === "ok" ? "border-green-200 bg-green-50 text-green-700" : "border-red-200 bg-red-50 text-red-700"}`}>
+            {notice.text}
+          </div>
+        )}
+
         {/* Stat cards */}
         <div className="grid gap-4 md:grid-cols-3">
           <Card className="border-border">
@@ -417,15 +546,26 @@ export default function Team() {
                     >
                       {status}
                     </Badge>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="w-full mt-1 text-xs"
-                      onClick={() => openAssignedProjects(emp)}
-                    >
-                      <FolderOpen className="h-3.5 w-3.5 mr-1.5" />
-                      Assigned Projects
-                    </Button>
+                    <div className="w-full flex gap-2 mt-1">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="flex-1 text-xs"
+                        onClick={() => openAssignedProjects(emp)}
+                      >
+                        <FolderOpen className="h-3.5 w-3.5 mr-1" />
+                        Projects
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="flex-1 text-xs"
+                        onClick={() => openClientManagerModal(emp)}
+                      >
+                        <Building2 className="h-3.5 w-3.5 mr-1" />
+                        Clients
+                      </Button>
+                    </div>
                   </CardContent>
                 </Card>
               );
@@ -500,15 +640,14 @@ export default function Team() {
                           </div>
                         </td>
                         <td className="px-4 py-3">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="text-xs h-7"
-                            onClick={() => openAssignedProjects(emp)}
-                          >
-                            <FolderOpen className="h-3 w-3 mr-1" />
-                            Assigned Projects
-                          </Button>
+                          <div className="flex items-center gap-2">
+                            <Button size="sm" variant="outline" className="text-xs h-7" onClick={() => openAssignedProjects(emp)}>
+                              <FolderOpen className="h-3 w-3 mr-1" />Projects
+                            </Button>
+                            <Button size="sm" variant="outline" className="text-xs h-7" onClick={() => openClientManagerModal(emp)}>
+                              <Building2 className="h-3 w-3 mr-1" />Clients
+                            </Button>
+                          </div>
                         </td>
                       </tr>
                     );
