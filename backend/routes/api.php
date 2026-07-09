@@ -210,6 +210,10 @@ Route::middleware(['auth:sanctum', 'throttle:60,1'])->group(function () {
     Route::post('/portal/create', [\App\Http\Controllers\PortalController::class, 'create']);
     Route::post('/portal/clients/{id}/reset-password', [\App\Http\Controllers\PortalController::class, 'resetPassword']);
     Route::post('/portal/bulk', [\App\Http\Controllers\PortalController::class, 'bulk']);
+    Route::get('/portal/clients/{id}/users', [\App\Http\Controllers\PortalController::class, 'clientUsers']);
+    Route::post('/portal/clients/{id}/users', [\App\Http\Controllers\PortalController::class, 'addClientUser']);
+    Route::delete('/portal/clients/{id}/users/{userId}', [\App\Http\Controllers\PortalController::class, 'removeClientUser']);
+    Route::post('/portal/clients/{id}/users/{userId}/reset-password', [\App\Http\Controllers\PortalController::class, 'resetUserPassword']);
 
     // Bulk operations
     Route::post('/bulk/execute', [\App\Http\Controllers\BulkController::class, 'execute']);

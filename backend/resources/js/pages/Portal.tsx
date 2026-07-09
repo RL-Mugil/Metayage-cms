@@ -1,6 +1,6 @@
 import { Head } from "@inertiajs/react";
 import { useEffect, useState, useRef } from "react";
-import { Globe, Eye, EyeOff, Mail, Loader2, Plus, X, CheckCircle, Search, KeyRound, ChevronLeft, ChevronRight, AlertCircle, Trash2, ToggleLeft, ToggleRight, CheckCheck, Minus } from "lucide-react";
+import { Globe, Eye, EyeOff, Mail, Loader2, Plus, X, CheckCircle, Search, KeyRound, ChevronLeft, ChevronRight, AlertCircle, Trash2, ToggleLeft, ToggleRight, CheckCheck, Users, UserPlus, UserMinus, Shield } from "lucide-react";
 import AppLayout from "@/layouts/AppLayout";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -88,45 +88,75 @@ export default function Portal() {
   const [tableSearch, setTableSearch] = useState("");
   const [page, setPage] = useState(1);
 
-  // New Portal modal
+  // ── New Portal modal ──────────────────────────────────────────────────────
   const [showNewPortal, setShowNewPortal] = useState(false);
   const [portalSearch, setPortalSearch] = useState("");
   const [showDropdown, setShowDropdown] = useState(false);
   const [selectedClient, setSelectedClient] = useState<any | null>(null);
-  const [emailList, setEmailList] = useState<string[]>([""]);
+  const [newPortalName, setNewPortalName] = useState("");
+  const [newPortalEmail, setNewPortalEmail] = useState("");
   const [newPortalPw, setNewPortalPw] = useState("");
   const [portalCreated, setPortalCreated] = useState(false);
-  const [createdCreds, setCreatedCreds] = useState<{ email: string }[] | null>(null);
+  const [createdEmail, setCreatedEmail] = useState("");
   const [createError, setCreateError] = useState("");
   const [saving, setSaving] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Invite All modal
+  // ── Invite All modal ──────────────────────────────────────────────────────
   const [showInviteAll, setShowInviteAll] = useState(false);
   const [inviteAllDone, setInviteAllDone] = useState(false);
 
   const [kpiModal, setKpiModal] = useState<PortalKpiKey | null>(null);
 
-  // Bulk selection
+  // ── Bulk selection ────────────────────────────────────────────────────────
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [bulkLoading, setBulkLoading] = useState(false);
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
   const [bulkError, setBulkError] = useState("");
   const [bulkSuccess, setBulkSuccess] = useState("");
 
-  // Reset Password modal
+  // ── Primary admin Reset PW (table-level) ──────────────────────────────────
   const [resetTarget, setResetTarget] = useState<any | null>(null);
   const [resetPw, setResetPw] = useState("");
   const [resetSaving, setResetSaving] = useState(false);
   const [resetDone, setResetDone] = useState(false);
   const [resetError, setResetError] = useState("");
 
-  const loadPortal = () => api.getPortalClients().then(setClients).catch(() => {}).finally(() => setLoading(false));
-  const loadAll = () => api.getClients(new URLSearchParams({ per_page: '2000' })).then((res: any) => setAllClients(Array.isArray(res) ? res : res?.data ?? [])).catch(() => {});
+  // ── Company Profile Panel ─────────────────────────────────────────────────
+  const [profileClient, setProfileClient] = useState<any | null>(null);
+  const [portalUsers, setPortalUsers] = useState<any[]>([]);
+  const [usersLoading, setUsersLoading] = useState(false);
+
+  // Add User in panel
+  const [showAddUser, setShowAddUser] = useState(false);
+  const [addName, setAddName] = useState("");
+  const [addEmail, setAddEmail] = useState("");
+  const [addPassword, setAddPassword] = useState("");
+  const [addUserSaving, setAddUserSaving] = useState(false);
+  const [addUserError, setAddUserError] = useState("");
+
+  // Per-user Reset PW (nested in profile panel)
+  const [userResetTarget, setUserResetTarget] = useState<any | null>(null);
+  const [userResetPw, setUserResetPw] = useState("");
+  const [userResetSaving, setUserResetSaving] = useState(false);
+  const [userResetError, setUserResetError] = useState("");
+  const [userResetDone, setUserResetDone] = useState(false);
+
+  // Remove user confirm
+  const [confirmRemoveUser, setConfirmRemoveUser] = useState<number | null>(null);
+  const [removeUserLoading, setRemoveUserLoading] = useState(false);
+  const [removeUserError, setRemoveUserError] = useState("");
+
+  // ── Data loaders ──────────────────────────────────────────────────────────
+  const loadPortal = () =>
+    api.getPortalClients().then(setClients).catch(() => {}).finally(() => setLoading(false));
+  const loadAll = () =>
+    api.getClients(new URLSearchParams({ per_page: '2000' }))
+      .then((res: any) => setAllClients(Array.isArray(res) ? res : res?.data ?? []))
+      .catch(() => {});
 
   useEffect(() => { loadPortal(); loadAll(); }, []);
 
-  // Close dropdown on outside click
   useEffect(() => {
     function handler(e: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
@@ -137,36 +167,43 @@ export default function Portal() {
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
+  // ── Actions ───────────────────────────────────────────────────────────────
   function toggleStatus(id: number) {
     setClients((prev) => prev.map((c) => (c.id === id ? { ...c, portal_enabled: !c.portal_enabled } : c)));
     api.togglePortal(id).catch(() => loadPortal());
   }
 
-  function openInviteModal(client: any) {
-    setSelectedClient(client);
-    setPortalSearch("");
+  function openNewPortal() {
+    setShowNewPortal(true);
     setPortalCreated(false);
-    setCreatedCreds(null);
+    setSelectedClient(null);
+    setPortalSearch("");
+    setNewPortalName("");
+    setNewPortalEmail("");
     setNewPortalPw("");
     setCreateError("");
-    setShowNewPortal(true);
-    // contact_email is already on the client object from the allClients list
-    const pre = client?.contact_email ? [client.contact_email] : [""];
-    setEmailList(pre);
   }
 
   async function createPortal() {
-    const emails = emailList.map(e => e.trim()).filter(Boolean);
-    if (!selectedClient || emails.length === 0 || newPortalPw.length < 6) return;
+    const email = newPortalEmail.trim();
+    if (!selectedClient || !email || newPortalPw.length < 6) return;
     setSaving(true);
     setCreateError("");
     try {
-      const res = await api.createPortal({ client_id: selectedClient.id, emails, password: newPortalPw });
-      setCreatedCreds(res.results ?? []);
+      await api.createPortal({
+        client_id: selectedClient.id,
+        name: newPortalName.trim() || undefined,
+        email,
+        password: newPortalPw,
+      });
+      setCreatedEmail(email);
       setPortalCreated(true);
       loadPortal();
-    } catch (e: any) { setCreateError(e?.message || "Failed to create portal."); }
-    finally { setSaving(false); }
+    } catch (e: any) {
+      setCreateError(e?.message || "Failed to create portal.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function inviteAll() {
@@ -183,7 +220,7 @@ export default function Portal() {
     if (!resetTarget || !resetPw) return;
     if (resetPw.length < 6) { setResetError("Password must be at least 6 characters."); return; }
     if (!resetTarget.portal_user_id) {
-      setResetError("No portal account linked. Create the portal first using the + New Portal button.");
+      setResetError("No portal account linked. Create the portal first.");
       return;
     }
     setResetSaving(true);
@@ -205,8 +242,7 @@ export default function Portal() {
     setBulkError("");
     setBulkSuccess("");
     try {
-      const ids = Array.from(selected).map(Number);
-      await api.portalBulk(action, ids);
+      await api.portalBulk(action, Array.from(selected).map(Number));
       setSelected(new Set());
       setConfirmBulkDelete(false);
       await loadPortal();
@@ -226,8 +262,72 @@ export default function Portal() {
     setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
   };
 
-  const someSelected = selected.size > 0;
+  // ── Company Profile Panel actions ─────────────────────────────────────────
+  async function openProfile(client: any) {
+    setProfileClient(client);
+    setUsersLoading(true);
+    setShowAddUser(false);
+    setAddName(""); setAddEmail(""); setAddPassword(""); setAddUserError("");
+    setUserResetTarget(null);
+    setConfirmRemoveUser(null); setRemoveUserError("");
+    try {
+      const users = await api.getPortalClientUsers(client.id);
+      setPortalUsers(Array.isArray(users) ? users : []);
+    } catch { setPortalUsers([]); }
+    finally { setUsersLoading(false); }
+  }
 
+  async function addUserToPortal() {
+    if (!profileClient || !addName.trim() || !addEmail.trim() || addPassword.length < 6) return;
+    setAddUserSaving(true);
+    setAddUserError("");
+    try {
+      const res = await api.addPortalClientUser(profileClient.id, {
+        name: addName.trim(),
+        email: addEmail.trim(),
+        password: addPassword,
+      });
+      setPortalUsers(prev => [...prev, res.user]);
+      setShowAddUser(false);
+      setAddName(""); setAddEmail(""); setAddPassword("");
+    } catch (e: any) {
+      setAddUserError(e?.message || "Failed to add user. Email may already exist.");
+    } finally {
+      setAddUserSaving(false);
+    }
+  }
+
+  async function removePortalUser(user: any) {
+    if (!profileClient) return;
+    setRemoveUserLoading(true);
+    setRemoveUserError("");
+    try {
+      await api.removePortalClientUser(profileClient.id, user.id);
+      setPortalUsers(prev => prev.filter(u => u.id !== user.id));
+      setConfirmRemoveUser(null);
+    } catch (e: any) {
+      setRemoveUserError(e?.message || "Failed to remove user.");
+    } finally {
+      setRemoveUserLoading(false);
+    }
+  }
+
+  async function resetPortalUserPw() {
+    if (!profileClient || !userResetTarget || userResetPw.length < 6) return;
+    setUserResetSaving(true);
+    setUserResetError("");
+    try {
+      await api.resetPortalUserPassword(profileClient.id, userResetTarget.id, userResetPw);
+      setUserResetDone(true);
+    } catch (e: any) {
+      setUserResetError(e?.message || "Failed to reset password.");
+    } finally {
+      setUserResetSaving(false);
+    }
+  }
+
+  // ── Derived values ────────────────────────────────────────────────────────
+  const someSelected = selected.size > 0;
   const activePortals = clients.filter((c) => c.portal_enabled).length;
   const pendingInvites = clients.filter((c) => !c.portal_enabled && c.portal_invited_at).length;
   const inactiveCount = clients.filter((c) => !c.portal_enabled).length;
@@ -270,14 +370,14 @@ export default function Portal() {
             <Button variant="outline" onClick={() => { setShowInviteAll(true); setInviteAllDone(false); }}>
               <Mail className="h-4 w-4 mr-2" />Invite All Inactive
             </Button>
-            <Button onClick={() => { setShowNewPortal(true); setPortalCreated(false); setSelectedClient(null); setPortalSearch(""); setEmailList([""]); setNewPortalPw(""); setCreateError(""); }}>
+            <Button onClick={openNewPortal}>
               <Globe className="h-4 w-4 mr-2" />New Portal
             </Button>
           </>
         }
       />
 
-      {/* Create Portal Modal */}
+      {/* ── New Portal Modal ─────────────────────────────────────────────── */}
       {showNewPortal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
           <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-md p-6 m-4">
@@ -289,24 +389,26 @@ export default function Portal() {
               <div className="py-4 space-y-4">
                 <div className="text-center">
                   <CheckCircle className="h-10 w-10 text-green-500 mx-auto mb-3" />
-                  <div className="font-semibold">Portal Account{(createdCreds?.length ?? 0) > 1 ? "s" : ""} Created!</div>
+                  <div className="font-semibold">Portal Account Created!</div>
                   <p className="text-xs text-muted-foreground mt-2">
                     Share the password you set with the client directly.<br />
                     They can change it later in Settings → Security.
                   </p>
                 </div>
-                {createdCreds && createdCreds.map((cred, i) => (
-                  <div key={i} className="rounded-lg border border-gold/30 bg-gold/5 px-4 py-2.5 flex justify-between text-sm">
-                    <span className="text-muted-foreground">Login email</span>
-                    <span className="font-mono font-medium">{cred.email}</span>
-                  </div>
-                ))}
+                <div className="rounded-lg border border-gold/30 bg-gold/5 px-4 py-2.5 flex justify-between text-sm">
+                  <span className="text-muted-foreground">Login email</span>
+                  <span className="font-mono font-medium">{createdEmail}</span>
+                </div>
                 <div className="text-xs text-muted-foreground text-center">Login: mypl-cms.139-59-85-216.sslip.io</div>
-                <Button className="w-full" variant="outline" onClick={() => { setShowNewPortal(false); setCreatedCreds(null); setPortalCreated(false); }}>Close</Button>
+                <p className="text-xs text-muted-foreground text-center">
+                  To add more users to this portal, click the company name in the table below.
+                </p>
+                <Button className="w-full" variant="outline" onClick={() => setShowNewPortal(false)}>Close</Button>
               </div>
             ) : (
               <>
                 <div className="space-y-3">
+                  {/* Client picker */}
                   <div ref={dropdownRef}>
                     <label className="block text-xs text-muted-foreground mb-1">Client</label>
                     <div className="relative">
@@ -326,7 +428,12 @@ export default function Portal() {
                           <div className="px-3 py-2 text-sm text-muted-foreground">No clients found</div>
                         ) : filteredDropdown.map((c) => (
                           <button key={c.id} className="w-full text-left px-3 py-2 text-sm hover:bg-muted/40 flex items-center gap-2"
-                            onClick={() => { setSelectedClient(c); setPortalSearch(""); setShowDropdown(false); setEmailList(c.contact_email ? [c.contact_email] : [""]); }}>
+                            onClick={() => {
+                              setSelectedClient(c);
+                              setPortalSearch("");
+                              setShowDropdown(false);
+                              if (c.contact_email && !newPortalEmail) setNewPortalEmail(c.contact_email);
+                            }}>
                             <span className="font-medium">{c.company_name}</span>
                             <span className="text-xs text-muted-foreground ml-auto">{c.client_code}</span>
                           </button>
@@ -334,44 +441,33 @@ export default function Portal() {
                       </div>
                     )}
                   </div>
+
+                  {/* Admin name */}
                   <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <label className="text-xs text-muted-foreground">Contact Email{emailList.length > 1 ? "s" : ""}</label>
-                    </div>
-                    <div className="space-y-2">
-                      {emailList.map((email, idx) => (
-                        <div key={idx} className="flex gap-2">
-                          <input
-                            type="email"
-                            value={email}
-                            onChange={e => {
-                              const next = [...emailList];
-                              next[idx] = e.target.value;
-                              setEmailList(next);
-                            }}
-                            placeholder="client@company.com"
-                            className="flex-1 h-9 rounded-md border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold"
-                          />
-                          {emailList.length > 1 && (
-                            <button
-                              type="button"
-                              onClick={() => setEmailList(emailList.filter((_, i) => i !== idx))}
-                              className="h-9 w-9 flex items-center justify-center rounded-md border border-border hover:bg-destructive/10 hover:border-destructive/40 text-muted-foreground hover:text-destructive transition-colors"
-                            >
-                              <Minus className="h-3.5 w-3.5" />
-                            </button>
-                          )}
-                        </div>
-                      ))}
-                      <button
-                        type="button"
-                        onClick={() => setEmailList([...emailList, ""])}
-                        className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                      >
-                        <Plus className="h-3.5 w-3.5" /> Add another email
-                      </button>
-                    </div>
+                    <label className="block text-xs text-muted-foreground mb-1">Admin Name <span className="text-muted-foreground/60">(optional)</span></label>
+                    <input
+                      type="text"
+                      value={newPortalName}
+                      onChange={e => setNewPortalName(e.target.value)}
+                      placeholder="Primary contact's name"
+                      className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold"
+                    />
                   </div>
+
+                  {/* Email */}
+                  <div>
+                    <label className="block text-xs text-muted-foreground mb-1">Root Email <span className="text-muted-foreground/60">(portal admin)</span></label>
+                    <input
+                      type="email"
+                      value={newPortalEmail}
+                      onChange={e => setNewPortalEmail(e.target.value)}
+                      placeholder="admin@company.com"
+                      className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold"
+                    />
+                    <p className="text-[10px] text-muted-foreground mt-1">Additional users can be added from the company profile after creation.</p>
+                  </div>
+
+                  {/* Password */}
                   <div>
                     <label className="block text-xs text-muted-foreground mb-1">Set Password</label>
                     <input
@@ -383,13 +479,13 @@ export default function Portal() {
                     />
                     <p className="text-[10px] text-muted-foreground mt-1">The client can change it later in Settings → Security.</p>
                   </div>
-                  {createError && (
-                    <p className="text-xs text-red-500">{createError}</p>
-                  )}
+
+                  {createError && <p className="text-xs text-red-500">{createError}</p>}
                 </div>
                 <div className="flex gap-2 mt-5">
-                  <Button className="bg-gold hover:bg-gold/90 text-black flex-1"
-                    disabled={!selectedClient || emailList.every(e => !e.trim()) || newPortalPw.length < 6 || saving}
+                  <Button
+                    className="bg-gold hover:bg-gold/90 text-black flex-1"
+                    disabled={!selectedClient || !newPortalEmail.trim() || newPortalPw.length < 6 || saving}
                     onClick={createPortal}>
                     {saving ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Creating…</> : <>Create Portal</>}
                   </Button>
@@ -401,7 +497,7 @@ export default function Portal() {
         </div>
       )}
 
-      {/* Invite All Modal */}
+      {/* ── Invite All Modal ─────────────────────────────────────────────── */}
       {showInviteAll && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
           <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-md p-6 m-4">
@@ -433,7 +529,7 @@ export default function Portal() {
         </div>
       )}
 
-      {/* Reset Password Modal */}
+      {/* ── Primary Admin Reset PW Modal ─────────────────────────────────── */}
       {resetTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
           <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-sm p-6 m-4">
@@ -473,8 +569,230 @@ export default function Portal() {
         </div>
       )}
 
+      {/* ── Per-user Reset PW Modal (nested above profile panel) ─────────── */}
+      {userResetTarget && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-sm p-6 m-4">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-display text-base font-semibold">Reset Password</h2>
+              <button onClick={() => { setUserResetTarget(null); setUserResetPw(""); setUserResetDone(false); setUserResetError(""); }}>
+                <X className="h-5 w-5 text-muted-foreground" />
+              </button>
+            </div>
+            {userResetDone ? (
+              <div className="text-center py-3">
+                <CheckCircle className="h-8 w-8 text-green-500 mx-auto mb-2" />
+                <div className="font-semibold text-sm">Password Reset!</div>
+                <div className="text-xs text-muted-foreground mt-1">{userResetTarget.name} ({userResetTarget.email})</div>
+                <Button className="mt-4" size="sm" variant="outline" onClick={() => { setUserResetTarget(null); setUserResetPw(""); setUserResetDone(false); }}>Close</Button>
+              </div>
+            ) : (
+              <>
+                <p className="text-sm text-muted-foreground mb-1">
+                  New password for <strong>{userResetTarget.name}</strong>
+                </p>
+                <p className="text-xs font-mono text-muted-foreground mb-3">{userResetTarget.email}</p>
+                {userResetError && <p className="text-xs text-red-500 mb-2">{userResetError}</p>}
+                <input
+                  type="text"
+                  value={userResetPw}
+                  onChange={e => { setUserResetPw(e.target.value); setUserResetError(""); }}
+                  placeholder="New password (min. 6 chars)"
+                  className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-gold mb-4"
+                />
+                <div className="flex gap-2">
+                  <Button className="bg-gold hover:bg-gold/90 text-black flex-1 h-8 text-sm"
+                    disabled={userResetPw.length < 6 || userResetSaving}
+                    onClick={resetPortalUserPw}>
+                    {userResetSaving ? <Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" /> : <KeyRound className="h-3.5 w-3.5 mr-2" />}Reset
+                  </Button>
+                  <Button variant="outline" className="h-8 text-sm" onClick={() => { setUserResetTarget(null); setUserResetPw(""); setUserResetError(""); }}>Cancel</Button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Company Profile Panel ─────────────────────────────────────────── */}
+      {profileClient && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-2xl max-h-[88vh] flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-border flex-shrink-0">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="font-display text-lg font-semibold">{profileClient.company_name}</h2>
+                  {profileClient.portal_enabled
+                    ? <Badge className="bg-green-500/10 text-green-600 border-green-500/30 text-[10px]">Active</Badge>
+                    : <Badge variant="outline" className="text-muted-foreground text-[10px]">Inactive</Badge>}
+                </div>
+                <p className="text-xs text-muted-foreground mt-0.5 font-mono">{profileClient.client_code}</p>
+              </div>
+              <button onClick={() => {
+                setProfileClient(null);
+                setUserResetTarget(null);
+                setConfirmRemoveUser(null);
+                setShowAddUser(false);
+              }}>
+                <X className="h-5 w-5 text-muted-foreground" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="flex-1 overflow-auto px-6 py-4 space-y-4">
+              {/* Section header */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Users className="h-4 w-4 text-muted-foreground" />
+                  <h3 className="text-sm font-medium">Portal Users</h3>
+                  {!usersLoading && (
+                    <span className="text-xs text-muted-foreground">({portalUsers.length})</span>
+                  )}
+                </div>
+                {!showAddUser && (
+                  <Button size="sm" className="h-7 text-xs gap-1.5"
+                    onClick={() => { setShowAddUser(true); setAddName(""); setAddEmail(""); setAddPassword(""); setAddUserError(""); }}>
+                    <UserPlus className="h-3.5 w-3.5" /> Add User
+                  </Button>
+                )}
+              </div>
+
+              {/* User list */}
+              {usersLoading ? (
+                <div className="flex items-center justify-center py-10">
+                  <Loader2 className="h-5 w-5 animate-spin text-gold" />
+                </div>
+              ) : (
+                <div className="rounded-lg border border-border overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead className="bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground">
+                      <tr>
+                        <th className="px-4 py-2.5 text-left">Name</th>
+                        <th className="px-4 py-2.5 text-left">Email</th>
+                        <th className="px-4 py-2.5 text-left">Role</th>
+                        <th className="px-4 py-2.5 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {portalUsers.length === 0 && (
+                        <tr>
+                          <td colSpan={4} className="px-4 py-8 text-center text-muted-foreground text-xs">
+                            No portal users found.
+                          </td>
+                        </tr>
+                      )}
+                      {portalUsers.map((user) => (
+                        <tr key={user.id} className="border-t border-border hover:bg-muted/20">
+                          <td className="px-4 py-2.5 font-medium">{user.name}</td>
+                          <td className="px-4 py-2.5 text-muted-foreground text-xs font-mono">{user.email}</td>
+                          <td className="px-4 py-2.5">
+                            {user.is_primary ? (
+                              <span className="inline-flex items-center gap-1 text-xs font-medium text-gold">
+                                <Shield className="h-3 w-3" />Admin
+                              </span>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">User</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-2.5">
+                            <div className="flex items-center justify-end gap-1.5">
+                              <Button size="sm" variant="outline" className="h-7 text-xs"
+                                onClick={() => {
+                                  setUserResetTarget(user);
+                                  setUserResetPw("");
+                                  setUserResetDone(false);
+                                  setUserResetError("");
+                                }}>
+                                <KeyRound className="h-3 w-3 mr-1" /> PW
+                              </Button>
+                              {!user.is_primary && (
+                                confirmRemoveUser === user.id ? (
+                                  <div className="flex items-center gap-1">
+                                    <span className="text-xs text-destructive whitespace-nowrap">Remove?</span>
+                                    <Button size="sm" className="h-7 text-xs bg-destructive text-white hover:bg-destructive/90 px-2"
+                                      disabled={removeUserLoading}
+                                      onClick={() => removePortalUser(user)}>
+                                      {removeUserLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : "Yes"}
+                                    </Button>
+                                    <Button size="sm" variant="ghost" className="h-7 w-7 p-0"
+                                      onClick={() => { setConfirmRemoveUser(null); setRemoveUserError(""); }}>
+                                      <X className="h-3 w-3" />
+                                    </Button>
+                                  </div>
+                                ) : (
+                                  <Button size="sm" variant="outline"
+                                    className="h-7 text-xs text-destructive border-destructive/40 hover:bg-destructive/10"
+                                    onClick={() => setConfirmRemoveUser(user.id)}>
+                                    <UserMinus className="h-3.5 w-3.5" />
+                                  </Button>
+                                )
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {removeUserError && (
+                    <p className="px-4 py-2 text-xs text-red-500 border-t border-border">{removeUserError}</p>
+                  )}
+                </div>
+              )}
+
+              {/* Add User Form */}
+              {showAddUser && (
+                <div className="rounded-lg border border-gold/30 bg-gold/5 p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-sm font-medium flex items-center gap-1.5">
+                      <UserPlus className="h-4 w-4 text-gold" />Add Portal User
+                    </h4>
+                    <button onClick={() => setShowAddUser(false)}>
+                      <X className="h-4 w-4 text-muted-foreground" />
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs text-muted-foreground mb-1">Full Name</label>
+                      <input type="text" value={addName} onChange={e => setAddName(e.target.value)}
+                        placeholder="Contact name"
+                        className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-muted-foreground mb-1">Email</label>
+                      <input type="email" value={addEmail} onChange={e => setAddEmail(e.target.value)}
+                        placeholder="contact@company.com"
+                        className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-muted-foreground mb-1">Set Password</label>
+                    <input type="text" value={addPassword} onChange={e => setAddPassword(e.target.value)}
+                      placeholder="Min. 6 characters"
+                      className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-gold" />
+                  </div>
+                  {addUserError && <p className="text-xs text-red-500">{addUserError}</p>}
+                  <div className="flex gap-2">
+                    <Button
+                      className="bg-gold hover:bg-gold/90 text-black flex-1 h-8 text-sm"
+                      disabled={!addName.trim() || !addEmail.trim() || addPassword.length < 6 || addUserSaving}
+                      onClick={addUserToPortal}>
+                      {addUserSaving
+                        ? <><Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" />Adding…</>
+                        : <><UserPlus className="h-3.5 w-3.5 mr-2" />Add to Portal</>}
+                    </Button>
+                    <Button variant="outline" className="h-8 text-sm" onClick={() => setShowAddUser(false)}>Cancel</Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="px-8 py-6 space-y-6">
         {kpiModal && <PortalKpiModal kpiKey={kpiModal} clients={clients} onClose={() => setKpiModal(null)} />}
+
         {/* Stats */}
         <div className="grid gap-4 md:grid-cols-3">
           {([
@@ -539,41 +857,42 @@ export default function Portal() {
                 </div>
               )}
               <div className="flex items-center gap-2 rounded-lg border border-gold/30 bg-gold/5 px-4 py-2.5">
-              <span className="text-xs text-muted-foreground mr-1">
-                {selected.size === filteredClients.length
-                  ? `All ${selected.size} portals selected`
-                  : `${selected.size} of ${filteredClients.length} selected`}
-              </span>
-              <div className="flex-1" />
-              <Button size="sm" variant="outline" className="h-7 text-xs gap-1.5" disabled={bulkLoading}
-                onClick={() => runBulk('enable')}>
-                <ToggleRight className="h-3.5 w-3.5 text-green-500" /> Enable
-              </Button>
-              <Button size="sm" variant="outline" className="h-7 text-xs gap-1.5" disabled={bulkLoading}
-                onClick={() => runBulk('disable')}>
-                <ToggleLeft className="h-3.5 w-3.5 text-muted-foreground" /> Disable
-              </Button>
-              {!confirmBulkDelete ? (
-                <Button size="sm" variant="outline" className="h-7 text-xs gap-1.5 text-destructive border-destructive/40 hover:bg-destructive/10"
-                  disabled={bulkLoading} onClick={() => setConfirmBulkDelete(true)}>
-                  <Trash2 className="h-3.5 w-3.5" /> Remove Access
+                <span className="text-xs text-muted-foreground mr-1">
+                  {selected.size === filteredClients.length
+                    ? `All ${selected.size} portals selected`
+                    : `${selected.size} of ${filteredClients.length} selected`}
+                </span>
+                <div className="flex-1" />
+                <Button size="sm" variant="outline" className="h-7 text-xs gap-1.5" disabled={bulkLoading}
+                  onClick={() => runBulk('enable')}>
+                  <ToggleRight className="h-3.5 w-3.5 text-green-500" /> Enable
                 </Button>
-              ) : (
-                <div className="flex items-center gap-1.5">
-                  <span className="text-xs text-destructive font-medium">Remove access for {selected.size} portal{selected.size !== 1 ? "s" : ""}?</span>
-                  <Button size="sm" className="h-7 text-xs bg-destructive text-white hover:bg-destructive/90" disabled={bulkLoading}
-                    onClick={() => runBulk('delete')}>
-                    {bulkLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Confirm"}
+                <Button size="sm" variant="outline" className="h-7 text-xs gap-1.5" disabled={bulkLoading}
+                  onClick={() => runBulk('disable')}>
+                  <ToggleLeft className="h-3.5 w-3.5 text-muted-foreground" /> Disable
+                </Button>
+                {!confirmBulkDelete ? (
+                  <Button size="sm" variant="outline" className="h-7 text-xs gap-1.5 text-destructive border-destructive/40 hover:bg-destructive/10"
+                    disabled={bulkLoading} onClick={() => setConfirmBulkDelete(true)}>
+                    <Trash2 className="h-3.5 w-3.5" /> Remove Access
                   </Button>
-                  <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setConfirmBulkDelete(false)}>
-                    Cancel
-                  </Button>
-                </div>
-              )}
-              <Button size="sm" variant="ghost" className="h-7 w-7 p-0 ml-1" onClick={() => { setSelected(new Set()); setConfirmBulkDelete(false); setBulkError(""); }}>
-                <X className="h-3.5 w-3.5" />
-              </Button>
-            </div>
+                ) : (
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs text-destructive font-medium">Remove access for {selected.size} portal{selected.size !== 1 ? "s" : ""}?</span>
+                    <Button size="sm" className="h-7 text-xs bg-destructive text-white hover:bg-destructive/90" disabled={bulkLoading}
+                      onClick={() => runBulk('delete')}>
+                      {bulkLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Confirm"}
+                    </Button>
+                    <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setConfirmBulkDelete(false)}>
+                      Cancel
+                    </Button>
+                  </div>
+                )}
+                <Button size="sm" variant="ghost" className="h-7 w-7 p-0 ml-1"
+                  onClick={() => { setSelected(new Set()); setConfirmBulkDelete(false); setBulkError(""); }}>
+                  <X className="h-3.5 w-3.5" />
+                </Button>
+              </div>
             </div>
           )}
 
@@ -614,7 +933,16 @@ export default function Portal() {
                           onChange={() => toggleRow(client.id)}
                         />
                       </td>
-                      <td className="px-4 py-3 font-medium">{client.company_name ?? "—"}</td>
+                      <td className="px-4 py-3">
+                        <button
+                          className="font-medium text-left hover:text-gold transition-colors flex items-center gap-1.5 group"
+                          onClick={() => openProfile(client)}
+                          title="Manage portal users"
+                        >
+                          {client.company_name ?? "—"}
+                          <Users className="h-3.5 w-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                        </button>
+                      </td>
                       <td className="px-4 py-3 text-muted-foreground font-mono text-xs">{client.client_code}</td>
                       <td className="px-4 py-3">
                         <button onClick={() => toggleStatus(client.id)} className="focus:outline-none">
@@ -636,17 +964,16 @@ export default function Portal() {
                               onClick={() => toggleStatus(client.id)}>
                               Disable
                             </Button>
-                          ) : client.portal_user_id ? (
+                          ) : (
                             <Button size="sm" variant="outline" className="text-xs h-7"
                               onClick={() => toggleStatus(client.id)}>
                               Enable
                             </Button>
-                          ) : (
-                            <Button size="sm" variant="outline" className="text-xs h-7"
-                              onClick={() => openInviteModal(client)}>
-                              <Mail className="h-3 w-3 mr-1" /> Invite
-                            </Button>
                           )}
+                          <Button size="sm" variant="outline" className="text-xs h-7 gap-1"
+                            onClick={() => openProfile(client)}>
+                            <Users className="h-3 w-3" /> Users
+                          </Button>
                           {client.portal_user_id && (
                             <Button size="sm" variant="outline" className="text-xs h-7"
                               onClick={() => { setResetTarget(client); setResetPw(""); setResetDone(false); setResetError(""); }}>
@@ -662,7 +989,9 @@ export default function Portal() {
             </table>
             {filteredClients.length === 0 && (
               <div className="py-12 text-center text-muted-foreground text-sm">
-                {clients.length === 0 ? "No clients found." : "No results match your search."}
+                {clients.length === 0
+                  ? "No portal clients yet. Click \"New Portal\" to create one."
+                  : "No results match your search."}
               </div>
             )}
             {/* Pagination */}
@@ -685,7 +1014,7 @@ export default function Portal() {
           </CardContent>
         </Card>
 
-        {/* Recent Activity — empty state (no hardcoded data) */}
+        {/* Recent Activity */}
         <Card className="border-border">
           <CardHeader>
             <CardTitle className="font-display">Recent Activity</CardTitle>

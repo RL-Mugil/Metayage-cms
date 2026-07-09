@@ -451,7 +451,7 @@ export const api = {
   async portalInviteAll(): Promise<{ ok: boolean; invited: number }> {
     return this.request('/portal/invite-all', { method: 'POST' })
   },
-  async createPortal(data: { client_id: number; emails: string[]; password: string }): Promise<any> {
+  async createPortal(data: { client_id: number; name?: string; email: string; password: string }): Promise<any> {
     return this.request('/portal/create', { method: 'POST', body: JSON.stringify(data) })
   },
   async resetUserPassword(userId: number | string, password: string): Promise<{ ok: boolean }> {
@@ -462,6 +462,18 @@ export const api = {
   },
   async portalBulk(action: 'enable' | 'disable' | 'delete', ids: number[]): Promise<{ ok: boolean; affected: number }> {
     return this.request('/portal/bulk', { method: 'POST', body: JSON.stringify({ action, ids }) })
+  },
+  async getPortalClientUsers(clientId: number): Promise<any[]> {
+    return this.request(`/portal/clients/${clientId}/users`)
+  },
+  async addPortalClientUser(clientId: number, data: { name: string; email: string; password: string }): Promise<any> {
+    return this.request(`/portal/clients/${clientId}/users`, { method: 'POST', body: JSON.stringify(data) })
+  },
+  async removePortalClientUser(clientId: number, userId: number): Promise<{ ok: boolean }> {
+    return this.request(`/portal/clients/${clientId}/users/${userId}`, { method: 'DELETE' })
+  },
+  async resetPortalUserPassword(clientId: number, userId: number, password: string): Promise<{ ok: boolean }> {
+    return this.request(`/portal/clients/${clientId}/users/${userId}/reset-password`, { method: 'POST', body: JSON.stringify({ password }) })
   },
 
   // ── Bulk operations ──

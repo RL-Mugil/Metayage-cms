@@ -127,8 +127,8 @@ class PortalController extends Controller
     }
 
     /**
-     * Create or reset a client portal account.
-     * Returns the generated password in the response (since SMTP is not configured).
+     * Create a client portal account (one root admin user).
+     * The firm admin sets the password and shares it directly with the client.
      */
     public function create(Request $request)
     {
@@ -136,77 +136,203 @@ class PortalController extends Controller
 
         $validated = $request->validate([
             'client_id' => 'required|integer|exists:clients,id',
-            'emails'    => 'required|array|min:1',
-            'emails.*'  => 'required|email|max:255',
+            'name'      => 'nullable|string|max:255',
+            'email'     => 'required|email|max:255',
             'password'  => 'required|string|min:6|max:100',
         ]);
 
-        $client  = Client::findOrFail($validated['client_id']);
-        $name    = $client->company_name ?? $client->legal_name ?? 'Client';
-        $results = [];
-        $primaryUserId = null;
+        $client      = Client::findOrFail($validated['client_id']);
+        $companyName = $client->company_name ?? $client->legal_name ?? 'Client';
+        $adminName   = $validated['name'] ?? $companyName;
+        $email       = $validated['email'];
 
-        foreach ($validated['emails'] as $i => $email) {
-            // Creator sets the password manually; clients can change it later
-            // in Settings → Security.
-            $portalUser = User::updateOrCreate(
-                ['email' => $email],
-                [
-                    'name'     => $name,
-                    'password' => Hash::make($validated['password']),
-                    // First email is the primary contact → client_admin
-                    // (manages their company's portal users, approves/rejects).
-                    'role'     => $i === 0 ? 'client_admin' : 'client',
-                    'status'   => 'Active',
-                ]
-            );
+        $portalUser = User::updateOrCreate(
+            ['email' => $email],
+            [
+                'name'     => $adminName,
+                'password' => Hash::make($validated['password']),
+                'role'     => 'client_admin',
+                'status'   => 'Active',
+            ]
+        );
 
-            // Ensure a client_contact record exists so RBAC data scoping works
-            DB::table('client_contacts')->upsert(
-                [['client_id' => $client->id, 'email' => $email, 'name' => $name, 'created_at' => now(), 'updated_at' => now()]],
-                ['email'],
-                ['client_id', 'name', 'updated_at']
-            );
+        DB::table('client_contacts')->upsert(
+            [['client_id' => $client->id, 'email' => $email, 'name' => $adminName, 'created_at' => now(), 'updated_at' => now()]],
+            ['email'],
+            ['client_id', 'name', 'updated_at']
+        );
 
-            if ($primaryUserId === null) {
-                $primaryUserId = $portalUser->id;
-            }
-
-            // Credential emails disabled for now — the creator shares the
-            // password directly. Re-enable by uncommenting.
-            // try {
-            //     Mail::to($email)->send(new PortalInviteMail(
-            //         clientName: $name,
-            //         email:      $email,
-            //         password:   $validated['password'],
-            //         loginUrl:   config('app.url') . '/login',
-            //     ));
-            // } catch (\Throwable) {}
-
-            $results[] = ['email' => $email];
-        }
-
-        $client->portal_user_id   = $primaryUserId;
-        $client->portal_enabled   = true;
+        $client->portal_user_id    = $portalUser->id;
+        $client->portal_enabled    = true;
         $client->portal_invited_at = now();
         $client->save();
 
-        $emailList = implode(', ', array_column($results, 'email'));
         DB::table('ip_notifications')->insert([
             'user_id'     => $request->user()->id,
             'type'        => 'portal_invite',
             'title'       => 'Client portal created',
-            'description' => "Created by {$request->user()->name} for {$name} ({$emailList})",
-            'meta'        => json_encode(['client_id' => $client->id, 'emails' => array_column($results, 'email')]),
+            'description' => "Created by {$request->user()->name} for {$companyName} ({$email})",
+            'meta'        => json_encode(['client_id' => $client->id, 'email' => $email]),
             'created_at'  => now(),
             'updated_at'  => now(),
         ]);
 
         return response()->json([
             'ok'             => true,
-            'results'        => $results,
-            'portal_user_id' => $primaryUserId,
+            'email'          => $email,
+            'portal_user_id' => $portalUser->id,
         ], 201);
+    }
+
+    /** List all portal users linked to a client. */
+    public function clientUsers(Request $request, $id)
+    {
+        if ($deny = $this->denyUnauthorized($request)) return $deny;
+
+        $client = Client::findOrFail($id);
+
+        $contactEmails = DB::table('client_contacts')
+            ->where('client_id', $client->id)
+            ->pluck('email')
+            ->filter()
+            ->values();
+
+        if ($contactEmails->isEmpty() && ! $client->portal_user_id) {
+            return response()->json([]);
+        }
+
+        $users = User::query()
+            ->where(function ($q) use ($contactEmails, $client) {
+                if ($contactEmails->isNotEmpty()) {
+                    $q->whereIn('email', $contactEmails);
+                }
+                if ($client->portal_user_id) {
+                    $method = $contactEmails->isNotEmpty() ? 'orWhere' : 'where';
+                    $q->{$method}('id', $client->portal_user_id);
+                }
+            })
+            ->whereIn('role', User::CLIENT_ROLES)
+            ->distinct()
+            ->get(['id', 'name', 'email', 'role', 'status', 'created_at'])
+            ->sortByDesc(fn ($u) => $u->id === (int) $client->portal_user_id)
+            ->values()
+            ->map(fn ($u) => [
+                'id'         => $u->id,
+                'name'       => $u->name,
+                'email'      => $u->email,
+                'role'       => $u->role,
+                'is_primary' => $u->id === (int) $client->portal_user_id,
+                'status'     => $u->status,
+                'created_at' => $u->created_at?->toDateTimeString(),
+            ]);
+
+        return response()->json($users->values());
+    }
+
+    /** Add a new portal user (role=client) to a client. */
+    public function addClientUser(Request $request, $id)
+    {
+        if ($deny = $this->denyUnauthorized($request)) return $deny;
+
+        $validated = $request->validate([
+            'name'     => 'required|string|max:255',
+            'email'    => 'required|email|max:255|unique:users,email',
+            'password' => 'required|string|min:6|max:100',
+        ]);
+
+        $client = Client::findOrFail($id);
+
+        $newUser = User::create([
+            'name'     => $validated['name'],
+            'email'    => $validated['email'],
+            'password' => Hash::make($validated['password']),
+            'role'     => 'client',
+            'status'   => 'Active',
+        ]);
+
+        DB::table('client_contacts')->upsert(
+            [[
+                'client_id'  => $client->id,
+                'email'      => $validated['email'],
+                'name'       => $validated['name'],
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]],
+            ['email'],
+            ['client_id', 'name', 'updated_at']
+        );
+
+        return response()->json([
+            'ok'   => true,
+            'user' => [
+                'id'         => $newUser->id,
+                'name'       => $newUser->name,
+                'email'      => $newUser->email,
+                'role'       => $newUser->role,
+                'is_primary' => false,
+                'status'     => $newUser->status,
+                'created_at' => $newUser->created_at->toDateTimeString(),
+            ],
+        ], 201);
+    }
+
+    /** Remove a non-admin portal user from a client. */
+    public function removeClientUser(Request $request, $clientId, $userId)
+    {
+        if ($deny = $this->denyUnauthorized($request)) return $deny;
+
+        $client = Client::findOrFail($clientId);
+        $target = User::findOrFail($userId);
+
+        if ((int) $client->portal_user_id === (int) $userId) {
+            return response()->json(['message' => 'Cannot remove the primary portal admin. Disable the portal instead.'], 422);
+        }
+
+        $isLinked = DB::table('client_contacts')
+            ->where('client_id', $client->id)
+            ->where('email', $target->email)
+            ->exists();
+
+        if (! $isLinked) {
+            return response()->json(['message' => 'This user is not linked to this client.'], 422);
+        }
+
+        $target->tokens()->delete();
+        DB::table('sessions')->where('user_id', $target->id)->delete();
+        DB::table('client_contacts')
+            ->where('client_id', $client->id)
+            ->where('email', $target->email)
+            ->delete();
+        $target->delete();
+
+        return response()->json(['ok' => true]);
+    }
+
+    /** Reset password for any individual portal user of a client. */
+    public function resetUserPassword(Request $request, $clientId, $userId)
+    {
+        if ($deny = $this->denyUnauthorized($request)) return $deny;
+
+        $request->validate(['password' => 'required|string|min:6']);
+
+        $client = Client::findOrFail($clientId);
+        $user   = User::findOrFail($userId);
+
+        $isLinked = DB::table('client_contacts')
+                ->where('client_id', $client->id)
+                ->where('email', $user->email)
+                ->exists()
+            || (int) $client->portal_user_id === (int) $userId;
+
+        if (! $isLinked) {
+            return response()->json(['message' => 'This user is not linked to this client.'], 422);
+        }
+
+        $user->password = Hash::make($request->input('password'));
+        $user->save();
+        $user->tokens()->delete();
+
+        return response()->json(['ok' => true]);
     }
 
     /**
