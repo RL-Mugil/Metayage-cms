@@ -32,9 +32,11 @@ class StoreProjectRequest extends FormRequest
             'start_date'            => 'nullable|date',
             'target_filing_date'    => 'nullable|date',
             'hard_deadline'         => 'nullable|date|after_or_equal:today',
-            'fee_arrangement'       => 'nullable|string',
+            'idf_received_date'     => 'nullable|date',
+            'advance_payment_date'  => 'nullable|date',
+            'partial_payment_date'  => 'nullable|date',
+            'full_payment_date'     => 'nullable|date',
             'urgency'               => 'nullable|string',
-            'confidentiality_level' => 'nullable|string',
             'notes'                 => 'nullable|string',
         ];
     }

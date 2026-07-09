@@ -44,24 +44,26 @@ class ProjectImportController extends Controller
         'VAR' => 'Various / Miscellaneous',
     ];
     private const URGENCIES = ['Low', 'Normal', 'High', 'Critical'];
-    private const FEE_TYPES = ['Fixed Fee', 'Hourly', 'Retainer', 'Contingency', 'Pro Bono'];
     private const STATUSES  = ['Open', 'In Progress', 'On Hold'];
 
     private const COLUMNS = [
-        'A' => ['header' => 'Project Name *',        'key' => 'project_name'],
-        'B' => ['header' => 'Case Type',             'key' => 'case_type'],
-        'C' => ['header' => 'Patent Office Code',    'key' => 'patent_office_code'],
-        'D' => ['header' => 'Service Code',          'key' => 'service_code'],
-        'E' => ['header' => 'Invention Title',       'key' => 'invention_title'],
-        'F' => ['header' => 'Application Number',    'key' => 'application_number'],
-        'G' => ['header' => 'Technology Field',      'key' => 'technology_field'],
-        'H' => ['header' => 'Filing Date (YYYY-MM-DD)',        'key' => 'filing_date'],
-        'I' => ['header' => 'Target Filing Date (YYYY-MM-DD)', 'key' => 'target_filing_date'],
-        'J' => ['header' => 'Hard Deadline (YYYY-MM-DD)',      'key' => 'hard_deadline'],
-        'K' => ['header' => 'Urgency',               'key' => 'urgency'],
-        'L' => ['header' => 'Fee Arrangement',       'key' => 'fee_arrangement'],
-        'M' => ['header' => 'Status',                'key' => 'status'],
-        'N' => ['header' => 'Notes',                 'key' => 'notes'],
+        'A' => ['header' => 'Project Name *',                    'key' => 'project_name'],
+        'B' => ['header' => 'Case Type',                         'key' => 'case_type'],
+        'C' => ['header' => 'Patent Office Code',                'key' => 'patent_office_code'],
+        'D' => ['header' => 'Service Code',                      'key' => 'service_code'],
+        'E' => ['header' => 'Invention Title',                   'key' => 'invention_title'],
+        'F' => ['header' => 'Application Number',                'key' => 'application_number'],
+        'G' => ['header' => 'Technology Field',                  'key' => 'technology_field'],
+        'H' => ['header' => 'Filing Date (YYYY-MM-DD)',          'key' => 'filing_date'],
+        'I' => ['header' => 'Target Filing Date (YYYY-MM-DD)',   'key' => 'target_filing_date'],
+        'J' => ['header' => 'Hard Deadline (YYYY-MM-DD)',        'key' => 'hard_deadline'],
+        'K' => ['header' => 'IDF Received Date (YYYY-MM-DD)',    'key' => 'idf_received_date'],
+        'L' => ['header' => 'Advance Payment Date (YYYY-MM-DD)', 'key' => 'advance_payment_date'],
+        'M' => ['header' => 'Partial Payment Date (YYYY-MM-DD)', 'key' => 'partial_payment_date'],
+        'N' => ['header' => 'Full Payment Date (YYYY-MM-DD)',    'key' => 'full_payment_date'],
+        'O' => ['header' => 'Urgency',                           'key' => 'urgency'],
+        'P' => ['header' => 'Status',                            'key' => 'status'],
+        'Q' => ['header' => 'Notes',                             'key' => 'notes'],
     ];
 
     private function denyUnauthorized(Request $request): ?\Illuminate\Http\JsonResponse
@@ -87,8 +89,7 @@ class ProjectImportController extends Controller
             'B' => array_keys(self::OFFICES),
             'C' => array_keys(self::SERVICES),
             'D' => self::URGENCIES,
-            'E' => self::FEE_TYPES,
-            'F' => self::STATUSES,
+            'E' => self::STATUSES,
         ];
         foreach ($sets as $col => $values) {
             foreach (array_values($values) as $i => $v) {
@@ -126,23 +127,23 @@ class ProjectImportController extends Controller
             $sheet->setCellValue("{$col}1", $def['header']);
             $sheet->getColumnDimension($col)->setWidth(max(18, strlen($def['header']) + 4));
         }
-        $sheet->getStyle('A1:N1')->getFont()->setBold(true);
-        $sheet->getStyle('A1:N1')->getFill()
+        $lastCol = array_key_last(self::COLUMNS); // 'Q'
+        $sheet->getStyle("A1:{$lastCol}1")->getFont()->setBold(true);
+        $sheet->getStyle("A1:{$lastCol}1")->getFill()
             ->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)
             ->getStartColor()->setARGB('FFDDEBF7');
         $sheet->freezePane('A2');
 
-        // Dates must arrive as text — force those columns to Text format.
-        $sheet->getStyle('H2:J300')->getNumberFormat()->setFormatCode('@');
+        // All date columns (H–N) must arrive as text — force Text format.
+        $sheet->getStyle('H2:N300')->getNumberFormat()->setFormatCode('@');
 
         // Dropdown validations for rows 2–300
         $dropdowns = [
             'B' => 'Lists!$A$1:$A$' . count(self::CASE_TYPES),
             'C' => 'Lists!$B$1:$B$' . count(self::OFFICES),
             'D' => 'Lists!$C$1:$C$' . count(self::SERVICES),
-            'K' => 'Lists!$D$1:$D$' . count(self::URGENCIES),
-            'L' => 'Lists!$E$1:$E$' . count(self::FEE_TYPES),
-            'M' => 'Lists!$F$1:$F$' . count(self::STATUSES),
+            'O' => 'Lists!$D$1:$D$' . count(self::URGENCIES),
+            'P' => 'Lists!$E$1:$E$' . count(self::STATUSES),
         ];
         foreach ($dropdowns as $col => $range) {
             $dv = new DataValidation();
@@ -162,7 +163,7 @@ class ProjectImportController extends Controller
         $tmp = tempnam(sys_get_temp_dir(), 'tpl') . '.xlsx';
         (new Xlsx($wb))->save($tmp);
 
-        return response()->download($tmp, 'case-import-template.xlsx', [
+        return response()->download($tmp, 'case-import-template-v2.xlsx', [
             'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         ])->deleteFileAfterSend(true);
     }
@@ -214,13 +215,16 @@ class ProjectImportController extends Controller
                     'invention_title'     => trim((string) ($row['invention_title'] ?? '')) ?: null,
                     'application_number'  => trim((string) ($row['application_number'] ?? '')) ?: null,
                     'technology_field'    => trim((string) ($row['technology_field'] ?? '')) ?: null,
-                    'filing_date'         => $this->parseDate($row['filing_date'] ?? null),
-                    'target_filing_date'  => $this->parseDate($row['target_filing_date'] ?? null),
-                    'hard_deadline'       => $this->parseDate($row['hard_deadline'] ?? null),
-                    'urgency'             => $this->pick($row, 'urgency', self::URGENCIES) ?? 'Normal',
-                    'fee_arrangement'     => $this->pick($row, 'fee_arrangement', self::FEE_TYPES),
-                    'status'              => $this->pick($row, 'status', self::STATUSES) ?? 'Open',
-                    'notes'               => trim((string) ($row['notes'] ?? '')) ?: null,
+                    'filing_date'          => $this->parseDate($row['filing_date'] ?? null),
+                    'target_filing_date'   => $this->parseDate($row['target_filing_date'] ?? null),
+                    'hard_deadline'        => $this->parseDate($row['hard_deadline'] ?? null),
+                    'idf_received_date'    => $this->parseDate($row['idf_received_date'] ?? null),
+                    'advance_payment_date' => $this->parseDate($row['advance_payment_date'] ?? null),
+                    'partial_payment_date' => $this->parseDate($row['partial_payment_date'] ?? null),
+                    'full_payment_date'    => $this->parseDate($row['full_payment_date'] ?? null),
+                    'urgency'              => $this->pick($row, 'urgency', self::URGENCIES) ?? 'Normal',
+                    'status'               => $this->pick($row, 'status', self::STATUSES) ?? 'Open',
+                    'notes'                => trim((string) ($row['notes'] ?? '')) ?: null,
                     'assigned_partner_id' => $request->user()->id,
                     'assigned_manager_id' => $request->user()->id,
                 ];

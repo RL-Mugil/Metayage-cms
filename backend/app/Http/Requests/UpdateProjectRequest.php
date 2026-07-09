@@ -38,9 +38,11 @@ class UpdateProjectRequest extends FormRequest
             'target_filing_date'    => 'nullable|date',
             'hard_deadline'         => 'nullable|date',
             'status'                => 'nullable|string|max:50',
-            'fee_arrangement'       => 'nullable|string',
+            'idf_received_date'     => 'nullable|date',
+            'advance_payment_date'  => 'nullable|date',
+            'partial_payment_date'  => 'nullable|date',
+            'full_payment_date'     => 'nullable|date',
             'urgency'               => 'nullable|string',
-            'confidentiality_level' => 'nullable|string',
             'notes'                 => 'nullable|string',
         ];
     }

@@ -192,7 +192,6 @@ const CASE_TYPES = [
 
 const URGENCIES = ["Low", "Normal", "High", "Critical"];
 const STATUSES  = ["Open", "In Progress", "On Hold", "Closed", "Completed"];
-const FEE_TYPES = ["Fixed Fee", "Hourly", "Retainer", "Contingency", "Pro Bono"];
 const PIPELINE_STAGES = ["Invention Disclosure", "Patent Search", "Search Report", "Provisional Application", "Provisional Filing", "Patent Drafting", "Applicant/Inventor Review", "Filing with Patent Office", "First Examination Report", "FER Response Preparation", "FER Response Filing", "Hearing with Examiner", "Hearing Response Preparation", "Hearing Response Filing", "Granted", "Renewal"];
 
 // ── Shared UI ─────────────────────────────────────────────────────────────────
@@ -301,8 +300,9 @@ interface PF {
   invention_title: string; technology_field: string;
   application_number: string; patent_office_code: string; service_code: string;
   filing_date: string; target_filing_date: string; hard_deadline: string;
-  urgency: string; status: string; fee_arrangement: string;
-  confidentiality_level: string;
+  idf_received_date: string; advance_payment_date: string;
+  partial_payment_date: string; full_payment_date: string;
+  urgency: string; status: string;
   assigned_partner_id: string; assigned_manager_id: string;
   secondary_manager_id: string; patent_engineer_id: string;
   notes: string;
@@ -313,8 +313,9 @@ const BLANK: PF = {
   invention_title: "", technology_field: "",
   application_number: "", patent_office_code: "IN", service_code: "FIL",
   filing_date: "", target_filing_date: "", hard_deadline: "",
-  urgency: "Normal", status: "Open", fee_arrangement: "Fixed Fee",
-  confidentiality_level: "Standard",
+  idf_received_date: "", advance_payment_date: "",
+  partial_payment_date: "", full_payment_date: "",
+  urgency: "Normal", status: "Open",
   assigned_partner_id: "", assigned_manager_id: "",
   secondary_manager_id: "", patent_engineer_id: "",
   notes: "",
@@ -610,10 +611,12 @@ export default function Projects() {
       filing_date:         p.filing_date           ? p.filing_date.split("T")[0] : "",
       target_filing_date:  p.target_filing_date    ? p.target_filing_date.split("T")[0] : "",
       hard_deadline:       p.hard_deadline         ? p.hard_deadline.split("T")[0] : "",
+      idf_received_date:   p.idf_received_date     ? p.idf_received_date.split("T")[0] : "",
+      advance_payment_date: p.advance_payment_date ? p.advance_payment_date.split("T")[0] : "",
+      partial_payment_date: p.partial_payment_date ? p.partial_payment_date.split("T")[0] : "",
+      full_payment_date:   p.full_payment_date     ? p.full_payment_date.split("T")[0] : "",
       urgency:             p.urgency               ?? "Normal",
       status:              p.status                ?? "Open",
-      fee_arrangement:     p.fee_arrangement       ?? "Fixed Fee",
-      confidentiality_level: p.confidentiality_level ?? "Standard",
       assigned_partner_id:   p.assigned_partner_id  ? String(p.assigned_partner_id) : "",
       assigned_manager_id:   p.assigned_manager_id  ? String(p.assigned_manager_id) : "",
       secondary_manager_id:  p.secondary_manager_id ? String(p.secondary_manager_id) : "",
@@ -958,16 +961,24 @@ export default function Projects() {
                     </select>
                   </div>
                   <div>
-                    <Lbl>Fee Arrangement</Lbl>
-                    <select value={form.fee_arrangement} onChange={(e) => sf("fee_arrangement", e.target.value)} className={ic}>
-                      {FEE_TYPES.map((f) => <option key={f}>{f}</option>)}
-                    </select>
+                    <Lbl>IDF Received Date</Lbl>
+                    <input type="date" value={form.idf_received_date}
+                      onChange={(e) => sf("idf_received_date", e.target.value)} className={ic} />
                   </div>
                   <div>
-                    <Lbl>Confidentiality</Lbl>
-                    <select value={form.confidentiality_level} onChange={(e) => sf("confidentiality_level", e.target.value)} className={ic}>
-                      {["Standard", "Confidential", "Strictly Confidential", "NDA Required"].map((c) => <option key={c}>{c}</option>)}
-                    </select>
+                    <Lbl>Advance Payment Received</Lbl>
+                    <input type="date" value={form.advance_payment_date}
+                      onChange={(e) => sf("advance_payment_date", e.target.value)} className={ic} />
+                  </div>
+                  <div>
+                    <Lbl>Partial Payment Date</Lbl>
+                    <input type="date" value={form.partial_payment_date}
+                      onChange={(e) => sf("partial_payment_date", e.target.value)} className={ic} />
+                  </div>
+                  <div>
+                    <Lbl>Full Payment Received</Lbl>
+                    <input type="date" value={form.full_payment_date}
+                      onChange={(e) => sf("full_payment_date", e.target.value)} className={ic} />
                   </div>
                 </div>
               </Section>

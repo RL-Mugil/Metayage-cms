@@ -16,21 +16,25 @@ class Project extends Model
         'invention_title', 'technology_field', 'parent_project_id', 'priority_date',
         'assigned_partner_id', 'assigned_manager_id', 'assigned_team',
         'start_date', 'target_filing_date', 'hard_deadline',
-        'fee_arrangement',
-        'status', 'urgency', 'confidentiality_level', 'tags',
+        'idf_received_date', 'advance_payment_date', 'partial_payment_date', 'full_payment_date',
+        'status', 'urgency', 'tags',
         // IP matter fields
         'docket_number', 'application_number', 'patent_office_code', 'service_code',
         'case_type', 'filing_date', 'secondary_manager_id', 'patent_engineer_id', 'notes',
     ];
 
     protected $casts = [
-        'assigned_team'  => 'array',
-        'tags'           => 'array',
-        'priority_date'  => 'date',
-        'start_date'     => 'date',
-        'target_filing_date' => 'date',
-        'hard_deadline'  => 'date',
-        'filing_date'    => 'date',
+        'assigned_team'       => 'array',
+        'tags'                => 'array',
+        'priority_date'       => 'date',
+        'start_date'          => 'date',
+        'target_filing_date'  => 'date',
+        'hard_deadline'       => 'date',
+        'filing_date'         => 'date',
+        'idf_received_date'   => 'date',
+        'advance_payment_date'=> 'date',
+        'partial_payment_date'=> 'date',
+        'full_payment_date'   => 'date',
     ];
 
     public function client(): BelongsTo
