@@ -233,9 +233,15 @@ class ProjectImportController extends Controller
                     'assigned_manager_id' => $request->user()->id,
                 ];
 
-                $project = app(ProjectController::class)->createFromImport($validated);
-                $created[] = $project->docket_number;
-                $imported++;
+                try {
+                    $project = app(ProjectController::class)->createFromImport($validated);
+                    $created[] = $project->docket_number;
+                    $imported++;
+                } catch (\Illuminate\Validation\ValidationException $ve) {
+                    $msg = collect($ve->errors())->flatten()->first() ?? 'Validation error';
+                    $errors[] = "Row {$line}: {$msg} — skipped.";
+                    $skipped++;
+                }
             }
         });
 

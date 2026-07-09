@@ -347,6 +347,16 @@ class ClientController extends Controller
                     continue;
                 }
 
+                // Skip if a client with the same legal name already exists
+                $alreadyExists = \App\Models\Client::whereRaw('LOWER(legal_name) = ?', [mb_strtolower($legalName)])
+                    ->orWhereRaw('LOWER(company_name) = ?', [mb_strtolower($legalName)])
+                    ->exists();
+                if ($alreadyExists) {
+                    $errors[] = "Row " . ($index + 2) . ": client \"{$legalName}\" already exists — skipped.";
+                    $skipped++;
+                    continue;
+                }
+
                 try {
                     $nationality = trim((string) ($row['nationality'] ?? 'India')) ?: 'India';
                     $hasGstin = filter_var($row['has_gstin'] ?? false, FILTER_VALIDATE_BOOLEAN);
