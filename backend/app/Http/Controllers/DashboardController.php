@@ -41,12 +41,14 @@ class DashboardController extends Controller
                 ->whereHas('client', fn ($q) => $q->where('portal_enabled', true)->visibleToUser($user));
             $tasksQuery
                 ->whereHas('project.client', fn ($q) => $q->where('portal_enabled', true)->visibleToUser($user));
-        } elseif (in_array($user->role, ['associate', 'paralegal'])) {
+        } elseif ($user->role === 'associate') {
+            // Patent Analysts see cases where they are PR, CM or SCM,
+            // or have a task assigned on the case.
             $activeMattersQuery->where(function ($q) use ($user) {
-                $q->where('assigned_manager_id', $user->id)
-                  ->orWhere('assigned_partner_id', $user->id)
-                  ->orWhere('patent_engineer_id', $user->id)
-                  ->orWhereJsonContains('assigned_team', $user->id);
+                $q->where('patent_engineer_id', $user->id)
+                  ->orWhere('assigned_manager_id', $user->id)
+                  ->orWhere('secondary_manager_id', $user->id)
+                  ->orWhereHas('tasks', fn ($t) => $t->where('assignee_id', $user->id));
             });
             $tasksQuery->where('assignee_id', $user->id);
         }
@@ -93,9 +95,7 @@ class DashboardController extends Controller
             ->groupBy('stage_name')
             ->orderBy('stage_name');
 
-        if ($user->isClientRole()) {
-            $stagesQuery->whereIn('project_id', (clone $activeMattersQuery)->pluck('id'));
-        } elseif (in_array($user->role, ['associate', 'paralegal'])) {
+        if ($user->isClientRole() || $user->role === 'associate') {
             $stagesQuery->whereIn('project_id', (clone $activeMattersQuery)->pluck('id'));
         }
 

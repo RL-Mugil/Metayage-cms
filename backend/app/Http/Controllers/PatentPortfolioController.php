@@ -26,8 +26,22 @@ class PatentPortfolioController extends Controller
             $clientId = $request->input('client_id');
         }
 
+        // Patent Analysts (associate) only see cases where they are PR, CM or
+        // SCM, or have a task assigned. Build the allowed project-id list once
+        // and apply it to every query below (via project id or joined p.id).
+        $analystIds = null;
+        if ($user->role === 'associate') {
+            $analystIds = Project::where(function ($q) use ($user) {
+                $q->where('patent_engineer_id', $user->id)
+                    ->orWhere('assigned_manager_id', $user->id)
+                    ->orWhere('secondary_manager_id', $user->id)
+                    ->orWhereHas('tasks', fn ($t) => $t->where('assignee_id', $user->id));
+            })->pluck('id')->all();
+        }
+
         $base = Project::where('project_type', 'like', '%Patent%')
-            ->when($clientId, fn($q) => $q->where('client_id', $clientId));
+            ->when($clientId, fn($q) => $q->where('client_id', $clientId))
+            ->when($analystIds !== null, fn($q) => $q->whereIn('id', $analystIds));
 
         // Granted patents by office
         $granted = (clone $base)
@@ -50,6 +64,7 @@ class PatentPortfolioController extends Controller
             ->whereNotIn('p.status', ['Granted', 'Completed', 'Closed'])
             ->whereNotNull('tr.status')
             ->when($clientId, fn($q) => $q->where('p.client_id', $clientId))
+            ->when($analystIds !== null, fn($q) => $q->whereIn('p.id', $analystIds))
             ->selectRaw('tr.status as stage_name, COUNT(*) as count')
             ->groupBy('tr.status')
             ->orderByDesc('count')
@@ -71,6 +86,10 @@ class PatentPortfolioController extends Controller
             ->limit(5);
         if ($clientId) {
             $invoicesQ->where('client_id', $clientId);
+        }
+        // Analysts see payments only for their own cases.
+        if ($analystIds !== null) {
+            $invoicesQ->whereIn('project_id', $analystIds ?: [-1]);
         }
         $invoices = $invoicesQ->get(['id', 'invoice_code', 'client_id', 'project_id', 'total_amount', 'balance_due', 'currency', 'created_at', 'status']);
 
@@ -123,8 +142,9 @@ class PatentPortfolioController extends Controller
             ];
         });
 
-        // Client list for the selector (internal users only)
-        $clients = $isClient
+        // Client list for the selector — hidden for clients and analysts (both
+        // are locked to a scoped view, so there is nothing to switch between).
+        $clients = ($isClient || $analystIds !== null)
             ? collect()
             : Client::orderBy('company_name')->get(['id', 'client_code', 'company_name', 'legal_name', 'nationality']);
 

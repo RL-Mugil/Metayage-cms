@@ -150,7 +150,9 @@ function SortTh({
 // ── Main page ────────────────────────────────────────────────────────────────
 export default function PatentPortfolio() {
   const { props: pageProps } = usePage() as any;
-  const isClientUser = ["client", "client_admin"].includes(pageProps.auth?.user?.role);
+  const role = pageProps.auth?.user?.role;
+  // Clients and Patent Analysts get a scoped view with no client selector.
+  const isClientUser = ["client", "client_admin", "associate"].includes(role);
   const [data, setData]         = useState<any>(null);
   const [loading, setLoading]   = useState(true);
   const [selectedClientId, setSelectedClientId] = useState<number | null>(null);

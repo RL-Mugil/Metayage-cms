@@ -129,17 +129,19 @@ export default function Dashboard() {
 
   useEffect(() => {
     const load = async () => {
-      try {
-        const [m, p, t, i] = await Promise.all([
-          api.getDashboardMetrics(), api.getProjects(),
-          api.getTasks(), api.getInvoices(),
-        ]);
-        setMetrics(m.metrics);
-        setProjects(Array.isArray(p) ? p : (p as any).data || []);
-        setTasks(Array.isArray(t) ? t : (t as any).data || []);
-        setInvoices(Array.isArray(i) ? i : (i as any).data || []);
-      } catch (e) { console.error(e); }
-      finally { setLoading(false); }
+      // Each call is independent — roles without financial access (e.g. Patent
+      // Analyst) get a 403 on invoices, which must NOT block the dashboard.
+      const [m, p, t, i] = await Promise.all([
+        api.getDashboardMetrics().catch(() => ({ metrics: {} })),
+        api.getProjects().catch(() => []),
+        api.getTasks().catch(() => []),
+        api.getInvoices().catch(() => []),
+      ]);
+      setMetrics((m as any)?.metrics ?? {});
+      setProjects(Array.isArray(p) ? p : (p as any).data || []);
+      setTasks(Array.isArray(t) ? t : (t as any).data || []);
+      setInvoices(Array.isArray(i) ? i : (i as any).data || []);
+      setLoading(false);
     };
     load();
   }, []);

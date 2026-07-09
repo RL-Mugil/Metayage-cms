@@ -117,12 +117,14 @@ export default function Analytics() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Each source is independent — roles without financial/tracker access
+    // (e.g. Patent Analyst) get 403s that must NOT blank the whole page.
     Promise.all([
-      api.getProjects(),
-      api.getTasks(),
-      api.getInvoices(),
-      api.getClients(),
-      api.getTrackerAnalytics(),
+      api.getProjects().catch(() => []),
+      api.getTasks().catch(() => []),
+      api.getInvoices().catch(() => []),
+      api.getClients().catch(() => []),
+      api.getTrackerAnalytics().catch(() => null),
     ])
       .then(([p, t, i, c, tr]) => {
         setProjects(Array.isArray(p) ? p : (p as any).data || []);
@@ -131,7 +133,6 @@ export default function Analytics() {
         setClients(Array.isArray(c) ? c : (c as any).data || []);
         setTracker(tr);
       })
-      .catch((err) => console.error("Analytics load error:", err))
       .finally(() => setLoading(false));
   }, []);
 
