@@ -39,16 +39,18 @@ export const api = {
   async getUsers(): Promise<User[]> { return this.request('/users') },
 
   // ── Dashboard ──
-  async getDashboardMetrics(): Promise<DashboardMetrics> {
-    return this.request('/dashboard/metrics')
+  async getDashboardMetrics(roleFilter?: string): Promise<DashboardMetrics> {
+    const q = roleFilter && roleFilter !== 'all' ? `?role_filter=${roleFilter}` : ''
+    return this.request(`/dashboard/metrics${q}`)
   },
 
   // ── Clients ──
   async getClientStats(): Promise<{ total: number; active: number; inactive: number; prospect: number; b2b: number; b2c: number; export: number; unregistered: number }> {
     return this.request('/clients/stats')
   },
-  async getProjectStats(): Promise<{ total: number; open: number; in_progress: number; on_hold: number; overdue: number }> {
-    return this.request('/projects/stats')
+  async getProjectStats(roleFilter?: string): Promise<{ total: number; open: number; in_progress: number; on_hold: number; overdue: number }> {
+    const q = roleFilter && roleFilter !== 'all' ? `?role_filter=${roleFilter}` : ''
+    return this.request(`/projects/stats${q}`)
   },
   async getClients(params?: string | URLSearchParams): Promise<PaginatedResponse<Client>> {
     let query = '';
@@ -510,8 +512,11 @@ export const api = {
     }
     return response.json()
   },
-  async getPatentPortfolioStats(clientId?: number | null): Promise<any> {
-    const q = clientId ? `?client_id=${clientId}` : ''
+  async getPatentPortfolioStats(clientId?: number | null, roleFilter?: string): Promise<any> {
+    const params = new URLSearchParams()
+    if (clientId) params.set('client_id', String(clientId))
+    if (roleFilter && roleFilter !== 'all') params.set('role_filter', roleFilter)
+    const q = params.toString() ? '?' + params.toString() : ''
     return this.request(`/patent-portfolio/stats${q}`)
   },
   async getMyPortalUsers(): Promise<any[]> {

@@ -37,19 +37,13 @@ class ProjectController extends Controller
                 $q->visibleToUser($user);
             });
         } elseif ($user->role === 'associate') {
-            // Patent Analysts see cases where they are PR, CM or SCM,
-            // or have a task assigned on the case.
-            $base->where(function ($q) use ($user) {
-                $q->where('patent_engineer_id', $user->id)
-                    ->orWhere('assigned_manager_id', $user->id)
-                    ->orWhere('secondary_manager_id', $user->id)
-                    ->orWhereHas('tasks', fn ($t) => $t->where('assignee_id', $user->id));
-            });
+            $base->where($this->analystWhereClause($user, $request->input('role_filter')));
         }
 
         $today = now()->toDateString();
+        $rf = $request->input('role_filter', 'all');
 
-        $cacheKey = "project_stats_{$user->id}_{$user->role}_v" . Cache::get('dashboard_v', 0);
+        $cacheKey = "project_stats_{$user->id}_{$user->role}_{$rf}_v" . Cache::get('dashboard_v', 0);
         $stats = Cache::remember($cacheKey, 300, function () use ($base, $today) {
             $row = (clone $base)->selectRaw("
                 COUNT(*) as total,
@@ -81,14 +75,7 @@ class ProjectController extends Controller
                 $q->visibleToUser($user);
             });
         } elseif ($user->role === 'associate') {
-            // Patent Analysts see cases where they are PR, CM or SCM,
-            // or have a task assigned on the case.
-            $query->where(function ($q) use ($user) {
-                $q->where('patent_engineer_id', $user->id)
-                    ->orWhere('assigned_manager_id', $user->id)
-                    ->orWhere('secondary_manager_id', $user->id)
-                    ->orWhereHas('tasks', fn ($t) => $t->where('assignee_id', $user->id));
-            });
+            $query->where($this->analystWhereClause($user, $request->input('role_filter')));
         }
 
         if ($request->filled('search')) {
@@ -380,5 +367,25 @@ class ProjectController extends Controller
         $project->delete();
         Cache::increment('dashboard_v');
         return response()->json(['message' => 'Case deleted']);
+    }
+
+    /**
+     * Build the WHERE closure that scopes a Patent Analyst's query.
+     * role_filter: pcm → only assigned_manager_id, scm → secondary_manager_id,
+     * pr → patent_engineer_id, anything else → all three + task-assigned.
+     */
+    private function analystWhereClause($user, ?string $roleFilter): \Closure
+    {
+        return function ($q) use ($user, $roleFilter) {
+            match ($roleFilter) {
+                'pcm' => $q->where('assigned_manager_id', $user->id),
+                'scm' => $q->where('secondary_manager_id', $user->id),
+                'pr'  => $q->where('patent_engineer_id', $user->id),
+                default => $q->where('patent_engineer_id', $user->id)
+                              ->orWhere('assigned_manager_id', $user->id)
+                              ->orWhere('secondary_manager_id', $user->id)
+                              ->orWhereHas('tasks', fn ($t) => $t->where('assignee_id', $user->id)),
+            };
+        };
     }
 }

@@ -1,4 +1,4 @@
-import { Head, Link } from "@inertiajs/react";
+import { Head, Link, usePage } from "@inertiajs/react";
 import { useEffect, useState, useMemo, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { api, downloadCSV } from "@/lib/api-client";
 import { statusColor } from "@/lib/utils";
+import { AnalystRoleFilter, useAnalystRoleFilter } from "@/components/analyst-role-filter";
 
 // ── Date helper ───────────────────────────────────────────────────────────────
 
@@ -482,6 +483,10 @@ function ProjectKpiModal({ kpi, onClose }: { kpi: KpiDef; onClose: () => void })
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 export default function Projects() {
+  const { props: pageProps } = usePage() as any;
+  const isAnalyst = pageProps.auth?.user?.role === "associate";
+  const [roleFilter, setRoleFilter] = useAnalystRoleFilter();
+
   const [projects, setProjects]  = useState<any[]>([]);
   const [clients, setClients]    = useState<any[]>([]);
 
@@ -522,9 +527,13 @@ export default function Projects() {
     return () => window.removeEventListener("click", close);
   }, [stageMenu]);
 
-  useEffect(() => {
-    api.getProjectStats().then(setStats).catch(() => {});
-    Promise.all([api.getProjects(), api.getClients(), api.getUsers()])
+  const loadProjects = (rf: string) => {
+    setLoading(true);
+    const rf_param = rf !== 'all' ? rf : undefined;
+    api.getProjectStats(rf_param).then(setStats).catch(() => {});
+    const params = new URLSearchParams({ per_page: '500' });
+    if (rf_param) params.set('role_filter', rf_param);
+    Promise.all([api.getProjectsPaged(params), api.getClients(), api.getUsers()])
       .then(([p, c, u]) => {
         setProjects(Array.isArray(p) ? p : (p as any).data || []);
         setClients(Array.isArray(c) ? c : (c as any).data || []);
@@ -532,7 +541,9 @@ export default function Projects() {
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, []);
+  };
+
+  useEffect(() => { loadProjects(roleFilter); }, [roleFilter]);
 
   const sf = (f: keyof PF, v: string) => setForm((p) => ({ ...p, [f]: v }));
 
@@ -667,6 +678,7 @@ export default function Projects() {
         description={`${projects.length} cases in portfolio`}
         actions={
           <>
+            <AnalystRoleFilter value={roleFilter} onChange={(v) => { setRoleFilter(v); }} />
             <Button variant="outline" onClick={() =>
               downloadCSV(`cases-${new Date().toISOString().slice(0, 10)}.csv`,
                 filtered.map((p) => ({
@@ -733,7 +745,7 @@ export default function Projects() {
                   </div>
                 )}
                 <Button className="w-full" variant="outline"
-                  onClick={() => { setShowImport(false); api.getProjects().then((p: any) => setProjects(Array.isArray(p) ? p : (p?.data ?? []))).catch(() => {}); }}>
+                  onClick={() => { setShowImport(false); loadProjects(roleFilter); }}>
                   Close
                 </Button>
               </div>
@@ -1308,8 +1320,7 @@ export default function Projects() {
                 await api.bulkExecute(body);
                 setSelectedIds([]);
                 setBulkAction("");
-                const p = await api.getProjects();
-                setProjects(Array.isArray(p) ? p : (p as any).data || []);
+                loadProjects(roleFilter);
               } catch (e: any) { alert(e.message ?? "Bulk action failed."); }
             }}>Apply</Button>
           <button className="text-muted-foreground hover:text-foreground text-xs" onClick={() => { setSelectedIds([]); setBulkAction(""); }}>

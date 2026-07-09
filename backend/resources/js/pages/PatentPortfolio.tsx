@@ -1,5 +1,6 @@
 import { Head, Link, usePage } from "@inertiajs/react";
 import { useEffect, useState, useMemo } from "react";
+import { AnalystRoleFilter, useAnalystRoleFilter } from "@/components/analyst-role-filter";
 import { PieChart, Pie, Cell, Tooltip as ReTooltip } from "recharts";
 import {
   Loader2, RefreshCw, ChevronDown, MapPin, FileText, Calendar,
@@ -153,6 +154,7 @@ export default function PatentPortfolio() {
   const role = pageProps.auth?.user?.role;
   // Clients and Patent Analysts get a scoped view with no client selector.
   const isClientUser = ["client", "client_admin", "associate"].includes(role);
+  const [roleFilter, setRoleFilter] = useAnalystRoleFilter();
   const [data, setData]         = useState<any>(null);
   const [loading, setLoading]   = useState(true);
   const [selectedClientId, setSelectedClientId] = useState<number | null>(null);
@@ -167,22 +169,23 @@ export default function PatentPortfolio() {
   const [sortDir, setSortDir]     = useState<"asc" | "desc">("asc");
   const [page, setPage]           = useState(1);
 
-  const load = (clientId?: number | null) => {
+  const load = (clientId?: number | null, rf?: string) => {
     setLoading(true);
     setActiveOffice(null);
     setActiveStatus(null);
     setPage(1);
-    api.getPatentPortfolioStats(clientId ?? null)
+    api.getPatentPortfolioStats(clientId ?? null, rf ?? roleFilter)
       .then(setData).catch(() => {}).finally(() => setLoading(false));
   };
 
+  useEffect(() => { load(selectedClientId, roleFilter); }, [roleFilter]);
   useEffect(() => { load(null); }, []);
 
   function selectClient(c: any) {
     setSelectedClientId(c?.id ?? null);
     setClientSearch(c ? (c.company_name ?? c.legal_name ?? "") : "");
     setShowClientDrop(false);
-    load(c?.id ?? null);
+    load(c?.id ?? null, roleFilter);
   }
 
   function toggleSort(col: typeof sortCol) {
@@ -262,12 +265,15 @@ export default function PatentPortfolio() {
         title="Patent Portfolio"
         description="Click chart segments or bars to filter the Action Required table."
         actions={
-          <button
-            onClick={() => load(selectedClientId)}
-            className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <RefreshCw className="h-3.5 w-3.5" /> Refresh
-          </button>
+          <>
+            <AnalystRoleFilter value={roleFilter} onChange={(v) => { setRoleFilter(v); }} />
+            <button
+              onClick={() => load(selectedClientId, roleFilter)}
+              className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <RefreshCw className="h-3.5 w-3.5" /> Refresh
+            </button>
+          </>
         }
       />
 

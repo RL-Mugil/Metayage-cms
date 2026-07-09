@@ -27,15 +27,20 @@ class PatentPortfolioController extends Controller
         }
 
         // Patent Analysts (associate) only see cases where they are PR, CM or
-        // SCM, or have a task assigned. Build the allowed project-id list once
-        // and apply it to every query below (via project id or joined p.id).
+        // SCM, or have a task assigned. role_filter narrows to one relationship.
         $analystIds = null;
         if ($user->role === 'associate') {
-            $analystIds = Project::where(function ($q) use ($user) {
-                $q->where('patent_engineer_id', $user->id)
-                    ->orWhere('assigned_manager_id', $user->id)
-                    ->orWhere('secondary_manager_id', $user->id)
-                    ->orWhereHas('tasks', fn ($t) => $t->where('assignee_id', $user->id));
+            $rf = $request->input('role_filter');
+            $analystIds = Project::where(function ($q) use ($user, $rf) {
+                match ($rf) {
+                    'pcm' => $q->where('assigned_manager_id', $user->id),
+                    'scm' => $q->where('secondary_manager_id', $user->id),
+                    'pr'  => $q->where('patent_engineer_id', $user->id),
+                    default => $q->where('patent_engineer_id', $user->id)
+                                  ->orWhere('assigned_manager_id', $user->id)
+                                  ->orWhere('secondary_manager_id', $user->id)
+                                  ->orWhereHas('tasks', fn ($t) => $t->where('assignee_id', $user->id)),
+                };
             })->pluck('id')->all();
         }
 

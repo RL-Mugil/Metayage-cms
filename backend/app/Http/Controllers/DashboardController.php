@@ -42,20 +42,25 @@ class DashboardController extends Controller
             $tasksQuery
                 ->whereHas('project.client', fn ($q) => $q->where('portal_enabled', true)->visibleToUser($user));
         } elseif ($user->role === 'associate') {
-            // Patent Analysts see cases where they are PR, CM or SCM,
-            // or have a task assigned on the case.
-            $activeMattersQuery->where(function ($q) use ($user) {
-                $q->where('patent_engineer_id', $user->id)
-                  ->orWhere('assigned_manager_id', $user->id)
-                  ->orWhere('secondary_manager_id', $user->id)
-                  ->orWhereHas('tasks', fn ($t) => $t->where('assignee_id', $user->id));
+            $rf = $request->input('role_filter');
+            $activeMattersQuery->where(function ($q) use ($user, $rf) {
+                match ($rf) {
+                    'pcm' => $q->where('assigned_manager_id', $user->id),
+                    'scm' => $q->where('secondary_manager_id', $user->id),
+                    'pr'  => $q->where('patent_engineer_id', $user->id),
+                    default => $q->where('patent_engineer_id', $user->id)
+                                  ->orWhere('assigned_manager_id', $user->id)
+                                  ->orWhere('secondary_manager_id', $user->id)
+                                  ->orWhereHas('tasks', fn ($t) => $t->where('assignee_id', $user->id)),
+                };
             });
             $tasksQuery->where('assignee_id', $user->id);
         }
 
         // Calculations — cached per user to avoid N queries on every page load.
         // dashboard_v is incremented by any mutative endpoint (projects, tasks, invoices).
-        $cacheKey = "dashboard_metrics_{$user->id}_{$user->role}_v" . Cache::get('dashboard_v', 0);
+        $rf = $request->input('role_filter', 'all');
+        $cacheKey = "dashboard_metrics_{$user->id}_{$user->role}_{$rf}_v" . Cache::get('dashboard_v', 0);
         [$activeMattersCount, $clientsCount, $tasksCount] = Cache::remember($cacheKey, 300, function () use ($activeMattersQuery, $clientsQuery, $tasksQuery) {
             return [
                 $activeMattersQuery->count(),

@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { api, downloadCSV } from "@/lib/api-client";
 import { statusColor } from "@/lib/utils";
 import { usePage } from "@inertiajs/react";
+import { AnalystRoleFilter, useAnalystRoleFilter } from "@/components/analyst-role-filter";
 import { fmtDate } from "@/lib/date-utils";
 
 function formatCurrency(val: number) {
@@ -119,6 +120,7 @@ function DashboardDrillModal({ config, onClose }: { config: DrillConfig; onClose
 export default function Dashboard() {
   const { props } = usePage() as any;
   const user = props.auth?.user;
+  const [roleFilter, setRoleFilter] = useAnalystRoleFilter();
 
   const [metrics, setMetrics]   = useState<any>(null);
   const [projects, setProjects] = useState<any[]>([]);
@@ -129,11 +131,12 @@ export default function Dashboard() {
 
   useEffect(() => {
     const load = async () => {
-      // Each call is independent — roles without financial access (e.g. Patent
-      // Analyst) get a 403 on invoices, which must NOT block the dashboard.
+      const rf = roleFilter !== 'all' ? roleFilter : undefined;
+      const projectParams = new URLSearchParams({ per_page: '500' });
+      if (rf) projectParams.set('role_filter', rf);
       const [m, p, t, i] = await Promise.all([
-        api.getDashboardMetrics().catch(() => ({ metrics: {} })),
-        api.getProjects().catch(() => []),
+        api.getDashboardMetrics(rf).catch(() => ({ metrics: {} })),
+        api.getProjectsPaged(projectParams).catch(() => []),
         api.getTasks().catch(() => []),
         api.getInvoices().catch(() => []),
       ]);
@@ -144,7 +147,7 @@ export default function Dashboard() {
       setLoading(false);
     };
     load();
-  }, []);
+  }, [roleFilter]);
 
   const handleExport = () => {
     const rows = projects.map(p => ({
@@ -244,7 +247,10 @@ export default function Dashboard() {
         title={`Good morning, ${welcomeName}`}
         description={`${metrics.active_matters} cases need attention · ${metrics.clients} clients · WIP ${formatCurrency(metrics.wip_balance)}`}
         actions={
-          <Button variant="outline" onClick={handleExport}><Download className="h-4 w-4 mr-2" />Export CSV</Button>
+          <>
+            <AnalystRoleFilter value={roleFilter} onChange={setRoleFilter} />
+            <Button variant="outline" onClick={handleExport}><Download className="h-4 w-4 mr-2" />Export CSV</Button>
+          </>
         }
       />
 
