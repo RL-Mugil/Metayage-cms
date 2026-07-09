@@ -14,7 +14,10 @@ class StoreProjectRequest extends FormRequest
     public function rules(): array
     {
         return [
+            'record_mode'           => 'nullable|in:new,existing',
             'client_id'             => 'required|exists:clients,id',
+            'project_code'          => 'nullable|required_if:record_mode,existing|string|max:100|unique:projects,project_code',
+            'docket_number'         => 'nullable|required_if:record_mode,existing|string|max:100',
             'project_name'          => 'required|string|max:255',
             'project_type'          => 'required|string|max:100',
             'case_type'             => 'nullable|string|max:100',

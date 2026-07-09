@@ -14,6 +14,8 @@ class StoreClientRequest extends FormRequest
     public function rules(): array
     {
         return [
+            'record_mode'          => 'nullable|in:new,existing',
+            'client_code'          => 'nullable|required_if:record_mode,existing|string|max:50|unique:clients,client_code',
             'client_type'          => 'required|in:individual,organization',
             'nationality'          => 'nullable|string|max:100',
             'has_gstin'            => 'boolean',

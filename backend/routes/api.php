@@ -215,6 +215,10 @@ Route::middleware(['auth:sanctum', 'throttle:60,1'])->group(function () {
     Route::delete('/portal/clients/{id}/users/{userId}', [\App\Http\Controllers\PortalController::class, 'removeClientUser']);
     Route::post('/portal/clients/{id}/users/{userId}/reset-password', [\App\Http\Controllers\PortalController::class, 'resetUserPassword']);
 
+    // Custom project codes (patent office / service)
+    Route::get('/project-codes', [\App\Http\Controllers\ProjectCodeController::class, 'index']);
+    Route::post('/project-codes', [\App\Http\Controllers\ProjectCodeController::class, 'store']);
+
     // Bulk operations
     Route::post('/bulk/execute', [\App\Http\Controllers\BulkController::class, 'execute']);
 

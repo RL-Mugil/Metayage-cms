@@ -293,9 +293,158 @@ function Combobox({ value, options, onSelect, placeholder }: {
   );
 }
 
+// Combobox with "Add entry" — fetches custom DB codes and merges with base list
+function CodeCombobox({ value, baseOptions, codeType, onSelect, placeholder }: {
+  value: string;
+  baseOptions: { id: string; label: string }[];
+  codeType: "office" | "service";
+  onSelect: (id: string) => void;
+  placeholder?: string;
+}) {
+  const [q, setQ]               = useState("");
+  const [open, setOpen]         = useState(false);
+  const [rect, setRect]         = useState<DOMRect | null>(null);
+  const inputRef                = useRef<HTMLInputElement>(null);
+  const [customCodes, setCustomCodes] = useState<{ id: string; label: string }[]>([]);
+  const [adding, setAdding]     = useState(false);
+  const [newCode, setNewCode]   = useState("");
+  const [newDesc, setNewDesc]   = useState("");
+  const [addErr, setAddErr]     = useState("");
+  const [saving, setSaving]     = useState(false);
+
+  // Fetch custom codes once
+  useEffect(() => {
+    api.getProjectCodes(codeType).then((rows) =>
+      setCustomCodes(rows.map((r) => ({ id: r.code, label: `${r.code} – ${r.description}` })))
+    ).catch(() => {});
+  }, [codeType]);
+
+  const allOptions = useMemo(() => {
+    const existing = new Set(baseOptions.map((o) => o.id.toUpperCase()));
+    const extra = customCodes.filter((c) => !existing.has(c.id.toUpperCase()));
+    return [...baseOptions, ...extra];
+  }, [baseOptions, customCodes]);
+
+  const selected = allOptions.find((o) => o.id === value);
+  const filtered = allOptions
+    .filter((o) => !q || o.label.toLowerCase().includes(q.toLowerCase()))
+    .slice(0, 30);
+
+  useEffect(() => {
+    if (!open) return;
+    const update = () => { if (inputRef.current) setRect(inputRef.current.getBoundingClientRect()); };
+    window.addEventListener("scroll", update, true);
+    return () => window.removeEventListener("scroll", update, true);
+  }, [open]);
+
+  function handleFocus() {
+    if (inputRef.current) setRect(inputRef.current.getBoundingClientRect());
+    setOpen(true);
+    setAdding(false);
+    setQ("");
+  }
+
+  async function handleAdd() {
+    const code = newCode.trim().toUpperCase();
+    const desc = newDesc.trim();
+    if (!code || !desc) { setAddErr("Code and description are required."); return; }
+    setSaving(true); setAddErr("");
+    try {
+      const created = await api.addProjectCode(codeType, code, desc);
+      const entry = { id: created.code, label: `${created.code} – ${created.description}` };
+      setCustomCodes((prev) => [...prev, entry]);
+      onSelect(created.code);
+      setAdding(false);
+      setOpen(false);
+      setNewCode(""); setNewDesc("");
+    } catch (e: any) {
+      setAddErr(e.message ?? "Failed to add code.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const dropdownContent = adding ? (
+    <div className="p-3 space-y-2" onMouseDown={(e) => e.preventDefault()}>
+      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Add new code</p>
+      <input
+        autoFocus
+        value={newCode}
+        onChange={(e) => setNewCode(e.target.value.toUpperCase())}
+        placeholder="Code (e.g. IN, INPAT)"
+        className="w-full h-8 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold uppercase"
+        onMouseDown={(e) => e.stopPropagation()}
+      />
+      <input
+        value={newDesc}
+        onChange={(e) => setNewDesc(e.target.value)}
+        placeholder="Description"
+        className="w-full h-8 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold"
+        onMouseDown={(e) => e.stopPropagation()}
+      />
+      {addErr && <p className="text-xs text-destructive">{addErr}</p>}
+      <div className="flex gap-2">
+        <button type="button" onMouseDown={(e) => { e.preventDefault(); handleAdd(); }}
+          disabled={saving}
+          className="flex-1 h-7 rounded bg-gold/90 hover:bg-gold text-xs font-medium text-black disabled:opacity-50">
+          {saving ? "Saving…" : "Save"}
+        </button>
+        <button type="button" onMouseDown={(e) => { e.preventDefault(); setAdding(false); setAddErr(""); setNewCode(""); setNewDesc(""); }}
+          className="flex-1 h-7 rounded border border-border text-xs hover:bg-muted/40">
+          Cancel
+        </button>
+      </div>
+    </div>
+  ) : (
+    <>
+      {filtered.map((o) => (
+        <button key={o.id} type="button"
+          onMouseDown={(e) => { e.preventDefault(); onSelect(o.id); setOpen(false); }}
+          className={`w-full text-left px-3 py-2 text-sm hover:bg-muted/40 ${o.id === value ? "bg-gold/10 text-gold font-medium" : ""}`}>
+          {o.label}
+        </button>
+      ))}
+      {filtered.length === 0 && <p className="px-3 py-2 text-xs text-muted-foreground">No matches</p>}
+      <button type="button"
+        onMouseDown={(e) => { e.preventDefault(); setAdding(true); setNewCode(q.toUpperCase()); setNewDesc(""); setAddErr(""); }}
+        className="w-full text-left px-3 py-2 text-xs text-gold hover:bg-gold/10 border-t border-border font-medium">
+        + Add entry
+      </button>
+    </>
+  );
+
+  const dropdown = open && rect
+    ? createPortal(
+        <div
+          style={{ position: "fixed", top: rect.bottom + 2, left: rect.left, width: rect.width, zIndex: 9999 }}
+          className="bg-background border border-border rounded-md shadow-2xl max-h-64 overflow-y-auto"
+        >
+          {dropdownContent}
+        </div>,
+        document.body
+      )
+    : null;
+
+  return (
+    <div>
+      <input
+        ref={inputRef}
+        value={open ? q : (selected?.label ?? "")}
+        onFocus={handleFocus}
+        onBlur={() => setTimeout(() => { if (!adding) setOpen(false); }, 200)}
+        onChange={(e) => setQ(e.target.value)}
+        placeholder={placeholder}
+        className={ic}
+      />
+      {dropdown}
+    </div>
+  );
+}
+
 // ── Form state ────────────────────────────────────────────────────────────────
 
 interface PF {
+  record_mode: "new" | "existing"; project_code: string; docket_number: string;
   project_name: string; client_id: string; case_type: string;
   invention_title: string; technology_field: string;
   application_number: string; patent_office_code: string; service_code: string;
@@ -309,6 +458,7 @@ interface PF {
 }
 
 const BLANK: PF = {
+  record_mode: "new", project_code: "", docket_number: "",
   project_name: "", client_id: "", case_type: "Patent – Utility",
   invention_title: "", technology_field: "",
   application_number: "", patent_office_code: "IN", service_code: "FIL",
@@ -485,7 +635,9 @@ function ProjectKpiModal({ kpi, onClose }: { kpi: KpiDef; onClose: () => void })
 
 export default function Projects() {
   const { props: pageProps } = usePage() as any;
+  const currentUserRole = pageProps.auth?.user?.role ?? "";
   const isAnalyst = pageProps.auth?.user?.role === "associate";
+  const canBulkImport = !["client", "client_admin"].includes(currentUserRole);
   const [roleFilter, setRoleFilter] = useAnalystRoleFilter();
 
   const [projects, setProjects]  = useState<any[]>([]);
@@ -535,10 +687,10 @@ export default function Projects() {
     api.getProjectStats(rf_param).then(setStats).catch(() => {});
     const params = new URLSearchParams({ per_page: '500' });
     if (rf_param) params.set('role_filter', rf_param);
-    Promise.all([api.getProjectsPaged(params), api.getClients(), api.getUsers()])
+    Promise.all([api.getProjectsPaged(params), api.getAllClients(), api.getUsers()])
       .then(([p, c, u]) => {
         setProjects(Array.isArray(p) ? p : (p as any).data || []);
-        setClients(Array.isArray(c) ? c : (c as any).data || []);
+        setClients(c);
         setUsers(u);
       })
       .catch(() => {})
@@ -558,8 +710,8 @@ export default function Projects() {
   const staffOptions = useMemo(() =>
     users.map((u) => ({ id: String(u.id), label: u.name })), [users]);
 
-  const officeOptions = PATENT_OFFICES.map((o) => ({ id: o.code, label: o.label }));
-  const serviceOptions = SERVICE_CODES.map((s) => ({ id: s.code, label: s.label }));
+  const officeOptions = useMemo(() => PATENT_OFFICES.map((o) => ({ id: o.code, label: o.label })), []);
+  const serviceOptions = useMemo(() => SERVICE_CODES.map((s) => ({ id: s.code, label: s.label })), []);
 
   const docketPreview = useMemo(() => {
     if (!form.client_id) return "—";
@@ -600,6 +752,9 @@ export default function Projects() {
 
   function openEdit(p: any) {
     setForm({
+      record_mode:         "existing",
+      project_code:        p.project_code         ?? "",
+      docket_number:       p.docket_number        ?? "",
       project_name:        p.project_name         ?? "",
       client_id:           p.client_id             ? String(p.client_id) : "",
       case_type:           p.case_type             ?? p.project_type ?? "Patent – Utility",
@@ -630,10 +785,16 @@ export default function Projects() {
     if (!form.project_name.trim() || !form.client_id) {
       setSaveErr("Patent title and client are required."); return;
     }
+    if (!editProj && form.record_mode === "existing" && !form.project_code.trim() && !form.docket_number.trim()) {
+      setSaveErr("Existing case ID is required for legacy cases."); return;
+    }
     setSaving(true); setSaveErr("");
     try {
+      const canonicalCaseId = (form.project_code || form.docket_number).trim().toUpperCase();
       const payload = {
         ...form,
+        project_code:         canonicalCaseId || null,
+        docket_number:        canonicalCaseId || null,
         client_id:            parseInt(form.client_id),
         assigned_partner_id:  form.assigned_partner_id  ? parseInt(form.assigned_partner_id)  : null,
         assigned_manager_id:  form.assigned_manager_id  ? parseInt(form.assigned_manager_id)  : null,
@@ -642,7 +803,8 @@ export default function Projects() {
         project_type: form.case_type,
       };
       if (editProj) {
-        const updated = await api.updateProject(editProj.id, payload as any);
+        const { record_mode, project_code, docket_number, ...updatePayload } = payload;
+        const updated = await api.updateProject(editProj.id, updatePayload as any);
         setProjects((prev) => prev.map((p) => p.id === editProj.id
           ? { ...p, ...updated, client: p.client } : p));
       } else {
@@ -700,12 +862,14 @@ export default function Projects() {
               )}>
               <Download className="h-4 w-4 mr-2" />Export CSV
             </Button>
-            <Button variant="outline" onClick={() => {
-              setShowImport(true); setImportClientId(""); setImportClientSearch("");
-              setImportFile(null); setImportError(""); setImportResult(null);
-            }}>
-              <Upload className="h-4 w-4 mr-2" />Bulk Import
-            </Button>
+            {canBulkImport && (
+              <Button variant="outline" onClick={() => {
+                setShowImport(true); setImportClientId(""); setImportClientSearch("");
+                setImportFile(null); setImportError(""); setImportResult(null);
+              }}>
+                <Upload className="h-4 w-4 mr-2" />Bulk Import
+              </Button>
+            )}
             <Button className="bg-gold hover:bg-gold/90 text-black" onClick={openCreate}>
               <Plus className="h-4 w-4 mr-2" />New Case
             </Button>
@@ -768,7 +932,7 @@ export default function Projects() {
                     {clients.filter((c: any) => {
                       const q = importClientSearch.toLowerCase();
                       return !q || (c.client_code ?? "").toLowerCase().includes(q) || (c.company_name ?? c.legal_name ?? "").toLowerCase().includes(q);
-                    }).slice(0, 50).map((c: any) => (
+                    }).map((c: any) => (
                       <option key={c.id} value={c.id}>{c.client_code} — {c.company_name ?? c.legal_name}</option>
                     ))}
                   </select>
@@ -785,7 +949,7 @@ export default function Projects() {
                     <Download className="h-3.5 w-3.5 text-muted-foreground" />
                   </a>
                   <p className="text-[10px] text-muted-foreground mt-1">
-                    Dropdown columns are built in (case type, office, service, urgency, fee, status). Dates as YYYY-MM-DD. See the Reference sheet for code descriptions.
+                    Dropdown columns are built in (case type, office, service, urgency, status). Dates use YYYY-MM-DD. See the Reference sheet for code descriptions.
                   </p>
                 </div>
 
@@ -836,7 +1000,9 @@ export default function Projects() {
                 <p className="text-xs text-muted-foreground mt-0.5">
                   {editProj
                     ? <>Docket: <span className="font-mono text-gold font-semibold">{editProj.docket_number ?? editProj.project_code}</span></>
-                    : <>Docket preview: <span className="font-mono text-gold font-semibold">{docketPreview}</span></>}
+                    : form.record_mode === "existing"
+                      ? <>Legacy matter: enter the existing case ID once. It will be saved as both project code and UIN.</>
+                      : <>Docket preview: <span className="font-mono text-gold font-semibold">{docketPreview}</span></>}
                 </p>
               </div>
               <button onClick={() => setShowModal(false)}>
@@ -852,6 +1018,46 @@ export default function Projects() {
               )}
 
               {/* ── 1. Case Identification ───────────────────────────── */}
+              {!editProj && (
+                <Section title="Record Type">
+                  <div className="grid grid-cols-2 gap-3">
+                    {([
+                      { key: "new", label: "New Case", hint: "Generate project code and UIN automatically." },
+                      { key: "existing", label: "Existing / Legacy Case", hint: "Enter the existing case ID once." },
+                    ] as const).map((option) => (
+                      <button
+                        key={option.key}
+                        type="button"
+                        onClick={() => sf("record_mode", option.key)}
+                        className={`rounded-lg border-2 px-4 py-3 text-left transition-all ${
+                          form.record_mode === option.key
+                            ? "border-gold bg-gold/10 text-foreground"
+                            : "border-border text-muted-foreground hover:border-gold/40"
+                        }`}
+                      >
+                        <div className="text-sm font-medium">{option.label}</div>
+                        <div className="mt-1 text-xs">{option.hint}</div>
+                      </button>
+                    ))}
+                  </div>
+                  {form.record_mode === "existing" && (
+                    <div>
+                      <Lbl req>Existing Case ID / UIN / Docket</Lbl>
+                      <input
+                        value={form.project_code || form.docket_number}
+                        onChange={(e) => {
+                          const value = e.target.value.toUpperCase();
+                          sf("project_code", value);
+                          sf("docket_number", value);
+                        }}
+                        className={ic}
+                        placeholder="e.g. A97M001INFER"
+                      />
+                    </div>
+                  )}
+                </Section>
+              )}
+
               <Section title="Case Identification">
                 <div className="grid grid-cols-2 gap-3">
                   <div className="col-span-2">
@@ -903,18 +1109,20 @@ export default function Projects() {
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <Lbl>Patent Office (Country)</Lbl>
-                    <Combobox
+                    <CodeCombobox
                       value={form.patent_office_code}
-                      options={officeOptions}
+                      baseOptions={officeOptions}
+                      codeType="office"
                       onSelect={(v) => sf("patent_office_code", v)}
                       placeholder="Search office…"
                     />
                   </div>
                   <div>
                     <Lbl>Service Code</Lbl>
-                    <Combobox
+                    <CodeCombobox
                       value={form.service_code}
-                      options={serviceOptions}
+                      baseOptions={serviceOptions}
+                      codeType="service"
                       onSelect={(v) => sf("service_code", v)}
                       placeholder="Search service code…"
                     />
@@ -1196,7 +1404,7 @@ export default function Projects() {
                             <div className="font-mono text-xs text-gold font-semibold">
                               {p.docket_number ?? p.project_code ?? "—"}
                             </div>
-                            {p.docket_number && p.project_code && (
+                            {p.docket_number && p.project_code && p.project_code !== p.docket_number && (
                               <div className="text-[10px] text-muted-foreground font-mono">{p.project_code}</div>
                             )}
                           </td>

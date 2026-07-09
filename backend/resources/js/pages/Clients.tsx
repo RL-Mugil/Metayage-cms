@@ -120,6 +120,7 @@ function fmtDate(d: string | null | undefined): string {
 
 type CType = "individual" | "organization";
 interface CF {
+  record_mode: "new" | "existing"; client_code: string;
   client_type: CType; nationality: string; has_gstin: boolean; gstin: string;
   legal_name: string; entity_subtype: string; pan_number: string; cin_number: string;
   trade_name: string; website: string; contact_name: string; contact_email: string;
@@ -129,6 +130,7 @@ interface CF {
   referred_by_code: string; accounts_person: string; remarks: string; status: string;
 }
 const BLANK: CF = {
+  record_mode:"new", client_code:"",
   client_type:"organization", nationality:"India", has_gstin:false, gstin:"",
   legal_name:"", entity_subtype:"", pan_number:"", cin_number:"", trade_name:"", website:"",
   contact_name:"", contact_email:"", phone:"", address:"", state:"",
@@ -537,6 +539,8 @@ export default function Clients() {
 
   function openEdit(c: any) {
     setForm({
+      record_mode:      "existing",
+      client_code:      c.client_code        ?? "",
       client_type:      c.client_type       ?? "organization",
       nationality:      c.nationality       ?? "India",
       has_gstin:        !!c.has_gstin,
@@ -568,14 +572,19 @@ export default function Clients() {
 
   async function handleSave() {
     if (!form.legal_name.trim()) { setFErr("Legal name is required."); return; }
+    if (!editC && form.record_mode === "existing" && !form.client_code.trim()) {
+      setFErr("Existing client code is required for legacy clients."); return;
+    }
     setSaving(true); setFErr("");
     try {
       const payload = {
         ...form,
+        client_code: form.client_code.trim().toUpperCase() || null,
         account_manager_id: form.account_manager_id ? parseInt(form.account_manager_id) : null,
       };
       if (editC) {
-        await api.updateClient(editC.id, payload as any);
+        const { record_mode, client_code, ...updatePayload } = payload;
+        await api.updateClient(editC.id, updatePayload as any);
       } else {
         await api.createClient(payload as any);
       }
@@ -804,7 +813,9 @@ export default function Clients() {
                 <h2 className="font-display text-lg font-semibold">{editC ? "Edit Client" : "New Client"}</h2>
                 <p className="text-xs text-muted-foreground mt-0.5">
                   {editC ? <>Code: <span className="font-mono text-gold font-semibold">{editC.client_code}</span></>
-                         : <>Auto-assigned code: <span className="font-mono text-gold font-semibold">{previewCode}</span></>}
+                         : form.record_mode === "existing"
+                           ? <>Legacy client: enter the existing client code manually.</>
+                           : <>Auto-assigned code: <span className="font-mono text-gold font-semibold">{previewCode}</span></>}
                 </p>
               </div>
               <button onClick={() => setShowForm(false)}><X className="h-5 w-5 text-muted-foreground"/></button>
@@ -814,6 +825,42 @@ export default function Clients() {
             <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
 
               {/* ── 0. Client Type Toggle ─────────────────────────────────── */}
+              {!editC && (
+                <Section title="Record Type">
+                  <div className="grid grid-cols-2 gap-3">
+                    {([
+                      { key: "new", label: "New Client", hint: "Use the current auto-generation rules." },
+                      { key: "existing", label: "Existing / Legacy Client", hint: "Enter the existing client code manually." },
+                    ] as const).map((option) => (
+                      <button
+                        key={option.key}
+                        type="button"
+                        onClick={() => set("record_mode", option.key)}
+                        className={`rounded-lg border-2 px-4 py-3 text-left transition-all ${
+                          form.record_mode === option.key
+                            ? "border-gold bg-gold/10 text-foreground"
+                            : "border-border text-muted-foreground hover:border-gold/40"
+                        }`}
+                      >
+                        <div className="text-sm font-medium">{option.label}</div>
+                        <div className="mt-1 text-xs">{option.hint}</div>
+                      </button>
+                    ))}
+                  </div>
+                  {form.record_mode === "existing" && (
+                    <div>
+                      <Lbl req>Existing Client Code</Lbl>
+                      <input
+                        value={form.client_code}
+                        onChange={(e)=>set("client_code", e.target.value.toUpperCase())}
+                        className={ic}
+                        placeholder="e.g. A97M"
+                      />
+                    </div>
+                  )}
+                </Section>
+              )}
+
               <div className="flex gap-2">
                 {(["organization","individual"] as CType[]).map((t) => (
                   <button key={t} type="button" onClick={() => set("client_type", t)}

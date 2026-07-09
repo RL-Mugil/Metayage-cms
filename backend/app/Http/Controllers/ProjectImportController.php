@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\AuditLog;
 use App\Models\Client;
 use App\Models\Project;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
@@ -19,29 +20,12 @@ use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
  */
 class ProjectImportController extends Controller
 {
-    private const IMPORT_ROLES = ['super_admin', 'partner', 'manager'];
-
     private const CASE_TYPES = [
         'Patent – Utility', 'Patent – Design', 'Patent – PCT',
         'Trademark', 'Copyright', 'Geographical Indication',
         'Plant Variety', 'Semiconductor Layout Design',
         'Trade Secret', 'IP Litigation', 'IP Licensing',
         'IP Audit', 'Technology Transfer', 'General Advisory',
-    ];
-    private const OFFICES = [
-        'IN' => 'India (IPO)', 'US' => 'United States (USPTO)', 'EP' => 'European Patent Office (EPO)',
-        'WO' => 'WIPO / PCT (International)', 'CN' => 'China (CNIPA)', 'JP' => 'Japan (JPO)',
-        'KR' => 'South Korea (KIPO)', 'AU' => 'Australia (IP Australia)', 'CA' => 'Canada (CIPO)',
-        'GB' => 'United Kingdom (UKIPO)', 'DE' => 'Germany (DPMA)', 'FR' => 'France (INPI)',
-        'SG' => 'Singapore (IPOS)', 'MY' => 'Malaysia (MyIPO)', 'AE' => 'United Arab Emirates',
-        'SA' => 'Saudi Arabia (SAIP)', 'BR' => 'Brazil (INPI-BR)', 'RU' => 'Russia (Rospatent)',
-        'IL' => 'Israel (ILPO)', 'NZ' => 'New Zealand (IPONZ)', 'ZA' => 'South Africa (CIPC)',
-    ];
-    private const SERVICES = [
-        'DFT' => 'Patent Drafting', 'PRV' => 'Provisional Application Filing',
-        'NPA' => 'Non-Provisional Application Filing', 'FIL' => 'Patent Filing (General)',
-        'PCT' => 'PCT International Filing', 'NPE' => 'National Phase Entry',
-        'VAR' => 'Various / Miscellaneous',
     ];
     private const URGENCIES = ['Low', 'Normal', 'High', 'Critical'];
     private const STATUSES  = ['Open', 'In Progress', 'On Hold'];
@@ -68,10 +52,24 @@ class ProjectImportController extends Controller
 
     private function denyUnauthorized(Request $request): ?\Illuminate\Http\JsonResponse
     {
-        if (! in_array($request->user()->role, self::IMPORT_ROLES)) {
+        if (in_array($request->user()->role, User::CLIENT_ROLES, true)) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
         return null;
+    }
+
+    private static function offices(): array
+    {
+        static $codes;
+        $codes ??= require config_path('project_import_codes.php');
+        return $codes['offices'] ?? [];
+    }
+
+    private static function services(): array
+    {
+        static $codes;
+        $codes ??= require config_path('project_import_codes.php');
+        return $codes['services'] ?? [];
     }
 
     /** Downloadable .xlsx template with dropdown validation on enum columns. */
@@ -82,12 +80,14 @@ class ProjectImportController extends Controller
         $wb = new Spreadsheet();
 
         // ── Lists sheet (hidden) drives the dropdowns ──
+        $offices = self::offices();
+        $services = self::services();
         $lists = $wb->createSheet();
         $lists->setTitle('Lists');
         $sets = [
             'A' => self::CASE_TYPES,
-            'B' => array_keys(self::OFFICES),
-            'C' => array_keys(self::SERVICES),
+            'B' => array_keys($offices),
+            'C' => array_keys($services),
             'D' => self::URGENCIES,
             'E' => self::STATUSES,
         ];
@@ -103,14 +103,14 @@ class ProjectImportController extends Controller
         $ref->setTitle('Reference');
         $ref->setCellValue('A1', 'Patent Office Codes');
         $r = 2;
-        foreach (self::OFFICES as $code => $label) {
+        foreach ($offices as $code => $label) {
             $ref->setCellValue("A{$r}", $code);
             $ref->setCellValue("B{$r}", $label);
             $r++;
         }
         $ref->setCellValue('D1', 'Service Codes');
         $r = 2;
-        foreach (self::SERVICES as $code => $label) {
+        foreach ($services as $code => $label) {
             $ref->setCellValue("D{$r}", $code);
             $ref->setCellValue("E{$r}", $label);
             $r++;
@@ -140,8 +140,8 @@ class ProjectImportController extends Controller
         // Dropdown validations for rows 2–300
         $dropdowns = [
             'B' => 'Lists!$A$1:$A$' . count(self::CASE_TYPES),
-            'C' => 'Lists!$B$1:$B$' . count(self::OFFICES),
-            'D' => 'Lists!$C$1:$C$' . count(self::SERVICES),
+            'C' => 'Lists!$B$1:$B$' . count($offices),
+            'D' => 'Lists!$C$1:$C$' . count($services),
             'O' => 'Lists!$D$1:$D$' . count(self::URGENCIES),
             'P' => 'Lists!$E$1:$E$' . count(self::STATUSES),
         ];
@@ -185,34 +185,38 @@ class ProjectImportController extends Controller
         $skipped  = 0;
         $errors   = [];
         $created  = [];
+        $offices = self::offices();
+        $services = self::services();
 
-        DB::transaction(function () use ($rows, $request, $client, &$imported, &$skipped, &$errors, &$created) {
+        DB::transaction(function () use ($rows, $request, $client, $offices, $services, &$imported, &$skipped, &$errors, &$created) {
             foreach ($rows as $i => $row) {
                 $line = $i + 2; // 1-based + header row
-                $name = trim((string) ($row['project_name'] ?? ''));
-                if ($name === '') { $skipped++; continue; }
+                $uin = strtoupper(trim((string) ($row['project_name'] ?? '')));
+                $inventionTitle = trim((string) ($row['invention_title'] ?? ''));
+                if ($uin === '' && $inventionTitle === '') { $skipped++; continue; }
 
                 $caseType = $this->pick($row, 'case_type', self::CASE_TYPES);
                 $office   = strtoupper(trim((string) ($row['patent_office_code'] ?? '')));
                 $service  = strtoupper(trim((string) ($row['service_code'] ?? '')));
 
-                if ($office && ! array_key_exists($office, self::OFFICES)) {
+                if ($office && ! array_key_exists($office, $offices)) {
                     $errors[] = "Row {$line}: unknown patent office code '{$office}' — skipped.";
                     $skipped++; continue;
                 }
-                if ($service && ! array_key_exists($service, self::SERVICES)) {
+                if ($service && ! array_key_exists($service, $services)) {
                     $errors[] = "Row {$line}: unknown service code '{$service}' — skipped.";
                     $skipped++; continue;
                 }
 
                 $validated = [
                     'client_id'           => $client->id,
-                    'project_name'        => $name,
+                    'project_name'        => $inventionTitle !== '' ? $inventionTitle : $uin,
                     'project_type'        => $caseType ? explode(' –', $caseType)[0] : 'Patent',
                     'case_type'           => $caseType,
+                    'docket_number'       => $uin !== '' ? $uin : null,
                     'patent_office_code'  => $office ?: null,
                     'service_code'        => $service ?: null,
-                    'invention_title'     => trim((string) ($row['invention_title'] ?? '')) ?: null,
+                    'invention_title'     => $inventionTitle ?: null,
                     'application_number'  => trim((string) ($row['application_number'] ?? '')) ?: null,
                     'technology_field'    => trim((string) ($row['technology_field'] ?? '')) ?: null,
                     'filing_date'          => $this->parseDate($row['filing_date'] ?? null),

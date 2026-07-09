@@ -68,7 +68,23 @@ class ClientController extends Controller
         }
 
         $suffix = strtolower(trim($nationality)) === 'india' ? 'M' : 'Y';
-        return $base . $suffix;
+        $candidate = $base . $suffix;
+
+        while (Client::withTrashed()->where('client_code', $candidate)->exists()) {
+            $letter = $base[0];
+            $num = (int) substr($base, 1, 2);
+
+            if ($num < 99) {
+                $base = $letter . str_pad($num + 1, 2, '0', STR_PAD_LEFT);
+            } else {
+                $next = chr(ord($letter) + 1);
+                $base = ($next > 'Z') ? 'C00' : $next . '00';
+            }
+
+            $candidate = $base . $suffix;
+        }
+
+        return $candidate;
     }
 
     /**
@@ -188,7 +204,10 @@ class ClientController extends Controller
         $clientType = $v['client_type'];
 
         $client = \DB::transaction(function () use ($v, $nationality, $hasGstin, $clientType, $user, $request) {
-            $v['client_code'] = $this->generateClientCode($nationality);
+            $recordMode = $v['record_mode'] ?? 'new';
+            $v['client_code'] = $recordMode === 'existing'
+                ? strtoupper(trim((string) $v['client_code']))
+                : $this->generateClientCode($nationality);
             $v['nationality'] = $nationality;
             $v['has_gstin'] = $hasGstin;
             $v['gst_type'] = $this->computeGstType($nationality, $hasGstin, $clientType);
@@ -196,6 +215,7 @@ class ClientController extends Controller
             $v['account_manager_id'] = $v['account_manager_id'] ?? $user->id;
             $v['date_onboarded'] = now()->toDateString();
             $v['status'] = $v['status'] ?? 'Active';
+            unset($v['record_mode']);
 
             $client = Client::create($v);
 

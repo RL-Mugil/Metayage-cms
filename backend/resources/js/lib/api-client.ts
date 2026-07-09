@@ -61,6 +61,27 @@ export const api = {
     }
     return this.request(`/clients${query}`);
   },
+  async getAllClients(search?: string): Promise<Client[]> {
+    const perPage = 2000
+    let page = 1
+    let allClients: Client[] = []
+
+    while (true) {
+      const params = new URLSearchParams({
+        per_page: String(perPage),
+        page: String(page),
+      })
+      if (search) params.set('search', search)
+
+      const response = await this.getClients(params)
+      allClients = allClients.concat(response.data ?? [])
+
+      if (!response.has_more || page >= response.last_page) break
+      page += 1
+    }
+
+    return allClients
+  },
   async getClient(id: number | string): Promise<Client> { return this.request(`/clients/${id}`) },
   async createClient(data: Partial<Client>): Promise<Client> {
     return this.request('/clients', { method: 'POST', body: JSON.stringify(data) })
@@ -474,6 +495,14 @@ export const api = {
   },
   async resetPortalUserPassword(clientId: number, userId: number, password: string): Promise<{ ok: boolean }> {
     return this.request(`/portal/clients/${clientId}/users/${userId}/reset-password`, { method: 'POST', body: JSON.stringify({ password }) })
+  },
+
+  // ── Project codes (custom office / service) ──
+  async getProjectCodes(type: 'office' | 'service'): Promise<{ code: string; description: string }[]> {
+    return this.request(`/project-codes?type=${type}`)
+  },
+  async addProjectCode(type: 'office' | 'service', code: string, description: string): Promise<{ code: string; description: string }> {
+    return this.request('/project-codes', { method: 'POST', body: JSON.stringify({ type, code, description }) })
   },
 
   // ── Bulk operations ──

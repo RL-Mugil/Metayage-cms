@@ -14,6 +14,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Inertia\Inertia;
+use Illuminate\Validation\ValidationException;
 
 class ProjectController extends Controller
 {
@@ -191,29 +192,91 @@ class ProjectController extends Controller
      */
     private function createProjectWithCodes(array $validated): Project
     {
-        $year = date('Y');
+        $recordMode = $validated['record_mode'] ?? 'new';
+        $manualProjectCode = strtoupper(trim((string) ($validated['project_code'] ?? '')));
+        $manualDocket = strtoupper(trim((string) ($validated['docket_number'] ?? '')));
 
-        $lastProject = Project::where('project_code', 'like', "PRJ-{$year}-%")
-            ->orderBy('project_code', 'desc')
-            ->lockForUpdate()
-            ->value('project_code');
-        $seq = $lastProject ? ((int) substr($lastProject, -5)) + 1 : 1;
-        $validated['project_code'] = sprintf('PRJ-%s-%05d', $year, $seq);
+        if ($recordMode === 'existing') {
+            if ($manualProjectCode !== '' && $manualDocket !== '' && $manualProjectCode !== $manualDocket) {
+                throw ValidationException::withMessages([
+                    'project_code' => 'Project code and UIN must be identical.',
+                    'docket_number' => 'Project code and UIN must be identical.',
+                ]);
+            }
+
+            $canonicalId = $manualProjectCode !== '' ? $manualProjectCode : $manualDocket;
+            if ($canonicalId === '') {
+                throw ValidationException::withMessages([
+                    'project_code' => 'Case ID is required.',
+                ]);
+            }
+
+            $idExists = Project::withTrashed()
+                ->lockForUpdate()
+                ->where(function ($query) use ($canonicalId) {
+                    $query->where('project_code', $canonicalId)
+                        ->orWhere('docket_number', $canonicalId);
+                })
+                ->exists();
+
+            if ($idExists) {
+                throw ValidationException::withMessages([
+                    'project_code' => 'Case ID already exists.',
+                    'docket_number' => 'Case ID already exists.',
+                ]);
+            }
+
+            $validated['project_code'] = $canonicalId;
+            $validated['docket_number'] = $canonicalId;
+        } else {
+            if ($manualProjectCode !== '' && $manualDocket !== '' && $manualProjectCode !== $manualDocket) {
+                throw ValidationException::withMessages([
+                    'project_code' => 'Project code and UIN must be identical.',
+                    'docket_number' => 'Project code and UIN must be identical.',
+                ]);
+            }
+
+            $manualCanonicalId = $manualProjectCode !== '' ? $manualProjectCode : $manualDocket;
+
+            if ($manualCanonicalId !== '') {
+                $idExists = Project::withTrashed()
+                    ->lockForUpdate()
+                    ->where(function ($query) use ($manualCanonicalId) {
+                        $query->where('project_code', $manualCanonicalId)
+                            ->orWhere('docket_number', $manualCanonicalId);
+                    })
+                    ->exists();
+
+                if ($idExists) {
+                    throw ValidationException::withMessages([
+                        'project_code' => 'Case ID already exists.',
+                        'docket_number' => 'Case ID already exists.',
+                    ]);
+                }
+
+                $validated['project_code'] = $manualCanonicalId;
+                $validated['docket_number'] = $manualCanonicalId;
+            } else {
+                $client = Client::findOrFail($validated['client_id']);
+                $clientCode = $client->client_code ?? '';
+                $maxSeq = Project::where('client_id', $client->id)
+                    ->whereNotNull('docket_number')
+                    ->lockForUpdate()
+                    ->get()
+                    ->map(fn($p) => strlen($p->docket_number) >= strlen($clientCode) + 3
+                        ? (int) substr($p->docket_number, strlen($clientCode), 3) : 0)
+                    ->max() ?? 0;
+                $docketSeq = str_pad($maxSeq + 1, 3, '0', STR_PAD_LEFT);
+                $office = strtoupper($validated['patent_office_code'] ?? '');
+                $service = strtoupper($validated['service_code'] ?? '');
+                $canonicalId = $clientCode . $docketSeq . $office . $service;
+                $validated['project_code'] = $canonicalId;
+                $validated['docket_number'] = $canonicalId;
+            }
+        }
+
         $validated['status'] = $validated['status'] ?? 'Open';
-
-        $client = Client::findOrFail($validated['client_id']);
-        $clientCode = $client->client_code ?? '';
-        $maxSeq = Project::where('client_id', $client->id)
-            ->whereNotNull('docket_number')
-            ->lockForUpdate()
-            ->get()
-            ->map(fn($p) => strlen($p->docket_number) >= strlen($clientCode) + 3
-                ? (int) substr($p->docket_number, strlen($clientCode), 3) : 0)
-            ->max() ?? 0;
-        $docketSeq = str_pad($maxSeq + 1, 3, '0', STR_PAD_LEFT);
-        $office = strtoupper($validated['patent_office_code'] ?? '');
-        $service = strtoupper($validated['service_code'] ?? '');
-        $validated['docket_number'] = $clientCode . $docketSeq . $office . $service;
+        unset($validated['record_mode']);
 
         $project = Project::create($validated);
 
