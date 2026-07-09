@@ -331,7 +331,12 @@ export default function ProjectTracker() {
       setQ("");
     }
 
+    const usedProjectIds = new Set(
+      rows.filter((r) => r.id !== row.id && r.project_id != null).map((r) => r.project_id)
+    );
+
     const filtered = trackerProjects.filter((p) => {
+      if (usedProjectIds.has(p.id)) return false;
       if (!q) return true;
       const ql = q.toLowerCase();
       return (p.docket_number || "").toLowerCase().includes(ql) ||
