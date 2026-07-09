@@ -130,8 +130,10 @@ export default function Dashboard() {
   const [drillKey, setDrillKey] = useState<DrillKey | null>(null);
 
   useEffect(() => {
+    const isAnalyst = user?.role === 'associate';
     const load = async () => {
-      const rf = roleFilter !== 'all' ? roleFilter : undefined;
+      // Only Patent Analysts get role-filtered data; all other roles see everything.
+      const rf = isAnalyst && roleFilter !== 'all' ? roleFilter : undefined;
       const projectParams = new URLSearchParams({ per_page: '500' });
       if (rf) projectParams.set('role_filter', rf);
       const [m, p, t, i] = await Promise.all([

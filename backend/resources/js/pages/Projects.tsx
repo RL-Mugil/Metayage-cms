@@ -529,7 +529,8 @@ export default function Projects() {
 
   const loadProjects = (rf: string) => {
     setLoading(true);
-    const rf_param = rf !== 'all' ? rf : undefined;
+    // Only apply role_filter for Patent Analysts; all other roles get unrestricted data.
+    const rf_param = isAnalyst && rf !== 'all' ? rf : undefined;
     api.getProjectStats(rf_param).then(setStats).catch(() => {});
     const params = new URLSearchParams({ per_page: '500' });
     if (rf_param) params.set('role_filter', rf_param);

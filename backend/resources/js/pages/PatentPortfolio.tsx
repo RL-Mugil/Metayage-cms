@@ -169,12 +169,16 @@ export default function PatentPortfolio() {
   const [sortDir, setSortDir]     = useState<"asc" | "desc">("asc");
   const [page, setPage]           = useState(1);
 
+  // Only pass role_filter to the API when the logged-in user is a Patent Analyst.
+  const isAnalyst = role === 'associate';
+  const effectiveRf = (rf?: string) => isAnalyst ? (rf ?? roleFilter) : undefined;
+
   const load = (clientId?: number | null, rf?: string) => {
     setLoading(true);
     setActiveOffice(null);
     setActiveStatus(null);
     setPage(1);
-    api.getPatentPortfolioStats(clientId ?? null, rf ?? roleFilter)
+    api.getPatentPortfolioStats(clientId ?? null, effectiveRf(rf))
       .then(setData).catch(() => {}).finally(() => setLoading(false));
   };
 
