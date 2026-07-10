@@ -151,6 +151,8 @@ export default function ProjectTracker() {
   const [memberSearch, setMemberSearch] = useState("");
   const [savingIds, setSavingIds] = useState<Set<number>>(new Set());
   const [selectPickerMenu, setSelectPickerMenu] = useState<{ rowId: number; col: string; opts: readonly string[]; rect: DOMRect } | null>(null);
+  const [pickerSearch, setPickerSearch] = useState("");
+  useEffect(() => { if (!selectPickerMenu) setPickerSearch(""); }, [selectPickerMenu]);
 
   useEffect(() => {
     let alive = true;
@@ -848,8 +850,19 @@ export default function ProjectTracker() {
             })()}
             onMouseDown={(e) => e.stopPropagation()}
           >
-            <div className="overflow-y-auto" style={{ maxHeight: 288 }}>
-              {selectPickerMenu.opts.map((s) => {
+            <div className="px-2 pt-2 pb-1 border-b border-border">
+              <input
+                autoFocus
+                type="text"
+                placeholder="Search…"
+                value={pickerSearch}
+                onChange={(e) => setPickerSearch(e.target.value)}
+                className="w-full text-[11px] px-2 py-1 rounded border border-border bg-white outline-none focus:border-blue-400 placeholder:text-gray-400"
+                onMouseDown={(e) => e.stopPropagation()}
+              />
+            </div>
+            <div className="overflow-y-auto" style={{ maxHeight: 256 }}>
+              {selectPickerMenu.opts.filter((s) => s.toLowerCase().includes(pickerSearch.toLowerCase())).map((s) => {
                 const currentRow = rows.find((r) => r.id === selectPickerMenu.rowId);
                 const isCurrent = (currentRow as any)?.[selectPickerMenu.col] === s;
                 const paymentCls: Record<string, string> = { Paid: "text-green-700 bg-green-100", Partial: "text-amber-700 bg-amber-100", Pending: "text-red-600 bg-red-50" };

@@ -674,6 +674,8 @@ export default function Projects() {
 
   const [stageMenu, setStageMenu] = useState<{ projectId: number; stages: string[]; rect: DOMRect } | null>(null);
   const [statusMenu, setStatusMenu] = useState<{ projectId: number; rect: DOMRect } | null>(null);
+  const [pickerSearch, setPickerSearch] = useState("");
+  useEffect(() => { if (!stageMenu && !statusMenu) setPickerSearch(""); }, [stageMenu, statusMenu]);
 
 
   const loadProjects = (rf: string) => {
@@ -1347,8 +1349,19 @@ export default function Projects() {
             <div className="px-3 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider border-b border-border bg-muted/30">
               Set Workflow Stage
             </div>
-            <div className="overflow-y-auto" style={{ maxHeight: 268 }}>
-              {stageMenu.stages.map((s) => {
+            <div className="px-2 pt-2 pb-1 border-b border-border">
+              <input
+                autoFocus
+                type="text"
+                placeholder="Search stages…"
+                value={pickerSearch}
+                onChange={(e) => setPickerSearch(e.target.value)}
+                className="w-full text-[11px] px-2 py-1 rounded border border-border bg-white outline-none focus:border-blue-400 placeholder:text-gray-400"
+                onMouseDown={(e) => e.stopPropagation()}
+              />
+            </div>
+            <div className="overflow-y-auto" style={{ maxHeight: 236 }}>
+              {stageMenu.stages.filter((s) => s.toLowerCase().includes(pickerSearch.toLowerCase())).map((s) => {
                 const currentProject = projects.find((p) => p.id === stageMenu.projectId);
                 const activeStage = currentProject?.stages?.find((st: any) => st.status === "In Progress")?.stage_name;
                 const isCurrent = activeStage === s;
@@ -1407,8 +1420,19 @@ export default function Projects() {
             <div className="px-3 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider border-b border-border bg-muted/30">
               Set Status
             </div>
-            <div className="overflow-y-auto" style={{ maxHeight: 188 }}>
-              {STATUSES.map((s) => {
+            <div className="px-2 pt-2 pb-1 border-b border-border">
+              <input
+                autoFocus
+                type="text"
+                placeholder="Search…"
+                value={pickerSearch}
+                onChange={(e) => setPickerSearch(e.target.value)}
+                className="w-full text-[11px] px-2 py-1 rounded border border-border bg-white outline-none focus:border-blue-400 placeholder:text-gray-400"
+                onMouseDown={(e) => e.stopPropagation()}
+              />
+            </div>
+            <div className="overflow-y-auto" style={{ maxHeight: 156 }}>
+              {STATUSES.filter((s) => s.toLowerCase().includes(pickerSearch.toLowerCase())).map((s) => {
                 const currentProject = projects.find((p) => p.id === statusMenu.projectId);
                 const isCurrent = currentProject?.status === s;
                 return (
