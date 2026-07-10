@@ -52,6 +52,8 @@ const groups = [
     label: "Overview",
     items: [
       { to: "/", title: "Dashboard", icon: LayoutDashboard },
+      { to: "/patent-portfolio", title: "Patent Portfolio", icon: Award },
+      { to: "/patent-lifecycle", title: "Patent Lifecycle", icon: GitBranch },
     ],
   },
   {
@@ -62,8 +64,6 @@ const groups = [
       { to: "/project-tracker", title: "Project Tracker", icon: TableProperties },
       { to: "/tasks", title: "Tasks", icon: ListChecks },
       { to: "/calendar", title: "Calendar", icon: CalendarDays },
-      { to: "/patent-portfolio", title: "Patent Portfolio", icon: Award },
-      { to: "/patent-lifecycle", title: "Patent Lifecycle", icon: GitBranch },
     ],
   },
   {

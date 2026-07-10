@@ -1,6 +1,7 @@
 import { Head, usePage } from "@inertiajs/react";
 import { useEffect, useState } from "react";
-import { Users, Plus, X, Loader2, Trash2, KeyRound, Pencil, Search, ShieldCheck, CheckCircle } from "lucide-react";
+import { createPortal } from "react-dom";
+import { Users, Plus, X, Loader2, Trash2, KeyRound, Pencil, Search, ShieldCheck, CheckCircle, Ban, ShieldOff } from "lucide-react";
 import AppLayout from "@/layouts/AppLayout";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -60,6 +61,12 @@ export default function StaffUsers() {
   // Delete confirm
   const [delTarget, setDelTarget] = useState<StaffUser | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  // Inline pickers
+  const [roleMenu, setRoleMenu] = useState<{ userId: number; rect: DOMRect } | null>(null);
+  const [statusMenu, setStatusMenu] = useState<{ userId: number; rect: DOMRect } | null>(null);
+  const [pickerSearch, setPickerSearch] = useState("");
+  useEffect(() => { if (!roleMenu && !statusMenu) setPickerSearch(""); }, [roleMenu, statusMenu]);
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(""), 3500); };
 
@@ -134,6 +141,12 @@ export default function StaffUsers() {
       setError(e?.message || "Failed to delete user.");
       setDelTarget(null);
     } finally { setDeleting(false); }
+  }
+
+  async function quickUpdate(userId: number, patch: Partial<{ role: string; status: string }>) {
+    setUsers((prev) => prev.map((u) => u.id === userId ? { ...u, ...patch } : u));
+    try { await api.updateStaffUser(userId, patch); }
+    catch { load(); }
   }
 
   if (!isAdmin) {
@@ -303,12 +316,27 @@ export default function StaffUsers() {
                       </td>
                       <td className="px-4 py-3 text-muted-foreground">{u.email}</td>
                       <td className="px-4 py-3">
-                        <span className={`px-2 py-0.5 rounded text-[11px] font-medium border ${ROLE_COLOR[u.role] ?? "bg-muted text-muted-foreground"}`}>
+                        <button
+                          title="Click to change role"
+                          onClick={(e) => { e.stopPropagation(); const rect = (e.currentTarget as HTMLElement).getBoundingClientRect(); setRoleMenu({ userId: u.id, rect }); }}
+                          className={`px-2 py-0.5 rounded text-[11px] font-medium border cursor-pointer hover:opacity-80 transition-opacity ${ROLE_COLOR[u.role] ?? "bg-muted text-muted-foreground"}`}
+                        >
                           {ROLE_LABEL[u.role] ?? u.role}
-                        </span>
+                        </button>
                       </td>
                       <td className="px-4 py-3">
-                        <Badge variant={u.status === "Active" ? "default" : "outline"} className="text-[10px]">{u.status}</Badge>
+                        <button
+                          title="Click to change status"
+                          onClick={(e) => { e.stopPropagation(); const rect = (e.currentTarget as HTMLElement).getBoundingClientRect(); setStatusMenu({ userId: u.id, rect }); }}
+                          className="cursor-pointer hover:opacity-80 transition-opacity"
+                        >
+                          <Badge
+                            variant={u.status === "Active" ? "default" : "outline"}
+                            className={`text-[10px] ${u.status === "Suspended" ? "border-red-400 text-red-500" : u.status === "Inactive" ? "border-muted text-muted-foreground" : ""}`}
+                          >
+                            {u.status}
+                          </Badge>
+                        </button>
                       </td>
                       <td className="px-4 py-3 text-muted-foreground text-xs font-mono">
                         {u.created_at ? new Date(u.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "—"}
@@ -322,6 +350,15 @@ export default function StaffUsers() {
                             onClick={() => { setPwTarget(u); setNewPw(""); setPwError(""); }}>
                             <KeyRound className="h-3.5 w-3.5 text-amber-500" />
                           </Button>
+                          {u.id !== myId && (
+                            <Button variant="ghost" size="sm" className="h-8 w-8 p-0"
+                              title={u.status === "Suspended" ? "Unsuspend (set Active)" : "Suspend"}
+                              onClick={() => quickUpdate(u.id, { status: u.status === "Suspended" ? "Active" : "Suspended" })}>
+                              {u.status === "Suspended"
+                                ? <ShieldOff className="h-3.5 w-3.5 text-green-500" />
+                                : <Ban className="h-3.5 w-3.5 text-orange-400" />}
+                            </Button>
+                          )}
                           {u.id !== myId && (
                             <Button variant="ghost" size="sm" className="h-8 w-8 p-0" title="Delete" onClick={() => setDelTarget(u)}>
                               <Trash2 className="h-3.5 w-3.5 text-red-400" />
@@ -340,6 +377,99 @@ export default function StaffUsers() {
           </CardContent>
         </Card>
       </div>
+      {/* ── Role picker portal ──────────────────────────────────────────────── */}
+      {roleMenu && createPortal(
+        <>
+          <div className="fixed inset-0 z-[9998]" onMouseDown={() => setRoleMenu(null)} />
+          <div
+            className="z-[9999] bg-white rounded-lg shadow-xl border border-border py-1"
+            style={(() => {
+              const MENU_H = 300;
+              const { rect } = roleMenu;
+              const spaceBelow = window.innerHeight - rect.bottom;
+              const openUp = spaceBelow < MENU_H && rect.top > spaceBelow;
+              return openUp
+                ? { position: "fixed" as const, bottom: window.innerHeight - rect.top + 4, left: rect.left, minWidth: Math.max(rect.width, 180) }
+                : { position: "fixed" as const, top: rect.bottom + 4, left: rect.left, minWidth: Math.max(rect.width, 180) };
+            })()}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <div className="px-2 pt-2 pb-1 border-b border-border">
+              <input autoFocus type="text" placeholder="Search role…" value={pickerSearch}
+                onChange={(e) => setPickerSearch(e.target.value)}
+                className="w-full text-[11px] px-2 py-1 rounded border border-border bg-white outline-none focus:border-blue-400 placeholder:text-gray-400"
+                onMouseDown={(e) => e.stopPropagation()} />
+            </div>
+            <div className="overflow-y-auto" style={{ maxHeight: 256 }}>
+              {STAFF_ROLES.filter((r) => (ROLE_LABEL[r] ?? r).toLowerCase().includes(pickerSearch.toLowerCase())).map((r) => {
+                const current = users.find((u) => u.id === roleMenu.userId)?.role;
+                const isCurrent = current === r;
+                return (
+                  <button key={r}
+                    className={`w-full text-left px-3 py-2 text-[12px] flex items-center gap-2 hover:bg-blue-50 transition-colors ${isCurrent ? "bg-blue-50 font-medium text-blue-700" : "text-gray-700"}`}
+                    onMouseDown={async (e) => {
+                      e.preventDefault();
+                      const uid = roleMenu.userId;
+                      setRoleMenu(null);
+                      await quickUpdate(uid, { role: r });
+                    }}
+                  >
+                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium border ${ROLE_COLOR[r] ?? "bg-muted"}`}>{ROLE_LABEL[r] ?? r}</span>
+                    {isCurrent && <span className="ml-auto text-blue-500">✓</span>}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </>,
+        document.body
+      )}
+
+      {/* ── Status picker portal ─────────────────────────────────────────────── */}
+      {statusMenu && createPortal(
+        <>
+          <div className="fixed inset-0 z-[9998]" onMouseDown={() => setStatusMenu(null)} />
+          <div
+            className="z-[9999] bg-white rounded-lg shadow-xl border border-border py-1"
+            style={(() => {
+              const MENU_H = 160;
+              const { rect } = statusMenu;
+              const spaceBelow = window.innerHeight - rect.bottom;
+              const openUp = spaceBelow < MENU_H && rect.top > spaceBelow;
+              return openUp
+                ? { position: "fixed" as const, bottom: window.innerHeight - rect.top + 4, left: rect.left, minWidth: Math.max(rect.width, 140) }
+                : { position: "fixed" as const, top: rect.bottom + 4, left: rect.left, minWidth: Math.max(rect.width, 140) };
+            })()}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <div className="px-3 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider border-b border-border bg-muted/30">
+              Set Status
+            </div>
+            <div className="overflow-y-auto" style={{ maxHeight: 120 }}>
+              {(["Active", "Suspended", "Inactive"] as const).map((s) => {
+                const current = users.find((u) => u.id === statusMenu.userId)?.status;
+                const isCurrent = current === s;
+                const cls = s === "Active" ? "text-green-700" : s === "Suspended" ? "text-red-500" : "text-muted-foreground";
+                return (
+                  <button key={s}
+                    className={`w-full text-left px-3 py-2 text-[12px] flex items-center gap-2 hover:bg-blue-50 transition-colors ${isCurrent ? "bg-blue-50 font-medium text-blue-700" : cls}`}
+                    onMouseDown={async (e) => {
+                      e.preventDefault();
+                      const uid = statusMenu.userId;
+                      setStatusMenu(null);
+                      await quickUpdate(uid, { status: s });
+                    }}
+                  >
+                    {s}
+                    {isCurrent && <span className="ml-auto text-blue-500">✓</span>}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </>,
+        document.body
+      )}
     </AppLayout>
   );
 }
