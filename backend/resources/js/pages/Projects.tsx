@@ -1420,19 +1420,8 @@ export default function Projects() {
             <div className="px-3 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider border-b border-border bg-muted/30">
               Set Status
             </div>
-            <div className="px-2 pt-2 pb-1 border-b border-border">
-              <input
-                autoFocus
-                type="text"
-                placeholder="Search…"
-                value={pickerSearch}
-                onChange={(e) => setPickerSearch(e.target.value)}
-                className="w-full text-[11px] px-2 py-1 rounded border border-border bg-white outline-none focus:border-blue-400 placeholder:text-gray-400"
-                onMouseDown={(e) => e.stopPropagation()}
-              />
-            </div>
-            <div className="overflow-y-auto" style={{ maxHeight: 156 }}>
-              {STATUSES.filter((s) => s.toLowerCase().includes(pickerSearch.toLowerCase())).map((s) => {
+            <div className="overflow-y-auto" style={{ maxHeight: 188 }}>
+              {STATUSES.map((s) => {
                 const currentProject = projects.find((p) => p.id === statusMenu.projectId);
                 const isCurrent = currentProject?.status === s;
                 return (

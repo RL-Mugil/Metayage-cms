@@ -345,7 +345,7 @@ export default function ProjectTracker() {
       return (p.docket_number || "").toLowerCase().includes(ql) ||
         p.project_code.toLowerCase().includes(ql) ||
         (p.client_name || "").toLowerCase().includes(ql);
-    }).slice(0, 25);
+    });
 
     return (
       <>
@@ -380,7 +380,15 @@ export default function ProjectTracker() {
             <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
             <div
               className="fixed z-50 bg-white border border-[#ccc] rounded-lg shadow-2xl overflow-hidden"
-              style={{ left: rect.left, top: rect.bottom + 2, width: Math.max(rect.width, 300) }}
+              style={(() => {
+                const MENU_H = 320;
+                const spaceBelow = window.innerHeight - rect.bottom;
+                const openUp = spaceBelow < MENU_H && rect.top > spaceBelow;
+                const w = Math.max(rect.width, 300);
+                return openUp
+                  ? { left: rect.left, bottom: window.innerHeight - rect.top + 2, width: w }
+                  : { left: rect.left, top: rect.bottom + 2, width: w };
+              })()}
             >
               <div className="p-2 border-b border-[#e5e5e5] bg-[#f8f8f8]">
                 <div className="relative">
@@ -395,7 +403,7 @@ export default function ProjectTracker() {
                   />
                 </div>
               </div>
-              <div className="max-h-56 overflow-y-auto">
+              <div className="overflow-y-auto" style={{ maxHeight: 288 }}>
                 {row.docket_number && (
                   <div
                     className="px-3 py-2 text-[11px] text-red-500 hover:bg-red-50 cursor-pointer border-b border-[#f0f0f0] flex items-center gap-1.5"
@@ -850,19 +858,21 @@ export default function ProjectTracker() {
             })()}
             onMouseDown={(e) => e.stopPropagation()}
           >
-            <div className="px-2 pt-2 pb-1 border-b border-border">
-              <input
-                autoFocus
-                type="text"
-                placeholder="Search…"
-                value={pickerSearch}
-                onChange={(e) => setPickerSearch(e.target.value)}
-                className="w-full text-[11px] px-2 py-1 rounded border border-border bg-white outline-none focus:border-blue-400 placeholder:text-gray-400"
-                onMouseDown={(e) => e.stopPropagation()}
-              />
-            </div>
-            <div className="overflow-y-auto" style={{ maxHeight: 256 }}>
-              {selectPickerMenu.opts.filter((s) => s.toLowerCase().includes(pickerSearch.toLowerCase())).map((s) => {
+            {selectPickerMenu.col === "status" && (
+              <div className="px-2 pt-2 pb-1 border-b border-border">
+                <input
+                  autoFocus
+                  type="text"
+                  placeholder="Search…"
+                  value={pickerSearch}
+                  onChange={(e) => setPickerSearch(e.target.value)}
+                  className="w-full text-[11px] px-2 py-1 rounded border border-border bg-white outline-none focus:border-blue-400 placeholder:text-gray-400"
+                  onMouseDown={(e) => e.stopPropagation()}
+                />
+              </div>
+            )}
+            <div className="overflow-y-auto" style={{ maxHeight: selectPickerMenu.col === "status" ? 256 : 288 }}>
+              {selectPickerMenu.opts.filter((s) => selectPickerMenu.col === "status" ? s.toLowerCase().includes(pickerSearch.toLowerCase()) : true).map((s) => {
                 const currentRow = rows.find((r) => r.id === selectPickerMenu.rowId);
                 const isCurrent = (currentRow as any)?.[selectPickerMenu.col] === s;
                 const paymentCls: Record<string, string> = { Paid: "text-green-700 bg-green-100", Partial: "text-amber-700 bg-amber-100", Pending: "text-red-600 bg-red-50" };
