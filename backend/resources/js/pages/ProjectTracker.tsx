@@ -150,6 +150,7 @@ export default function ProjectTracker() {
   const [showMembers, setShowMembers] = useState(false);
   const [memberSearch, setMemberSearch] = useState("");
   const [savingIds, setSavingIds] = useState<Set<number>>(new Set());
+  const [statusPickerMenu, setStatusPickerMenu] = useState<{ rowId: number; rect: DOMRect } | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -525,7 +526,15 @@ export default function ProjectTracker() {
     return (
       <td className={`${tdBase} hover:bg-blue-50/40 cursor-cell transition-colors`}
         style={{ minWidth: w, width: w }}
-        onClick={() => { setActiveCell({ rowId: row.id, col }); setEditVal(strVal); }}
+        onClick={(e) => {
+          if (col === "status") {
+            const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+            setStatusPickerMenu({ rowId: row.id, rect });
+          } else {
+            setActiveCell({ rowId: row.id, col });
+            setEditVal(strVal);
+          }
+        }}
       >
         <div className="px-2 py-1.5 overflow-hidden whitespace-nowrap">{content}</div>
       </td>
@@ -820,6 +829,50 @@ export default function ProjectTracker() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ── Status picker portal ─────────────────────────────────────────────── */}
+      {statusPickerMenu && createPortal(
+        <>
+          <div className="fixed inset-0 z-[9998]" onMouseDown={() => setStatusPickerMenu(null)} />
+          <div
+            className="z-[9999] bg-white rounded-lg shadow-xl border border-border py-1 w-56"
+            style={(() => {
+              const MENU_H = 320;
+              const { rect } = statusPickerMenu;
+              const spaceBelow = window.innerHeight - rect.bottom;
+              const openUp = spaceBelow < MENU_H && rect.top > spaceBelow;
+              return openUp
+                ? { position: "fixed" as const, bottom: window.innerHeight - rect.top + 4, left: rect.left, minWidth: rect.width }
+                : { position: "fixed" as const, top: rect.bottom + 4, left: rect.left, minWidth: rect.width };
+            })()}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <div className="overflow-y-auto" style={{ maxHeight: 288 }}>
+              {STATUSES.map((s) => {
+                const dot = STATUS_DOT[s] ?? "bg-gray-400";
+                const currentRow = rows.find((r) => r.id === statusPickerMenu.rowId);
+                const isCurrent = currentRow?.status === s;
+                return (
+                  <button
+                    key={s}
+                    className={`w-full text-left px-3 py-1.5 text-[11px] flex items-center gap-2 hover:bg-blue-50 transition-colors ${isCurrent ? "bg-blue-50 font-medium text-blue-700" : "text-gray-700"}`}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      commitCell(statusPickerMenu.rowId, "status", s);
+                      setStatusPickerMenu(null);
+                    }}
+                  >
+                    <span className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${dot}`} />
+                    {s}
+                    {isCurrent && <span className="ml-auto text-blue-500">✓</span>}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </>,
+        document.body
       )}
     </AppLayout>
   );
