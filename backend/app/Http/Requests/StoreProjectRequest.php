@@ -41,6 +41,7 @@ class StoreProjectRequest extends FormRequest
             'full_payment_date'     => 'nullable|date',
             'urgency'               => 'nullable|string',
             'notes'                 => 'nullable|string',
+            'circle'                => 'nullable|in:A,B',
         ];
     }
 }

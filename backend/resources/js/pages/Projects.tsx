@@ -454,7 +454,7 @@ interface PF {
   urgency: string; status: string;
   assigned_partner_id: string; assigned_manager_id: string;
   secondary_manager_id: string; patent_engineer_id: string;
-  notes: string;
+  notes: string; circle: string;
 }
 
 const BLANK: PF = {
@@ -468,7 +468,7 @@ const BLANK: PF = {
   urgency: "Normal", status: "Open",
   assigned_partner_id: "", assigned_manager_id: "",
   secondary_manager_id: "", patent_engineer_id: "",
-  notes: "",
+  notes: "", circle: "",
 };
 
 // ── KPI ───────────────────────────────────────────────────────────────────────
@@ -775,6 +775,7 @@ export default function Projects() {
       secondary_manager_id:  p.secondary_manager_id ? String(p.secondary_manager_id) : "",
       patent_engineer_id:    p.patent_engineer_id   ? String(p.patent_engineer_id) : "",
       notes:               p.notes                 ?? "",
+      circle:              p.circle                ?? "",
     });
     setEditProj(p); setSaveErr(""); setShowModal(true);
   }
@@ -799,6 +800,7 @@ export default function Projects() {
         secondary_manager_id: form.secondary_manager_id ? parseInt(form.secondary_manager_id) : null,
         patent_engineer_id:   form.patent_engineer_id   ? parseInt(form.patent_engineer_id)   : null,
         project_type: form.case_type,
+        circle: form.circle || null,
       };
       if (editProj) {
         const { record_mode, project_code, docket_number, ...updatePayload } = payload;
@@ -1159,6 +1161,25 @@ export default function Projects() {
                     <select value={form.case_type} onChange={(e) => sf("case_type", e.target.value)} className={ic}>
                       {CASE_TYPES.map((t) => <option key={t}>{t}</option>)}
                     </select>
+                  </div>
+                  <div>
+                    <Lbl>Circle</Lbl>
+                    <div className="flex gap-2 mt-0.5">
+                      {["A", "B"].map((c) => (
+                        <button
+                          key={c}
+                          type="button"
+                          onClick={() => sf("circle", form.circle === c ? "" : c)}
+                          className={`flex-1 py-1.5 rounded-md text-sm font-semibold border transition-colors ${
+                            form.circle === c
+                              ? c === "A" ? "bg-blue-600 text-white border-blue-600" : "bg-violet-600 text-white border-violet-600"
+                              : "border-border text-muted-foreground hover:bg-muted/40"
+                          }`}
+                        >
+                          Circle {c}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                   <div>
                     <Lbl>Application Number</Lbl>
@@ -1530,6 +1551,7 @@ export default function Projects() {
                       </th>
                       <th className="px-4 py-3 text-left">Case ID</th>
                       <th className="px-4 py-3 text-left">Patent Title</th>
+                      <th className="px-4 py-3 text-left">Circle</th>
                       <th className="px-4 py-3 text-left">Country</th>
                       <th className="px-4 py-3 text-left">Filed</th>
                       <th className="px-4 py-3 text-left">Status</th>
@@ -1564,6 +1586,24 @@ export default function Projects() {
                             {p.invention_title && (
                               <div className="text-xs text-muted-foreground truncate">{p.invention_title}</div>
                             )}
+                          </td>
+                          <td className="px-4 py-3">
+                            <button
+                              title="Toggle circle (A / B)"
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                const next = p.circle === "A" ? "B" : p.circle === "B" ? null : "A";
+                                setProjects((prev) => prev.map((x) => x.id === p.id ? { ...x, circle: next } : x));
+                                try { await api.updateProject(p.id, { circle: next } as any); } catch {}
+                              }}
+                              className={`text-[11px] font-bold w-7 h-7 rounded-full border-2 flex items-center justify-center transition-colors ${
+                                p.circle === "A" ? "bg-blue-600 text-white border-blue-600 hover:bg-blue-700" :
+                                p.circle === "B" ? "bg-violet-600 text-white border-violet-600 hover:bg-violet-700" :
+                                "border-dashed border-border text-muted-foreground hover:border-blue-400 hover:text-blue-500"
+                              }`}
+                            >
+                              {p.circle ?? "—"}
+                            </button>
                           </td>
                           <td className="px-4 py-3">
                             {p.patent_office_code

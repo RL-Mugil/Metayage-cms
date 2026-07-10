@@ -160,7 +160,7 @@ export default function ProjectTracker() {
     Promise.all([
       api.getTrackerCircles(),
       api.getUsers(),
-      api.getTrackerProjects(),
+      api.getTrackerProjects(activeCircle.toUpperCase()),
     ]).then(async ([circlesData, usersData, projectsData]) => {
       if (!alive) return;
       setCircles(circlesData as unknown as CircleInfo[]);

@@ -268,8 +268,12 @@ export const api = {
   async dismissNotification(id: number | string): Promise<{ message: string }> { return this.request(`/notifications/${id}`, { method: 'DELETE' }) },
 
   // ── Project Tracker ──
-  async getTrackerProjects(q?: string): Promise<Project[]> {
-    return this.request(`/tracker/projects${q ? `?q=${encodeURIComponent(q)}` : ''}`)
+  async getTrackerProjects(circle?: string, q?: string): Promise<Project[]> {
+    const params = new URLSearchParams();
+    if (circle) params.set('circle', circle);
+    if (q) params.set('q', q);
+    const qs = params.toString();
+    return this.request(`/tracker/projects${qs ? `?${qs}` : ''}`)
   },
   async getTrackerCircles(): Promise<Record<string, unknown>[]> { return this.request('/tracker/circles') },
   async getTrackerRows(circle: string): Promise<Record<string, unknown>[]> {

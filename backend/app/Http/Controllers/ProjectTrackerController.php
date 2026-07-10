@@ -108,9 +108,15 @@ class ProjectTrackerController extends Controller implements HasMiddleware
     // Lightweight project list for docket combobox
     public function projects(Request $request)
     {
-        $q = $request->q ?? '';
+        $q      = $request->q ?? '';
+        $circle = $request->circle ? strtoupper($request->circle) : null;
+
         $query = Project::with(['client:id,company_name', 'partner:id,name', 'manager:id,name', 'secondaryManager:id,name', 'patentEngineer:id,name'])
             ->whereNull('deleted_at');
+
+        if ($circle) {
+            $query->where('circle', $circle);
+        }
 
         if ($q) {
             $ql = strtolower($q);
@@ -123,7 +129,6 @@ class ProjectTrackerController extends Controller implements HasMiddleware
 
         return response()->json(
             $query->orderBy('created_at', 'desc')
-                ->limit(100)
                 ->get()
                 ->map(fn ($p) => [
                     'id'             => $p->id,
@@ -139,6 +144,7 @@ class ProjectTrackerController extends Controller implements HasMiddleware
                     'start_date'     => $p->start_date?->toDateString(),
                     'hard_deadline'  => $p->hard_deadline?->toDateString(),
                     'record_type'    => $p->case_type,
+                    'circle'         => $p->circle,
                 ])
         );
     }
