@@ -673,13 +673,14 @@ export default function Projects() {
   const [bulkAction, setBulkAction]   = useState("");
 
   const [stageMenu, setStageMenu] = useState<{ projectId: number; stages: string[]; rect: DOMRect } | null>(null);
+  const [statusMenu, setStatusMenu] = useState<{ projectId: number; rect: DOMRect } | null>(null);
 
   useEffect(() => {
-    if (!stageMenu) return;
-    const close = () => setStageMenu(null);
+    if (!stageMenu && !statusMenu) return;
+    const close = () => { setStageMenu(null); setStatusMenu(null); };
     window.addEventListener("click", close);
     return () => window.removeEventListener("click", close);
-  }, [stageMenu]);
+  }, [stageMenu, statusMenu]);
 
   const loadProjects = (rf: string) => {
     setLoading(true);
@@ -1333,43 +1334,89 @@ export default function Projects() {
 
       {/* ── Stage Picker Portal ────────────────────────────────────────────── */}
       {stageMenu && createPortal(
-        <div
-          style={{ position: "fixed", top: stageMenu.rect.bottom + 4, left: stageMenu.rect.left, zIndex: 9999, minWidth: 160 }}
-          className="bg-background border border-border rounded-md shadow-2xl overflow-hidden"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="px-3 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider border-b border-border bg-muted/30">
-            Set Workflow Stage
-          </div>
-          {stageMenu.stages.map((s) => (
-            <button
-              key={s}
-              className="w-full text-left px-3 py-2 text-sm hover:bg-muted/40 transition-colors"
-              onClick={async () => {
-                const pid = stageMenu.projectId;
-                setStageMenu(null);
-                try {
-                  await api.updateProjectStage(pid, s);
-                } catch {}
-                setProjects((prev) => prev.map((p) => {
-                  if (p.id !== pid) return p;
-                  const existing = p.stages ?? PIPELINE_STAGES.map((name: string, i: number) => ({
-                    stage_name: name, status: "Pending", sequence_order: i,
-                  }));
-                  return {
-                    ...p,
-                    stages: existing.map((st: any) => ({
-                      ...st,
-                      status: st.stage_name === s ? "In Progress" : "Pending",
-                    })),
-                  };
-                }));
-              }}
+        (() => {
+          const MENU_H = 300;
+          const spaceBelow = window.innerHeight - stageMenu.rect.bottom;
+          const openUp = spaceBelow < MENU_H && stageMenu.rect.top > spaceBelow;
+          const posStyle: React.CSSProperties = openUp
+            ? { position: "fixed", bottom: window.innerHeight - stageMenu.rect.top + 4, left: stageMenu.rect.left, zIndex: 9999, minWidth: 220 }
+            : { position: "fixed", top: stageMenu.rect.bottom + 4, left: stageMenu.rect.left, zIndex: 9999, minWidth: 220 };
+          return (
+            <div style={posStyle}
+              className="bg-background border border-border rounded-md shadow-2xl overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
             >
-              {s}
-            </button>
-          ))}
-        </div>,
+              <div className="px-3 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider border-b border-border bg-muted/30">
+                Set Workflow Stage
+              </div>
+              <div className="overflow-y-auto" style={{ maxHeight: MENU_H - 32 }}>
+                {stageMenu.stages.map((s) => (
+                  <button
+                    key={s}
+                    className="w-full text-left px-3 py-2 text-sm hover:bg-muted/40 transition-colors"
+                    onClick={async () => {
+                      const pid = stageMenu.projectId;
+                      setStageMenu(null);
+                      try { await api.updateProjectStage(pid, s); } catch {}
+                      setProjects((prev) => prev.map((p) => {
+                        if (p.id !== pid) return p;
+                        const existing = p.stages ?? PIPELINE_STAGES.map((name: string, i: number) => ({
+                          stage_name: name, status: "Pending", sequence_order: i,
+                        }));
+                        return {
+                          ...p,
+                          stages: existing.map((st: any) => ({
+                            ...st,
+                            status: st.stage_name === s ? "In Progress" : "Pending",
+                          })),
+                        };
+                      }));
+                    }}
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </div>
+          );
+        })(),
+        document.body
+      )}
+
+      {/* ── Status Picker Portal ───────────────────────────────────────────── */}
+      {statusMenu && createPortal(
+        (() => {
+          const MENU_H = 220;
+          const spaceBelow = window.innerHeight - statusMenu.rect.bottom;
+          const openUp = spaceBelow < MENU_H && statusMenu.rect.top > spaceBelow;
+          const posStyle: React.CSSProperties = openUp
+            ? { position: "fixed", bottom: window.innerHeight - statusMenu.rect.top + 4, left: statusMenu.rect.left, zIndex: 9999, minWidth: 160 }
+            : { position: "fixed", top: statusMenu.rect.bottom + 4, left: statusMenu.rect.left, zIndex: 9999, minWidth: 160 };
+          return (
+            <div style={posStyle}
+              className="bg-background border border-border rounded-md shadow-2xl overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="px-3 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider border-b border-border bg-muted/30">
+                Set Status
+              </div>
+              {STATUSES.filter((s) => s !== "Completed").concat(["Completed"]).map((s) => (
+                <button
+                  key={s}
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-muted/40 transition-colors"
+                  onClick={async () => {
+                    const pid = statusMenu.projectId;
+                    setStatusMenu(null);
+                    try { await api.updateProject(pid, { status: s } as any); } catch {}
+                    setProjects((prev) => prev.map((p) => p.id === pid ? { ...p, status: s } : p));
+                  }}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          );
+        })(),
         document.body
       )}
 
@@ -1500,9 +1547,18 @@ export default function Projects() {
                             {fmtDate(p.filing_date)}
                           </td>
                           <td className="px-4 py-3">
-                            <Badge variant={statusColor(p.status)} className="text-[10px] whitespace-nowrap">
-                              {p.status}
-                            </Badge>
+                            <button
+                              title="Click to change status"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                                setStatusMenu({ projectId: p.id, rect });
+                              }}
+                            >
+                              <Badge variant={statusColor(p.status)} className="text-[10px] whitespace-nowrap cursor-pointer hover:opacity-80 transition-opacity">
+                                {p.status}
+                              </Badge>
+                            </button>
                           </td>
                           <td className="px-4 py-3">
                             <button
