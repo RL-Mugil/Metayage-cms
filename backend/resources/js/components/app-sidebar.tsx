@@ -106,14 +106,14 @@ const groups = [
   {
     label: "HRMS",
     items: [
-      { to: "/hrms", title: "HR Overview", icon: IdCard },
-      { to: "/hrms/employees", title: "Employees", icon: Users },
-      { to: "/hrms/attendance", title: "Attendance", icon: CalendarDays },
-      { to: "/hrms/leave", title: "Leave", icon: ListChecks },
-      { to: "/hrms/payroll", title: "Payroll", icon: Wallet },
-      { to: "/hrms/performance", title: "Performance", icon: BarChart3 },
-      { to: "/hrms/recruitment", title: "Recruitment", icon: Briefcase },
-      { to: "/hrms/offboarding", title: "Offboarding", icon: Scale },
+      { to: "/hrms",             title: "HR Overview",  icon: IdCard },
+      { to: "/hrms/attendance",  title: "Attendance",   icon: CalendarDays },
+      { to: "/hrms/leave",       title: "Leave",        icon: ListChecks },
+      { to: "/hrms/employees",   title: "Employees",    icon: Users,       roles: ["super_admin","partner","hr","finance"] },
+      { to: "/hrms/payroll",     title: "Payroll",      icon: Wallet,      roles: ["super_admin","partner","hr","finance"] },
+      { to: "/hrms/performance", title: "Performance",  icon: BarChart3,   roles: ["super_admin","partner","hr","finance"] },
+      { to: "/hrms/recruitment", title: "Recruitment",  icon: Briefcase,   roles: ["super_admin","partner","hr","finance"] },
+      { to: "/hrms/offboarding", title: "Offboarding",  icon: Scale,       roles: ["super_admin","partner","hr","finance"] },
     ],
   },
 ];
@@ -172,7 +172,11 @@ export function AppSidebar() {
               </SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu>
-                  {g.items.filter((it: any) => !it.adminOnly || user?.role === "super_admin").map((it) => (
+                  {g.items.filter((it: any) => {
+                    if (it.adminOnly && user?.role !== "super_admin") return false;
+                    if (it.roles && !it.roles.includes(user?.role)) return false;
+                    return true;
+                  }).map((it) => (
                     <SidebarMenuItem key={it.to}>
                       <SidebarMenuButton asChild isActive={isActive(it.to)} tooltip={it.title}>
                         <Link href={it.to}>
