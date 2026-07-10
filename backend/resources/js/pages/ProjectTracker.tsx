@@ -150,7 +150,7 @@ export default function ProjectTracker() {
   const [showMembers, setShowMembers] = useState(false);
   const [memberSearch, setMemberSearch] = useState("");
   const [savingIds, setSavingIds] = useState<Set<number>>(new Set());
-  const [statusPickerMenu, setStatusPickerMenu] = useState<{ rowId: number; rect: DOMRect } | null>(null);
+  const [selectPickerMenu, setSelectPickerMenu] = useState<{ rowId: number; col: string; opts: readonly string[]; rect: DOMRect } | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -527,9 +527,9 @@ export default function ProjectTracker() {
       <td className={`${tdBase} hover:bg-blue-50/40 cursor-cell transition-colors`}
         style={{ minWidth: w, width: w }}
         onClick={(e) => {
-          if (col === "status") {
+          if (type === "select" && opts) {
             const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-            setStatusPickerMenu({ rowId: row.id, rect });
+            setSelectPickerMenu({ rowId: row.id, col, opts, rect });
           } else {
             setActiveCell({ rowId: row.id, col });
             setEditVal(strVal);
@@ -831,15 +831,15 @@ export default function ProjectTracker() {
         </div>
       )}
 
-      {/* ── Status picker portal ─────────────────────────────────────────────── */}
-      {statusPickerMenu && createPortal(
+      {/* ── Generic select picker portal (status / payment_status / record_type) ── */}
+      {selectPickerMenu && createPortal(
         <>
-          <div className="fixed inset-0 z-[9998]" onMouseDown={() => setStatusPickerMenu(null)} />
+          <div className="fixed inset-0 z-[9998]" onMouseDown={() => setSelectPickerMenu(null)} />
           <div
-            className="z-[9999] bg-white rounded-lg shadow-xl border border-border py-1 w-56"
+            className="z-[9999] bg-white rounded-lg shadow-xl border border-border py-1"
             style={(() => {
               const MENU_H = 320;
-              const { rect } = statusPickerMenu;
+              const { rect } = selectPickerMenu;
               const spaceBelow = window.innerHeight - rect.bottom;
               const openUp = spaceBelow < MENU_H && rect.top > spaceBelow;
               return openUp
@@ -849,22 +849,28 @@ export default function ProjectTracker() {
             onMouseDown={(e) => e.stopPropagation()}
           >
             <div className="overflow-y-auto" style={{ maxHeight: 288 }}>
-              {STATUSES.map((s) => {
-                const dot = STATUS_DOT[s] ?? "bg-gray-400";
-                const currentRow = rows.find((r) => r.id === statusPickerMenu.rowId);
-                const isCurrent = currentRow?.status === s;
+              {selectPickerMenu.opts.map((s) => {
+                const currentRow = rows.find((r) => r.id === selectPickerMenu.rowId);
+                const isCurrent = (currentRow as any)?.[selectPickerMenu.col] === s;
+                const paymentCls: Record<string, string> = { Paid: "text-green-700 bg-green-100", Partial: "text-amber-700 bg-amber-100", Pending: "text-red-600 bg-red-50" };
                 return (
                   <button
                     key={s}
                     className={`w-full text-left px-3 py-1.5 text-[11px] flex items-center gap-2 hover:bg-blue-50 transition-colors ${isCurrent ? "bg-blue-50 font-medium text-blue-700" : "text-gray-700"}`}
                     onMouseDown={(e) => {
                       e.preventDefault();
-                      commitCell(statusPickerMenu.rowId, "status", s);
-                      setStatusPickerMenu(null);
+                      commitCell(selectPickerMenu.rowId, selectPickerMenu.col, s);
+                      setSelectPickerMenu(null);
                     }}
                   >
-                    <span className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${dot}`} />
-                    {s}
+                    {selectPickerMenu.col === "status" && (
+                      <span className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${STATUS_DOT[s] ?? "bg-gray-400"}`} />
+                    )}
+                    {selectPickerMenu.col === "payment_status" ? (
+                      <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${paymentCls[s] ?? ""}`}>{s}</span>
+                    ) : (
+                      <span>{s}</span>
+                    )}
                     {isCurrent && <span className="ml-auto text-blue-500">✓</span>}
                   </button>
                 );
