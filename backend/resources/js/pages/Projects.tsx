@@ -651,6 +651,7 @@ export default function Projects() {
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState("");
   const [importResult, setImportResult] = useState<{ imported: number; skipped: number; errors: string[]; dockets: string[]; client: string } | null>(null);
+  const [importDuplicates, setImportDuplicates] = useState<{ line: number; uin: string; reason: string }[] | null>(null);
   const [users, setUsers]        = useState<any[]>([]);
   const [loading, setLoading]    = useState(true);
   const [search, setSearch]      = useState("");
@@ -865,7 +866,7 @@ export default function Projects() {
             {canBulkImport && (
               <Button variant="outline" onClick={() => {
                 setShowImport(true); setImportClientId(""); setImportClientSearch("");
-                setImportFile(null); setImportError(""); setImportResult(null);
+                setImportFile(null); setImportError(""); setImportResult(null); setImportDuplicates(null);
               }}>
                 <Upload className="h-4 w-4 mr-2" />Bulk Import
               </Button>
@@ -887,6 +888,7 @@ export default function Projects() {
             </div>
 
             {importResult ? (
+              /* ── Result ── */
               <div className="space-y-4">
                 <div className="text-center py-2">
                   <CheckCircle className="h-10 w-10 text-green-500 mx-auto mb-2" />
@@ -917,7 +919,78 @@ export default function Projects() {
                   Close
                 </Button>
               </div>
+            ) : importDuplicates ? (
+              /* ── Duplicate confirmation ── */
+              <div className="space-y-4">
+                <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-4">
+                  <div className="flex items-start gap-3">
+                    <AlertCircle className="h-5 w-5 text-amber-500 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-sm font-semibold text-amber-700">
+                        {importDuplicates.length} duplicate {importDuplicates.length === 1 ? "case" : "cases"} detected
+                      </p>
+                      <p className="text-xs text-amber-600 mt-0.5">
+                        These UINs already exist. Choose how to proceed:
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                <div className="rounded-lg border border-border max-h-48 overflow-y-auto">
+                  <table className="w-full text-xs">
+                    <thead className="bg-muted/40 sticky top-0">
+                      <tr>
+                        <th className="text-left px-3 py-2 text-muted-foreground font-medium">Row</th>
+                        <th className="text-left px-3 py-2 text-muted-foreground font-medium">UIN</th>
+                        <th className="text-left px-3 py-2 text-muted-foreground font-medium">Reason</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {importDuplicates.map((d, i) => (
+                        <tr key={i} className="border-t border-border">
+                          <td className="px-3 py-2 font-mono text-muted-foreground">{d.line}</td>
+                          <td className="px-3 py-2 font-mono font-semibold">{d.uin}</td>
+                          <td className="px-3 py-2 text-amber-600">{d.reason}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {importError && <p className="text-xs text-red-500">{importError}</p>}
+                <div className="flex gap-2">
+                  <Button className="flex-1 bg-gold hover:bg-gold/90 text-black"
+                    disabled={importing}
+                    onClick={async () => {
+                      if (!importClientId || !importFile) return;
+                      setImporting(true); setImportError("");
+                      try {
+                        const res = await api.importProjects(Number(importClientId), importFile, true) as any;
+                        setImportDuplicates(null); setImportResult(res);
+                      } catch (e: any) { setImportError(e?.message || "Import failed."); }
+                      finally { setImporting(false); }
+                    }}>
+                    {importing ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Importing…</> : "Skip duplicates"}
+                  </Button>
+                  <Button variant="outline" className="flex-1"
+                    disabled={importing}
+                    onClick={async () => {
+                      if (!importClientId || !importFile) return;
+                      setImporting(true); setImportError("");
+                      try {
+                        const res = await api.importProjects(Number(importClientId), importFile, false) as any;
+                        setImportDuplicates(null); setImportResult(res);
+                      } catch (e: any) { setImportError(e?.message || "Import failed."); }
+                      finally { setImporting(false); }
+                    }}>
+                    {importing ? <Loader2 className="h-4 w-4 animate-spin" /> : "Import all anyway"}
+                  </Button>
+                </div>
+                <button className="text-xs text-muted-foreground underline w-full text-center"
+                  onClick={() => setImportDuplicates(null)}>
+                  ← Back
+                </button>
+              </div>
             ) : (
+              /* ── Upload form ── */
               <div className="space-y-4">
                 <div>
                   <label className="block text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1.5">
@@ -971,13 +1044,17 @@ export default function Projects() {
                       if (!importClientId || !importFile) return;
                       setImporting(true); setImportError("");
                       try {
-                        const res = await api.importProjects(Number(importClientId), importFile);
-                        setImportResult(res);
+                        const res = await api.importProjects(Number(importClientId), importFile) as any;
+                        if (res.requires_confirmation) {
+                          setImportDuplicates(res.duplicates);
+                        } else {
+                          setImportResult(res);
+                        }
                       } catch (e: any) {
                         setImportError(e?.message || "Import failed.");
                       } finally { setImporting(false); }
                     }}>
-                    {importing ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Importing…</> : <><Upload className="h-4 w-4 mr-2" />Import Cases</>}
+                    {importing ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Checking…</> : <><Upload className="h-4 w-4 mr-2" />Import Cases</>}
                   </Button>
                   <Button variant="outline" onClick={() => setShowImport(false)}>Cancel</Button>
                 </div>

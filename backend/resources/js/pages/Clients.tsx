@@ -335,29 +335,37 @@ function downloadImportTemplate() {
 
 type ImportTab = "file" | "sheet";
 interface ImportResult { imported: number; skipped: number; errors: string[] }
+interface ImportDuplicate { line: number; name: string; reason: string }
 
 function ImportModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
-  const [tab, setTab]         = useState<ImportTab>("file");
-  const [file, setFile]       = useState<File | null>(null);
-  const [sheetUrl, setSheetUrl] = useState("");
-  const [busy, setBusy]       = useState(false);
-  const [result, setResult]   = useState<ImportResult | null>(null);
-  const [err, setErr]         = useState("");
+  const [tab, setTab]             = useState<ImportTab>("file");
+  const [file, setFile]           = useState<File | null>(null);
+  const [sheetUrl, setSheetUrl]   = useState("");
+  const [busy, setBusy]           = useState(false);
+  const [result, setResult]       = useState<ImportResult | null>(null);
+  const [duplicates, setDuplicates] = useState<ImportDuplicate[] | null>(null);
+  const [err, setErr]             = useState("");
 
-  async function handleImport() {
+  function buildFormData(skipDuplicates?: boolean) {
+    const fd = new FormData();
+    if (tab === "file") { if (file) fd.append("file", file); }
+    else { fd.append("google_sheet_url", sheetUrl.trim()); }
+    if (skipDuplicates !== undefined) fd.append("skip_duplicates", String(skipDuplicates));
+    return fd;
+  }
+
+  async function handleImport(skipDuplicates?: boolean) {
     setErr(""); setBusy(true);
     try {
-      const fd = new FormData();
-      if (tab === "file") {
-        if (!file) { setErr("Please select a file."); setBusy(false); return; }
-        fd.append("file", file);
+      if (tab === "file" && !file) { setErr("Please select a file."); setBusy(false); return; }
+      if (tab === "sheet" && !sheetUrl.trim()) { setErr("Please enter a Google Sheet URL."); setBusy(false); return; }
+      const res = await api.importClients(buildFormData(skipDuplicates)) as any;
+      if (res.requires_confirmation) {
+        setDuplicates(res.duplicates);
       } else {
-        if (!sheetUrl.trim()) { setErr("Please enter a Google Sheet URL."); setBusy(false); return; }
-        fd.append("google_sheet_url", sheetUrl.trim());
+        setResult(res);
+        onDone();
       }
-      const res = await api.importClients(fd);
-      setResult(res);
-      onDone();
     } catch (e: any) {
       setErr(e.message || "Import failed.");
     } finally { setBusy(false); }
@@ -397,13 +405,63 @@ function ImportModal({ onClose, onDone }: { onClose: () => void; onDone: () => v
             )}
             <Button className="w-full" variant="outline" onClick={onClose}>Close</Button>
           </div>
+        ) : duplicates ? (
+          /* ── Duplicate confirmation ── */
+          <div className="px-6 py-4 space-y-4">
+            <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-4">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="h-5 w-5 text-amber-500 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-semibold text-amber-700">
+                    {duplicates.length} duplicate {duplicates.length === 1 ? "client" : "clients"} detected
+                  </p>
+                  <p className="text-xs text-amber-600 mt-0.5">These names already exist. Choose how to proceed:</p>
+                </div>
+              </div>
+            </div>
+            <div className="rounded-lg border border-border max-h-48 overflow-y-auto">
+              <table className="w-full text-xs">
+                <thead className="bg-muted/40 sticky top-0">
+                  <tr>
+                    <th className="text-left px-3 py-2 text-muted-foreground font-medium">Row</th>
+                    <th className="text-left px-3 py-2 text-muted-foreground font-medium">Client Name</th>
+                    <th className="text-left px-3 py-2 text-muted-foreground font-medium">Reason</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {duplicates.map((d, i) => (
+                    <tr key={i} className="border-t border-border">
+                      <td className="px-3 py-2 font-mono text-muted-foreground">{d.line}</td>
+                      <td className="px-3 py-2 font-semibold">{d.name}</td>
+                      <td className="px-3 py-2 text-amber-600">{d.reason}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {err && <div className="text-xs text-destructive">{err}</div>}
+            <div className="flex gap-2">
+              <Button className="flex-1 bg-gold hover:bg-gold/90 text-black" disabled={busy}
+                onClick={() => handleImport(true)}>
+                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Skip duplicates"}
+              </Button>
+              <Button variant="outline" className="flex-1" disabled={busy}
+                onClick={() => handleImport(false)}>
+                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Import all anyway"}
+              </Button>
+            </div>
+            <button className="text-xs text-muted-foreground underline w-full text-center"
+              onClick={() => { setDuplicates(null); setErr(""); }}>
+              ← Back
+            </button>
+          </div>
         ) : (
           /* ── Import form ── */
           <div className="px-6 py-4 space-y-4">
             {/* Tab toggle */}
             <div className="flex gap-1 p-1 bg-muted/30 rounded-lg border border-border">
               {([["file", "Upload File", FileSpreadsheet], ["sheet", "Google Sheet", Link]] as [ImportTab, string, any][]).map(([key, label, Icon]) => (
-                <button key={key} onClick={() => { setTab(key); setErr(""); }}
+                <button key={key} onClick={() => { setTab(key as ImportTab); setErr(""); }}
                   className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-md text-sm font-medium transition-all
                     ${tab === key ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
                   <Icon className="h-4 w-4" />{label}
@@ -464,12 +522,12 @@ function ImportModal({ onClose, onDone }: { onClose: () => void; onDone: () => v
           </div>
         )}
 
-        {/* Footer */}
-        {!result && (
+        {/* Footer — only shown on the upload form screen */}
+        {!result && !duplicates && (
           <div className="flex gap-2 px-6 py-4 border-t border-border">
             <Button variant="outline" onClick={onClose} className="flex-1">Cancel</Button>
-            <Button className="flex-1 bg-gold hover:bg-gold/90 text-black" onClick={handleImport} disabled={busy}>
-              {busy ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Importing…</> : <><Upload className="h-4 w-4 mr-2" />Import</>}
+            <Button className="flex-1 bg-gold hover:bg-gold/90 text-black" onClick={() => handleImport()} disabled={busy}>
+              {busy ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Checking…</> : <><Upload className="h-4 w-4 mr-2" />Import</>}
             </Button>
           </div>
         )}

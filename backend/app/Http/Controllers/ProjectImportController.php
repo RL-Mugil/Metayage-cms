@@ -174,21 +174,37 @@ class ProjectImportController extends Controller
         if ($deny = $this->denyUnauthorized($request)) return $deny;
 
         $request->validate([
-            'client_id' => 'required|integer|exists:clients,id',
-            'file'      => 'required|file|mimes:xlsx,xls,csv|max:10240',
+            'client_id'       => 'required|integer|exists:clients,id',
+            'file'            => 'required|file|mimes:xlsx,xls,csv|max:10240',
+            'skip_duplicates' => 'nullable|string',
         ]);
 
-        $client = Client::findOrFail($request->client_id);
-        $rows   = $this->parseUploadedFile($request->file('file'));
+        $client   = Client::findOrFail($request->client_id);
+        $rows     = $this->parseUploadedFile($request->file('file'));
+        $offices  = self::offices();
+        $services = self::services();
 
+        // ── Phase 1: detect duplicates before user has decided ────────────────
+        if (! $request->has('skip_duplicates')) {
+            $duplicates = $this->detectProjectDuplicates($rows);
+            if (! empty($duplicates)) {
+                return response()->json([
+                    'requires_confirmation' => true,
+                    'duplicates'            => $duplicates,
+                ]);
+            }
+        }
+
+        $skipDuplicates = filter_var($request->input('skip_duplicates', 'false'), FILTER_VALIDATE_BOOLEAN);
+        $dupIndexes     = $request->has('skip_duplicates') ? $this->detectProjectDuplicateIndexes($rows) : [];
+
+        // ── Phase 2: import ───────────────────────────────────────────────────
         $imported = 0;
         $skipped  = 0;
         $errors   = [];
         $created  = [];
-        $offices = self::offices();
-        $services = self::services();
 
-        DB::transaction(function () use ($rows, $request, $client, $offices, $services, &$imported, &$skipped, &$errors, &$created) {
+        DB::transaction(function () use ($rows, $request, $client, $offices, $services, $skipDuplicates, $dupIndexes, &$imported, &$skipped, &$errors, &$created) {
             foreach ($rows as $i => $row) {
                 $line = $i + 2; // 1-based + header row
                 $uin = strtoupper(trim((string) ($row['project_name'] ?? '')));
@@ -206,6 +222,14 @@ class ProjectImportController extends Controller
                 if ($service && ! array_key_exists($service, $services)) {
                     $errors[] = "Row {$line}: unknown service code '{$service}' — skipped.";
                     $skipped++; continue;
+                }
+
+                // Handle duplicate rows per user decision
+                $isDuplicate = isset($dupIndexes[$i]);
+                if ($isDuplicate) {
+                    if ($skipDuplicates) { $skipped++; continue; }
+                    // Import anyway: clear UIN so a new docket is auto-generated
+                    $uin = '';
                 }
 
                 $validated = [
@@ -264,6 +288,50 @@ class ProjectImportController extends Controller
             'dockets'  => $created,
             'client'   => $client->company_name,
         ]);
+    }
+
+    /** Returns duplicate rows: [{line, uin, reason}] for frontend confirmation. */
+    private function detectProjectDuplicates(array $rows): array
+    {
+        $duplicates = [];
+        $seenInFile = [];
+        foreach ($rows as $i => $row) {
+            $line = $i + 2;
+            $uin  = strtoupper(trim((string) ($row['project_name'] ?? '')));
+            if ($uin === '') continue;
+            if (isset($seenInFile[$uin])) {
+                $duplicates[] = ['line' => $line, 'uin' => $uin, 'reason' => "same as row {$seenInFile[$uin]} in this file"];
+                continue;
+            }
+            $seenInFile[$uin] = $line;
+            $exists = \App\Models\Project::withTrashed()
+                ->where(function ($q) use ($uin) {
+                    $q->where('project_code', $uin)->orWhere('docket_number', $uin);
+                })->exists();
+            if ($exists) {
+                $duplicates[] = ['line' => $line, 'uin' => $uin, 'reason' => 'already exists in system'];
+            }
+        }
+        return $duplicates;
+    }
+
+    /** Returns array keyed by row index for all duplicate rows. */
+    private function detectProjectDuplicateIndexes(array $rows): array
+    {
+        $indexes    = [];
+        $seenInFile = [];
+        foreach ($rows as $i => $row) {
+            $uin = strtoupper(trim((string) ($row['project_name'] ?? '')));
+            if ($uin === '') continue;
+            if (isset($seenInFile[$uin])) { $indexes[$i] = true; continue; }
+            $seenInFile[$uin] = $i;
+            $exists = \App\Models\Project::withTrashed()
+                ->where(function ($q) use ($uin) {
+                    $q->where('project_code', $uin)->orWhere('docket_number', $uin);
+                })->exists();
+            if ($exists) $indexes[$i] = true;
+        }
+        return $indexes;
     }
 
     /** Case-insensitive match of a row value against an allowed list. */

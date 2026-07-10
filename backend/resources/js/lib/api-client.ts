@@ -92,7 +92,7 @@ export const api = {
   async deleteClient(id: number | string): Promise<{ message: string }> {
     return this.request(`/clients/${id}`, { method: 'DELETE' })
   },
-  async importClients(formData: FormData): Promise<{ imported: number; skipped: number; errors: string[] }> {
+  async importClients(formData: FormData): Promise<{ imported: number; skipped: number; errors: string[] } | { requires_confirmation: true; duplicates: { line: number; name: string; reason: string }[] }> {
     const response = await fetch('/api/clients/import', {
       method: 'POST',
       headers: { 'Accept': 'application/json', 'X-XSRF-TOKEN': getCsrfToken() },
@@ -100,7 +100,7 @@ export const api = {
       credentials: 'same-origin',
     })
     if (!response.ok) {
-      if (response.status === 401) { window.location.href = '/login'; return null as unknown as { imported: number; skipped: number; errors: string[] } }
+      if (response.status === 401) { window.location.href = '/login'; return null as any }
       const errData = await response.json().catch(() => ({}))
       throw new Error((errData as { message?: string }).message || `Import failed: ${response.status}`)
     }
@@ -537,10 +537,11 @@ export const api = {
   async getLifecycleStats(): Promise<Record<string, number>> {
     return this.request('/projects/lifecycle-stats')
   },
-  async importProjects(clientId: number, file: File): Promise<{ imported: number; skipped: number; errors: string[]; dockets: string[]; client: string }> {
+  async importProjects(clientId: number, file: File, skipDuplicates?: boolean): Promise<{ imported: number; skipped: number; errors: string[]; dockets: string[]; client: string } | { requires_confirmation: true; duplicates: { line: number; uin: string; reason: string }[] }> {
     const formData = new FormData()
     formData.append('client_id', String(clientId))
     formData.append('file', file)
+    if (skipDuplicates !== undefined) formData.append('skip_duplicates', String(skipDuplicates))
     const response = await fetch('/api/projects/import', {
       method: 'POST',
       headers: { 'X-XSRF-TOKEN': getCsrfToken(), Accept: 'application/json' },

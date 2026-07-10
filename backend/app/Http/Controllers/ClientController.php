@@ -321,8 +321,9 @@ class ClientController extends Controller
         }
 
         $request->validate([
-            'file' => 'required_without:google_sheet_url|nullable|file|mimes:csv,xlsx,xls|max:5120',
+            'file'             => 'required_without:google_sheet_url|nullable|file|mimes:csv,xlsx,xls|max:5120',
             'google_sheet_url' => 'required_without:file|nullable|string',
+            'skip_duplicates'  => 'nullable|string',
         ]);
 
         try {
@@ -335,11 +336,25 @@ class ClientController extends Controller
             return response()->json(['message' => $e->getMessage()], 422);
         }
 
+        // ── Phase 1: detect duplicates before user has decided ────────────────
+        if (! $request->has('skip_duplicates')) {
+            $duplicates = $this->detectClientDuplicates($rows);
+            if (! empty($duplicates)) {
+                return response()->json([
+                    'requires_confirmation' => true,
+                    'duplicates'            => $duplicates,
+                ]);
+            }
+        }
+
+        $skipDuplicates = filter_var($request->input('skip_duplicates', 'false'), FILTER_VALIDATE_BOOLEAN);
+        $dupIndexes     = $request->has('skip_duplicates') ? $this->detectClientDuplicateIndexes($rows) : [];
+
         $imported = 0;
         $skipped = 0;
         $errors = [];
 
-        \DB::transaction(function () use ($rows, $user, &$imported, &$skipped, &$errors) {
+        \DB::transaction(function () use ($rows, $user, $skipDuplicates, $dupIndexes, &$imported, &$skipped, &$errors) {
             foreach ($rows as $index => $row) {
                 $legalName = trim((string) ($row['legal_name'] ?? $row['company_name'] ?? $row['full_name'] ?? ''));
                 if (!$legalName) {
@@ -347,14 +362,10 @@ class ClientController extends Controller
                     continue;
                 }
 
-                // Skip if a client with the same legal name already exists
-                $alreadyExists = \App\Models\Client::whereRaw('LOWER(legal_name) = ?', [mb_strtolower($legalName)])
-                    ->orWhereRaw('LOWER(company_name) = ?', [mb_strtolower($legalName)])
-                    ->exists();
-                if ($alreadyExists) {
-                    $errors[] = "Row " . ($index + 2) . ": client \"{$legalName}\" already exists — skipped.";
-                    $skipped++;
-                    continue;
+                // Handle duplicate rows per user decision
+                if (isset($dupIndexes[$index])) {
+                    if ($skipDuplicates) { $skipped++; continue; }
+                    // Import anyway — allow the duplicate client to be created
                 }
 
                 try {
@@ -407,6 +418,46 @@ class ClientController extends Controller
             'skipped' => $skipped,
             'errors' => $errors,
         ]);
+    }
+
+    private function detectClientDuplicates(array $rows): array
+    {
+        $duplicates = [];
+        $seenInFile = [];
+        foreach ($rows as $i => $row) {
+            $name = mb_strtolower(trim((string) ($row['legal_name'] ?? $row['company_name'] ?? $row['full_name'] ?? '')));
+            if ($name === '') continue;
+            $line = $i + 2;
+            if (isset($seenInFile[$name])) {
+                $duplicates[] = ['line' => $line, 'name' => trim((string) ($row['legal_name'] ?? $row['company_name'] ?? $row['full_name'] ?? '')), 'reason' => "same as row {$seenInFile[$name]} in this file"];
+                continue;
+            }
+            $seenInFile[$name] = $line;
+            $exists = \App\Models\Client::whereRaw('LOWER(legal_name) = ?', [$name])
+                ->orWhereRaw('LOWER(company_name) = ?', [$name])
+                ->exists();
+            if ($exists) {
+                $duplicates[] = ['line' => $line, 'name' => trim((string) ($row['legal_name'] ?? $row['company_name'] ?? $row['full_name'] ?? '')), 'reason' => 'already exists in system'];
+            }
+        }
+        return $duplicates;
+    }
+
+    private function detectClientDuplicateIndexes(array $rows): array
+    {
+        $indexes    = [];
+        $seenInFile = [];
+        foreach ($rows as $i => $row) {
+            $name = mb_strtolower(trim((string) ($row['legal_name'] ?? $row['company_name'] ?? $row['full_name'] ?? '')));
+            if ($name === '') continue;
+            if (isset($seenInFile[$name])) { $indexes[$i] = true; continue; }
+            $seenInFile[$name] = $i;
+            $exists = \App\Models\Client::whereRaw('LOWER(legal_name) = ?', [$name])
+                ->orWhereRaw('LOWER(company_name) = ?', [$name])
+                ->exists();
+            if ($exists) $indexes[$i] = true;
+        }
+        return $indexes;
     }
 
     private function parseUploadedFile(\Illuminate\Http\UploadedFile $file): array
