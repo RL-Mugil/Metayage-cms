@@ -152,7 +152,7 @@ export function AppSidebar() {
       <SidebarHeader className="border-b border-sidebar-border">
         <Link href="/" className="flex items-center gap-2 px-2 py-3">
           <img
-            src="/favicon.jpg"
+            src="/favicon.png"
             alt="Metayage"
             className="h-9 w-9 rounded-md object-cover"
           />
