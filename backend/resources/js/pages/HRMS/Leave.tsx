@@ -340,9 +340,13 @@ export default function HRMSLeave() {
                       <tr key={r.id} className="border-t border-border hover:bg-muted/30">
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2">
-                            <div className="h-7 w-7 rounded-full bg-muted flex items-center justify-center text-xs font-bold text-gold shrink-0">
-                              {(r.employee_name || "U").charAt(0).toUpperCase()}
-                            </div>
+                            {r.employee_avatar ? (
+                              <img src={r.employee_avatar} alt={r.employee_name} className="h-7 w-7 rounded-full object-cover shrink-0" />
+                            ) : (
+                              <div className="h-7 w-7 rounded-full bg-muted flex items-center justify-center text-xs font-bold text-gold shrink-0">
+                                {(r.employee_name || "U").charAt(0).toUpperCase()}
+                              </div>
+                            )}
                             <span className="font-medium whitespace-nowrap">{r.employee_name || "—"}</span>
                           </div>
                         </td>

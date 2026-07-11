@@ -21,7 +21,7 @@ class LeaveController extends Controller
         $employee   = Employee::where('user_id', $user->id)->first();
         $isApprover = in_array($user->role, ['super_admin', 'hr', 'manager', 'partner']);
 
-        $query = LeaveRequest::with('employee:id,full_name,user_id')->orderBy('from_date', 'desc');
+        $query = LeaveRequest::with(['employee:id,full_name,user_id', 'employee.user:id,avatar_url'])->orderBy('from_date', 'desc');
         if (! $isApprover) {
             if (! $employee) return response()->json(['requests' => [], 'balances' => null, 'is_approver' => false]);
             $query->where('employee_id', $employee->id);
@@ -33,7 +33,8 @@ class LeaveController extends Controller
         $items   = $query->forPage($page, $perPage)->get()->map(fn ($r) => [
             'id'            => $r->id,
             'employee_id'   => $r->employee_id,
-            'employee_name' => $r->employee?->full_name,
+            'employee_name'   => $r->employee?->full_name,
+            'employee_avatar' => $r->employee?->user?->avatar_url,
             'leave_type'    => $r->leave_type,
             'from_date'     => $r->from_date,
             'to_date'       => $r->to_date,

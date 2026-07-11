@@ -228,8 +228,19 @@ export default function HRMSEmployees() {
                   {filtered.map((e) => (
                     <tr key={e.id} className="border-t border-border hover:bg-muted/30">
                       <td className="px-4 py-3">
-                        <div className="font-medium">{e.user?.name || e.full_name || "—"}</div>
-                        <div className="text-xs text-muted-foreground">{e.user?.email || e.work_email}</div>
+                        <div className="flex items-center gap-2.5">
+                          {e.user?.avatar_url ? (
+                            <img src={e.user.avatar_url} alt={e.user?.name || e.full_name} className="h-8 w-8 rounded-full object-cover flex-shrink-0" />
+                          ) : (
+                            <div className="h-8 w-8 rounded-full bg-gold/20 flex items-center justify-center text-gold font-semibold text-xs flex-shrink-0">
+                              {(e.user?.name || e.full_name || "?").charAt(0)}
+                            </div>
+                          )}
+                          <div>
+                            <div className="font-medium">{e.user?.name || e.full_name || "—"}</div>
+                            <div className="text-xs text-muted-foreground">{e.user?.email || e.work_email}</div>
+                          </div>
+                        </div>
                       </td>
                       <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{e.employee_code}</td>
                       <td className="px-4 py-3 text-muted-foreground">{e.designation?.title || "—"}</td>
