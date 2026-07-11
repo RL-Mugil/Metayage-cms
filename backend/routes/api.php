@@ -77,6 +77,15 @@ Route::middleware(['auth:sanctum', 'throttle:60,1'])->group(function () {
     Route::get('/hrms/attendance', [AttendanceController::class, 'index']);
     Route::post('/hrms/clock-in', [AttendanceController::class, 'clockIn']);
     Route::post('/hrms/clock-out', [AttendanceController::class, 'clockOut']);
+    // Admin attendance management
+    Route::get('/hrms/attendance/settings', [AttendanceController::class, 'getSettings']);
+    Route::put('/hrms/attendance/settings', [AttendanceController::class, 'updateSettings']);
+    Route::get('/hrms/admin-attendance', [AttendanceController::class, 'adminIndex']);
+    Route::post('/hrms/admin-attendance', [AttendanceController::class, 'adminStore']);
+    Route::put('/hrms/admin-attendance/{id}', [AttendanceController::class, 'adminUpdate']);
+    Route::delete('/hrms/admin-attendance/{id}', [AttendanceController::class, 'adminDestroy']);
+    Route::get('/hrms/attendance/report', [AttendanceController::class, 'report']);
+    Route::post('/hrms/employees/{id}/reset-today', [AttendanceController::class, 'resetToday']);
     Route::get('/hrms/leaves', [LeaveController::class, 'index']);
     Route::post('/hrms/leaves', [LeaveController::class, 'store']);
     Route::put('/hrms/leaves/{id}', [LeaveController::class, 'update']);
@@ -115,6 +124,7 @@ Route::middleware(['auth:sanctum', 'throttle:60,1'])->group(function () {
 
     // Notifications
     Route::get('/notifications', [NotificationController::class, 'index']);
+    Route::get('/notifications/unread-count', [NotificationController::class, 'unreadCount']);
     Route::post('/notifications/mark-all-read', [NotificationController::class, 'markAllRead']);
     Route::post('/notifications/{id}/read', [NotificationController::class, 'markRead']);
     Route::delete('/notifications/{id}', [NotificationController::class, 'dismiss']);

@@ -149,3 +149,21 @@
     background-size: 32px 32px;
   }
 }
+
+@media print {
+  /* Hide navigation, sidebar, and all non-report UI when printing */
+  [data-slot="sidebar"],
+  nav,
+  header,
+  .print\:hidden,
+  aside {
+    display: none !important;
+  }
+  body {
+    background: white !important;
+    color: black !important;
+  }
+  #attendance-print-area {
+    font-size: 11px;
+  }
+}

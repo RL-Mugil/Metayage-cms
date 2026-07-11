@@ -180,12 +180,37 @@ export const api = {
   async deleteEmployee(id: number | string): Promise<{ message: string }> {
     return this.request(`/hrms/employees/${id}`, { method: 'DELETE' })
   },
+  async resetEmployeeToday(id: number | string): Promise<{ message: string }> {
+    return this.request(`/hrms/employees/${id}/reset-today`, { method: 'POST' })
+  },
   async getAttendance(): Promise<Attendance[]> { return this.request('/hrms/attendance') },
   async clockIn(locationGps?: string): Promise<Attendance> {
     return this.request('/hrms/clock-in', { method: 'POST', body: JSON.stringify({ location_gps: locationGps }) })
   },
   async clockOut(): Promise<Attendance> {
     return this.request('/hrms/clock-out', { method: 'POST' })
+  },
+  async getAttendanceSettings(): Promise<{ max_sessions_per_day: number; work_start_time: string; work_end_time: string; lunch_start: string; lunch_end: string; standard_hours_minutes: number }> {
+    return this.request('/hrms/attendance/settings')
+  },
+  async updateAttendanceSettings(data: { max_sessions_per_day?: number; work_start_time?: string; work_end_time?: string; lunch_start?: string; lunch_end?: string; standard_hours_minutes?: number }): Promise<{ message: string; settings: object }> {
+    return this.request('/hrms/attendance/settings', { method: 'PUT', body: JSON.stringify(data) })
+  },
+  async getAdminAttendance(params?: URLSearchParams): Promise<{ data: object[]; total: number }> {
+    const query = params ? '?' + params.toString() : ''
+    return this.request(`/hrms/admin-attendance${query}`)
+  },
+  async createAdminAttendance(data: object): Promise<object> {
+    return this.request('/hrms/admin-attendance', { method: 'POST', body: JSON.stringify(data) })
+  },
+  async updateAdminAttendance(id: number, data: object): Promise<object> {
+    return this.request(`/hrms/admin-attendance/${id}`, { method: 'PUT', body: JSON.stringify(data) })
+  },
+  async deleteAdminAttendance(id: number): Promise<{ message: string }> {
+    return this.request(`/hrms/admin-attendance/${id}`, { method: 'DELETE' })
+  },
+  async getAttendanceReport(month: number, year: number): Promise<object> {
+    return this.request(`/hrms/attendance/report?month=${month}&year=${year}`)
   },
   async getLeaves(): Promise<{ requests: LeaveRequest[]; balances: LeaveBalance | null; is_approver: boolean }> {
     return this.request('/leaves')
@@ -263,6 +288,10 @@ export const api = {
     const res = await this.request<PaginatedResponse<Notification> | Notification[]>('/notifications')
     return Array.isArray(res) ? res : ((res as PaginatedResponse<Notification>).data ?? [])
   },
+  async getUnreadNotificationCount(): Promise<number> {
+    const res = await this.request<{ count: number }>('/notifications/unread-count')
+    return res?.count ?? 0
+  },
   async markAllNotificationsRead(): Promise<{ message: string }> { return this.request('/notifications/mark-all-read', { method: 'POST' }) },
   async markNotificationRead(id: number | string): Promise<{ message: string }> { return this.request(`/notifications/${id}/read`, { method: 'POST' }) },
   async dismissNotification(id: number | string): Promise<{ message: string }> { return this.request(`/notifications/${id}`, { method: 'DELETE' }) },
@@ -339,8 +368,8 @@ export const api = {
     const res = await this.request<PaginatedResponse<Record<string, unknown>> | Record<string, unknown>[]>('/approvals')
     return Array.isArray(res) ? res : ((res as PaginatedResponse<Record<string, unknown>>).data ?? [])
   },
-  async resolveApproval(type: string, id: number, action: 'Approved' | 'Rejected'): Promise<{ message: string }> {
-    return this.request('/approvals/resolve', { method: 'POST', body: JSON.stringify({ type, id, action }) })
+  async resolveApproval(type: string, id: number, action: 'Approved' | 'Rejected', comment?: string): Promise<{ message: string }> {
+    return this.request('/approvals/resolve', { method: 'POST', body: JSON.stringify({ type, id, action, comment }) })
   },
 
   // ── Discussions ──
@@ -586,7 +615,7 @@ export const api = {
   async deleteMyPortalUser(userId: number): Promise<{ ok: boolean }> {
     return this.request(`/my-portal/users/${userId}`, { method: 'DELETE' })
   },
-  async createApproval(data: { client_id: number; title: string; description?: string }): Promise<any> {
+  async createApproval(data: { client_id?: number; approver_id?: number; title: string; description?: string }): Promise<any> {
     return this.request('/approvals', { method: 'POST', body: JSON.stringify(data) })
   },
 }

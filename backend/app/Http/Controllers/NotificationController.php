@@ -26,6 +26,7 @@ class NotificationController extends Controller
                 'title'       => $n->title,
                 'description' => $n->description,
                 'meta'        => json_decode($n->meta ?? '{}', true),
+                'action_url'  => $n->action_url ?? null,
                 'read'        => (bool) $n->read_at,
                 'created_at'  => $n->created_at,
             ]);
@@ -39,6 +40,16 @@ class NotificationController extends Controller
             'last_page' => (int) ceil($total / $perPage),
             'has_more' => $hasMore,
         ]);
+    }
+
+    public function unreadCount(Request $request)
+    {
+        $count = DB::table('ip_notifications')
+            ->where('user_id', $request->user()->id)
+            ->whereNull('read_at')
+            ->count();
+
+        return response()->json(['count' => $count]);
     }
 
     public function markAllRead(Request $request)

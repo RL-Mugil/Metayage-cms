@@ -123,9 +123,25 @@ redirect_stderr=true
 stdout_logfile=/var/log/supervisor/mypl-horizon.log
 stopwaitsecs=3600
 SUPEOF
+echo "--- Setting up Laravel scheduler via Supervisor ---"
+# Runs php artisan schedule:work (a long-lived process that ticks every minute),
+# so scheduled commands like reminders:send-deadlines actually fire in production.
+cat > /etc/supervisor/conf.d/mypl-scheduler.conf << 'SCHEDEOF'
+[program:mypl-scheduler]
+process_name=%(program_name)s
+command=php /var/www/mypl-cms/backend/artisan schedule:work
+autostart=true
+autorestart=true
+user=www-data
+redirect_stderr=true
+stdout_logfile=/var/log/supervisor/mypl-scheduler.log
+stopwaitsecs=60
+SCHEDEOF
+
 supervisorctl reread || true
 supervisorctl update || true
 supervisorctl start mypl-horizon || supervisorctl restart mypl-horizon || true
+supervisorctl start mypl-scheduler || supervisorctl restart mypl-scheduler || true
 
 echo ""
 echo "=== Rebuild deployment complete! ==="

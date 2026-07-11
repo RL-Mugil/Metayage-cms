@@ -66,15 +66,43 @@ class HRMSController extends Controller
 
         $result = PaginationHelper::paginate($query, $request);
 
-        // Compensation, banking and identity fields are HR-only.
-        if (! in_array($user->role, ['super_admin', 'hr'])) {
-            $result['data']->makeHidden([
-                'salary', 'bank_account_number', 'bank_name', 'bank_ifsc_code',
-                'aadhaar_ssn_encrypted', 'pan_tax_id', 'uan_pf_number', 'esi_number',
-            ]);
-        }
+        $hideSensitive = ! in_array($user->role, ['super_admin', 'hr']);
+        $sensitiveFields = ['salary', 'bank_account_number', 'bank_name', 'bank_ifsc_code',
+                            'aadhaar_ssn_encrypted', 'pan_tax_id', 'uan_pf_number', 'esi_number'];
 
-        return response()->json($result);
+        // Today's attendance: pull once, key by employee_id.
+        $today = Carbon::now('Asia/Kolkata')->toDateString();
+        $todayAtt = Attendance::whereDate('attendance_date', $today)
+            ->whereIn('employee_id', $result['data']->pluck('id'))
+            ->get()
+            ->keyBy('employee_id');
+
+        // Map to plain arrays so extra fields are always serialised.
+        $rows = $result['data']->map(function ($emp) use ($todayAtt, $hideSensitive, $sensitiveFields) {
+            $arr = $emp->toArray();
+
+            if ($hideSensitive) {
+                foreach ($sensitiveFields as $f) { unset($arr[$f]); }
+            }
+
+            $att     = $todayAtt->get($emp->id);
+            $clockIn = false;
+            $status  = 'absent';
+
+            if ($att) {
+                $sessions = $att->sessions ?? [];
+                $last     = end($sessions) ?: null;
+                $clockIn  = $last && isset($last['out']) && $last['out'] === null;
+                $status   = $clockIn ? 'clocked_in' : 'clocked_out';
+            }
+
+            $arr['clocked_in']   = $clockIn;
+            $arr['today_status'] = $status;
+
+            return $arr;
+        });
+
+        return response()->json(array_merge($result, ['data' => $rows]));
     }
 
     public function createEmployee(StoreEmployeeRequest $request)
@@ -99,15 +127,18 @@ class HRMSController extends Controller
         }
 
         $employee = \DB::transaction(function () use ($validated, $deptId, $desigId) {
-            // Auto-generate employee code from the highest existing code for
-            // the year (row-locked to avoid duplicate codes under concurrency).
-            $year = date('Y');
-            $last = Employee::where('employee_code', 'like', "EMP-{$year}-%")
-                ->orderBy('employee_code', 'desc')
-                ->lockForUpdate()
-                ->value('employee_code');
-            $next = $last ? ((int) substr($last, -4)) + 1 : 1;
-            $code = sprintf('EMP-%s-%04d', $year, $next);
+            // Use custom code if provided; otherwise auto-generate.
+            if (!empty($validated['employee_code'])) {
+                $code = trim($validated['employee_code']);
+            } else {
+                $year = date('Y');
+                $last = Employee::where('employee_code', 'like', "EMP-{$year}-%")
+                    ->orderBy('employee_code', 'desc')
+                    ->lockForUpdate()
+                    ->value('employee_code');
+                $next = $last ? ((int) substr($last, -4)) + 1 : 1;
+                $code = sprintf('EMP-%s-%04d', $year, $next);
+            }
 
             // Create linked user account (skip if email already exists).
             // Without an explicit password a random one is set; the user must

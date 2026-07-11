@@ -1,4 +1,4 @@
-import { Head } from "@inertiajs/react";
+import { Head, usePage } from "@inertiajs/react";
 import { useEffect, useState } from "react";
 import { Loader2, Plus, X, Edit2, Trash2, Search, Download } from "lucide-react";
 import AppLayout from "@/layouts/AppLayout";
@@ -13,9 +13,14 @@ const DEPTS = ["Legal", "Operations", "HR", "Finance", "Engineering", "Business 
 const ROLES = ["Director", "HR", "Patent Attorney", "Patent Analyst", "Patent Engineer", "Finance Manager", "Paralegal", "Consultant", "System Admin"];
 const LOCATIONS = ["Remote", "Coimbatore", "Chennai", "Bengaluru", "Hyderabad", "Pollachi"];
 
-const blankForm = { full_name: "", work_email: "", department_name: "", designation_title: "", work_location: "Coimbatore", date_of_joining: "", employment_type: "Full-time", salary: "" };
+const blankForm = { employee_code: "", full_name: "", work_email: "", department_name: "", designation_title: "", work_location: "Coimbatore", date_of_joining: "", employment_type: "Full-time", salary: "" };
+const HR_CRUD_ROLES = ["super_admin", "partner", "hr"];
 
 export default function HRMSEmployees() {
+  const { props } = usePage() as any;
+  const userRole: string = props.auth?.user?.role ?? "";
+  const canCRUD = HR_CRUD_ROLES.includes(userRole);
+
   const [employees, setEmployees] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -48,6 +53,7 @@ export default function HRMSEmployees() {
   function openEdit(e: any) {
     setEditEmp(e);
     setForm({
+      employee_code: e.employee_code || "",
       full_name: e.user?.name || e.full_name || "",
       work_email: e.user?.email || e.work_email || "",
       department_name: e.department?.name || "",
@@ -107,7 +113,7 @@ export default function HRMSEmployees() {
         actions={
           <>
             <Button variant="outline" onClick={handleExport}><Download className="h-4 w-4 mr-2" />Export CSV</Button>
-            <Button onClick={openNew}><Plus className="h-4 w-4 mr-2" />Add Employee</Button>
+            {canCRUD && <Button onClick={openNew}><Plus className="h-4 w-4 mr-2" />Add Employee</Button>}
           </>
         }
       />
@@ -121,6 +127,18 @@ export default function HRMSEmployees() {
             </div>
             {saveError && <div className="rounded-md bg-destructive/15 border border-destructive/30 p-3 text-xs text-destructive mb-3">{saveError}</div>}
             <div className="space-y-3">
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1">
+                  Employee Code
+                  {!editEmp && <span className="ml-1 text-muted-foreground/60">(leave blank to auto-generate)</span>}
+                </label>
+                <input
+                  value={form.employee_code}
+                  onChange={e => setForm(p => ({ ...p, employee_code: e.target.value }))}
+                  placeholder="e.g. EMP-2026-0042"
+                  className={inputCls}
+                />
+              </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs text-muted-foreground mb-1">Full Name *</label>
@@ -203,7 +221,7 @@ export default function HRMSEmployees() {
                     <th className="px-4 py-3 text-left">Department</th>
                     <th className="px-4 py-3 text-left">Location</th>
                     <th className="px-4 py-3 text-left">Status</th>
-                    <th className="px-4 py-3 text-left">Actions</th>
+                    {canCRUD && <th className="px-4 py-3 text-left">Actions</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -220,16 +238,18 @@ export default function HRMSEmployees() {
                       <td className="px-4 py-3">
                         <Badge variant={statusColor(e.employment_status || "Active")}>{e.employment_status || "Active"}</Badge>
                       </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-1">
-                          <button onClick={() => openEdit(e)} className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground"><Edit2 className="h-3.5 w-3.5" /></button>
-                          <button onClick={() => handleDelete(e.id)} className="p-1.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></button>
-                        </div>
-                      </td>
+                      {canCRUD && (
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-1">
+                            <button onClick={() => openEdit(e)} className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground"><Edit2 className="h-3.5 w-3.5" /></button>
+                            <button onClick={() => handleDelete(e.id)} className="p-1.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></button>
+                          </div>
+                        </td>
+                      )}
                     </tr>
                   ))}
                   {filtered.length === 0 && (
-                    <tr><td colSpan={7} className="px-4 py-12 text-center text-muted-foreground">
+                    <tr><td colSpan={canCRUD ? 7 : 6} className="px-4 py-12 text-center text-muted-foreground">
                       {employees.length === 0 ? "No employees yet. Add your first team member." : "No employees match your search."}
                     </td></tr>
                   )}

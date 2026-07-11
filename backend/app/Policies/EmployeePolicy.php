@@ -9,12 +9,14 @@ class EmployeePolicy
 {
     public function viewAny(User $user): bool
     {
-        return in_array($user->role, ['super_admin', 'partner', 'manager', 'hr']);
+        // All authenticated staff can view the employee directory (HR Overview).
+        // Sensitive fields (salary, bank, PII) are stripped in the controller for non-HR roles.
+        return !in_array($user->role, ['client', 'client_admin']);
     }
 
     public function view(User $user, Employee $employee): bool
     {
-        if (in_array($user->role, ['super_admin', 'partner', 'manager', 'hr'])) return true;
+        if (!in_array($user->role, ['client', 'client_admin'])) return true;
         return $employee->user_id === $user->id;
     }
 

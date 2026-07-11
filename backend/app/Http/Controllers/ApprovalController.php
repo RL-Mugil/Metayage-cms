@@ -10,6 +10,7 @@ use App\Models\ExpenseClaim;
 use App\Models\LeaveRequest;
 use App\Models\User;
 use App\Services\LeaveApprovalService;
+use App\Support\Notifier;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -69,21 +70,27 @@ class ApprovalController extends Controller
             return $this->clientIndex($request);
         }
 
-        if (! in_array($user->role, self::APPROVER_ROLES)) {
-            return response()->json(['message' => 'Forbidden'], 403);
-        }
+        // All internal staff may view the approvals page. Leave/expense visibility
+        // stays restricted to HR approvers (separation of duties); client &
+        // colleague approvals are visible to the people involved, plus
+        // admins/partners/hr for oversight.
+        $canSeeHrApprovals = in_array($user->role, self::APPROVER_ROLES);
+        $seesAllApprovals  = in_array($user->role, ['super_admin', 'partner', 'hr']);
 
         $perPage = max(1, min((int) $request->query('per_page', 25), 500));
         $page    = max(1, (int) $request->query('page', 1));
         $offset  = ($page - 1) * $perPage;
 
-        // Managers see only direct/dotted-line reports; hr/partner/super_admin see all.
-        $scopedEmployeeIds = null;
-        if ($user->role === 'manager') {
+        // Leave/expense scoping: non-approvers see none; managers see their
+        // reports; hr/partner/super_admin see all.
+        $scopedEmployeeIds = null; // null = all
+        if (! $canSeeHrApprovals) {
+            $scopedEmployeeIds = [-1]; // none
+        } elseif ($user->role === 'manager') {
             $scopedEmployeeIds = Employee::where('reporting_manager_id', $user->id)
                 ->orWhere('dotted_line_manager_id', $user->id)
                 ->pluck('id')
-                ->all();
+                ->all() ?: [-1];
         }
 
         $leavesQuery   = LeaveRequest::query();
@@ -93,27 +100,37 @@ class ApprovalController extends Controller
             $expensesQuery->whereIn('employee_id', $scopedEmployeeIds);
         }
 
-        // Client approvals: managers track only their own requests; admins/partners/hr see all.
-        $clientApprovalsQuery = Approval::where('type', 'client');
-        if ($user->role === 'manager') {
-            $clientApprovalsQuery->where('requester_id', $user->id);
-        }
+        // Client + colleague approvals from the approvals table. Everyone sees
+        // the ones they raised or are addressed to; oversight roles see all.
+        $applyApprovalScope = function ($q) use ($user, $seesAllApprovals) {
+            $q->whereIn('type', ['client', 'colleague']);
+            if (! $seesAllApprovals) {
+                $q->where(function ($w) use ($user) {
+                    $w->where('requester_id', $user->id)
+                      ->orWhere('approver_id', $user->id);
+                });
+            }
+        };
 
         $leavesCount   = (clone $leavesQuery)->count();
         $expensesCount = (clone $expensesQuery)->count();
-        $clientCount   = (clone $clientApprovalsQuery)->count();
-        $total         = $leavesCount + $expensesCount + $clientCount;
+        $approvalCount = Approval::where($applyApprovalScope)->count();
+        $total         = $leavesCount + $expensesCount + $approvalCount;
 
         // DB-level UNION pagination — only fetches the current page rows
         $leaveBase    = DB::table('leave_requests')->select('id', DB::raw("'Leave' as type"), 'created_at');
         $expenseBase  = DB::table('expense_claims')->select('id', DB::raw("'Expense' as type"), 'created_at');
-        $approvalBase = DB::table('approvals')->select('id', DB::raw("'Client' as type"), 'created_at')->where('type', 'client');
+        $approvalBase = DB::table('approvals')->select('id', DB::raw("'Approval' as type"), 'created_at')
+            ->whereIn('type', ['client', 'colleague']);
         if ($scopedEmployeeIds !== null) {
-            $leaveBase->whereIn('employee_id', $scopedEmployeeIds ?: [-1]);
-            $expenseBase->whereIn('employee_id', $scopedEmployeeIds ?: [-1]);
+            $leaveBase->whereIn('employee_id', $scopedEmployeeIds);
+            $expenseBase->whereIn('employee_id', $scopedEmployeeIds);
         }
-        if ($user->role === 'manager') {
-            $approvalBase->where('requester_id', $user->id);
+        if (! $seesAllApprovals) {
+            $approvalBase->where(function ($w) use ($user) {
+                $w->where('requester_id', $user->id)
+                  ->orWhere('approver_id', $user->id);
+            });
         }
         $unionPage = $leaveBase
             ->unionAll($expenseBase)
@@ -133,20 +150,29 @@ class ApprovalController extends Controller
             ? ExpenseClaim::with('employee:id,full_name')->whereIn('id', $idsByType['Expense'])->get()->keyBy('id')
             : collect();
 
-        $clientApprovals = isset($idsByType['Client'])
-            ? Approval::with('requester:id,name', 'client:id,company_name')->whereIn('id', $idsByType['Client'])->get()->keyBy('id')
+        $approvals = isset($idsByType['Approval'])
+            ? Approval::with('requester:id,name', 'approver:id,name', 'client:id,company_name')->whereIn('id', $idsByType['Approval'])->get()->keyBy('id')
             : collect();
 
-        $data = $unionPage->map(function ($item) use ($leaves, $expenses, $clientApprovals) {
-            if ($item->type === 'Client') {
-                $a = $clientApprovals->get($item->id);
+        $data = $unionPage->map(function ($item) use ($leaves, $expenses, $approvals, $user) {
+            if ($item->type === 'Approval') {
+                $a = $approvals->get($item->id);
                 if (! $a) return null;
+                $isColleague = $a->type === 'colleague';
+                $recipient   = $isColleague
+                    ? ($a->approver?->name ?? '—')
+                    : ($a->client?->company_name ?? '—');
+                // Only the addressed colleague may resolve a pending colleague approval.
+                $canResolve = $isColleague
+                    && $a->status === 'Pending'
+                    && (int) $a->approver_id === (int) $user->id;
                 return [
                     'id'          => $a->id,
-                    'type'        => 'Client',
+                    'type'        => $isColleague ? 'Colleague' : 'Client',
                     'requester'   => $a->requester?->name ?? '—',
                     'title'       => $a->title,
-                    'description' => "For {$a->client?->company_name}: {$a->title}" . ($a->description ? " — {$a->description}" : ''),
+                    'description' => ($isColleague ? "To {$recipient}: " : "For {$recipient}: ")
+                        . $a->title . ($a->description ? " — {$a->description}" : ''),
                     'amount'      => null,
                     'from_date'   => null,
                     'to_date'     => null,
@@ -154,7 +180,7 @@ class ApprovalController extends Controller
                     'status'      => strtolower($a->status),
                     'urgency'     => 'Normal',
                     'comments'    => $a->comments,
-                    'can_resolve' => false, // firm side only tracks; the client_admin resolves
+                    'can_resolve' => $canResolve,
                     'created_at'  => $a->created_at,
                 ];
             }
@@ -204,57 +230,74 @@ class ApprovalController extends Controller
     }
 
     /**
-     * Create a client approval request (firm side → client_admin action).
+     * Raise an approval and send it to a client (portal admin acts) or a
+     * colleague (the addressed internal user acts). Any internal staff may raise.
      */
     public function store(Request $request)
     {
         $user = $request->user();
-        if (! in_array($user->role, self::CLIENT_APPROVAL_CREATORS)) {
+        if ($user->isClientRole()) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
         $validated = $request->validate([
-            'client_id'   => 'required|integer|exists:clients,id',
+            'client_id'   => 'nullable|integer|exists:clients,id',
+            'approver_id' => 'nullable|integer|exists:users,id',
             'title'       => 'required|string|max:255',
             'description' => 'nullable|string|max:5000',
         ]);
 
+        if (empty($validated['client_id']) && empty($validated['approver_id'])) {
+            return response()->json(['message' => 'Choose a client or a colleague to send this approval to.'], 422);
+        }
+
+        $isColleague = ! empty($validated['approver_id']);
+        if ($isColleague && (int) $validated['approver_id'] === (int) $user->id) {
+            return response()->json(['message' => 'You cannot send an approval to yourself.'], 422);
+        }
+
         $approval = Approval::create([
             'requester_id' => $user->id,
-            'approver_id'  => $user->id, // updated to the resolving client_admin on action
-            'client_id'    => $validated['client_id'],
-            'type'         => 'client',
+            'approver_id'  => $isColleague ? $validated['approver_id'] : $user->id, // client flow updates approver_id on resolve
+            'client_id'    => $isColleague ? null : $validated['client_id'],
+            'type'         => $isColleague ? 'colleague' : 'client',
             'title'        => $validated['title'],
             'description'  => $validated['description'] ?? null,
-            'subject_type' => 'Client',
-            'subject_id'   => $validated['client_id'],
+            'subject_type' => $isColleague ? 'User' : 'Client',
+            'subject_id'   => $isColleague ? $validated['approver_id'] : $validated['client_id'],
             'status'       => 'Pending',
         ]);
 
-        // Notify every portal user of this client
-        $client = Client::find($validated['client_id']);
-        $portalUserIds = collect($client?->portalUserIds() ?? []);
-        $now = now();
-        $notifications = $portalUserIds->map(fn ($uid) => [
-            'user_id'     => $uid,
-            'type'        => 'approval',
-            'title'       => 'Approval requested',
-            'description' => "{$user->name} requested your approval: {$validated['title']}",
-            'meta'        => json_encode(['approval_id' => $approval->id]),
-            'action_url'  => '/approvals',
-            'created_at'  => $now,
-            'updated_at'  => $now,
-        ])->all();
-        if ($notifications) {
-            DB::table('ip_notifications')->insert($notifications);
+        if ($isColleague) {
+            Notifier::push(
+                $validated['approver_id'],
+                'approval',
+                'Approval requested',
+                "{$user->name} requested your approval: {$validated['title']}",
+                '/approvals',
+                ['approval_id' => $approval->id],
+            );
+        } else {
+            $client = Client::find($validated['client_id']);
+            Notifier::push(
+                collect($client?->portalUserIds() ?? [])->all(),
+                'approval',
+                'Approval requested',
+                "{$user->name} requested your approval: {$validated['title']}",
+                '/approvals',
+                ['approval_id' => $approval->id],
+            );
         }
 
         AuditLog::create([
             'user_id'      => $user->id,
-            'action'       => 'create_client_approval',
+            'action'       => $isColleague ? 'create_colleague_approval' : 'create_client_approval',
             'subject_type' => 'Approval',
             'subject_id'   => $approval->id,
-            'metadata'     => ['client_id' => $validated['client_id'], 'title' => $validated['title']],
+            'metadata'     => [
+                'recipient' => $isColleague ? "user:{$validated['approver_id']}" : "client:{$validated['client_id']}",
+                'title'     => $validated['title'],
+            ],
             'ip_address'   => $request->ip(),
             'user_agent'   => $request->userAgent(),
         ]);
@@ -267,11 +310,49 @@ class ApprovalController extends Controller
         $user = $request->user();
 
         $validated = $request->validate([
-            'type'    => 'required|in:Leave,Expense,Client',
+            'type'    => 'required|in:Leave,Expense,Client,Colleague',
             'id'      => 'required|integer',
             'action'  => 'required|in:Approved,Rejected',
             'comment' => 'nullable|string|max:2000',
         ]);
+
+        // ── Colleague approvals: only the addressed internal user may act ──
+        if ($validated['type'] === 'Colleague') {
+            $approval = Approval::findOrFail($validated['id']);
+            if ($approval->type !== 'colleague' || (int) $approval->approver_id !== (int) $user->id) {
+                return response()->json(['message' => 'Only the addressed colleague can approve or reject.'], 403);
+            }
+            if ($approval->status !== 'Pending') {
+                return response()->json(['message' => "Already {$approval->status}."], 422);
+            }
+
+            $approval->update([
+                'status'   => $validated['action'],
+                'comments' => $validated['comment'] ?? null,
+            ]);
+
+            Notifier::push(
+                $approval->requester_id,
+                'approval',
+                "Approval {$validated['action']}",
+                "{$user->name} {$validated['action']}: {$approval->title}"
+                    . ($validated['comment'] ? " — {$validated['comment']}" : ''),
+                '/approvals',
+                ['approval_id' => $approval->id],
+            );
+
+            AuditLog::create([
+                'user_id'      => $user->id,
+                'action'       => 'resolve_approval',
+                'subject_type' => 'Approval',
+                'subject_id'   => $approval->id,
+                'metadata'     => ['action' => $validated['action'], 'kind' => 'colleague'],
+                'ip_address'   => $request->ip(),
+                'user_agent'   => $request->userAgent(),
+            ]);
+
+            return response()->json(['ok' => true]);
+        }
 
         // ── Client approvals: only the client_admin of that client may act ──
         if ($validated['type'] === 'Client') {
@@ -294,16 +375,14 @@ class ApprovalController extends Controller
             ]);
 
             // Notify the firm-side requester
-            DB::table('ip_notifications')->insert([
-                'user_id'     => $approval->requester_id,
-                'type'        => 'approval',
-                'title'       => "Client approval {$validated['action']}",
-                'description' => "{$user->name} ({$ownClient->company_name}) {$validated['action']}: {$approval->title}",
-                'meta'        => json_encode(['approval_id' => $approval->id]),
-                'action_url'  => '/approvals',
-                'created_at'  => now(),
-                'updated_at'  => now(),
-            ]);
+            Notifier::push(
+                $approval->requester_id,
+                'approval',
+                "Client approval {$validated['action']}",
+                "{$user->name} ({$ownClient->company_name}) {$validated['action']}: {$approval->title}",
+                '/approvals',
+                ['approval_id' => $approval->id],
+            );
 
             AuditLog::create([
                 'user_id'      => $user->id,

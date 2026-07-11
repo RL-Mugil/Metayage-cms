@@ -398,17 +398,14 @@ class ProjectController extends Controller
 
         // Notify assigned manager via ip_notifications (the table the UI reads from)
         if ($project->assigned_manager_id) {
-            DB::table('ip_notifications')->insert([
-                'user_id' => $project->assigned_manager_id,
-                'type' => 'system',
-                'title' => 'Case Stage Updated',
-                'description' => "Case '{$project->project_name}' has been moved to '{$stageName}' stage.",
-                'meta' => json_encode(['project_id' => $project->id, 'stage' => $stageName]),
-                'action_url' => "/projects/{$project->id}",
-                'read_at' => null,
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]);
+            \App\Support\Notifier::push(
+                $project->assigned_manager_id,
+                'system',
+                'Case Stage Updated',
+                "Case '{$project->project_name}' has been moved to '{$stageName}' stage.",
+                "/projects/{$project->id}",
+                ['project_id' => $project->id, 'stage' => $stageName],
+            );
         }
 
         Cache::increment('dashboard_v');

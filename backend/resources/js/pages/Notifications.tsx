@@ -1,4 +1,4 @@
-import { Head } from "@inertiajs/react";
+import { Head, router } from "@inertiajs/react";
 import { useEffect, useState } from "react";
 import { Bell, CheckSquare, AlertTriangle, DollarSign, MessageSquare, Settings, User, X, Check, Loader2 } from "lucide-react";
 import AppLayout from "@/layouts/AppLayout";
@@ -16,6 +16,7 @@ interface Notif {
   title: string;
   description: string;
   meta?: Record<string, any>;
+  action_url?: string | null;
   read: boolean;
   created_at: string;
 }
@@ -54,6 +55,7 @@ export default function Notifications() {
         title: n.title,
         description: (n as any).description ?? (n as any).message ?? "",
         meta: (n as any).meta,
+        action_url: (n as any).action_url ?? null,
         read: (n as any).read ?? n.is_read ?? false,
         created_at: n.created_at,
       }) as Notif)))
@@ -72,6 +74,11 @@ export default function Notifications() {
     if (items.find((n) => n.id === id)?.read) return;
     await api.markNotificationRead(id).catch(() => {});
     setItems((prev) => prev.map((n) => n.id === id ? { ...n, read: true } : n));
+  }
+
+  async function openNotif(n: Notif) {
+    await markRead(n.id);
+    if (n.action_url) router.visit(n.action_url);
   }
 
   async function dismiss(id: number) {
@@ -141,7 +148,7 @@ export default function Notifications() {
                   return (
                     <div
                       key={n.id}
-                      onClick={() => markRead(n.id)}
+                      onClick={() => openNotif(n)}
                       className={`flex items-start gap-4 p-4 rounded-lg border cursor-pointer transition-colors ${
                         !n.read ? "bg-muted/20 border-border" : "bg-transparent border-transparent hover:border-border"
                       }`}

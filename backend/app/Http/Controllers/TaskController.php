@@ -58,16 +58,14 @@ class TaskController extends Controller
 
         // In-app notification for the assignee (skip if assigning to self)
         if ($task->assignee_id && $task->assignee_id !== $user->id) {
-            \DB::table('ip_notifications')->insert([
-                'user_id'    => $task->assignee_id,
-                'title'      => 'Task Assigned',
-                'message'    => "{$user->name} assigned you: {$task->title}",
-                'type'       => 'task_assigned',
-                'action_url' => '/tasks',
-                'is_read'    => false,
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]);
+            \App\Support\Notifier::push(
+                $task->assignee_id,
+                'task_assigned',
+                'Task Assigned',
+                "{$user->name} assigned you: {$task->title}",
+                '/tasks',
+                ['task_id' => $task->id],
+            );
         }
 
         // Audit Log
@@ -92,7 +90,23 @@ class TaskController extends Controller
         $this->authorize('update', $task);
         $validated = $request->validated();
 
+        $previousAssignee = $task->assignee_id;
         $task->update($validated);
+
+        // Notify the new assignee when a task is reassigned to someone else.
+        if (array_key_exists('assignee_id', $validated)
+            && $task->assignee_id
+            && (int) $task->assignee_id !== (int) $previousAssignee
+            && (int) $task->assignee_id !== (int) $user->id) {
+            \App\Support\Notifier::push(
+                $task->assignee_id,
+                'task_assigned',
+                'Task reassigned to you',
+                "{$user->name} reassigned you: {$task->title}",
+                '/tasks',
+                ['task_id' => $task->id],
+            );
+        }
 
         // Audit Log
         AuditLog::create([

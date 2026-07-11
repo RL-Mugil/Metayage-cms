@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api-client";
 
-type ApprovalType = "Leave" | "Expense" | "Client";
+type ApprovalType = "Leave" | "Expense" | "Client" | "Colleague";
 type ApprovalStatus = "pending" | "approved" | "rejected";
 
 interface Approval {
@@ -30,6 +30,7 @@ const typeColors: Record<ApprovalType, string> = {
   Leave: "bg-blue-500/10 text-blue-600 border-blue-200",
   Expense: "bg-amber-500/10 text-amber-600 border-amber-200",
   Client: "bg-purple-500/10 text-purple-600 border-purple-200",
+  Colleague: "bg-teal-500/10 text-teal-600 border-teal-200",
 };
 
 export default function Approvals() {
@@ -37,8 +38,10 @@ export default function Approvals() {
   const role: string = pageProps.auth?.user?.role ?? "";
   const isClientUser = ["client", "client_admin"].includes(role);
   const isClientAdmin = role === "client_admin";
-  const canCreateClientApproval = ["super_admin", "partner", "manager"].includes(role);
-  // Internal approvers act on Leave/Expense; client_admin acts on Client type
+  // Any internal staff may raise an approval (to a client or a colleague).
+  const canCreateApproval = !isClientUser;
+  // Internal approvers act on Leave/Expense; client_admin acts on Client type;
+  // colleague approvals are resolvable by whoever the backend flags (can_resolve).
   const canActInternal = ["super_admin", "hr", "manager", "partner"].includes(role);
 
   const [items, setItems] = useState<Approval[]>([]);
@@ -47,17 +50,25 @@ export default function Approvals() {
   const [activeTab, setActiveTab] = useState<"pending" | "approved" | "rejected">("pending");
   const [filterType, setFilterType] = useState<ApprovalType | "All">("All");
 
-  // New client approval modal (firm side)
+  // New approval modal (firm side)
   const [showNew, setShowNew] = useState(false);
+  const [recipientMode, setRecipientMode] = useState<"client" | "colleague">("client");
   const [clients, setClients] = useState<any[]>([]);
-  const [form, setForm] = useState({ client_id: "", title: "", description: "" });
+  const [colleagues, setColleagues] = useState<any[]>([]);
+  const [form, setForm] = useState({ client_id: "", approver_id: "", title: "", description: "" });
   const [clientSearch, setClientSearch] = useState("");
+  const [colleagueSearch, setColleagueSearch] = useState("");
   const [saving, setSaving] = useState(false);
   const [newError, setNewError] = useState("");
 
+  // Resolve modal (capture an optional comment / description with the decision)
+  const [resolveTarget, setResolveTarget] = useState<{ item: Approval; action: "Approved" | "Rejected" } | null>(null);
+  const [resolveComment, setResolveComment] = useState("");
+  const [resolving, setResolving] = useState(false);
+
   const filterTypes: (ApprovalType | "All")[] = isClientUser
     ? ["All"]
-    : ["All", "Leave", "Expense", "Client"];
+    : ["All", "Leave", "Expense", "Client", "Colleague"];
 
   const load = () => {
     api.getApprovals()
@@ -68,41 +79,56 @@ export default function Approvals() {
 
   useEffect(() => {
     load();
-    if (canCreateClientApproval) {
+    if (canCreateApproval) {
       api.getClients(new URLSearchParams({ per_page: "2000" }))
         .then((res: any) => setClients(Array.isArray(res) ? res : res?.data ?? []))
+        .catch(() => {});
+      api.getUsers()
+        .then((res: any) => {
+          const list = Array.isArray(res) ? res : res?.data ?? [];
+          setColleagues(list.filter((u: any) => !["client", "client_admin"].includes(u.role)));
+        })
         .catch(() => {});
     }
   }, []);
 
-  const resolve = async (item: Approval, action: "Approved" | "Rejected") => {
+  const doResolve = async () => {
+    if (!resolveTarget) return;
+    const { item, action } = resolveTarget;
+    setResolving(true);
     setError("");
     try {
-      await api.resolveApproval(item.type, item.id, action);
+      await api.resolveApproval(item.type, item.id, action, resolveComment.trim() || undefined);
       setItems((prev) =>
         prev.map((a) =>
           a.id === item.id && a.type === item.type
-            ? { ...a, status: action.toLowerCase() as ApprovalStatus }
+            ? { ...a, status: action.toLowerCase() as ApprovalStatus, comments: resolveComment.trim() || a.comments }
             : a
         )
       );
+      setResolveTarget(null);
+      setResolveComment("");
     } catch (e: any) {
       setError(e.message || "Failed to resolve approval.");
+    } finally {
+      setResolving(false);
     }
   };
 
   async function createApproval() {
-    if (!form.client_id || !form.title.trim()) return;
+    const isColleague = recipientMode === "colleague";
+    if ((isColleague ? !form.approver_id : !form.client_id) || !form.title.trim()) return;
     setSaving(true);
     setNewError("");
     try {
       await api.createApproval({
-        client_id: Number(form.client_id),
+        client_id: isColleague ? undefined : Number(form.client_id),
+        approver_id: isColleague ? Number(form.approver_id) : undefined,
         title: form.title.trim(),
         description: form.description.trim() || undefined,
       });
       setShowNew(false);
-      setForm({ client_id: "", title: "", description: "" });
+      setForm({ client_id: "", approver_id: "", title: "", description: "" });
       load();
     } catch (e: any) {
       setNewError(e?.message || "Failed to create approval request.");
@@ -114,6 +140,7 @@ export default function Approvals() {
   // Can the current user act on this row?
   const canAct = (a: Approval) => {
     if (a.type === "Client") return isClientAdmin && (a.can_resolve ?? true);
+    if (a.type === "Colleague") return a.can_resolve ?? false;
     return canActInternal && !isClientUser;
   };
 
@@ -130,6 +157,11 @@ export default function Approvals() {
     return !q || (c.company_name ?? "").toLowerCase().includes(q) || (c.client_code ?? "").toLowerCase().includes(q);
   }).slice(0, 15);
 
+  const filteredColleagues = colleagues.filter((u: any) => {
+    const q = colleagueSearch.toLowerCase();
+    return !q || (u.name ?? "").toLowerCase().includes(q) || (u.email ?? "").toLowerCase().includes(q);
+  }).slice(0, 15);
+
   return (
     <AppLayout>
       <Head title="Approvals" />
@@ -138,10 +170,10 @@ export default function Approvals() {
         title="Approvals"
         description={isClientUser
           ? "Review and act on approval requests from your legal team"
-          : "Manage leave requests, expense claims, and client approvals"}
-        actions={canCreateClientApproval ? (
+          : "Raise approvals for clients or colleagues, and act on ones sent to you"}
+        actions={canCreateApproval ? (
           <Button onClick={() => { setShowNew(true); setNewError(""); }}>
-            <Plus className="h-4 w-4 mr-2" /> New Client Approval
+            <Plus className="h-4 w-4 mr-2" /> New Approval
           </Button>
         ) : undefined}
       />
@@ -151,27 +183,58 @@ export default function Approvals() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
           <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-md p-6 m-4">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="font-display text-lg font-semibold">Request Client Approval</h2>
+              <h2 className="font-display text-lg font-semibold">New Approval Request</h2>
               <button onClick={() => setShowNew(false)}><X className="h-5 w-5 text-muted-foreground" /></button>
             </div>
             {newError && <p className="text-xs text-red-500 mb-3">{newError}</p>}
             <div className="space-y-3">
-              <div>
-                <label className="block text-xs text-muted-foreground mb-1">Client</label>
-                <div className="relative mb-1">
-                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
-                  <input type="text" placeholder="Filter clients…" value={clientSearch}
-                    onChange={(e) => setClientSearch(e.target.value)}
-                    className="w-full h-8 pl-7 pr-3 rounded-md border border-border bg-background text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
-                </div>
-                <select value={form.client_id} onChange={e => setForm(p => ({ ...p, client_id: e.target.value }))}
-                  className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold">
-                  <option value="">Select client…</option>
-                  {filteredClients.map((c: any) => (
-                    <option key={c.id} value={c.id}>{c.company_name ?? c.legal_name} ({c.client_code})</option>
-                  ))}
-                </select>
+              {/* Recipient toggle */}
+              <div className="flex gap-1 border border-border rounded-lg p-1 bg-muted/30">
+                {(["client", "colleague"] as const).map((m) => (
+                  <button key={m} type="button" onClick={() => setRecipientMode(m)}
+                    className={`flex-1 px-3 py-1.5 rounded text-sm font-medium capitalize transition-colors ${
+                      recipientMode === m ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
+                    }`}>
+                    {m === "client" ? "To a client" : "To a colleague"}
+                  </button>
+                ))}
               </div>
+
+              {recipientMode === "client" ? (
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1">Client</label>
+                  <div className="relative mb-1">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
+                    <input type="text" placeholder="Filter clients…" value={clientSearch}
+                      onChange={(e) => setClientSearch(e.target.value)}
+                      className="w-full h-8 pl-7 pr-3 rounded-md border border-border bg-background text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
+                  </div>
+                  <select value={form.client_id} onChange={e => setForm(p => ({ ...p, client_id: e.target.value }))}
+                    className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold">
+                    <option value="">Select client…</option>
+                    {filteredClients.map((c: any) => (
+                      <option key={c.id} value={c.id}>{c.company_name ?? c.legal_name} ({c.client_code})</option>
+                    ))}
+                  </select>
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1">Colleague</label>
+                  <div className="relative mb-1">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
+                    <input type="text" placeholder="Filter colleagues…" value={colleagueSearch}
+                      onChange={(e) => setColleagueSearch(e.target.value)}
+                      className="w-full h-8 pl-7 pr-3 rounded-md border border-border bg-background text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
+                  </div>
+                  <select value={form.approver_id} onChange={e => setForm(p => ({ ...p, approver_id: e.target.value }))}
+                    className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold">
+                    <option value="">Select colleague…</option>
+                    {filteredColleagues.map((u: any) => (
+                      <option key={u.id} value={u.id}>{u.name} ({u.role})</option>
+                    ))}
+                  </select>
+                </div>
+              )}
               <div>
                 <label className="block text-xs text-muted-foreground mb-1">Title</label>
                 <input type="text" value={form.title} onChange={e => setForm(p => ({ ...p, title: e.target.value }))}
@@ -187,10 +250,42 @@ export default function Approvals() {
             </div>
             <div className="flex gap-2 mt-5">
               <Button className="bg-gold hover:bg-gold/90 text-black flex-1"
-                disabled={!form.client_id || !form.title.trim() || saving} onClick={createApproval}>
-                {saving ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Sending…</> : "Send to Client"}
+                disabled={(recipientMode === "colleague" ? !form.approver_id : !form.client_id) || !form.title.trim() || saving}
+                onClick={createApproval}>
+                {saving ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Sending…</>
+                  : recipientMode === "colleague" ? "Send to Colleague" : "Send to Client"}
               </Button>
               <Button variant="outline" onClick={() => setShowNew(false)}>Cancel</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Resolve modal — capture an optional comment with the decision */}
+      {resolveTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-md p-6 m-4">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-display text-lg font-semibold">
+                {resolveTarget.action === "Approved" ? "Approve" : "Reject"} request
+              </h2>
+              <button onClick={() => setResolveTarget(null)}><X className="h-5 w-5 text-muted-foreground" /></button>
+            </div>
+            <p className="text-sm text-muted-foreground mb-3">{resolveTarget.item.description}</p>
+            <label className="block text-xs text-muted-foreground mb-1">
+              Comment {resolveTarget.action === "Rejected" ? "(recommended)" : "(optional)"}
+            </label>
+            <textarea value={resolveComment} onChange={e => setResolveComment(e.target.value)} rows={3}
+              placeholder="Add a note for the requester…"
+              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gold resize-none" />
+            <div className="flex gap-2 mt-5">
+              <Button
+                className={`flex-1 text-white ${resolveTarget.action === "Approved" ? "bg-green-600 hover:bg-green-700" : "bg-red-600 hover:bg-red-700"}`}
+                disabled={resolving} onClick={doResolve}>
+                {resolving ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Submitting…</>
+                  : resolveTarget.action === "Approved" ? "Confirm Approve" : "Confirm Reject"}
+              </Button>
+              <Button variant="outline" onClick={() => setResolveTarget(null)}>Cancel</Button>
             </div>
           </div>
         </div>
@@ -335,16 +430,18 @@ export default function Approvals() {
                         <td className="px-4 py-3">
                           {canAct(a) ? (
                             <div className="flex gap-2">
-                              <Button size="sm" className="h-7 px-3 bg-green-600 hover:bg-green-700 text-white text-xs" onClick={() => resolve(a, "Approved")}>
+                              <Button size="sm" className="h-7 px-3 bg-green-600 hover:bg-green-700 text-white text-xs" onClick={() => { setResolveTarget({ item: a, action: "Approved" }); setResolveComment(""); }}>
                                 <CheckCircle className="h-3 w-3 mr-1" /> Approve
                               </Button>
-                              <Button size="sm" variant="outline" className="h-7 px-3 text-xs border-red-200 text-red-600 hover:bg-red-50" onClick={() => resolve(a, "Rejected")}>
+                              <Button size="sm" variant="outline" className="h-7 px-3 text-xs border-red-200 text-red-600 hover:bg-red-50" onClick={() => { setResolveTarget({ item: a, action: "Rejected" }); setResolveComment(""); }}>
                                 <XCircle className="h-3 w-3 mr-1" /> Reject
                               </Button>
                             </div>
                           ) : (
                             <span className="text-xs text-muted-foreground">
-                              {a.type === "Client" && !isClientUser ? "Awaiting client" : "View only"}
+                              {a.type === "Client" && !isClientUser ? "Awaiting client"
+                                : a.type === "Colleague" ? "Awaiting colleague"
+                                : "View only"}
                             </span>
                           )}
                         </td>

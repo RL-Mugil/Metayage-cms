@@ -1,6 +1,6 @@
-import { Head } from "@inertiajs/react";
+import { Head, usePage } from "@inertiajs/react";
 import { useState, useEffect, useCallback } from "react";
-import { Users, Clock, Calendar, TrendingUp, UserCheck, UserX, Loader2, X, Search, ChevronLeft, ChevronRight } from "lucide-react";
+import { Users, Clock, Calendar, TrendingUp, UserCheck, UserX, Loader2, X, Search, ChevronLeft, ChevronRight, RefreshCw, Clock as ClockIcon } from "lucide-react";
 import AppLayout from "@/layouts/AppLayout";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -122,72 +122,218 @@ const deptColors: Record<string, string> = {
   "People Ops": "bg-amber-500/10 text-amber-600 border-amber-200",
 };
 
+const HR_ADMIN_ROLES = ["super_admin", "partner", "hr", "finance"];
+
+// v2 — Team Availability board with real-time clock status
 export default function HRMSIndex() {
+  const { props } = usePage() as any;
+  const userRole: string = props.auth?.user?.role ?? "";
+  const isHrAdmin = HR_ADMIN_ROLES.includes(userRole);
+
   const [employees, setEmployees] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({ total: 0, active: 0, on_leave: 0, departments: 0 });
   const [kpiModal, setKpiModal] = useState<HrmsKpiDef | null>(null);
+  const [resetting, setResetting] = useState<number | null>(null);
+
+  const loadEmployees = useCallback(() => {
+    return api.getEmployees().then((data) => {
+      setEmployees(Array.isArray(data) ? data : []);
+    });
+  }, []);
 
   useEffect(() => {
     api.getHRMSStats().then(setStats).catch(() => {});
-    api.getEmployees().then((data) => {
-      setEmployees(Array.isArray(data) ? data : []);
-      setLoading(false);
-    }).catch(() => setLoading(false));
-  }, []);
+    loadEmployees().finally(() => setLoading(false));
+  }, [loadEmployees]);
+
+  async function handleResetToday(emp: any) {
+    if (!confirm(`Reset today's clock-in sessions for ${emp.full_name}?`)) return;
+    setResetting(emp.id);
+    try {
+      await api.resetEmployeeToday(emp.id);
+      await loadEmployees();
+    } catch (e: any) { alert(e.message || "Failed."); }
+    finally { setResetting(null); }
+  }
+
+  const [search, setSearch] = useState("");
+  const [filterStatus, setFilterStatus] = useState<"all" | "in" | "out" | "leave">("all");
 
   const departments = [...new Set(employees.map((e) => e.department?.name).filter(Boolean))];
-
   const deptBreakdown = departments.map((dept) => ({
     name: dept,
     count: employees.filter((e) => e.department?.name === dept).length,
   }));
-
   const locationBreakdown = [...new Set(employees.map((e) => e.work_location).filter(Boolean))]
-    .map((loc) => ({
-      name: loc as string,
-      count: employees.filter((e) => e.work_location === loc).length,
-    }))
+    .map((loc) => ({ name: loc as string, count: employees.filter((e) => e.work_location === loc).length }))
     .sort((a, b) => b.count - a.count);
+
+  const clockedIn  = employees.filter(e => e.today_status === "clocked_in").length;
+  const onLeaveNow = employees.filter(e => e.employment_status === "On Leave").length;
+
+  const visible = employees.filter(e => {
+    const q = search.toLowerCase();
+    if (q && !(e.full_name?.toLowerCase().includes(q) || e.work_email?.toLowerCase().includes(q) || e.designation?.title?.toLowerCase().includes(q) || e.department?.name?.toLowerCase().includes(q))) return false;
+    if (filterStatus === "in")    return e.today_status === "clocked_in";
+    if (filterStatus === "out")   return e.today_status === "clocked_out";
+    if (filterStatus === "leave") return e.employment_status === "On Leave";
+    return true;
+  });
 
   return (
     <AppLayout>
       <Head title="HR Overview" />
-      <PageHeader eyebrow="HRMS" title="HR Overview" description="Headcount, department summary, and workforce snapshot" />
+      <PageHeader eyebrow="HRMS" title="HR Overview" description="See who's in, out, or on leave — refreshed on every page load." />
       {kpiModal && <HrmsKpiModal kpi={kpiModal} onClose={() => setKpiModal(null)} />}
 
       <div className="px-8 py-6 space-y-6">
 
-        {/* Stats */}
+        {/* Availability quick-stats — visible to everyone */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {HRMS_KPI_DEFS.map((kpi) => {
-            const Icon = kpi.icon;
-            const val  = stats[kpi.key as keyof typeof stats] ?? 0;
-            const canDrill = kpi.statusFilter !== null || kpi.key === "total";
-            return (
-              <button key={kpi.key}
-                onClick={canDrill ? () => setKpiModal(kpi) : undefined}
-                className={`rounded-xl border border-border bg-card p-4 text-left transition-all ${canDrill ? "hover:shadow-md hover:border-gold/40 cursor-pointer" : "cursor-default"}`}
-              >
-                <div className="flex items-center gap-2 mb-2">
-                  <Icon className={`h-5 w-5 ${kpi.color}`} />
-                  <span className="text-xs text-muted-foreground">{kpi.label}</span>
-                </div>
-                <div className={`text-2xl font-bold ${kpi.color}`}>{loading ? "—" : val}</div>
-                {canDrill && <div className="mt-1 text-xs text-muted-foreground">Click to view</div>}
-              </button>
-            );
-          })}
+          <button onClick={() => setFilterStatus("all")}
+            className={`rounded-xl border bg-card p-4 text-left transition-all hover:shadow-md hover:border-gold/40 ${filterStatus === "all" ? "border-gold/60" : "border-border"}`}>
+            <div className="flex items-center gap-2 mb-2"><Users className="h-5 w-5 text-gold" /><span className="text-xs text-muted-foreground">Total Staff</span></div>
+            <div className="text-2xl font-bold text-gold">{loading ? "—" : employees.length}</div>
+            <div className="mt-1 text-xs text-muted-foreground">Show all</div>
+          </button>
+          <button onClick={() => setFilterStatus("in")}
+            className={`rounded-xl border bg-card p-4 text-left transition-all hover:shadow-md hover:border-green-500/40 ${filterStatus === "in" ? "border-green-500/60" : "border-border"}`}>
+            <div className="flex items-center gap-2 mb-2"><UserCheck className="h-5 w-5 text-green-500" /><span className="text-xs text-muted-foreground">Clocked In</span></div>
+            <div className="text-2xl font-bold text-green-500">{loading ? "—" : clockedIn}</div>
+            <div className="mt-1 text-xs text-muted-foreground">At work right now</div>
+          </button>
+          <button onClick={() => setFilterStatus("leave")}
+            className={`rounded-xl border bg-card p-4 text-left transition-all hover:shadow-md hover:border-amber-500/40 ${filterStatus === "leave" ? "border-amber-500/60" : "border-border"}`}>
+            <div className="flex items-center gap-2 mb-2"><Calendar className="h-5 w-5 text-amber-500" /><span className="text-xs text-muted-foreground">On Leave</span></div>
+            <div className="text-2xl font-bold text-amber-500">{loading ? "—" : onLeaveNow}</div>
+            <div className="mt-1 text-xs text-muted-foreground">Do not disturb</div>
+          </button>
+          {isHrAdmin ? (
+            <button onClick={() => setKpiModal(HRMS_KPI_DEFS[3])}
+              className="rounded-xl border border-border bg-card p-4 text-left transition-all hover:shadow-md hover:border-blue-400/40">
+              <div className="flex items-center gap-2 mb-2"><TrendingUp className="h-5 w-5 text-blue-500" /><span className="text-xs text-muted-foreground">Departments</span></div>
+              <div className="text-2xl font-bold text-blue-500">{loading ? "—" : stats.departments}</div>
+              <div className="mt-1 text-xs text-muted-foreground">Click to view</div>
+            </button>
+          ) : (
+            <button onClick={() => setFilterStatus("out")}
+              className={`rounded-xl border bg-card p-4 text-left transition-all hover:shadow-md hover:border-muted-foreground/40 ${filterStatus === "out" ? "border-muted-foreground/60" : "border-border"}`}>
+              <div className="flex items-center gap-2 mb-2"><UserX className="h-5 w-5 text-muted-foreground" /><span className="text-xs text-muted-foreground">Done for Today</span></div>
+              <div className="text-2xl font-bold text-muted-foreground">{loading ? "—" : employees.filter(e => e.today_status === "clocked_out").length}</div>
+              <div className="mt-1 text-xs text-muted-foreground">Clocked out</div>
+            </button>
+          )}
         </div>
 
-        <div className="grid grid-cols-2 gap-6">
-          {/* Department breakdown */}
-          <Card className="border-border">
-            <CardHeader><CardTitle className="font-display text-base">Department Breakdown</CardTitle></CardHeader>
-            <CardContent>
-              {loading ? (
-                <div className="flex items-center justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-gold" /></div>
-              ) : (
+        {/* People availability table — the main view */}
+        <Card className="border-border">
+          <CardHeader className="flex flex-row items-center justify-between gap-4 pb-3">
+            <CardTitle className="font-display text-base">Team Availability</CardTitle>
+            <div className="flex items-center gap-2 ml-auto">
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                <input
+                  value={search} onChange={e => setSearch(e.target.value)}
+                  placeholder="Search name, role…"
+                  className="h-8 pl-8 pr-3 rounded-md border border-border bg-background text-sm focus:outline-none focus:ring-1 focus:ring-gold w-48"
+                />
+              </div>
+              {filterStatus !== "all" && (
+                <button onClick={() => setFilterStatus("all")} className="text-xs text-muted-foreground hover:text-foreground underline">Clear filter</button>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent className="p-0">
+            {loading ? (
+              <div className="flex items-center justify-center py-10"><Loader2 className="h-7 w-7 animate-spin text-gold" /></div>
+            ) : (
+              <table className="w-full text-sm">
+                <thead className="bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground">
+                  <tr>
+                    <th className="px-4 py-3 text-left">Employee</th>
+                    <th className="px-4 py-3 text-left">Designation</th>
+                    <th className="px-4 py-3 text-left">Department</th>
+                    <th className="px-4 py-3 text-left">Location</th>
+                    <th className="px-4 py-3 text-left">Availability</th>
+                    {isHrAdmin && <th className="px-4 py-3 text-left"></th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {visible.map((e) => {
+                    const onLeave = e.employment_status === "On Leave";
+                    const clockedIn = e.today_status === "clocked_in";
+                    const clockedOut = e.today_status === "clocked_out";
+                    return (
+                      <tr key={e.id} className={`border-t border-border hover:bg-muted/30 ${onLeave ? "bg-amber-500/5" : ""}`}>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-3">
+                            <div className="relative flex-shrink-0">
+                              <div className="h-9 w-9 rounded-full bg-gold/20 flex items-center justify-center text-gold font-semibold text-sm">
+                                {e.full_name?.charAt(0) || "?"}
+                              </div>
+                              {clockedIn && <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full bg-green-500 border-2 border-background" />}
+                              {onLeave && <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full bg-amber-400 border-2 border-background" />}
+                            </div>
+                            <div>
+                              <div className="font-medium text-foreground">{e.full_name}</div>
+                              <div className="text-xs text-muted-foreground">{e.work_email}</div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-xs text-muted-foreground">{e.designation?.title || "—"}</td>
+                        <td className="px-4 py-3">
+                          <span className={`px-2 py-0.5 rounded border text-xs font-medium ${deptColors[e.department?.name] || "bg-muted text-muted-foreground border-border"}`}>
+                            {e.department?.name || "—"}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-xs text-muted-foreground">{e.work_location || "—"}</td>
+                        <td className="px-4 py-3">
+                          {onLeave ? (
+                            <span className="inline-flex items-center gap-1.5 text-xs font-medium text-amber-600 bg-amber-500/10 px-2 py-1 rounded-full">
+                              <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />On Leave — Do Not Disturb
+                            </span>
+                          ) : clockedIn ? (
+                            <span className="inline-flex items-center gap-1.5 text-xs font-medium text-green-600 bg-green-500/10 px-2 py-1 rounded-full">
+                              <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />Clocked In
+                            </span>
+                          ) : clockedOut ? (
+                            <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground bg-muted/50 px-2 py-1 rounded-full">
+                              <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/40" />Done for Today
+                            </span>
+                          ) : (
+                            <span className="text-xs text-muted-foreground/50 px-2 py-1">Not clocked in</span>
+                          )}
+                        </td>
+                        {isHrAdmin && (
+                          <td className="px-4 py-3">
+                            <button onClick={() => handleResetToday(e)} disabled={resetting === e.id}
+                              title="Reset today's clock-in sessions"
+                              className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground disabled:opacity-40">
+                              {resetting === e.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                            </button>
+                          </td>
+                        )}
+                      </tr>
+                    );
+                  })}
+                  {visible.length === 0 && (
+                    <tr><td colSpan={isHrAdmin ? 6 : 5} className="px-4 py-10 text-center text-muted-foreground text-sm">
+                      {search || filterStatus !== "all" ? "No employees match this filter." : "No employees found."}
+                    </td></tr>
+                  )}
+                </tbody>
+              </table>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Admin-only: dept breakdown + location split */}
+        {isHrAdmin && (
+          <div className="grid grid-cols-2 gap-6">
+            <Card className="border-border">
+              <CardHeader><CardTitle className="font-display text-base">Department Breakdown</CardTitle></CardHeader>
+              <CardContent>
                 <div className="space-y-3">
                   {deptBreakdown.map(({ name, count }) => (
                     <div key={name} className="flex items-center gap-3">
@@ -200,23 +346,15 @@ export default function HRMSIndex() {
                   ))}
                   {deptBreakdown.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">No department data</p>}
                 </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Location split */}
-          <Card className="border-border">
-            <CardHeader><CardTitle className="font-display text-base">Work Location Split</CardTitle></CardHeader>
-            <CardContent>
-              {loading ? (
-                <div className="flex items-center justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-gold" /></div>
-              ) : (
+              </CardContent>
+            </Card>
+            <Card className="border-border">
+              <CardHeader><CardTitle className="font-display text-base">Work Location Split</CardTitle></CardHeader>
+              <CardContent>
                 <div className="space-y-3">
                   {locationBreakdown.map(({ name, count }) => (
                     <div key={name} className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium">{name}</span>
-                      </div>
+                      <span className="text-sm font-medium">{name}</span>
                       <div className="flex items-center gap-3">
                         <div className="w-32 h-2 bg-muted rounded-full">
                           <div className="h-full bg-blue-500 rounded-full" style={{ width: `${employees.length ? (count / employees.length) * 100 : 0}%` }} />
@@ -227,66 +365,10 @@ export default function HRMSIndex() {
                   ))}
                   {locationBreakdown.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">No location data</p>}
                 </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Recent employees */}
-        <Card className="border-border">
-          <CardHeader><CardTitle className="font-display text-base">All Employees</CardTitle></CardHeader>
-          <CardContent className="p-0">
-            {loading ? (
-              <div className="flex items-center justify-center py-10"><Loader2 className="h-7 w-7 animate-spin text-gold" /></div>
-            ) : (
-              <table className="w-full text-sm">
-                <thead className="bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground">
-                  <tr>
-                    <th className="px-4 py-3 text-left">Employee</th>
-                    <th className="px-4 py-3 text-left">Designation</th>
-                    <th className="px-4 py-3 text-left">Department</th>
-                    <th className="px-4 py-3 text-left">Location</th>
-                    <th className="px-4 py-3 text-left">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {employees.map((e) => (
-                    <tr key={e.id} className="border-t border-border hover:bg-muted/30">
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-3">
-                          <div className="h-8 w-8 rounded-full bg-gold/20 flex items-center justify-center text-gold font-semibold text-xs flex-shrink-0">
-                            {e.full_name?.charAt(0) || "?"}
-                          </div>
-                          <div>
-                            <div className="font-medium">{e.full_name}</div>
-                            <div className="text-xs text-muted-foreground">{e.work_email}</div>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-muted-foreground">{e.designation?.title || "—"}</td>
-                      <td className="px-4 py-3">
-                        <span className={`px-2 py-0.5 rounded border text-xs font-medium ${deptColors[e.department?.name] || "bg-muted text-muted-foreground border-border"}`}>
-                          {e.department?.name || "—"}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-muted-foreground">{e.work_location || "—"}</td>
-                      <td className="px-4 py-3">
-                        <Badge variant="outline" className={e.employment_status === "Active" ? "text-green-600 border-green-200 bg-green-50" : "text-amber-600 border-amber-200 bg-amber-50"}>
-                          {e.employment_status || "Active"}
-                        </Badge>
-                      </td>
-                    </tr>
-                  ))}
-                  {employees.length === 0 && (
-                    <tr>
-                      <td colSpan={5} className="px-4 py-10 text-center text-muted-foreground text-sm">No employees found</td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            )}
-          </CardContent>
-        </Card>
+              </CardContent>
+            </Card>
+          </div>
+        )}
       </div>
     </AppLayout>
   );

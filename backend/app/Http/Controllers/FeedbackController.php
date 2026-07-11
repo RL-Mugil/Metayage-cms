@@ -106,21 +106,14 @@ class FeedbackController extends Controller
         ]);
 
         // Notify every portal user of this client
-        $portalUserIds = collect($project->client->portalUserIds());
-        $now = now();
-        $rows = $portalUserIds->map(fn ($uid) => [
-            'user_id'     => $uid,
-            'type'        => 'feedback_request',
-            'title'       => 'Feedback requested',
-            'description' => "{$request->user()->name} requested your feedback on case {$project->docket_number}",
-            'meta'        => json_encode(['feedback_request_id' => $fr->id, 'project_id' => $project->id]),
-            'action_url'  => '/feedback',
-            'created_at'  => $now,
-            'updated_at'  => $now,
-        ])->all();
-        if ($rows) {
-            DB::table('ip_notifications')->insert($rows);
-        }
+        \App\Support\Notifier::push(
+            collect($project->client->portalUserIds())->all(),
+            'feedback_request',
+            'Feedback requested',
+            "{$request->user()->name} requested your feedback on case {$project->docket_number}",
+            '/feedback',
+            ['feedback_request_id' => $fr->id, 'project_id' => $project->id],
+        );
 
         return response()->json($fr, 201);
     }
@@ -204,17 +197,15 @@ class FeedbackController extends Controller
             'entry_date'  => now()->toDateString(),
         ]);
 
-        // Notify the requesting client manager
-        DB::table('ip_notifications')->insert([
-            'user_id'     => $fr->requested_by_id,
-            'type'        => 'feedback_request',
-            'title'       => 'Case feedback received',
-            'description' => "{$client->company_name} rated case {$fr->docket_number}: {$validated['rating']}/5",
-            'meta'        => json_encode(['feedback_request_id' => $fr->id, 'rating' => $validated['rating']]),
-            'action_url'  => '/feedback',
-            'created_at'  => now(),
-            'updated_at'  => now(),
-        ]);
+        // Notify the requesting staff member
+        \App\Support\Notifier::push(
+            $fr->requested_by_id,
+            'feedback_request',
+            'Case feedback received',
+            "{$client->company_name} rated case {$fr->docket_number}: {$validated['rating']}/5",
+            '/feedback',
+            ['feedback_request_id' => $fr->id, 'rating' => $validated['rating']],
+        );
 
         return response()->json(['ok' => true]);
     }

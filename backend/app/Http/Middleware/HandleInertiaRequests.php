@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Inertia\Middleware;
 
 class HandleInertiaRequests extends Middleware
@@ -28,6 +29,10 @@ class HandleInertiaRequests extends Middleware
                     'role'       => $user->role,
                     'status'     => $user->status,
                     'avatar_url' => $user->avatar_url,
+                    'unread_notifications' => fn () => DB::table('ip_notifications')
+                        ->where('user_id', $user->id)
+                        ->whereNull('read_at')
+                        ->count(),
                 ] : null,
             ],
             'flash' => [

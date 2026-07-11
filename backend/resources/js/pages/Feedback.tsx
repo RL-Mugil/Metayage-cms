@@ -161,7 +161,8 @@ export default function Feedback() {
   const role: string = pageProps.auth?.user?.role ?? "";
   const isClientUser = ["client", "client_admin"].includes(role);
   const isClientAdmin = role === "client_admin";
-  const canRequest = ["super_admin", "partner", "manager"].includes(role);
+  // Any internal staff member can request feedback on a case they work on.
+  const canRequest = !isClientUser;
 
   const [entries, setEntries] = useState<any[]>([]);
   const [requests, setRequests] = useState<FeedbackRequestRow[]>([]);
