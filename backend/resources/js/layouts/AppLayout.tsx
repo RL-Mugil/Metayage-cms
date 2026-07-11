@@ -137,7 +137,7 @@ export default function AppLayout({ children }: Props) {
 
     const NAV_MAP: Record<string, string> = {
       d: "/", c: "/clients", p: "/projects", t: "/tasks",
-      f: "/financial", h: "/hrms", r: "/reports", n: "/notifications",
+      k: "/kanban", f: "/financial", h: "/hrms", r: "/reports", n: "/notifications",
     };
 
     const handler = (e: globalThis.KeyboardEvent) => {

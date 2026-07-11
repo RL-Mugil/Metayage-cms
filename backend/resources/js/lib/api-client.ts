@@ -623,6 +623,38 @@ export const api = {
   async createApproval(data: { client_id?: number; approver_id?: number; title: string; description?: string }): Promise<any> {
     return this.request('/approvals', { method: 'POST', body: JSON.stringify(data) })
   },
+
+  // Performance goals
+  async createGoal(data: { title: string; description?: string; target_date?: string; category?: string }): Promise<Record<string, unknown>> {
+    return this.request('/performance/goals', { method: 'POST', body: JSON.stringify(data) })
+  },
+  async updateGoal(id: number | string, data: { title?: string; progress?: number; status?: string }): Promise<Record<string, unknown>> {
+    return this.request(`/performance/goals/${id}`, { method: 'PUT', body: JSON.stringify(data) })
+  },
+  async deleteGoal(id: number | string): Promise<{ message: string }> {
+    return this.request(`/performance/goals/${id}`, { method: 'DELETE' })
+  },
+  async submitFeedback360(data: { reviewee_id: number; feedback: string; rating: number }): Promise<{ message: string }> {
+    return this.request('/performance/feedback360', { method: 'POST', body: JSON.stringify(data) })
+  },
+
+  // Recruitment candidates
+  async createCandidate(data: { job_id: number; name: string; email?: string; phone?: string; resume_url?: string; stage?: string }): Promise<Record<string, unknown>> {
+    return this.request('/recruitment/candidates', { method: 'POST', body: JSON.stringify(data) })
+  },
+  async updateCandidateStage(id: number | string, stage: string): Promise<Record<string, unknown>> {
+    return this.request(`/recruitment/candidates/${id}`, { method: 'PUT', body: JSON.stringify({ stage }) })
+  },
+
+  // Portal recent activity
+  async portalRecentActivity(): Promise<Record<string, unknown>[]> {
+    return this.request('/portal/recent-activity')
+  },
+
+  // Integration logs
+  async getIntegrationLogs(slug: string): Promise<Record<string, unknown>[]> {
+    return this.request(`/integrations/${slug}/logs`)
+  },
 }
 
 // ── CSV Download Utility ──

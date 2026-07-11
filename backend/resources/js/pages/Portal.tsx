@@ -147,6 +147,9 @@ export default function Portal() {
   const [removeUserLoading, setRemoveUserLoading] = useState(false);
   const [removeUserError, setRemoveUserError] = useState("");
 
+  const [activity, setActivity] = useState<any[]>([]);
+  const [activityLoading, setActivityLoading] = useState(true);
+
   // ── Data loaders ──────────────────────────────────────────────────────────
   const loadPortal = () =>
     api.getPortalClients().then(setClients).catch(() => {}).finally(() => setLoading(false));
@@ -154,8 +157,13 @@ export default function Portal() {
     api.getClients(new URLSearchParams({ per_page: '2000' }))
       .then((res: any) => setAllClients(Array.isArray(res) ? res : res?.data ?? []))
       .catch(() => {});
+  const loadActivity = () =>
+    api.portalRecentActivity()
+      .then((d: any) => setActivity(Array.isArray(d) ? d : []))
+      .catch(() => setActivity([]))
+      .finally(() => setActivityLoading(false));
 
-  useEffect(() => { loadPortal(); loadAll(); }, []);
+  useEffect(() => { loadPortal(); loadAll(); loadActivity(); }, []);
 
   useEffect(() => {
     function handler(e: MouseEvent) {
@@ -1019,10 +1027,37 @@ export default function Portal() {
           <CardHeader>
             <CardTitle className="font-display">Recent Activity</CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="py-8 text-center text-muted-foreground text-sm">
-              No recent activity to display.
-            </div>
+          <CardContent className="p-0">
+            {activityLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-5 w-5 animate-spin text-gold" />
+              </div>
+            ) : activity.length === 0 ? (
+              <div className="py-8 text-center text-muted-foreground text-sm">
+                No recent activity to display.
+              </div>
+            ) : (
+              <table className="w-full text-sm">
+                <thead className="bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground">
+                  <tr>
+                    <th className="px-4 py-3 text-left">User</th>
+                    <th className="px-4 py-3 text-left">Action</th>
+                    <th className="px-4 py-3 text-left">Subject</th>
+                    <th className="px-4 py-3 text-left">When</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {activity.map((a: any, i: number) => (
+                    <tr key={i} className="border-t border-border hover:bg-muted/30">
+                      <td className="px-4 py-2.5 font-medium">{a.user_name ?? "—"}</td>
+                      <td className="px-4 py-2.5 text-muted-foreground capitalize">{(a.action ?? "").replace(/_/g, " ")}</td>
+                      <td className="px-4 py-2.5 text-muted-foreground">{a.subject_type} {a.subject_id ? `#${a.subject_id}` : ""}</td>
+                      <td className="px-4 py-2.5 text-xs text-muted-foreground font-mono">{a.created_at ? new Date(a.created_at).toLocaleString("en-IN") : "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </CardContent>
         </Card>
       </div>

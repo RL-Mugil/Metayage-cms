@@ -129,6 +129,16 @@ class PerformanceController extends Controller
         return response()->json(['ok' => true, 'progress' => $goal->progress, 'status' => $goal->status]);
     }
 
+    public function deleteGoal(Request $request, $id)
+    {
+        if ($deny = $this->gate($request, self::WRITE_ROLES)) return $deny;
+
+        $goal = PerformanceGoal::findOrFail($id);
+        $goal->delete();
+
+        return response()->json(['ok' => true]);
+    }
+
     public function storeFeedback360(Request $request)
     {
         if ($deny = $this->gate($request, self::WRITE_ROLES)) return $deny;

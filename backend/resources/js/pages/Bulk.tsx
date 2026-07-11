@@ -68,6 +68,8 @@ export default function Bulk() {
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [action, setAction] = useState<BulkAction | "">("");
   const [statusValue, setStatusValue] = useState("");
+  const [notifyTitle, setNotifyTitle] = useState("");
+  const [notifyMessage, setNotifyMessage] = useState("");
   const [executing, setExecuting] = useState(false);
   const [done, setDone] = useState(false);
   const [resultMsg, setResultMsg] = useState("");
@@ -83,7 +85,7 @@ export default function Bulk() {
   const toggleAll = () => {
     setSelected(selected.size === rows.length ? new Set() : new Set(rows.map((r) => r.id)));
   };
-  const reset = () => { setStep(1); setEntity(null); setRows([]); setSelected(new Set()); setAction(""); setStatusValue(""); setDone(false); setResultMsg(""); };
+  const reset = () => { setStep(1); setEntity(null); setRows([]); setSelected(new Set()); setAction(""); setStatusValue(""); setNotifyTitle(""); setNotifyMessage(""); setDone(false); setResultMsg(""); };
 
   const availableActions: { a: BulkAction; icon: any; desc: string }[] = [
     { a: "Export CSV", icon: Download, desc: "Download as CSV file" },
@@ -114,7 +116,8 @@ export default function Bulk() {
         ids: Array.from(selected),
         action: action === "Change Status" ? "change_status" : action === "Archive" ? "archive" : "notify",
         ...(action === "Change Status" ? { status: statusValue } : {}),
-      });
+        ...(action === "Send Notification" ? { notify_title: notifyTitle || "Bulk Notification", notify_message: notifyMessage } : {}),
+      } as any);
       setResultMsg(`${res.affected} records updated`);
       setDone(true);
     } catch (e: any) {
@@ -258,8 +261,24 @@ export default function Bulk() {
                       </select>
                     </div>
                   )}
+                  {action === "Send Notification" && (
+                    <div className="space-y-2">
+                      <div>
+                        <label className="block text-xs text-muted-foreground mb-1">Notification Title</label>
+                        <input value={notifyTitle} onChange={(e) => setNotifyTitle(e.target.value)}
+                          placeholder="e.g. Action Required"
+                          className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-muted-foreground mb-1">Message Body</label>
+                        <textarea value={notifyMessage} onChange={(e) => setNotifyMessage(e.target.value)}
+                          rows={3} placeholder="Enter the notification message…"
+                          className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-gold" />
+                      </div>
+                    </div>
+                  )}
                   <div className="flex gap-3">
-                    <Button className="flex-1" disabled={executing || (action === "Change Status" && !statusValue)} onClick={execute}>
+                    <Button className="flex-1" disabled={executing || (action === "Change Status" && !statusValue) || (action === "Send Notification" && !notifyMessage.trim())} onClick={execute}>
                       {executing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Package className="h-4 w-4 mr-2" />}
                       Execute on {selected.size} Records
                     </Button>

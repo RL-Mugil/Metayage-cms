@@ -63,6 +63,7 @@ const groups = [
       { to: "/projects", title: "Projects", icon: Briefcase },
       { to: "/project-tracker", title: "Project Tracker", icon: TableProperties },
       { to: "/tasks", title: "Tasks", icon: ListChecks },
+      { to: "/kanban", title: "Kanban Board", icon: Layers },
       { to: "/calendar", title: "Calendar", icon: CalendarDays },
     ],
   },

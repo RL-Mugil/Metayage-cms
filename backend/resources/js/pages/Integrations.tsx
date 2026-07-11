@@ -1,6 +1,6 @@
 import { Head } from "@inertiajs/react";
 import { useEffect, useState } from "react";
-import { Plug, Zap, RefreshCw, X, Settings, Globe, CheckCircle, Loader2 } from "lucide-react";
+import { Plug, Zap, RefreshCw, X, Settings, Globe, CheckCircle, Loader2, Activity, ChevronDown, ChevronUp, Copy } from "lucide-react";
 import AppLayout from "@/layouts/AppLayout";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -30,6 +30,10 @@ export default function Integrations() {
   const [keySaved, setKeySaved] = useState<Record<string, boolean>>({});
   const [busyId, setBusyId] = useState<string | null>(null);
   const [banner, setBanner] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  const [logsOpen, setLogsOpen] = useState<string | null>(null);
+  const [logs, setLogs] = useState<Record<string, any[]>>({});
+  const [logsLoading, setLogsLoading] = useState<string | null>(null);
+  const webhookBase = `${window.location.origin}/api/webhooks`;
 
   const load = () => api.getIntegrations()
     .then((d) => setList(d as unknown as Integration[]))
@@ -62,6 +66,16 @@ export default function Integrations() {
         setTestResult((prev) => ({ ...prev, [id]: "fail" }));
         setBanner({ kind: "err", text: error instanceof Error ? error.message : "Integration test failed." });
       });
+  };
+
+  const fetchLogs = (id: string) => {
+    setLogsOpen(id);
+    if (logs[id]) return;
+    setLogsLoading(id);
+    api.getIntegrationLogs(id)
+      .then((d: any) => setLogs((p) => ({ ...p, [id]: Array.isArray(d) ? d : [] })))
+      .catch(() => setLogs((p) => ({ ...p, [id]: [] })))
+      .finally(() => setLogsLoading(null));
   };
 
   const saveKey = (id: string) => {
@@ -169,18 +183,48 @@ export default function Integrations() {
                     <div>
                       <label className="text-xs font-medium text-muted-foreground">Webhook URL</label>
                       <div className="mt-1 flex items-center gap-2">
-                        <input readOnly value={`https://mypl-cms.139-59-85-216.sslip.io/api/webhooks/${intg.id}`}
-                          className="flex-1 h-8 rounded border border-border bg-muted/30 px-3 text-xs text-muted-foreground" />
-                        <Globe className="h-4 w-4 text-muted-foreground" />
+                        <input readOnly value={`${webhookBase}/${intg.id}`}
+                          className="flex-1 h-8 rounded border border-border bg-muted/30 px-3 text-xs text-muted-foreground font-mono" />
+                        <button
+                          title="Copy"
+                          onClick={() => navigator.clipboard.writeText(`${webhookBase}/${intg.id}`)}
+                          className="text-muted-foreground hover:text-foreground">
+                          <Copy className="h-3.5 w-3.5" />
+                        </button>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <Button size="sm" className="h-7 text-xs" onClick={() => testConnection(intg.id)}>
                         <Zap className="h-3 w-3 mr-1" /> Test Connection
+                      </Button>
+                      <Button size="sm" variant="outline" className="h-7 text-xs"
+                        onClick={() => logsOpen === intg.id ? setLogsOpen(null) : fetchLogs(intg.id)}>
+                        <Activity className="h-3 w-3 mr-1" /> Logs
+                        {logsOpen === intg.id ? <ChevronUp className="h-3 w-3 ml-1" /> : <ChevronDown className="h-3 w-3 ml-1" />}
                       </Button>
                       {testResult[intg.id] === "ok" && <span className="text-xs text-green-600 flex items-center gap-1"><CheckCircle className="h-3 w-3" /> Connected</span>}
                       {testResult[intg.id] === "fail" && <span className="text-xs text-red-600 flex items-center gap-1"><X className="h-3 w-3" /> Failed</span>}
                     </div>
+                    {logsOpen === intg.id && (
+                      <div className="rounded-md border border-border bg-muted/20 p-3 max-h-40 overflow-y-auto">
+                        {logsLoading === intg.id ? (
+                          <div className="flex items-center justify-center py-4"><Loader2 className="h-4 w-4 animate-spin text-gold" /></div>
+                        ) : (logs[intg.id] ?? []).length === 0 ? (
+                          <p className="text-xs text-muted-foreground text-center py-2">No webhook events recorded yet.</p>
+                        ) : (
+                          <div className="space-y-1.5">
+                            {(logs[intg.id] ?? []).map((l: any, i: number) => (
+                              <div key={i} className="flex items-center gap-2 text-[11px]">
+                                <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${l.status === "ok" ? "bg-green-400" : "bg-red-400"}`} />
+                                <span className="text-muted-foreground font-mono">{l.event_type}</span>
+                                <span className="flex-1 truncate text-muted-foreground">{l.summary}</span>
+                                <span className="font-mono text-muted-foreground/60">{l.created_at ? new Date(l.created_at).toLocaleTimeString("en-IN") : ""}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
               </CardContent>
@@ -189,9 +233,48 @@ export default function Integrations() {
         </div>
 
         <Card className="border-border">
-          <CardHeader><CardTitle className="font-display text-base">Integration Telemetry</CardTitle></CardHeader>
-          <CardContent className="text-sm text-muted-foreground">
-            Live webhook and sync logs are not wired to a database table yet, so this screen only shows actual integration configuration state from the `integrations` table.
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle className="font-display text-base flex items-center gap-2">
+              <Activity className="h-4 w-4 text-gold" /> Integration Telemetry
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">Open "Configure" on any integration to view its webhook event log.</p>
+          </CardHeader>
+          <CardContent className="p-0">
+            {list.filter((i) => i.connected).length === 0 ? (
+              <div className="px-6 py-8 text-sm text-muted-foreground text-center">
+                No active integrations. Connect one above to start receiving webhook events.
+              </div>
+            ) : (
+              <table className="w-full text-sm">
+                <thead className="bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground">
+                  <tr>
+                    <th className="px-4 py-3 text-left">Integration</th>
+                    <th className="px-4 py-3 text-left">Status</th>
+                    <th className="px-4 py-3 text-left">Last Sync</th>
+                    <th className="px-4 py-3 text-right">Logs</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {list.filter((i) => i.connected).map((intg) => (
+                    <tr key={intg.id} className="border-t border-border hover:bg-muted/30">
+                      <td className="px-4 py-3 font-medium">{intg.name}</td>
+                      <td className="px-4 py-3">
+                        <span className="inline-flex items-center gap-1 text-xs text-green-600">
+                          <CheckCircle className="h-3 w-3" /> Connected
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-xs text-muted-foreground">{intg.lastSync ?? "—"}</td>
+                      <td className="px-4 py-3 text-right">
+                        <Button size="sm" variant="outline" className="h-7 text-xs"
+                          onClick={() => { setConfigOpen(intg.id); fetchLogs(intg.id); }}>
+                          <Activity className="h-3 w-3 mr-1" /> View Logs
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </CardContent>
         </Card>
       </div>

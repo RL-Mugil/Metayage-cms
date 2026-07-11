@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Integration;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class IntegrationController extends Controller
 {
@@ -54,6 +55,12 @@ class IntegrationController extends Controller
         $integration->last_sync = $integration->connected ? now()->toIso8601String() : null;
         $integration->save();
 
+        DB::table('integration_logs')->insert([
+            'slug' => $slug, 'event_type' => $integration->connected ? 'connect' : 'disconnect',
+            'status' => 'ok', 'summary' => $integration->connected ? 'Integration enabled' : 'Integration disabled',
+            'payload' => null, 'created_at' => now(), 'updated_at' => now(),
+        ]);
+
         return response()->json([
             'ok' => true,
             'connected' => $integration->connected,
@@ -88,11 +95,18 @@ class IntegrationController extends Controller
         $integration->last_sync = $ok ? now()->toIso8601String() : $integration->last_sync;
         $integration->save();
 
+        DB::table('integration_logs')->insert([
+            'slug' => $slug, 'event_type' => 'test',
+            'status' => $ok ? 'ok' : 'fail',
+            'summary' => $ok ? 'Credentials present and connection enabled' : 'Not fully configured',
+            'payload' => null, 'created_at' => now(), 'updated_at' => now(),
+        ]);
+
         return response()->json([
             'ok' => $ok,
             'message' => $ok
-                ? 'Integration credentials are present and the connection is enabled.'
-                : 'Integration is not fully configured yet.',
+                ? 'Credentials are saved and the integration is enabled. Note: this confirms configuration only — live connectivity to the external service is not verified here.'
+                : 'Integration is not fully configured. Save an API key and enable the integration first.',
         ]);
     }
 }

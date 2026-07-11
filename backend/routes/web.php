@@ -33,6 +33,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/projects', [ProjectController::class, 'inertiaIndex'])->name('projects.index');
     Route::get('/projects/{id}', [ProjectController::class, 'inertiaShow'])->name('projects.show');
     Route::get('/tasks', [TaskController::class, 'inertiaIndex'])->name('tasks.index');
+    Route::get('/kanban', fn () => Inertia::render('Kanban'))->name('kanban');
     Route::get('/project-tracker', [ProjectTrackerController::class, 'inertiaIndex'])->name('project-tracker');
     Route::get('/calendar', fn () => Inertia::render('Calendar'))->name('calendar');
     Route::get('/financial', [FinancialController::class, 'inertiaIndex'])->name('financial.index');

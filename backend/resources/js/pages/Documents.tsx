@@ -107,10 +107,22 @@ export default function Documents() {
     return files.filter((f) => f.folder === folder).length;
   }
 
+  const ALLOWED_TYPES = new Set(["pdf","docx","doc","xlsx","xls","pptx","ppt","txt","csv","png","jpg","jpeg","gif","zip"]);
+  const MAX_BYTES = 50 * 1024 * 1024; // 50 MB
+
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
+    const fileExt = file.name.split(".").pop()?.toLowerCase() ?? "";
+    if (!ALLOWED_TYPES.has(fileExt)) {
+      showBanner("err", `File type .${fileExt} is not allowed. Supported: PDF, Word, Excel, PowerPoint, TXT, CSV, images, ZIP.`);
+      return;
+    }
+    if (file.size > MAX_BYTES) {
+      showBanner("err", `File too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Maximum allowed size is 50 MB.`);
+      return;
+    }
     setUploading(true);
     try {
       const folder = activeFolder === "All Documents" ? "General" : activeFolder;

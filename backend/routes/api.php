@@ -22,6 +22,9 @@ use App\Http\Controllers\SearchController;
 // The old public POST /api/login pointed at the same session login and
 // always 500'd outside a browser — removed.
 
+// Public webhook receiver — no auth, for external integrations
+Route::post('/webhooks/{slug}', [\App\Http\Controllers\WebhookController::class, 'receive'])->middleware('throttle:120,1');
+
 // Authenticated routes protected by Sanctum
 Route::middleware(['auth:sanctum', 'throttle:60,1'])->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
@@ -193,6 +196,7 @@ Route::middleware(['auth:sanctum', 'throttle:60,1'])->group(function () {
     Route::post('/performance/goals', [\App\Http\Controllers\PerformanceController::class, 'storeGoal']);
     Route::put('/performance/goals/{id}', [\App\Http\Controllers\PerformanceController::class, 'updateGoal']);
     Route::post('/performance/feedback360', [\App\Http\Controllers\PerformanceController::class, 'storeFeedback360']);
+    Route::delete('/performance/goals/{id}', [\App\Http\Controllers\PerformanceController::class, 'deleteGoal']);
 
     // Recruitment
     Route::get('/recruitment', [\App\Http\Controllers\RecruitmentController::class, 'index']);
@@ -216,6 +220,7 @@ Route::middleware(['auth:sanctum', 'throttle:60,1'])->group(function () {
     Route::post('/integrations/{slug}/toggle', [\App\Http\Controllers\IntegrationController::class, 'toggle']);
     Route::post('/integrations/{slug}/config', [\App\Http\Controllers\IntegrationController::class, 'saveConfig']);
     Route::post('/integrations/{slug}/test', [\App\Http\Controllers\IntegrationController::class, 'test']);
+    Route::get('/integrations/{slug}/logs', [\App\Http\Controllers\WebhookController::class, 'logs']);
 
     // Client Portal
     Route::get('/portal/clients', [\App\Http\Controllers\PortalController::class, 'clients']);
@@ -227,6 +232,7 @@ Route::middleware(['auth:sanctum', 'throttle:60,1'])->group(function () {
     Route::get('/portal/clients/{id}/users', [\App\Http\Controllers\PortalController::class, 'clientUsers']);
     Route::post('/portal/clients/{id}/users', [\App\Http\Controllers\PortalController::class, 'addClientUser']);
     Route::delete('/portal/clients/{id}/users/{userId}', [\App\Http\Controllers\PortalController::class, 'removeClientUser']);
+    Route::get('/portal/recent-activity', [\App\Http\Controllers\PortalController::class, 'recentActivity']);
     Route::post('/portal/clients/{id}/users/{userId}/reset-password', [\App\Http\Controllers\PortalController::class, 'resetUserPassword']);
 
     // Custom project codes (patent office / service)

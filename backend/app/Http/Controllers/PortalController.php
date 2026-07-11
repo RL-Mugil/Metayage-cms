@@ -399,4 +399,35 @@ class PortalController extends Controller
 
         return response()->json(['ok' => true]);
     }
+
+    public function recentActivity(Request $request)
+    {
+        if ($deny = $this->denyUnauthorized($request)) return $deny;
+
+        $logs = DB::table('audit_logs')
+            ->join('users', 'audit_logs.user_id', '=', 'users.id')
+            ->whereIn('audit_logs.action', [
+                'portal_invite_sent', 'portal_enabled', 'portal_disabled',
+                'portal_password_reset', 'create', 'update',
+            ])
+            ->where(function ($q) {
+                $q->where('audit_logs.subject_type', 'Client')
+                  ->orWhereIn('audit_logs.action', ['portal_invite_sent', 'portal_enabled', 'portal_disabled', 'portal_password_reset']);
+            })
+            ->orderByDesc('audit_logs.created_at')
+            ->limit(15)
+            ->select('audit_logs.id', 'audit_logs.action', 'audit_logs.subject_type', 'audit_logs.subject_id', 'audit_logs.metadata', 'audit_logs.created_at', 'users.name as user_name')
+            ->get()
+            ->map(fn ($r) => [
+                'id'           => $r->id,
+                'action'       => $r->action,
+                'subject_type' => $r->subject_type,
+                'subject_id'   => $r->subject_id,
+                'user_name'    => $r->user_name,
+                'metadata'     => is_string($r->metadata) ? json_decode($r->metadata, true) : $r->metadata,
+                'created_at'   => $r->created_at,
+            ]);
+
+        return response()->json($logs);
+    }
 }

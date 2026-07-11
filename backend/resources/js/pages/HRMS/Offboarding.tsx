@@ -141,11 +141,18 @@ export default function HRMSOffboarding() {
                   placeholder="e.g. Engineering"
                   className="w-full h-8 rounded border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
               </div>
-              <div className="col-span-2 flex gap-2">
-                <Button size="sm" className="bg-gold hover:bg-gold/90 text-black" disabled={saving || !form.employee.trim() || !form.last_day} onClick={initiateCase}>
-                  {saving ? <><Loader2 className="h-3 w-3 mr-1 animate-spin" />Creating…</> : "Create Offboarding Case"}
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => setShowInitiate(false)}>Cancel</Button>
+              <div className="col-span-2 space-y-2">
+                {(!form.employee.trim() || !form.last_day) && (
+                  <p className="text-xs text-amber-500">
+                    {!form.employee.trim() && !form.last_day ? "Employee name and last working day are required." : !form.employee.trim() ? "Employee name is required." : "Last working day is required."}
+                  </p>
+                )}
+                <div className="flex gap-2">
+                  <Button size="sm" className="bg-gold hover:bg-gold/90 text-black" disabled={saving || !form.employee.trim() || !form.last_day} onClick={initiateCase}>
+                    {saving ? <><Loader2 className="h-3 w-3 mr-1 animate-spin" />Creating…</> : "Create Offboarding Case"}
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => setShowInitiate(false)}>Cancel</Button>
+                </div>
               </div>
             </CardContent>
           </Card>

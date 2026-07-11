@@ -89,6 +89,10 @@ export default function HRMSRecruitment() {
   const [kpiModal, setKpiModal] = useState<RecruitKpiKey | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [showAddCandidate, setShowAddCandidate] = useState(false);
+  const [newCandidate, setNewCandidate] = useState({ job_id: 0, name: "", email: "", phone: "", stage: "Applied" });
+  const [candidateSaving, setCandidateSaving] = useState(false);
+  const [movingCandidate, setMovingCandidate] = useState<number | null>(null);
 
   const load = () => api.getRecruitment()
     .then((d) => { setJobsList(d.jobs as Job[]); setPipeline(d.pipeline); })
@@ -107,6 +111,27 @@ export default function HRMSRecruitment() {
       load();
     } catch { /* keep form open */ }
     finally { setSaving(false); }
+  }
+
+  async function addCandidate() {
+    if (!newCandidate.name.trim() || !newCandidate.job_id) return;
+    setCandidateSaving(true);
+    try {
+      await api.createCandidate({ ...newCandidate, email: newCandidate.email || undefined, phone: newCandidate.phone || undefined });
+      setNewCandidate({ job_id: 0, name: "", email: "", phone: "", stage: "Applied" });
+      setShowAddCandidate(false);
+      load();
+    } catch { /* keep form open */ }
+    finally { setCandidateSaving(false); }
+  }
+
+  async function advanceCandidate(id: number, stage: string) {
+    setMovingCandidate(id);
+    try {
+      await api.updateCandidateStage(id, stage);
+      load();
+    } catch { /* ignore */ }
+    finally { setMovingCandidate(null); }
   }
 
   async function closeJob(id: number) {
@@ -132,7 +157,12 @@ export default function HRMSRecruitment() {
       <Head title="Recruitment" />
       <PageHeader eyebrow="HRMS" title="Recruitment"
         description="Job postings, applicant tracking, and hiring pipeline"
-        actions={<Button className="bg-gold hover:bg-gold/90 text-black" onClick={() => setShowNewJob(true)}><Plus className="h-4 w-4 mr-2" />Post New Job</Button>}
+        actions={
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => setShowAddCandidate(true)}><Plus className="h-4 w-4 mr-2" />Add Candidate</Button>
+            <Button className="bg-gold hover:bg-gold/90 text-black" onClick={() => setShowNewJob(true)}><Plus className="h-4 w-4 mr-2" />Post New Job</Button>
+          </div>
+        }
       />
       <div className="px-8 py-6 space-y-6">
         {kpiModal && <RecruitmentKpiModal kpiKey={kpiModal} jobsList={jobsList} pipeline={pipeline} onClose={() => setKpiModal(null)} />}
@@ -196,6 +226,66 @@ export default function HRMSRecruitment() {
               </div>
             </CardContent>
           </Card>
+        )}
+
+        {showAddCandidate && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+            <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-md p-6 m-4">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="font-display text-lg font-semibold">Add Candidate</h2>
+                <button onClick={() => setShowAddCandidate(false)}><X className="h-5 w-5 text-muted-foreground" /></button>
+              </div>
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1">Job Role *</label>
+                  <select value={newCandidate.job_id} onChange={(e) => setNewCandidate((p) => ({ ...p, job_id: Number(e.target.value) }))}
+                    className="w-full h-8 rounded border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold">
+                    <option value={0}>Select a job…</option>
+                    {jobsList.filter((j) => j.status === "Active").map((j) => (
+                      <option key={j.id} value={j.id}>{j.title}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1">Candidate Name *</label>
+                  <input value={newCandidate.name} onChange={(e) => setNewCandidate((p) => ({ ...p, name: e.target.value }))}
+                    placeholder="Full name"
+                    className="w-full h-8 rounded border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-muted-foreground mb-1">Email</label>
+                    <input type="email" value={newCandidate.email} onChange={(e) => setNewCandidate((p) => ({ ...p, email: e.target.value }))}
+                      placeholder="candidate@email.com"
+                      className="w-full h-8 rounded border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-muted-foreground mb-1">Phone</label>
+                    <input value={newCandidate.phone} onChange={(e) => setNewCandidate((p) => ({ ...p, phone: e.target.value }))}
+                      placeholder="+91 98765 43210"
+                      className="w-full h-8 rounded border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1">Initial Stage</label>
+                  <select value={newCandidate.stage} onChange={(e) => setNewCandidate((p) => ({ ...p, stage: e.target.value }))}
+                    className="w-full h-8 rounded border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold">
+                    {["Applied", "Screening", "Interview", "Assessment", "Offer", "Hired", "Rejected"].map((s) => (
+                      <option key={s}>{s}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div className="flex gap-2 mt-5">
+                <Button className="bg-gold hover:bg-gold/90 text-black flex-1"
+                  disabled={!newCandidate.name.trim() || !newCandidate.job_id || candidateSaving}
+                  onClick={addCandidate}>
+                  {candidateSaving ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Adding…</> : "Add Candidate"}
+                </Button>
+                <Button variant="outline" onClick={() => setShowAddCandidate(false)}>Cancel</Button>
+              </div>
+            </div>
+          </div>
         )}
 
         {viewApplicants && (
@@ -284,16 +374,28 @@ export default function HRMSRecruitment() {
                   <span className="text-xs text-muted-foreground bg-muted rounded-full px-1.5">{candidates.length}</span>
                 </div>
                 <div className="space-y-2">
-                  {candidates.map((c: any) => (
-                    <div key={c.id} className={`p-3 rounded-lg border text-xs ${color}`}>
-                      <div className="font-medium">{c.name}</div>
-                      <div className="text-muted-foreground mt-0.5">{c.role}</div>
-                      <div className="flex items-center justify-between mt-1.5">
-                        <span className="text-muted-foreground flex items-center gap-1"><Clock className="h-2.5 w-2.5" />{c.date}</span>
-                        <button className="text-muted-foreground hover:text-foreground"><ChevronRight className="h-3 w-3" /></button>
+                  {candidates.map((c: any) => {
+                    const stageOrder = ["Applied", "Screening", "Interview", "Assessment", "Offer", "Hired"];
+                    const nextStage = stageOrder[stageOrder.indexOf(stage) + 1];
+                    return (
+                      <div key={c.id} className={`p-3 rounded-lg border text-xs ${color}`}>
+                        <div className="font-medium">{c.name}</div>
+                        <div className="text-muted-foreground mt-0.5">{c.role}</div>
+                        <div className="flex items-center justify-between mt-1.5">
+                          <span className="text-muted-foreground flex items-center gap-1"><Clock className="h-2.5 w-2.5" />{c.date}</span>
+                          {nextStage && c.id && (
+                            <button
+                              onClick={() => advanceCandidate(c.id, nextStage)}
+                              disabled={movingCandidate === c.id}
+                              className="text-muted-foreground hover:text-foreground"
+                              title={`Move to ${nextStage}`}>
+                              {movingCandidate === c.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <ChevronRight className="h-3 w-3" />}
+                            </button>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             ))}

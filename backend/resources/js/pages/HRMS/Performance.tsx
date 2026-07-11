@@ -1,6 +1,6 @@
 import { Head } from "@inertiajs/react";
 import { Fragment, useEffect, useState } from "react";
-import { Star, Target, TrendingUp, CheckCircle, Clock, Award, Plus, Loader2, X, Search } from "lucide-react";
+import { Star, Target, TrendingUp, CheckCircle, Clock, Award, Plus, Loader2, X, Search, Trash2 } from "lucide-react";
 import AppLayout from "@/layouts/AppLayout";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -109,6 +109,10 @@ export default function HRMSPerformance() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [kpiModal, setKpiModal] = useState<PerfKpiKey | null>(null);
+  const [showAddGoal, setShowAddGoal] = useState(false);
+  const [newGoal, setNewGoal] = useState({ title: "", description: "", target_date: "", category: "" });
+  const [goalSaving, setGoalSaving] = useState(false);
+  const [deletingGoal, setDeletingGoal] = useState<number | null>(null);
 
   const load = () => api.getPerformance()
     .then((d) => { setReviews(d.reviews); setGoals(d.goals); setFeedback360(d.feedback360); })
@@ -116,6 +120,27 @@ export default function HRMSPerformance() {
     .finally(() => setLoading(false));
 
   useEffect(() => { load(); }, []);
+
+  async function addGoal() {
+    if (!newGoal.title.trim()) return;
+    setGoalSaving(true);
+    try {
+      await api.createGoal({ title: newGoal.title.trim(), description: newGoal.description || undefined, target_date: newGoal.target_date || undefined, category: newGoal.category || undefined });
+      setNewGoal({ title: "", description: "", target_date: "", category: "" });
+      setShowAddGoal(false);
+      load();
+    } catch { /* keep form open */ }
+    finally { setGoalSaving(false); }
+  }
+
+  async function deleteGoal(id: number) {
+    setDeletingGoal(id);
+    try {
+      await api.deleteGoal(id);
+      setGoals((prev) => prev.filter((g) => g.id !== id));
+    } catch { /* revert via next load */ load(); }
+    finally { setDeletingGoal(null); }
+  }
 
   async function submitReview(id: number) {
     setSaving(true);
@@ -271,6 +296,55 @@ export default function HRMSPerformance() {
 
         {tab === "goals" && (
           <div className="space-y-3">
+            {/* Add Goal form */}
+            {showAddGoal ? (
+              <Card className="border-gold/30 bg-gold/5">
+                <CardContent className="p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-semibold">Add Goal</h3>
+                    <button onClick={() => setShowAddGoal(false)}><X className="h-4 w-4 text-muted-foreground" /></button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="col-span-2">
+                      <label className="block text-xs text-muted-foreground mb-1">Title *</label>
+                      <input value={newGoal.title} onChange={(e) => setNewGoal((p) => ({ ...p, title: e.target.value }))}
+                        placeholder="e.g. Complete 5 patent filings"
+                        className="w-full h-8 rounded border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-muted-foreground mb-1">Category</label>
+                      <input value={newGoal.category} onChange={(e) => setNewGoal((p) => ({ ...p, category: e.target.value }))}
+                        placeholder="e.g. Technical"
+                        className="w-full h-8 rounded border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-muted-foreground mb-1">Target Date</label>
+                      <input type="date" value={newGoal.target_date} onChange={(e) => setNewGoal((p) => ({ ...p, target_date: e.target.value }))}
+                        className="w-full h-8 rounded border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+                    </div>
+                    <div className="col-span-2">
+                      <label className="block text-xs text-muted-foreground mb-1">Description</label>
+                      <textarea value={newGoal.description} onChange={(e) => setNewGoal((p) => ({ ...p, description: e.target.value }))}
+                        rows={2} placeholder="Optional details..."
+                        className="w-full rounded border border-border bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-gold" />
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button size="sm" className="bg-gold hover:bg-gold/90 text-black" disabled={!newGoal.title.trim() || goalSaving} onClick={addGoal}>
+                      {goalSaving ? <><Loader2 className="h-3 w-3 mr-1 animate-spin" />Saving…</> : "Add Goal"}
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => setShowAddGoal(false)}>Cancel</Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="flex justify-end">
+                <Button size="sm" variant="outline" onClick={() => setShowAddGoal(true)}>
+                  <Plus className="h-3.5 w-3.5 mr-1" /> Add Goal
+                </Button>
+              </div>
+            )}
+
             {goals.map((g) => (
               <Card key={g.id} className="border-border">
                 <CardContent className="p-4">
@@ -282,9 +356,18 @@ export default function HRMSPerformance() {
                         <div className="text-xs text-muted-foreground mt-0.5">{g.employee} · Due {g.due}</div>
                       </div>
                     </div>
-                    <Badge variant="outline" className={g.status === "On Track" ? "text-green-600 border-green-200 bg-green-50" : "text-amber-600 border-amber-200 bg-amber-50"}>
-                      {g.status}
-                    </Badge>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline" className={g.status === "On Track" ? "text-green-600 border-green-200 bg-green-50" : "text-amber-600 border-amber-200 bg-amber-50"}>
+                        {g.status}
+                      </Badge>
+                      <button
+                        onClick={() => deleteGoal(g.id)}
+                        disabled={deletingGoal === g.id}
+                        className="text-muted-foreground hover:text-destructive transition-colors"
+                        title="Delete goal">
+                        {deletingGoal === g.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                      </button>
+                    </div>
                   </div>
                   <div className="flex items-center gap-3 mt-3">
                     <div className="flex-1 h-2 bg-muted rounded-full">
