@@ -276,6 +276,18 @@ class SendDeadlineRemindersCommand extends Command
                     3,
                 );
             }
+
+            // Auto-escalate the overdue task to directors, HRs and System Admins.
+            $daysLate = (int) Carbon::parse($task->due_date)->diffInDays($today);
+            $docket   = $task->project?->docket_number;
+            $this->escalate(
+                "task:{$task->id}",
+                $task->title . ($docket ? " ({$docket})" : '') . " [task]",
+                $daysLate,
+                '/tasks',
+                ['task_id' => $task->id],
+                Carbon::parse($task->due_date)->toDateString(),
+            );
         }
     }
 
