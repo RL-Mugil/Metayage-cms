@@ -103,11 +103,6 @@ chown -R www-data:www-data /var/www/mypl-cms/backend/bootstrap/cache
 chmod -R 775 /var/www/mypl-cms/backend/storage
 chmod -R 775 /var/www/mypl-cms/backend/bootstrap/cache
 
-echo "--- Stopping PM2 frontend (no longer needed) ---"
-pm2 stop mypl-cms-frontend || true
-pm2 delete mypl-cms-frontend || true
-pm2 save || true
-
 echo "--- Restarting PHP-FPM ---"
 systemctl reload php8.4-fpm
 
