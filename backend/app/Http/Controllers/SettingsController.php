@@ -53,7 +53,7 @@ class SettingsController extends Controller
     {
         $user = $request->user();
         $request->validate([
-            'avatar' => 'required|image|mimes:jpeg,png,jpg,gif,webp|max:5120',
+            'avatar' => 'required|image|mimes:jpeg,png,jpg,gif,webp|max:10240',
         ]);
 
         // Delete old avatar if it's one we stored
@@ -71,6 +71,18 @@ class SettingsController extends Controller
         $user->save();
 
         return response()->json(['ok' => true, 'avatar_url' => $url]);
+    }
+
+    public function removeAvatar(Request $request)
+    {
+        $user = $request->user();
+        if ($user->avatar_url && str_contains($user->avatar_url, '/storage/avatars/')) {
+            $old = str_replace('/storage/', '', parse_url($user->avatar_url, PHP_URL_PATH));
+            \Illuminate\Support\Facades\Storage::disk('public')->delete($old);
+        }
+        $user->avatar_url = null;
+        $user->save();
+        return response()->json(['ok' => true]);
     }
 
     public function updateProfile(Request $request)

@@ -423,6 +423,9 @@ export const api = {
     if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error((e as any).message || 'Upload failed') }
     return res.json()
   },
+  async removeAvatar(): Promise<{ ok: boolean }> {
+    return this.request('/settings/avatar', { method: 'DELETE' })
+  },
   async requestReminderHelp(id: number, targetUserId: number, note?: string): Promise<{ ok: boolean }> {
     return this.request(`/reminders/${id}/help-request`, { method: 'POST', body: JSON.stringify({ target_user_id: targetUserId, note: note ?? null }) })
   },

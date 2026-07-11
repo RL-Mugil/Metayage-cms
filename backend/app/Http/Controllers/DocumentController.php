@@ -47,7 +47,49 @@ class DocumentController extends Controller
         $query = Document::with('uploader:id,name')->orderBy('updated_at', 'desc');
 
         if ($user->isClientRole()) {
+            // Client portal: own docs only
             $query->where('client_id', $client->id);
+        } elseif (in_array($user->role, ['super_admin', 'partner', 'paralegal'])) {
+            // These roles see everything — no filter needed
+        } elseif ($user->role === 'associate') {
+            // See docs for projects assigned to them, or un-tagged (internal) docs
+            $assignedProjectIds = \App\Models\Project::where(function ($q) use ($user) {
+                $q->where('patent_engineer_id', $user->id)
+                  ->orWhere('assigned_manager_id', $user->id)
+                  ->orWhere('secondary_manager_id', $user->id)
+                  ->orWhereHas('tasks', fn ($t) => $t->where('assignee_id', $user->id));
+            })->pluck('id');
+            $query->where(function ($q) use ($assignedProjectIds) {
+                $q->whereNull('project_id')
+                  ->orWhereIn('project_id', $assignedProjectIds);
+            })->where(function ($q) use ($user) {
+                // Also scope to their own client or internal docs
+                $q->whereNull('client_id')->orWhereHas('project', fn ($p) => $p->where(function ($pp) use ($user) {
+                    $pp->where('patent_engineer_id', $user->id)
+                       ->orWhere('assigned_manager_id', $user->id)
+                       ->orWhere('secondary_manager_id', $user->id);
+                }));
+            });
+        } elseif ($user->role === 'manager') {
+            // See docs for projects they manage, or internal docs
+            $managedProjectIds = \App\Models\Project::where('assigned_manager_id', $user->id)->pluck('id');
+            $query->where(function ($q) use ($managedProjectIds) {
+                $q->whereNull('client_id')
+                  ->orWhereIn('project_id', $managedProjectIds);
+            });
+        } elseif (in_array($user->role, ['finance', 'hr'])) {
+            // Internal-only docs (not tagged to a specific client)
+            $query->whereNull('client_id');
+        }
+        // else: any other role falls through to see all (safe fallback)
+
+        // Allow filtering by client_id (for roles that can see all)
+        if ($request->filled('client_id') && in_array($user->role, ['super_admin', 'partner', 'paralegal', 'manager'])) {
+            $cid = (int) $request->client_id;
+            $query->where(function ($q) use ($cid) {
+                $q->where('client_id', $cid)
+                  ->orWhereHas('project', fn ($p) => $p->where('client_id', $cid));
+            });
         }
 
         if ($folder && in_array($folder, self::FOLDERS)) {

@@ -186,7 +186,7 @@ export interface Employee {
   salary?: number | null
   department?: Department
   designation?: Designation
-  user?: Pick<User, 'id' | 'name' | 'email' | 'role'>
+  user?: Pick<User, 'id' | 'name' | 'email' | 'role' | 'status' | 'avatar_url'>
 }
 
 export interface Attendance {

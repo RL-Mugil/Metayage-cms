@@ -44,7 +44,11 @@ class PatentPortfolioController extends Controller
             })->pluck('id')->all();
         }
 
-        $base = Project::where('project_type', 'like', '%Patent%')
+        $base = Project::where(function ($q) {
+                $q->where('project_type', 'like', '%Patent%')
+                  ->orWhere('project_type', 'Design')
+                  ->orWhere('project_type', 'Trade Secret');
+            })
             ->when($clientId, fn($q) => $q->where('client_id', $clientId))
             ->when($analystIds !== null, fn($q) => $q->whereIn('id', $analystIds));
 
@@ -65,7 +69,11 @@ class PatentPortfolioController extends Controller
         // Pending by tracker status (from tracker_rows.status)
         $pendingByStage = DB::table('tracker_rows as tr')
             ->join('projects as p', 'tr.project_id', '=', 'p.id')
-            ->where('p.project_type', 'like', '%Patent%')
+            ->where(function ($q) {
+                $q->where('p.project_type', 'like', '%Patent%')
+                  ->orWhere('p.project_type', 'Design')
+                  ->orWhere('p.project_type', 'Trade Secret');
+            })
             ->whereNotIn('p.status', ['Granted', 'Completed', 'Closed'])
             ->whereNotNull('tr.status')
             ->when($clientId, fn($q) => $q->where('p.client_id', $clientId))

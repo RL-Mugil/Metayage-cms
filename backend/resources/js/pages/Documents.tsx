@@ -24,7 +24,15 @@ interface DocFile {
   path: string;
   folder: string;
   size: number;
-  modified: number;
+  modified: string;
+  uploader?: string;
+}
+
+interface ClientOption {
+  id: number;
+  company_name?: string;
+  legal_name?: string;
+  client_code?: string;
 }
 
 const FOLDERS = ["All Documents", "General", "Patents", "Trademarks", "Contracts", "Correspondence", "Invoices"];
@@ -35,8 +43,9 @@ function fmtSize(bytes: number): string {
   return `${bytes} B`;
 }
 
-function fmtModified(ts: number): string {
-  return new Date(ts * 1000).toISOString().slice(0, 10);
+function fmtModified(ts: string | number): string {
+  const d = typeof ts === "number" ? new Date(ts * 1000) : new Date(ts);
+  return d.toISOString().slice(0, 10);
 }
 
 function ext(name: string): string {
@@ -71,8 +80,11 @@ export default function Documents() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // "Share with client" — internal users can tag an upload to a client
-  const [clients, setClients] = useState<any[]>([]);
+  const [clients, setClients] = useState<ClientOption[]>([]);
   const [shareClientId, setShareClientId] = useState<number | null>(null);
+  const [clientSearch, setClientSearch] = useState("");
+  const [clientDropdownOpen, setClientDropdownOpen] = useState(false);
+  const clientComboRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!isClientUser) {
@@ -81,6 +93,35 @@ export default function Documents() {
         .catch(() => {});
     }
   }, [isClientUser]);
+
+  useEffect(() => {
+    if (!clientDropdownOpen) return;
+    function onOutsideClick(e: MouseEvent) {
+      if (clientComboRef.current && !clientComboRef.current.contains(e.target as Node)) {
+        setClientDropdownOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onOutsideClick);
+    return () => document.removeEventListener("mousedown", onOutsideClick);
+  }, [clientDropdownOpen]);
+
+  const filteredClients = clients.filter((c) => {
+    const q = clientSearch.toLowerCase();
+    return (
+      (c.company_name ?? c.legal_name ?? "").toLowerCase().includes(q) ||
+      (c.client_code ?? "").toLowerCase().includes(q)
+    );
+  }).slice(0, 60);
+
+  function clientDisplayName(c: ClientOption) {
+    return `${c.client_code ?? ""} — ${c.company_name ?? c.legal_name ?? ""}`.trim().replace(/^— /, "");
+  }
+
+  function selectClient(c: ClientOption | null) {
+    setShareClientId(c ? c.id : null);
+    setClientSearch(c ? clientDisplayName(c) : "");
+    setClientDropdownOpen(false);
+  }
 
   function showBanner(kind: "ok" | "err", text: string) {
     setBanner({ kind, text });
@@ -172,17 +213,54 @@ export default function Documents() {
               accept=".pdf,.docx,.doc,.xlsx,.xls,.pptx,.ppt,.txt,.csv,.png,.jpg,.jpeg,.gif,.zip"
             />
             {!isClientUser && (
-              <select
-                value={shareClientId ?? ""}
-                onChange={(e) => setShareClientId(e.target.value ? Number(e.target.value) : null)}
-                title="Tag the next upload to a client so they can see it in their portal"
-                className="h-9 rounded-md border border-border bg-background px-2 text-xs text-muted-foreground focus:outline-none focus:ring-1 focus:ring-gold max-w-[180px]"
-              >
-                <option value="">Internal only</option>
-                {clients.map((c: any) => (
-                  <option key={c.id} value={c.id}>Share: {c.company_name ?? c.legal_name}</option>
-                ))}
-              </select>
+              <div ref={clientComboRef} className="relative w-[220px]">
+                <input
+                  type="text"
+                  placeholder="Internal only"
+                  value={clientSearch}
+                  onChange={(e) => {
+                    setClientSearch(e.target.value);
+                    setClientDropdownOpen(true);
+                    if (!e.target.value) setShareClientId(null);
+                  }}
+                  onFocus={() => setClientDropdownOpen(true)}
+                  className="h-9 w-full rounded-md border border-border bg-background px-3 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-gold"
+                  title="Type client name or code to filter"
+                />
+                {shareClientId && (
+                  <button
+                    type="button"
+                    onClick={() => selectClient(null)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground text-xs leading-none"
+                    title="Clear"
+                  >✕</button>
+                )}
+                {clientDropdownOpen && (
+                  <div className="absolute z-50 mt-1 w-full rounded-md border border-border bg-popover shadow-lg max-h-60 overflow-y-auto">
+                    <button
+                      type="button"
+                      onMouseDown={(e) => { e.preventDefault(); selectClient(null); }}
+                      className={`w-full px-3 py-2 text-left text-xs hover:bg-muted/60 ${!shareClientId ? "text-gold font-medium" : "text-muted-foreground"}`}
+                    >
+                      Internal only
+                    </button>
+                    {filteredClients.length === 0 && clientSearch && (
+                      <p className="px-3 py-2 text-xs text-muted-foreground">No clients match</p>
+                    )}
+                    {filteredClients.map((c) => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onMouseDown={(e) => { e.preventDefault(); selectClient(c); }}
+                        className={`w-full px-3 py-2 text-left text-xs hover:bg-muted/60 ${shareClientId === c.id ? "text-gold font-medium" : "text-foreground"}`}
+                      >
+                        <span className="font-mono text-[10px] text-muted-foreground mr-1">{c.client_code}</span>
+                        {c.company_name ?? c.legal_name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             )}
             <Button onClick={() => fileInputRef.current?.click()} disabled={uploading}>
               {uploading

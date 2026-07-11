@@ -49,7 +49,7 @@ class HRMSController extends Controller
         $user = $request->user();
         $this->authorize('viewAny', \App\Models\Employee::class);
 
-        $query = Employee::with('department', 'designation', 'user');
+        $query = Employee::with(['department', 'designation', 'user:id,name,email,role,status,avatar_url']);
 
         if ($request->filled('employment_status')) {
             $query->where('employment_status', $request->employment_status);
@@ -188,7 +188,7 @@ class HRMSController extends Controller
             'user_agent'   => $request->userAgent(),
         ]);
 
-        return response()->json($employee->load('department', 'designation', 'user'), 201);
+        return response()->json($employee->load(['department', 'designation', 'user:id,name,email,role,status,avatar_url']), 201);
     }
 
     public function inviteMember(Request $request)
@@ -279,7 +279,7 @@ class HRMSController extends Controller
             $employee->user->update(['name' => $validated['full_name']]);
         }
 
-        return response()->json($employee->load('department', 'designation', 'user'));
+        return response()->json($employee->load(['department', 'designation', 'user:id,name,email,role,status,avatar_url']));
     }
 
     public function deleteEmployee(Request $request, $id)

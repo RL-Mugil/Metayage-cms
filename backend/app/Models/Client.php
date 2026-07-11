@@ -40,6 +40,8 @@ class Client extends Model
         'status',
         // Portal
         'portal_enabled', 'portal_invited_at', 'portal_user_id',
+        // Circle
+        'circle',
     ];
 
     protected $casts = [

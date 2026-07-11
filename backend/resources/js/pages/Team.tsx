@@ -517,9 +517,13 @@ export default function Team() {
               return (
                 <Card key={emp.id} className="border-border hover:shadow-md transition-shadow">
                   <CardContent className="pt-5 pb-4 flex flex-col items-center text-center gap-3">
-                    <div className="flex h-14 w-14 items-center justify-center rounded-full bg-gold text-background font-display font-semibold text-lg">
-                      {getInitials(name)}
-                    </div>
+                    {emp.user?.avatar_url ? (
+                      <img src={emp.user.avatar_url} alt={name} className="h-14 w-14 rounded-full object-cover" />
+                    ) : (
+                      <div className="flex h-14 w-14 items-center justify-center rounded-full bg-gold text-background font-display font-semibold text-lg">
+                        {getInitials(name)}
+                      </div>
+                    )}
                     <div>
                       <div className="font-medium text-foreground">{name}</div>
                       <div className="text-xs text-muted-foreground mt-0.5">{role}</div>
@@ -607,9 +611,13 @@ export default function Team() {
                       <tr key={emp.id} className="border-t border-border hover:bg-muted/30">
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-3">
-                            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gold text-background text-xs font-semibold flex-shrink-0">
-                              {getInitials(name)}
-                            </div>
+                            {emp.user?.avatar_url ? (
+                              <img src={emp.user.avatar_url} alt={name} className="h-8 w-8 rounded-full object-cover flex-shrink-0" />
+                            ) : (
+                              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gold text-background text-xs font-semibold flex-shrink-0">
+                                {getInitials(name)}
+                              </div>
+                            )}
                             <span className="font-medium">{name}</span>
                           </div>
                         </td>

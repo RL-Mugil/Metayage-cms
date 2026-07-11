@@ -92,7 +92,13 @@ class ProjectController extends Controller
         }
 
         if ($request->filled('status') && $request->status !== 'All') {
-            $query->where('status', $request->status);
+            $statuses = array_map('trim', explode(',', $request->status));
+            count($statuses) > 1 ? $query->whereIn('status', $statuses) : $query->where('status', $statuses[0]);
+        }
+
+        if ($request->filled('exclude_status')) {
+            $excluded = array_map('trim', explode(',', $request->exclude_status));
+            $query->whereNotIn('status', $excluded);
         }
 
         if ($request->boolean('overdue')) {

@@ -24,7 +24,8 @@ class DashboardController extends Controller
         $user = $request->user();
 
         // Base metrics query
-        $activeMattersQuery = Project::where('status', 'Active');
+        $activeMattersQuery  = Project::whereIn('status', ['Open', 'In Progress']);
+        $inactiveMattersQuery = Project::whereNotIn('status', ['Open', 'In Progress']);
         $clientsQuery = Client::where('status', 'Active');
         $invoicesQuery = Invoice::query();
         $tasksQuery = Task::where('status', '!=', 'Completed');
@@ -33,6 +34,8 @@ class DashboardController extends Controller
         // immediately blocks all data access, not just the UI.
         if ($user->isClientRole()) {
             $activeMattersQuery
+                ->whereHas('client', fn ($q) => $q->where('portal_enabled', true)->visibleToUser($user));
+            $inactiveMattersQuery
                 ->whereHas('client', fn ($q) => $q->where('portal_enabled', true)->visibleToUser($user));
             $clientsQuery
                 ->where('portal_enabled', true)
@@ -43,7 +46,7 @@ class DashboardController extends Controller
                 ->whereHas('project.client', fn ($q) => $q->where('portal_enabled', true)->visibleToUser($user));
         } elseif ($user->role === 'associate') {
             $rf = $request->input('role_filter');
-            $activeMattersQuery->where(function ($q) use ($user, $rf) {
+            $scopeFn = function ($q) use ($user, $rf) {
                 match ($rf) {
                     'pcm' => $q->where('assigned_manager_id', $user->id),
                     'scm' => $q->where('secondary_manager_id', $user->id),
@@ -53,7 +56,9 @@ class DashboardController extends Controller
                                   ->orWhere('secondary_manager_id', $user->id)
                                   ->orWhereHas('tasks', fn ($t) => $t->where('assignee_id', $user->id)),
                 };
-            });
+            };
+            $activeMattersQuery->where($scopeFn);
+            $inactiveMattersQuery->where($scopeFn);
             $tasksQuery->where('assignee_id', $user->id);
         }
 
@@ -61,9 +66,10 @@ class DashboardController extends Controller
         // dashboard_v is incremented by any mutative endpoint (projects, tasks, invoices).
         $rf = $request->input('role_filter', 'all');
         $cacheKey = "dashboard_metrics_{$user->id}_{$user->role}_{$rf}_v" . Cache::get('dashboard_v', 0);
-        [$activeMattersCount, $clientsCount, $tasksCount] = Cache::remember($cacheKey, 300, function () use ($activeMattersQuery, $clientsQuery, $tasksQuery) {
+        [$activeMattersCount, $inactiveMattersCount, $clientsCount, $tasksCount] = Cache::remember($cacheKey, 300, function () use ($activeMattersQuery, $inactiveMattersQuery, $clientsQuery, $tasksQuery) {
             return [
                 $activeMattersQuery->count(),
+                $inactiveMattersQuery->count(),
                 $clientsQuery->count(),
                 $tasksQuery->count(),
             ];
@@ -156,6 +162,7 @@ class DashboardController extends Controller
         return response()->json([
             'metrics' => [
                 'active_matters'        => $activeMattersCount,
+                'inactive_matters'      => $inactiveMattersCount,
                 'clients'               => $clientsCount,
                 'pending_tasks'         => $tasksCount,
                 'wip_balance'           => $wipAmount,

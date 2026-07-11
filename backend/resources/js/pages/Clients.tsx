@@ -244,6 +244,7 @@ function KpiModal({ kpi, onClose }: { kpi: KpiDef; onClose: () => void }) {
                   <th className={th} onClick={() => handleSort("status")}>
                     <span className="flex items-center">Status<SortIcon field="status" /></span>
                   </th>
+                  <th className="px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Circle</th>
                 </tr>
               </thead>
               <tbody>
@@ -277,11 +278,29 @@ function KpiModal({ kpi, onClose }: { kpi: KpiDef; onClose: () => void }) {
                           {c.status ?? "Active"}
                         </Badge>
                       </td>
+                      <td className="px-3 py-2.5">
+                        <button
+                          title="Toggle circle (A / B)"
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            const next = c.circle === "A" ? "B" : c.circle === "B" ? null : "A";
+                            setResult((prev: any) => ({ ...prev, data: prev.data.map((x: any) => x.id === c.id ? { ...x, circle: next } : x) }));
+                            try { await api.updateClient(c.id, { circle: next } as any); } catch {}
+                          }}
+                          className={`text-[11px] font-bold w-7 h-7 rounded-full border-2 flex items-center justify-center transition-colors ${
+                            c.circle === "A" ? "bg-blue-600 text-white border-blue-600 hover:bg-blue-700" :
+                            c.circle === "B" ? "bg-violet-600 text-white border-violet-600 hover:bg-violet-700" :
+                            "border-dashed border-border text-muted-foreground hover:border-blue-400 hover:text-blue-500"
+                          }`}
+                        >
+                          {c.circle ?? "—"}
+                        </button>
+                      </td>
                     </tr>
                   );
                 })}
                 {result.data.length === 0 && (
-                  <tr><td colSpan={8} className="px-4 py-10 text-center text-sm text-muted-foreground">No clients found.</td></tr>
+                  <tr><td colSpan={9} className="px-4 py-10 text-center text-sm text-muted-foreground">No clients found.</td></tr>
                 )}
               </tbody>
             </table>
@@ -761,6 +780,7 @@ export default function Clients() {
                       <th className="px-4 py-3 text-left">State</th>
                       <th className="px-4 py-3 text-left">Onboarded</th>
                       <th className="px-4 py-3 text-left">Status</th>
+                      <th className="px-4 py-3 text-left">Circle</th>
                       <th className="px-4 py-3 text-left">Actions</th>
                     </tr>
                   </thead>
@@ -802,6 +822,24 @@ export default function Clients() {
                             </Badge>
                           </td>
                           <td className="px-4 py-3">
+                            <button
+                              title="Toggle circle (A / B)"
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                const next = c.circle === "A" ? "B" : c.circle === "B" ? null : "A";
+                                setClients((prev: any[]) => prev.map((x) => x.id === c.id ? { ...x, circle: next } : x));
+                                try { await api.updateClient(c.id, { circle: next } as any); } catch {}
+                              }}
+                              className={`text-[11px] font-bold w-7 h-7 rounded-full border-2 flex items-center justify-center transition-colors ${
+                                c.circle === "A" ? "bg-blue-600 text-white border-blue-600 hover:bg-blue-700" :
+                                c.circle === "B" ? "bg-violet-600 text-white border-violet-600 hover:bg-violet-700" :
+                                "border-dashed border-border text-muted-foreground hover:border-blue-400 hover:text-blue-500"
+                              }`}
+                            >
+                              {c.circle ?? "—"}
+                            </button>
+                          </td>
+                          <td className="px-4 py-3">
                             <div className="flex gap-1">
                               <Button size="sm" variant="outline" className="h-7 w-7 p-0" onClick={()=>openEdit(c)}><Pencil className="h-3 w-3"/></Button>
                               <Button size="sm" variant="outline" className="h-7 w-7 p-0 text-destructive border-destructive/30" onClick={()=>setDelTarget(c)}>
@@ -812,7 +850,7 @@ export default function Clients() {
                         </tr>
                       );
                     })}
-                    {!loading && clients.length===0 && <tr><td colSpan={9} className="px-4 py-10 text-center text-sm text-muted-foreground">No clients found.</td></tr>}
+                    {!loading && clients.length===0 && <tr><td colSpan={10} className="px-4 py-10 text-center text-sm text-muted-foreground">No clients found.</td></tr>}
                   </tbody>
                 </table>
               </CardContent>

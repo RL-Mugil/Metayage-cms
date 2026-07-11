@@ -427,7 +427,7 @@ class AttendanceController extends Controller
             ->groupBy('employee_id');
 
         // Get all employees (or just the requested one)
-        $empQuery = Employee::with('user');
+        $empQuery = Employee::with(['user:id,name,email,role,status,avatar_url']);
         if ($request->filled('employee_id')) {
             $empQuery->where('id', (int) $request->employee_id);
         }

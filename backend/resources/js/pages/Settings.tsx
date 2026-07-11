@@ -1,6 +1,6 @@
 import { Head, usePage, router } from "@inertiajs/react";
-import { useState, useEffect, useRef } from "react";
-import { User, Bell, Shield, Palette, Settings as SettingsIcon, Key, Building, Loader2, Camera } from "lucide-react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { User, Bell, Shield, Palette, Settings as SettingsIcon, Key, Building, Loader2, Camera, Trash2, ZoomIn, ZoomOut, RotateCcw } from "lucide-react";
 import AppLayout from "@/layouts/AppLayout";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -65,8 +65,19 @@ export default function Settings() {
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [avatarUploading, setAvatarUploading] = useState(false);
+  const [avatarRemoving, setAvatarRemoving] = useState(false);
   const [localAvatar, setLocalAvatar] = useState<string | null>(user?.avatar_url ?? null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
+
+  // ── Crop modal state ──
+  const [cropSrc, setCropSrc] = useState<string | null>(null);
+  const cropCanvasRef = useRef<HTMLCanvasElement>(null);
+  const cropImgRef = useRef<HTMLImageElement | null>(null);
+  const [cropScale, setCropScale] = useState(1);
+  const [cropOffset, setCropOffset] = useState({ x: 0, y: 0 });
+  const dragState = useRef<{ active: boolean; startX: number; startY: number; startOX: number; startOY: number }>({ active: false, startX: 0, startY: 0, startOX: 0, startOY: 0 });
+  const CANVAS_SIZE = 300;
+  const EXPORT_SIZE = 400;
   const [profile, setProfile] = useState({
     name: user?.name || "",
     email: user?.email || "",
@@ -94,23 +105,152 @@ export default function Settings() {
 
   const flashSaved = () => { setError(""); setSaved(true); setTimeout(() => setSaved(false), 2500); };
 
+  // Compress image to under 5 MB using canvas if needed
+  async function compressIfNeeded(file: File): Promise<File> {
+    if (file.size <= 5 * 1024 * 1024) return file;
+    return new Promise((resolve) => {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        const MAX_DIM = 2400;
+        const ratio = Math.min(1, MAX_DIM / Math.max(img.naturalWidth, img.naturalHeight));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.round(img.naturalWidth * ratio);
+        canvas.height = Math.round(img.naturalHeight * ratio);
+        canvas.getContext("2d")!.drawImage(img, 0, 0, canvas.width, canvas.height);
+        const tryQ = (q: number) => {
+          canvas.toBlob((blob) => {
+            if (!blob || blob.size <= 5 * 1024 * 1024 || q <= 0.3) {
+              resolve(new File([blob ?? file], "avatar.jpg", { type: "image/jpeg" }));
+            } else {
+              tryQ(q - 0.1);
+            }
+          }, "image/jpeg", q);
+        };
+        tryQ(0.85);
+      };
+      img.src = url;
+    });
+  }
+
   async function handleAvatarChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
+    const raw = e.target.files?.[0];
     e.target.value = "";
-    if (!file) return;
-    if (file.size > 5 * 1024 * 1024) { setError("Photo must be under 5 MB."); return; }
-    setAvatarUploading(true);
+    if (!raw) return;
+    setError("");
+    const file = await compressIfNeeded(raw);
+    const url = URL.createObjectURL(file);
+    // Store file ref for later upload after crop
+    (avatarInputRef as any)._pendingFile = file;
+    setCropSrc(url);
+    setCropScale(1);
+    setCropOffset({ x: 0, y: 0 });
+  }
+
+  // Draw crop preview on canvas
+  const drawCrop = useCallback(() => {
+    const canvas = cropCanvasRef.current;
+    const img = cropImgRef.current;
+    if (!canvas || !img || !img.complete) return;
+    const ctx = canvas.getContext("2d")!;
+    ctx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+
+    // Fit image to fill the circle (cover), then apply user scale + offset
+    const fitScale = Math.max(CANVAS_SIZE / img.naturalWidth, CANVAS_SIZE / img.naturalHeight);
+    const drawW = img.naturalWidth * fitScale * cropScale;
+    const drawH = img.naturalHeight * fitScale * cropScale;
+    const drawX = (CANVAS_SIZE - drawW) / 2 + cropOffset.x;
+    const drawY = (CANVAS_SIZE - drawH) / 2 + cropOffset.y;
+    ctx.drawImage(img, drawX, drawY, drawW, drawH);
+
+    // Dark overlay outside circle
+    ctx.save();
+    ctx.fillStyle = "rgba(0,0,0,0.55)";
+    ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+    ctx.globalCompositeOperation = "destination-out";
+    ctx.beginPath();
+    ctx.arc(CANVAS_SIZE / 2, CANVAS_SIZE / 2, CANVAS_SIZE / 2 - 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    // Gold circle border
+    ctx.strokeStyle = "#C8971D";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(CANVAS_SIZE / 2, CANVAS_SIZE / 2, CANVAS_SIZE / 2 - 2, 0, Math.PI * 2);
+    ctx.stroke();
+  }, [cropScale, cropOffset]);
+
+  useEffect(() => { drawCrop(); }, [drawCrop]);
+
+  function onCropMouseDown(e: React.MouseEvent) {
+    dragState.current = { active: true, startX: e.clientX, startY: e.clientY, startOX: cropOffset.x, startOY: cropOffset.y };
+  }
+  function onCropMouseMove(e: React.MouseEvent) {
+    if (!dragState.current.active) return;
+    setCropOffset({ x: dragState.current.startOX + e.clientX - dragState.current.startX, y: dragState.current.startOY + e.clientY - dragState.current.startY });
+  }
+  function onCropMouseUp() { dragState.current.active = false; }
+
+  function onCropWheel(e: React.WheelEvent) {
+    e.preventDefault();
+    setCropScale(s => Math.min(4, Math.max(0.5, s - e.deltaY * 0.001)));
+  }
+
+  async function applyCrop() {
+    const img = cropImgRef.current;
+    if (!img) return;
+    const offscreen = document.createElement("canvas");
+    offscreen.width = EXPORT_SIZE;
+    offscreen.height = EXPORT_SIZE;
+    const ctx = offscreen.getContext("2d")!;
+
+    const fitScale = Math.max(CANVAS_SIZE / img.naturalWidth, CANVAS_SIZE / img.naturalHeight);
+    const drawW = img.naturalWidth * fitScale * cropScale;
+    const drawH = img.naturalHeight * fitScale * cropScale;
+    const drawX = (CANVAS_SIZE - drawW) / 2 + cropOffset.x;
+    const drawY = (CANVAS_SIZE - drawH) / 2 + cropOffset.y;
+    const ex = EXPORT_SIZE / CANVAS_SIZE;
+
+    ctx.beginPath();
+    ctx.arc(EXPORT_SIZE / 2, EXPORT_SIZE / 2, EXPORT_SIZE / 2, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.drawImage(img, drawX * ex, drawY * ex, drawW * ex, drawH * ex);
+
+    offscreen.toBlob(async (blob) => {
+      if (!blob) return;
+      const file = new File([blob], "avatar.jpg", { type: "image/jpeg" });
+      setCropSrc(null);
+      if (cropSrc) URL.revokeObjectURL(cropSrc);
+      setAvatarUploading(true);
+      setError("");
+      try {
+        const res = await api.uploadAvatar(file);
+        setLocalAvatar(res.avatar_url);
+        flashSaved();
+        router.reload({ only: [] });
+      } catch (e: any) {
+        setError(e.message || "Avatar upload failed.");
+      } finally {
+        setAvatarUploading(false);
+      }
+    }, "image/jpeg", 0.92);
+  }
+
+  async function handleRemoveAvatar() {
+    if (!confirm("Remove your profile photo?")) return;
+    setAvatarRemoving(true);
     setError("");
     try {
-      const res = await api.uploadAvatar(file);
-      setLocalAvatar(res.avatar_url);
+      await api.removeAvatar();
+      setLocalAvatar(null);
       flashSaved();
-      // Refresh Inertia shared props so the new avatar propagates to AppLayout
       router.reload({ only: [] });
     } catch (e: any) {
-      setError(e.message || "Avatar upload failed.");
+      setError(e.message || "Failed to remove photo.");
     } finally {
-      setAvatarUploading(false);
+      setAvatarRemoving(false);
     }
   }
 
@@ -219,7 +359,7 @@ export default function Settings() {
                     <AvatarDisplay src={localAvatar} name={profile.name} size="lg" />
                     <button
                       onClick={() => avatarInputRef.current?.click()}
-                      disabled={avatarUploading}
+                      disabled={avatarUploading || avatarRemoving}
                       className="absolute inset-0 rounded-full bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
                       title="Change photo"
                     >
@@ -235,10 +375,32 @@ export default function Settings() {
                       onChange={handleAvatarChange}
                     />
                   </div>
-                  <div>
+                  <div className="space-y-1.5">
                     <div className="font-semibold">{profile.name}</div>
-                    <Badge variant="outline" className="text-xs mt-1">{user?.role || "Admin"}</Badge>
-                    <p className="text-xs text-muted-foreground mt-1">Click the photo to upload a new one (max 5 MB)</p>
+                    <Badge variant="outline" className="text-xs">{user?.role || "Admin"}</Badge>
+                    <div className="flex items-center gap-2 pt-0.5">
+                      <button
+                        onClick={() => avatarInputRef.current?.click()}
+                        disabled={avatarUploading || avatarRemoving}
+                        className="text-xs text-gold hover:text-gold/80 underline underline-offset-2 disabled:opacity-50"
+                      >
+                        {avatarUploading ? "Uploading…" : localAvatar ? "Change photo" : "Upload photo"}
+                      </button>
+                      {localAvatar && (
+                        <>
+                          <span className="text-muted-foreground text-xs">·</span>
+                          <button
+                            onClick={handleRemoveAvatar}
+                            disabled={avatarRemoving || avatarUploading}
+                            className="text-xs text-destructive hover:text-destructive/80 flex items-center gap-1 disabled:opacity-50"
+                          >
+                            {avatarRemoving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
+                            Remove
+                          </button>
+                        </>
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground">Any size — large images are auto-compressed</p>
                   </div>
                 </div>
 
@@ -407,6 +569,94 @@ export default function Settings() {
           )}
         </div>
       </div>
+      {/* ── Crop / Zoom Modal ── */}
+      {cropSrc && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="bg-background border border-border rounded-2xl shadow-2xl w-full max-w-sm p-6 flex flex-col items-center gap-5">
+            <div className="text-center">
+              <h2 className="font-display text-base font-semibold">Adjust Photo</h2>
+              <p className="text-xs text-muted-foreground mt-0.5">Drag to reposition · Scroll or use buttons to zoom</p>
+            </div>
+
+            {/* Canvas preview */}
+            <div className="relative select-none" style={{ width: CANVAS_SIZE, height: CANVAS_SIZE }}>
+              <canvas
+                ref={cropCanvasRef}
+                width={CANVAS_SIZE}
+                height={CANVAS_SIZE}
+                className="rounded-full cursor-grab active:cursor-grabbing"
+                style={{ width: CANVAS_SIZE, height: CANVAS_SIZE }}
+                onMouseDown={onCropMouseDown}
+                onMouseMove={onCropMouseMove}
+                onMouseUp={onCropMouseUp}
+                onMouseLeave={onCropMouseUp}
+                onWheel={onCropWheel}
+              />
+              {/* Hidden img element to hold the decoded image */}
+              <img
+                src={cropSrc}
+                className="hidden"
+                ref={(el) => {
+                  cropImgRef.current = el;
+                  if (el) el.onload = () => drawCrop();
+                }}
+                alt=""
+              />
+            </div>
+
+            {/* Zoom controls */}
+            <div className="flex items-center gap-3 w-full">
+              <button
+                onClick={() => setCropScale(s => Math.max(0.5, s - 0.1))}
+                className="flex h-8 w-8 items-center justify-center rounded-full border border-border hover:bg-muted transition-colors"
+              >
+                <ZoomOut className="h-4 w-4" />
+              </button>
+              <input
+                type="range"
+                min={50} max={400} step={1}
+                value={Math.round(cropScale * 100)}
+                onChange={e => setCropScale(Number(e.target.value) / 100)}
+                className="flex-1 accent-[#C8971D] h-1.5 rounded-full cursor-pointer"
+              />
+              <button
+                onClick={() => setCropScale(s => Math.min(4, s + 0.1))}
+                className="flex h-8 w-8 items-center justify-center rounded-full border border-border hover:bg-muted transition-colors"
+              >
+                <ZoomIn className="h-4 w-4" />
+              </button>
+              <button
+                onClick={() => { setCropScale(1); setCropOffset({ x: 0, y: 0 }); }}
+                className="flex h-8 w-8 items-center justify-center rounded-full border border-border hover:bg-muted transition-colors"
+                title="Reset"
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+              </button>
+            </div>
+
+            <div className="text-xs text-muted-foreground">{Math.round(cropScale * 100)}%</div>
+
+            {/* Action buttons */}
+            <div className="flex gap-3 w-full">
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => { setCropSrc(null); if (cropSrc) URL.revokeObjectURL(cropSrc); }}
+              >
+                Cancel
+              </Button>
+              <Button
+                className="flex-1 bg-gold hover:bg-gold/90 text-black font-semibold"
+                onClick={applyCrop}
+                disabled={avatarUploading}
+              >
+                {avatarUploading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                Apply
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </AppLayout>
   );
 }

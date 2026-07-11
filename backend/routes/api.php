@@ -172,6 +172,7 @@ Route::middleware(['auth:sanctum', 'throttle:60,1'])->group(function () {
     Route::put('/settings/notifications', [\App\Http\Controllers\SettingsController::class, 'updateNotifications']);
     Route::put('/settings/system',        [\App\Http\Controllers\SettingsController::class, 'updateSystem']);
     Route::post('/settings/avatar',       [\App\Http\Controllers\SettingsController::class, 'uploadAvatar']);
+    Route::delete('/settings/avatar',     [\App\Http\Controllers\SettingsController::class, 'removeAvatar']);
 
     // Google Calendar
     Route::get('/integrations/google-calendar/status',     [GoogleCalendarController::class, 'status']);

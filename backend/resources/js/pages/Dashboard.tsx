@@ -1,6 +1,6 @@
 import { Head, Link } from "@inertiajs/react";
 import { useEffect, useState, useCallback } from "react";
-import { Briefcase, Users, Wallet, Clock, ArrowUpRight, TrendingUp, Loader2, Download, X, Search, ChevronLeft, ChevronRight } from "lucide-react";
+import { Briefcase, Users, Wallet, Clock, ArrowUpRight, TrendingUp, Loader2, Download, X, Search, ChevronLeft, ChevronRight, Archive } from "lucide-react";
 import AppLayout from "@/layouts/AppLayout";
 import { PageHeader } from "@/components/page-header";
 import { StatCard } from "@/components/stat-card";
@@ -18,7 +18,7 @@ function formatCurrency(val: number) {
   return `₹ ${val.toLocaleString()}`;
 }
 
-type DrillKey = "active_cases" | "active_clients" | "wip" | "revenue";
+type DrillKey = "active_cases" | "inactive_cases" | "active_clients" | "wip" | "revenue";
 
 interface DrillConfig {
   title: string;
@@ -183,7 +183,7 @@ export default function Dashboard() {
       title: "Active Cases",
       subtitle: "Open & In Progress",
       fetchFn: (params) => {
-        params.set("status", "Active");
+        params.set("status", "Open,In Progress");
         return api.getProjectsPaged(params);
       },
       columns: [
@@ -192,6 +192,21 @@ export default function Dashboard() {
         { label: "Client", render: (r) => <span className="text-xs text-muted-foreground">{r.client?.company_name ?? "—"}</span> },
         { label: "Status", render: (r) => <span className="text-xs">{r.status}</span> },
         { label: "Deadline", render: (r) => { const od = r.hard_deadline && new Date(r.hard_deadline) < new Date(); return <span className={`text-xs font-mono ${od ? "text-destructive font-semibold" : "text-muted-foreground"}`}>{fmtD(r.hard_deadline)}</span>; } },
+      ],
+    },
+    inactive_cases: {
+      title: "Inactive Cases",
+      subtitle: "Completed, Archived, Closed & other terminal statuses",
+      fetchFn: (params) => {
+        params.set("exclude_status", "Open,In Progress");
+        return api.getProjectsPaged(params);
+      },
+      columns: [
+        { label: "Docket", render: (r) => <span className="font-mono text-xs text-gold font-semibold">{r.docket_number ?? r.project_code ?? "—"}</span> },
+        { label: "Patent Title", render: (r) => <span className="max-w-[200px] truncate block font-medium">{r.project_name}</span> },
+        { label: "Client", render: (r) => <span className="text-xs text-muted-foreground">{r.client?.company_name ?? "—"}</span> },
+        { label: "Status", render: (r) => <span className="text-xs">{r.status}</span> },
+        { label: "Deadline", render: (r) => <span className="text-xs font-mono text-muted-foreground">{fmtD(r.hard_deadline)}</span> },
       ],
     },
     active_clients: {
@@ -247,7 +262,7 @@ export default function Dashboard() {
       <PageHeader
         eyebrow="Overview"
         title={`Good morning, ${welcomeName}`}
-        description={`${metrics.active_matters} cases need attention · ${metrics.clients} clients · WIP ${formatCurrency(metrics.wip_balance)}`}
+        description={`${metrics.active_matters} active · ${metrics.inactive_matters ?? 0} inactive · ${metrics.clients} clients · WIP ${formatCurrency(metrics.wip_balance)}`}
         actions={
           <>
             <AnalystRoleFilter value={roleFilter} onChange={setRoleFilter} />
@@ -261,8 +276,9 @@ export default function Dashboard() {
           <DashboardDrillModal config={DRILL_CONFIGS[drillKey]} onClose={() => setDrillKey(null)} />
         )}
 
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
           <StatCard label="Active Cases" value={metrics.active_matters.toString()} delta={metrics.active_matters_delta ?? undefined} trend={metrics.active_matters_delta_trend ?? "up"} icon={Briefcase} accent="primary" onClick={() => setDrillKey("active_cases")} />
+          <StatCard label="Inactive Cases" value={(metrics.inactive_matters ?? 0).toString()} icon={Archive} accent="neutral" onClick={() => setDrillKey("inactive_cases")} />
           <StatCard label="Active Clients" value={metrics.clients.toString()} delta={metrics.clients_delta ?? undefined} trend={metrics.clients_delta_trend ?? "up"} icon={Users} accent="gold" onClick={() => setDrillKey("active_clients")} />
           <StatCard label="WIP (unbilled)" value={formatCurrency(metrics.wip_balance)} delta={metrics.wip_delta ?? undefined} trend={metrics.wip_delta_trend ?? "neutral"} icon={Clock} accent="info" onClick={() => setDrillKey("wip")} />
           <StatCard label="MTD Revenue" value={formatCurrency(metrics.received_payments)} delta={metrics.revenue_delta ?? undefined} trend={metrics.revenue_delta_trend ?? "up"} icon={Wallet} accent="success" onClick={() => setDrillKey("revenue")} />
