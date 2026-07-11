@@ -411,6 +411,21 @@ export const api = {
   async updateSystemSettings(data: { company: string; currency: string; fiscalMonth: string; maxUploadMB: string }): Promise<any> {
     return this.request('/settings/system', { method: 'PUT', body: JSON.stringify(data) })
   },
+  async uploadAvatar(file: File): Promise<{ ok: boolean; avatar_url: string }> {
+    const form = new FormData()
+    form.append('avatar', file)
+    const token = document.cookie.match(/XSRF-TOKEN=([^;]+)/)?.[1] ?? ''
+    const res = await fetch('/api/settings/avatar', {
+      method: 'POST',
+      headers: { 'X-XSRF-TOKEN': decodeURIComponent(token), Accept: 'application/json' },
+      body: form,
+    })
+    if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error((e as any).message || 'Upload failed') }
+    return res.json()
+  },
+  async requestReminderHelp(id: number, targetUserId: number, note?: string): Promise<{ ok: boolean }> {
+    return this.request(`/reminders/${id}/help-request`, { method: 'POST', body: JSON.stringify({ target_user_id: targetUserId, note: note ?? null }) })
+  },
 
   // ── Compliance ──
   async getComplianceStats(): Promise<{ critical: number; at_risk: number; on_track: number; compliant: number }> {

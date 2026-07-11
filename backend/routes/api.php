@@ -170,6 +170,7 @@ Route::middleware(['auth:sanctum', 'throttle:60,1'])->group(function () {
     Route::put('/settings/password',      [\App\Http\Controllers\SettingsController::class, 'updatePassword']);
     Route::put('/settings/notifications', [\App\Http\Controllers\SettingsController::class, 'updateNotifications']);
     Route::put('/settings/system',        [\App\Http\Controllers\SettingsController::class, 'updateSystem']);
+    Route::post('/settings/avatar',       [\App\Http\Controllers\SettingsController::class, 'uploadAvatar']);
 
     // Compliance
     Route::get('/compliance/stats', [\App\Http\Controllers\ComplianceController::class, 'stats']);
@@ -182,6 +183,7 @@ Route::middleware(['auth:sanctum', 'throttle:60,1'])->group(function () {
     Route::post('/reminders', [\App\Http\Controllers\ReminderController::class, 'store']);
     Route::put('/reminders/{id}', [\App\Http\Controllers\ReminderController::class, 'update']);
     Route::delete('/reminders/{id}', [\App\Http\Controllers\ReminderController::class, 'destroy']);
+    Route::post('/reminders/{id}/help-request', [\App\Http\Controllers\ReminderController::class, 'helpRequest']);
 
     // Feedback / CSAT
     Route::get('/feedback', [\App\Http\Controllers\FeedbackController::class, 'index']);

@@ -284,6 +284,21 @@ export default function AppLayout({ children }: Props) {
                   )}
                 </Link>
               </Button>
+
+              {/* User avatar → Settings */}
+              <Link href="/settings" aria-label="Profile settings" title={`${props.auth?.user?.name ?? "Profile"} · Settings`}>
+                {props.auth?.user?.avatar_url ? (
+                  <img
+                    src={props.auth.user.avatar_url}
+                    alt={props.auth.user.name}
+                    className="h-8 w-8 rounded-full object-cover ring-2 ring-gold/30 hover:ring-gold transition-all"
+                  />
+                ) : (
+                  <div className="h-8 w-8 rounded-full bg-gold/20 flex items-center justify-center text-gold text-xs font-bold ring-2 ring-gold/30 hover:ring-gold transition-all">
+                    {(props.auth?.user?.name ?? "U").charAt(0).toUpperCase()}
+                  </div>
+                )}
+              </Link>
             </div>
           </header>
 

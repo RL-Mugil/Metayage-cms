@@ -1,6 +1,6 @@
-import { Head } from "@inertiajs/react";
+import { Head, usePage } from "@inertiajs/react";
 import { useEffect, useState } from "react";
-import { Plug, Zap, RefreshCw, X, Settings, Globe, CheckCircle, Loader2, Activity, ChevronDown, ChevronUp, Copy } from "lucide-react";
+import { Plug, Zap, RefreshCw, X, Settings, Globe, CheckCircle, Loader2, Activity, ChevronDown, ChevronUp, Copy, Eye } from "lucide-react";
 import AppLayout from "@/layouts/AppLayout";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -21,7 +21,12 @@ interface Integration {
   hasKey?: boolean;
 }
 
+const MANAGE_ROLES = ["super_admin", "partner", "manager"];
+
 export default function Integrations() {
+  const { props } = usePage() as any;
+  const canManage = MANAGE_ROLES.includes(props.auth?.user?.role ?? "");
+
   const [list, setList] = useState<Integration[]>([]);
   const [loading, setLoading] = useState(true);
   const [configOpen, setConfigOpen] = useState<string | null>(null);
@@ -107,7 +112,13 @@ export default function Integrations() {
     <AppLayout>
       <Head title="Integrations" />
       <PageHeader eyebrow="Operations" title="Integrations"
-        description={`${connected} of ${list.length} integrations active`} />
+        description={`${connected} of ${list.length} integrations active`}
+        actions={!canManage ? (
+          <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground border border-border rounded-full px-3 py-1">
+            <Eye className="h-3.5 w-3.5" /> View Only
+          </span>
+        ) : undefined}
+      />
       <div className="px-8 py-6 space-y-8">
         {banner && (
           <div className={`rounded-lg border px-4 py-3 text-sm ${banner.kind === "ok" ? "border-green-200 bg-green-50 text-green-700" : "border-red-200 bg-red-50 text-red-700"}`}>
@@ -143,30 +154,36 @@ export default function Integrations() {
                   </div>
                 </div>
                 <div className="flex gap-2 mt-4">
-                  {intg.connected ? (
-                    <>
-                      <Button size="sm" variant="outline" className="h-7 text-xs flex-1"
-                        onClick={() => setConfigOpen(configOpen === intg.id ? null : intg.id)}
-                        disabled={busyId === intg.id}>
-                        <Settings className="h-3 w-3 mr-1" /> Configure
-                      </Button>
-                      <Button size="sm" variant="outline" className="h-7 text-xs border-red-200 text-red-600 hover:bg-red-50"
+                  {canManage ? (
+                    intg.connected ? (
+                      <>
+                        <Button size="sm" variant="outline" className="h-7 text-xs flex-1"
+                          onClick={() => setConfigOpen(configOpen === intg.id ? null : intg.id)}
+                          disabled={busyId === intg.id}>
+                          <Settings className="h-3 w-3 mr-1" /> Configure
+                        </Button>
+                        <Button size="sm" variant="outline" className="h-7 text-xs border-red-200 text-red-600 hover:bg-red-50"
+                          onClick={() => toggle(intg.id)}
+                          disabled={busyId === intg.id}>
+                          <X className="h-3 w-3 mr-1" /> Disconnect
+                        </Button>
+                      </>
+                    ) : (
+                      <Button size="sm" className="h-7 text-xs flex-1 bg-gold hover:bg-gold/90 text-black"
                         onClick={() => toggle(intg.id)}
                         disabled={busyId === intg.id}>
-                        <X className="h-3 w-3 mr-1" /> Disconnect
+                        {busyId === intg.id ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Plug className="h-3 w-3 mr-1" />} Connect
                       </Button>
-                    </>
+                    )
                   ) : (
-                    <Button size="sm" className="h-7 text-xs flex-1 bg-gold hover:bg-gold/90 text-black"
-                      onClick={() => toggle(intg.id)}
-                      disabled={busyId === intg.id}>
-                      {busyId === intg.id ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Plug className="h-3 w-3 mr-1" />} Connect
-                    </Button>
+                    <span className="text-xs text-muted-foreground italic">
+                      {intg.connected ? "Connected — managed by your admin" : "Not connected"}
+                    </span>
                   )}
                 </div>
 
-                {/* Config panel */}
-                {configOpen === intg.id && (
+                {/* Config panel — managers only */}
+                {canManage && configOpen === intg.id && (
                   <div className="mt-4 pt-4 border-t border-border space-y-3">
                     <div>
                       <label className="text-xs font-medium text-muted-foreground">API Key {intg.hasKey && <span className="text-green-600">(saved)</span>}</label>
@@ -265,10 +282,14 @@ export default function Integrations() {
                       </td>
                       <td className="px-4 py-3 text-xs text-muted-foreground">{intg.lastSync ?? "—"}</td>
                       <td className="px-4 py-3 text-right">
-                        <Button size="sm" variant="outline" className="h-7 text-xs"
-                          onClick={() => { setConfigOpen(intg.id); fetchLogs(intg.id); }}>
-                          <Activity className="h-3 w-3 mr-1" /> View Logs
-                        </Button>
+                        {canManage ? (
+                          <Button size="sm" variant="outline" className="h-7 text-xs"
+                            onClick={() => { setConfigOpen(intg.id); fetchLogs(intg.id); }}>
+                            <Activity className="h-3 w-3 mr-1" /> View Logs
+                          </Button>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
                       </td>
                     </tr>
                   ))}

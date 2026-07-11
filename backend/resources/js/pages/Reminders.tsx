@@ -1,6 +1,6 @@
 import { Head } from "@inertiajs/react";
 import { useEffect, useState } from "react";
-import { Bell, BellOff, CheckCircle2, Clock, Calendar, Plus, AlertCircle, Loader2, Trash2 } from "lucide-react";
+import { Bell, BellOff, CheckCircle2, Clock, Calendar, Plus, AlertCircle, Loader2, Trash2, HelpCircle, X } from "lucide-react";
 import { api } from "@/lib/api-client";
 import AppLayout from "@/layouts/AppLayout";
 import { PageHeader } from "@/components/page-header";
@@ -37,12 +37,20 @@ const CATEGORY_COLORS: Record<Category, string> = {
 const CATEGORIES: Category[] = ["Deadline", "Meeting", "Follow-up", "Renewal"];
 
 export default function Reminders() {
-  const [reminders, setReminders] = useState<Reminder[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [showForm, setShowForm] = useState(false);
-  const [employees, setEmployees] = useState<EmployeeOption[]>([]);
+  const [reminders, setReminders]   = useState<Reminder[]>([]);
+  const [loading, setLoading]       = useState(true);
+  const [saving, setSaving]         = useState(false);
+  const [showForm, setShowForm]     = useState(false);
+  const [employees, setEmployees]   = useState<EmployeeOption[]>([]);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+
+  // Help-request modal state
+  const [helpReminder, setHelpReminder]   = useState<Reminder | null>(null);
+  const [helpTargetId, setHelpTargetId]   = useState<string>("");
+  const [helpNote, setHelpNote]           = useState("");
+  const [helpSending, setHelpSending]     = useState(false);
+  const [helpSuccess, setHelpSuccess]     = useState(false);
+
   const [newReminder, setNewReminder] = useState({
     title: "",
     description: "",
@@ -52,7 +60,11 @@ export default function Reminders() {
     remindTo: "self",
   });
 
-  const load = () => api.getReminders().then((d) => setReminders(d as unknown as Reminder[])).catch(() => {}).finally(() => setLoading(false));
+  const load = () =>
+    api.getReminders()
+      .then((d) => setReminders(d as unknown as Reminder[]))
+      .catch(() => {})
+      .finally(() => setLoading(false));
 
   useEffect(() => {
     load();
@@ -104,19 +116,41 @@ export default function Reminders() {
       setNewReminder({ title: "", description: "", dueDate: "", dueTime: "", category: "Deadline", remindTo: "self" });
       setShowForm(false);
       load();
-    } catch { /* validation errors keep the form open */ }
+    } catch { /* keep form open */ }
     finally { setSaving(false); }
   }
 
-  const active = reminders.filter((r) => !r.completed);
-  const dueToday = reminders.filter(
-    (r) => !r.completed && r.section === "today"
-  ).length;
+  function openHelp(reminder: Reminder) {
+    setHelpReminder(reminder);
+    setHelpTargetId("");
+    setHelpNote("");
+    setHelpSuccess(false);
+  }
 
+  function closeHelp() {
+    setHelpReminder(null);
+    setHelpSuccess(false);
+  }
+
+  async function sendHelp() {
+    if (!helpReminder || !helpTargetId || helpSending) return;
+    setHelpSending(true);
+    try {
+      await api.requestReminderHelp(helpReminder.id, Number(helpTargetId), helpNote.trim() || undefined);
+      setHelpSuccess(true);
+      setTimeout(closeHelp, 1400);
+    } catch {
+      /* stay open */
+    } finally {
+      setHelpSending(false);
+    }
+  }
+
+  const active       = reminders.filter((r) => !r.completed);
+  const dueToday     = reminders.filter((r) => !r.completed && r.section === "today").length;
   const overdueCount = reminders.filter((r) => {
     if (r.completed) return false;
-    const due = new Date(r.dueDate + "T00:00:00");
-    return due < new Date(new Date().toDateString());
+    return new Date(r.dueDate + "T00:00:00") < new Date(new Date().toDateString());
   }).length;
 
   const bySection = (section: "today" | "week" | "upcoming") =>
@@ -145,12 +179,8 @@ export default function Reminders() {
         title="Reminders"
         description="Automated deadline and follow-up reminders"
         actions={
-          <Button
-            onClick={() => setShowForm(!showForm)}
-            className="bg-gold text-background hover:bg-gold/90"
-          >
-            <Plus className="mr-2 h-4 w-4" />
-            New Reminder
+          <Button onClick={() => setShowForm(!showForm)} className="bg-gold text-background hover:bg-gold/90">
+            <Plus className="mr-2 h-4 w-4" />New Reminder
           </Button>
         }
       />
@@ -172,9 +202,7 @@ export default function Reminders() {
               <Clock className={`h-5 w-5 ${dueToday > 0 ? "text-red-500" : "text-muted-foreground"}`} />
               <div>
                 <p className="text-xs text-muted-foreground">Due Today</p>
-                <p className={`text-2xl font-bold ${dueToday > 0 ? "text-red-500" : "text-foreground"}`}>
-                  {dueToday}
-                </p>
+                <p className={`text-2xl font-bold ${dueToday > 0 ? "text-red-500" : "text-foreground"}`}>{dueToday}</p>
               </div>
             </CardContent>
           </Card>
@@ -183,9 +211,7 @@ export default function Reminders() {
               <AlertCircle className={`h-5 w-5 ${overdueCount > 0 ? "text-red-500" : "text-muted-foreground"}`} />
               <div>
                 <p className="text-xs text-muted-foreground">Overdue</p>
-                <p className={`text-2xl font-bold ${overdueCount > 0 ? "text-red-500" : "text-foreground"}`}>
-                  {overdueCount}
-                </p>
+                <p className={`text-2xl font-bold ${overdueCount > 0 ? "text-red-500" : "text-foreground"}`}>{overdueCount}</p>
               </div>
             </CardContent>
           </Card>
@@ -242,9 +268,7 @@ export default function Reminders() {
                     value={newReminder.category}
                     onChange={(e) => setNewReminder({ ...newReminder, category: e.target.value as Category })}
                   >
-                    {CATEGORIES.map((c) => (
-                      <option key={c} value={c}>{c}</option>
-                    ))}
+                    {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </div>
                 <div className="space-y-1">
@@ -256,9 +280,7 @@ export default function Reminders() {
                   >
                     <option value="self">Myself</option>
                     {employees.map((emp) => (
-                      <option key={emp.id} value={String(emp.id)}>
-                        {emp.name}
-                      </option>
+                      <option key={emp.id} value={String(emp.id)}>{emp.name}</option>
                     ))}
                   </select>
                 </div>
@@ -289,10 +311,7 @@ export default function Reminders() {
                     className={`border-border transition-opacity ${reminder.completed ? "opacity-50" : ""}`}
                   >
                     <CardContent className="flex items-start gap-4 p-4">
-                      <button
-                        onClick={() => toggleComplete(reminder.id)}
-                        className="mt-0.5 flex-shrink-0"
-                      >
+                      <button onClick={() => toggleComplete(reminder.id)} className="mt-0.5 flex-shrink-0">
                         {reminder.completed ? (
                           <CheckCircle2 className="h-5 w-5 text-green-500" />
                         ) : (
@@ -301,16 +320,10 @@ export default function Reminders() {
                       </button>
                       <div className="flex-1 min-w-0 space-y-1">
                         <div className="flex items-start justify-between gap-2 flex-wrap">
-                          <p
-                            className={`text-sm font-medium ${
-                              reminder.completed ? "line-through text-muted-foreground" : "text-foreground"
-                            }`}
-                          >
+                          <p className={`text-sm font-medium ${reminder.completed ? "line-through text-muted-foreground" : "text-foreground"}`}>
                             {reminder.title}
                           </p>
-                          <span
-                            className={`text-[10px] font-medium px-2 py-0.5 rounded border flex-shrink-0 ${CATEGORY_COLORS[reminder.category]}`}
-                          >
+                          <span className={`text-[10px] font-medium px-2 py-0.5 rounded border flex-shrink-0 ${CATEGORY_COLORS[reminder.category]}`}>
                             {reminder.category}
                           </span>
                         </div>
@@ -329,17 +342,30 @@ export default function Reminders() {
                           </span>
                         </div>
                       </div>
-                      {/* Delete button */}
-                      <button
-                        onClick={() => deleteReminder(reminder.id)}
-                        disabled={deletingId === reminder.id}
-                        className="flex-shrink-0 p-1.5 rounded hover:bg-destructive/20 text-muted-foreground hover:text-destructive transition-colors"
-                        title="Delete reminder"
-                      >
-                        {deletingId === reminder.id
-                          ? <Loader2 className="h-4 w-4 animate-spin" />
-                          : <Trash2 className="h-4 w-4" />}
-                      </button>
+                      {/* Action buttons */}
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        {/* Request Help */}
+                        {!reminder.completed && employees.length > 0 && (
+                          <button
+                            onClick={() => openHelp(reminder)}
+                            title="Request help from a teammate"
+                            className="p-1.5 rounded hover:bg-gold/20 text-muted-foreground hover:text-gold transition-colors"
+                          >
+                            <HelpCircle className="h-4 w-4" />
+                          </button>
+                        )}
+                        {/* Delete */}
+                        <button
+                          onClick={() => deleteReminder(reminder.id)}
+                          disabled={deletingId === reminder.id}
+                          className="p-1.5 rounded hover:bg-destructive/20 text-muted-foreground hover:text-destructive transition-colors"
+                          title="Delete reminder"
+                        >
+                          {deletingId === reminder.id
+                            ? <Loader2 className="h-4 w-4 animate-spin" />
+                            : <Trash2 className="h-4 w-4" />}
+                        </button>
+                      </div>
                     </CardContent>
                   </Card>
                 ))}
@@ -355,6 +381,67 @@ export default function Reminders() {
           </div>
         )}
       </div>
+
+      {/* ── Request Help Modal ─────────────────────────────────────────────── */}
+      {helpReminder && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="w-full max-w-sm rounded-xl border border-border bg-card shadow-xl p-6 space-y-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-semibold text-foreground">Request Help</h3>
+                <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{helpReminder.title}</p>
+              </div>
+              <button onClick={closeHelp} className="p-1 rounded hover:bg-muted text-muted-foreground">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {helpSuccess ? (
+              <div className="flex items-center gap-2 rounded-lg bg-green-500/10 border border-green-500/30 px-4 py-3 text-sm text-green-600">
+                <CheckCircle2 className="h-4 w-4 flex-shrink-0" />
+                Help request sent!
+              </div>
+            ) : (
+              <>
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Ask teammate</label>
+                  <select
+                    value={helpTargetId}
+                    onChange={(e) => setHelpTargetId(e.target.value)}
+                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gold"
+                  >
+                    <option value="">Select a teammate…</option>
+                    {employees.map((emp) => (
+                      <option key={emp.id} value={String(emp.id)}>{emp.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Note (optional)</label>
+                  <textarea
+                    rows={2}
+                    placeholder="What kind of help do you need?"
+                    value={helpNote}
+                    onChange={(e) => setHelpNote(e.target.value)}
+                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-gold"
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    onClick={sendHelp}
+                    disabled={!helpTargetId || helpSending}
+                    className="flex-1 bg-gold text-background hover:bg-gold/90"
+                  >
+                    {helpSending ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : <HelpCircle className="h-4 w-4 mr-1.5" />}
+                    Send Request
+                  </Button>
+                  <Button variant="outline" onClick={closeHelp}>Cancel</Button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </AppLayout>
   );
 }

@@ -9,10 +9,19 @@ use Illuminate\Support\Facades\DB;
 class IntegrationController extends Controller
 {
     private const MANAGE_ROLES = ['super_admin', 'partner', 'manager'];
+    private const CLIENT_ROLES = ['client', 'client_admin'];
 
-    private function gate(Request $request): ?\Illuminate\Http\JsonResponse
+    private function writeGate(Request $request): ?\Illuminate\Http\JsonResponse
     {
         if (! in_array($request->user()->role, self::MANAGE_ROLES)) {
+            return response()->json(['message' => 'Forbidden — only managers and above can configure integrations.'], 403);
+        }
+        return null;
+    }
+
+    private function readGate(Request $request): ?\Illuminate\Http\JsonResponse
+    {
+        if (in_array($request->user()->role, self::CLIENT_ROLES)) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
         return null;
@@ -20,7 +29,7 @@ class IntegrationController extends Controller
 
     public function index(Request $request)
     {
-        if ($deny = $this->gate($request)) return $deny;
+        if ($deny = $this->readGate($request)) return $deny;
 
         return response()->json(
             Integration::orderBy('id')->get()->map(fn ($i) => [
@@ -40,7 +49,7 @@ class IntegrationController extends Controller
 
     public function toggle(Request $request, string $slug)
     {
-        if ($deny = $this->gate($request)) return $deny;
+        if ($deny = $this->writeGate($request)) return $deny;
 
         $integration = Integration::where('slug', $slug)->firstOrFail();
         $hasKey = ! empty(($integration->config ?? [])['api_key'] ?? null);
@@ -70,7 +79,7 @@ class IntegrationController extends Controller
 
     public function saveConfig(Request $request, string $slug)
     {
-        if ($deny = $this->gate($request)) return $deny;
+        if ($deny = $this->writeGate($request)) return $deny;
 
         $integration = Integration::where('slug', $slug)->firstOrFail();
         $validated = $request->validate(['api_key' => 'required|string|max:500']);
@@ -86,7 +95,7 @@ class IntegrationController extends Controller
     /** Connectivity check: real for integrations with public endpoints, config-presence otherwise. */
     public function test(Request $request, string $slug)
     {
-        if ($deny = $this->gate($request)) return $deny;
+        if ($deny = $this->writeGate($request)) return $deny;
 
         $integration = Integration::where('slug', $slug)->firstOrFail();
 

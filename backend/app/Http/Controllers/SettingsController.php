@@ -9,6 +9,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 
 class SettingsController extends Controller
@@ -46,6 +47,30 @@ class SettingsController extends Controller
         }
 
         return response()->json($data);
+    }
+
+    public function uploadAvatar(Request $request)
+    {
+        $user = $request->user();
+        $request->validate([
+            'avatar' => 'required|image|mimes:jpeg,png,jpg,gif,webp|max:5120',
+        ]);
+
+        // Delete old avatar if it's one we stored
+        if ($user->avatar_url && str_contains($user->avatar_url, '/storage/avatars/')) {
+            $old = str_replace('/storage/', '', parse_url($user->avatar_url, PHP_URL_PATH));
+            Storage::disk('public')->delete($old);
+        }
+
+        $ext  = $request->file('avatar')->getClientOriginalExtension();
+        $name = "avatars/user_{$user->id}_{$user->updated_at?->timestamp}." . $ext;
+        $path = $request->file('avatar')->storeAs('avatars', "user_{$user->id}." . $ext, 'public');
+        $url  = Storage::disk('public')->url($path);
+
+        $user->avatar_url = $url;
+        $user->save();
+
+        return response()->json(['ok' => true, 'avatar_url' => $url]);
     }
 
     public function updateProfile(Request $request)

@@ -4,8 +4,10 @@ namespace App\Http\Controllers;
 
 use App\Http\PaginationHelper;
 use App\Models\Reminder;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 
 class ReminderController extends Controller
 {
@@ -94,5 +96,35 @@ class ReminderController extends Controller
         $reminder->delete();
 
         return response()->json(['message' => 'Reminder deleted']);
+    }
+
+    public function helpRequest(Request $request, $id)
+    {
+        if ($deny = $this->denyClients($request)) return $deny;
+
+        $actor = $request->user();
+        $validated = $request->validate([
+            'target_user_id' => 'required|integer|exists:users,id',
+            'note'           => 'nullable|string|max:500',
+        ]);
+
+        $user = $request->user();
+        $reminder = Reminder::where('id', $id)
+            ->where(fn ($q) => $q->where('user_id', $user->id)->orWhere('scope', 'team'))
+            ->firstOrFail();
+
+        $note = $validated['note'] ? " — \"{$validated['note']}\"" : '';
+        DB::table('ip_notifications')->insert([
+            'user_id'    => $validated['target_user_id'],
+            'type'       => 'help_request',
+            'title'      => "Help requested: {$reminder->title}",
+            'description'=> "{$actor->name} needs help with a reminder{$note}",
+            'action_url' => '/reminders',
+            'meta'       => json_encode(['reminder_id' => $reminder->id, 'requester_id' => $actor->id]),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        return response()->json(['ok' => true, 'message' => 'Help request sent.']);
     }
 }
