@@ -28,9 +28,12 @@ class TaskController extends Controller
         $query = Task::with('project', 'assignee');
 
         if ($user->isClientRole()) {
-            $query->whereHas('project.client.contacts', function ($q) use ($user) {
-                $q->where('email', $user->email);
-            });
+            $client = $request->attributes->get('portal_client') ?? \App\Models\Client::forUser($user);
+            if ($client) {
+                $query->whereHas('project', fn ($q) => $q->where('client_id', $client->id));
+            } else {
+                $query->whereRaw('1=0');
+            }
         } elseif ($user->role === 'associate') {
             // Patent Analysts see their assigned tasks
             $query->where('assignee_id', $user->id);

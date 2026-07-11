@@ -1,6 +1,6 @@
-import { Head } from "@inertiajs/react";
+import { Head, usePage } from "@inertiajs/react";
 import { useEffect, useState } from "react";
-import { Users, Grid, List, Search, Mail, Briefcase, Loader2, Plus, X, FolderOpen, Building2 } from "lucide-react";
+import { Users, Grid, List, Search, Mail, Briefcase, Loader2, Plus, X, FolderOpen, Building2, Shield, UserCheck } from "lucide-react";
 import AppLayout from "@/layouts/AppLayout";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent } from "@/components/ui/card";
@@ -52,7 +52,115 @@ interface ManagedClient {
   gst_type: string | null;
 }
 
+const ROLE_BADGE: Record<string, string> = {
+  Attorney: "bg-gold/10 text-gold border-gold/30",
+  PCM:  "bg-blue-500/10 text-blue-500 border-blue-500/30",
+  SCM:  "bg-purple-500/10 text-purple-500 border-purple-500/30",
+  PR:   "bg-green-500/10 text-green-600 border-green-500/30",
+};
+
+function ClientTeamView() {
+  const [team, setTeam] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [expanded, setExpanded] = useState<number | null>(null);
+
+  useEffect(() => {
+    api.getClientTeam()
+      .then((d) => setTeam(Array.isArray(d) ? d : []))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  function getInitials(name: string) {
+    return name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
+  }
+
+  return (
+    <AppLayout>
+      <Head title="My Team" />
+      <PageHeader
+        eyebrow="Client Portal"
+        title="My Team"
+        description="Internal staff assigned to your active matters"
+      />
+      <div className="px-8 py-6">
+        {loading ? (
+          <div className="flex items-center justify-center py-24">
+            <Loader2 className="h-8 w-8 animate-spin text-gold" />
+          </div>
+        ) : team.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-24 text-center">
+            <UserCheck className="h-12 w-12 text-muted-foreground mb-4" />
+            <p className="text-muted-foreground">No team members found for your active cases.</p>
+          </div>
+        ) : (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {team.map((member: any) => {
+              const isOpen = expanded === member.id;
+              return (
+                <Card key={member.id} className="border-border hover:border-gold/40 transition-colors">
+                  <CardContent className="p-5">
+                    <div className="flex items-start gap-3">
+                      {member.avatar_url ? (
+                        <img src={member.avatar_url} alt={member.name}
+                          className="h-12 w-12 rounded-full object-cover flex-shrink-0 ring-2 ring-border" />
+                      ) : (
+                        <div className="h-12 w-12 rounded-full bg-gold text-black flex items-center justify-center text-sm font-bold flex-shrink-0">
+                          {getInitials(member.name)}
+                        </div>
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium text-sm leading-tight truncate">{member.name}</p>
+                        <p className="text-xs text-muted-foreground truncate mt-0.5">{member.email}</p>
+                        <div className="flex flex-wrap gap-1 mt-2">
+                          {(member.roles as string[]).map((r: string) => (
+                            <span key={r} className={`inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border font-medium ${ROLE_BADGE[r] ?? "bg-muted text-muted-foreground border-border"}`}>
+                              <Shield className="h-2.5 w-2.5" />{r}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    <button
+                      className="mt-3 text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors"
+                      onClick={() => setExpanded(isOpen ? null : member.id)}
+                    >
+                      <Briefcase className="h-3 w-3" />
+                      {member.projects?.length ?? 0} case{member.projects?.length !== 1 ? "s" : ""}
+                      <span className="ml-auto">{isOpen ? "▲" : "▼"}</span>
+                    </button>
+
+                    {isOpen && (
+                      <div className="mt-2 space-y-1.5 border-t border-border pt-2">
+                        {(member.projects as any[]).map((p: any, i: number) => (
+                          <div key={i} className="flex items-center gap-2 text-xs">
+                            <span className={`text-[10px] px-1 py-0.5 rounded border font-medium ${ROLE_BADGE[p.your_role] ?? ""}`}>
+                              {p.your_role}
+                            </span>
+                            <span className="font-mono text-muted-foreground truncate">
+                              {p.docket_number ?? p.project_code}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </AppLayout>
+  );
+}
+
 export default function Team() {
+  const { props: pageProps } = usePage() as any;
+  const role = pageProps.auth?.user?.role;
+  if (["client", "client_admin"].includes(role)) return <ClientTeamView />;
+
   const [employees, setEmployees] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");

@@ -1,4 +1,4 @@
-import { Head } from "@inertiajs/react";
+import { Head, usePage } from "@inertiajs/react";
 import { useEffect, useState, useCallback } from "react";
 import { Loader2, Plus, X, Trash2, Download, DollarSign, Clock, CheckCircle, AlertCircle, Search, ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import AppLayout from "@/layouts/AppLayout";
@@ -146,6 +146,10 @@ function FinancialKpiModal({ kpi, onClose }: { kpi: KpiDef; onClose: () => void 
 }
 
 export default function Financial() {
+  const { props: pageProps } = usePage() as any;
+  const role = pageProps.auth?.user?.role;
+  const isClientUser = ["client", "client_admin"].includes(role);
+
   const [invoices, setInvoices] = useState<any[]>([]);
   const [clients, setClients] = useState<any[]>([]);
   const [projects, setProjects] = useState<any[]>([]);
@@ -237,8 +241,8 @@ export default function Financial() {
         description="Invoices, payments, and revenue analytics"
         actions={
           <>
-            <Button variant="outline" onClick={handleExport}><Download className="h-4 w-4 mr-2" />Export CSV</Button>
-            <Button onClick={() => { setShowModal(true); setSaveError(""); }}><Plus className="h-4 w-4 mr-2" />New Invoice</Button>
+            {!isClientUser && <Button variant="outline" onClick={handleExport}><Download className="h-4 w-4 mr-2" />Export CSV</Button>}
+            {!isClientUser && <Button onClick={() => { setShowModal(true); setSaveError(""); }}><Plus className="h-4 w-4 mr-2" />New Invoice</Button>}
           </>
         }
       />

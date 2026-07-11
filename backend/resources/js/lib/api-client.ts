@@ -669,6 +669,10 @@ export const api = {
     return this.request('/portal/recent-activity')
   },
 
+  async getClientTeam(): Promise<Record<string, unknown>[]> {
+    return this.request('/portal/my-team')
+  },
+
   // Integration logs
   async getIntegrationLogs(slug: string): Promise<Record<string, unknown>[]> {
     return this.request(`/integrations/${slug}/logs`)

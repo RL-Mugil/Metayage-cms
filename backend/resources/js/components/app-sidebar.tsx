@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Users, Briefcase, GitBranch, ListChecks,
   BellRing, UserCircle2, FolderLock, MessagesSquare, CheckCircle2,
   Bell, BarChart3, FileBarChart2, Wallet, Sparkles, Building2, Star, Layers,
-  CalendarDays, Plug, Settings, IdCard, Scale, LogOut, TableProperties, ShieldCheck, Award,
+  CalendarDays, Plug, Settings, IdCard, Scale, LogOut, TableProperties, ShieldCheck, Award, LayoutGrid,
 } from "lucide-react";
 import {
   Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel,
@@ -19,11 +19,22 @@ const clientGroups = (isAdmin: boolean) => [
     items: [
       { to: "/", title: "Dashboard", icon: LayoutDashboard },
       { to: "/patent-portfolio", title: "Patent Portfolio", icon: Award },
+      { to: "/patent-lifecycle", title: "Patent Lifecycle", icon: GitBranch },
+    ],
+  },
+  {
+    label: "My Cases",
+    items: [
+      { to: "/projects", title: "My Cases", icon: Briefcase },
+      { to: "/tasks", title: "Tasks", icon: ListChecks },
+      { to: "/kanban", title: "Kanban Board", icon: LayoutGrid },
+      { to: "/calendar", title: "Calendar", icon: CalendarDays },
     ],
   },
   {
     label: "Workspace",
     items: [
+      { to: "/team", title: "My Team", icon: Building2 },
       { to: "/documents", title: "Documents", icon: FolderLock },
       { to: "/discussions", title: "Discussions", icon: MessagesSquare },
       { to: "/approvals", title: "Approvals", icon: CheckCircle2 },

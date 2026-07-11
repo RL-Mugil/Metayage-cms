@@ -317,6 +317,7 @@ class ProjectTrackerController extends Controller implements HasMiddleware
     {
         $user = $request->user();
         $hasGlobalAccess = in_array($user->role, ['super_admin', 'partner', 'manager', 'hr', 'finance']);
+        $isClientUser = $user->isClientRole();
 
         // ── Source 1: Projects with hard_deadline ──────────────────────────────
         $projectQuery = Project::with([
@@ -331,7 +332,14 @@ class ProjectTrackerController extends Controller implements HasMiddleware
               ->orWhereNotNull('target_filing_date');
         });
 
-        if (!$hasGlobalAccess) {
+        if ($isClientUser) {
+            $client = $request->attributes->get('portal_client') ?? \App\Models\Client::forUser($user);
+            if ($client) {
+                $projectQuery->where('client_id', $client->id);
+            } else {
+                $projectQuery->whereRaw('1=0');
+            }
+        } elseif (!$hasGlobalAccess) {
             $uid = $user->id;
             $projectQuery->where(function ($q) use ($uid) {
                 $q->where('assigned_manager_id', $uid)
@@ -403,7 +411,10 @@ class ProjectTrackerController extends Controller implements HasMiddleware
                   ->orWhereNotIn('project_id', $linkedProjectIds);
             });
 
-        if (!$hasGlobalAccess) {
+        if ($isClientUser) {
+            // Client portal users see no orphan tracker rows (rows without a project_id have no client link)
+            $trackerQuery->whereRaw('1=0');
+        } elseif (!$hasGlobalAccess) {
             $uid = $user->id;
             $trackerQuery->where(function ($q) use ($uid) {
                 $q->where('pcm_id', $uid)

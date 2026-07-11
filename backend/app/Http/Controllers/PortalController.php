@@ -430,4 +430,75 @@ class PortalController extends Controller
 
         return response()->json($logs);
     }
+
+    /**
+     * Return distinct internal users assigned to the authenticated client's projects.
+     * Groups by staff member, listing which projects they are on and in what role (PCM/SCM/PR/Attorney).
+     */
+    public function myTeam(Request $request)
+    {
+        $user = $request->user();
+        if (! $user->isClientRole()) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        $client = $request->attributes->get('portal_client') ?? Client::forUser($user);
+        if (! $client) {
+            return response()->json(['message' => 'No client record linked to your account.'], 403);
+        }
+
+        $projects = \App\Models\Project::with([
+            'partner:id,name,email,avatar_url',
+            'manager:id,name,email,avatar_url',
+            'secondaryManager:id,name,email,avatar_url',
+            'patentEngineer:id,name,email,avatar_url',
+        ])
+        ->where('client_id', $client->id)
+        ->whereNotIn('status', ['Archived', 'Completed'])
+        ->get(['id', 'project_code', 'docket_number', 'project_name', 'status',
+               'assigned_partner_id', 'assigned_manager_id', 'secondary_manager_id', 'patent_engineer_id']);
+
+        // Accumulate per-user role assignments
+        $teamMap = [];
+
+        foreach ($projects as $p) {
+            $entries = [
+                ['user' => $p->partner,          'role' => 'Attorney'],
+                ['user' => $p->manager,           'role' => 'PCM'],
+                ['user' => $p->secondaryManager,  'role' => 'SCM'],
+                ['user' => $p->patentEngineer,    'role' => 'PR'],
+            ];
+
+            foreach ($entries as ['user' => $staffUser, 'role' => $role]) {
+                if (! $staffUser) continue;
+                $uid = $staffUser->id;
+                if (! isset($teamMap[$uid])) {
+                    $teamMap[$uid] = [
+                        'id'         => $uid,
+                        'name'       => $staffUser->name,
+                        'email'      => $staffUser->email,
+                        'avatar_url' => $staffUser->avatar_url,
+                        'roles'      => [],
+                        'projects'   => [],
+                    ];
+                }
+                if (! in_array($role, $teamMap[$uid]['roles'])) {
+                    $teamMap[$uid]['roles'][] = $role;
+                }
+                $teamMap[$uid]['projects'][] = [
+                    'id'           => $p->id,
+                    'project_code' => $p->project_code,
+                    'docket_number'=> $p->docket_number,
+                    'project_name' => $p->project_name,
+                    'status'       => $p->status,
+                    'your_role'    => $role,
+                ];
+            }
+        }
+
+        $roleOrder = ['Attorney' => 0, 'PCM' => 1, 'SCM' => 2, 'PR' => 3];
+        $sorted = collect(array_values($teamMap))->sortBy(fn ($m) => $roleOrder[$m['roles'][0]] ?? 99)->values();
+
+        return response()->json($sorted);
+    }
 }
