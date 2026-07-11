@@ -106,7 +106,17 @@ export default function Tasks() {
 
   useEffect(() => {
     Promise.all([api.getTasks(), api.getProjects(), api.getUsers()])
-      .then(([t, p, u]) => { setTasks(t); setProjects(p); setUsers(u); })
+      .then(([t, p, u]) => {
+        setTasks(t); setProjects(p); setUsers(u);
+        const params = new URLSearchParams(window.location.search);
+        const openId = params.get("open");
+        if (openId) {
+          const target = (t as any[]).find((task: any) => String(task.id) === openId);
+          if (target) openEdit(target);
+          params.delete("open");
+          window.history.replaceState({}, "", window.location.pathname + (params.toString() ? "?" + params.toString() : ""));
+        }
+      })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);

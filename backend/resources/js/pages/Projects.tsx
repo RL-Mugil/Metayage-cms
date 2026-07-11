@@ -687,9 +687,18 @@ export default function Projects() {
     if (rf_param) params.set('role_filter', rf_param);
     Promise.all([api.getProjectsPaged(params), api.getAllClients(), api.getUsers()])
       .then(([p, c, u]) => {
-        setProjects(Array.isArray(p) ? p : (p as any).data || []);
+        const list = Array.isArray(p) ? p : (p as any).data || [];
+        setProjects(list);
         setClients(c);
         setUsers(u);
+        const sp = new URLSearchParams(window.location.search);
+        const openId = sp.get("open");
+        if (openId) {
+          const target = list.find((proj: any) => String(proj.id) === openId);
+          if (target) openEdit(target);
+          sp.delete("open");
+          window.history.replaceState({}, "", window.location.pathname + (sp.toString() ? "?" + sp.toString() : ""));
+        }
       })
       .catch(() => {})
       .finally(() => setLoading(false));

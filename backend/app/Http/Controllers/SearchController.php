@@ -40,7 +40,7 @@ class SearchController extends Controller
                     'id'       => $c->id,
                     'title'    => $c->company_name ?: $c->legal_name,
                     'subtitle' => ($c->client_code ?? '') . ' · ' . ($c->status ?? ''),
-                    'url'      => '/clients',
+                    'url'      => '/clients?open=' . $c->id,
                 ];
             }
         }
@@ -85,7 +85,7 @@ class SearchController extends Controller
                 'id'       => $p->id,
                 'title'    => $p->project_code ?? $p->docket_number,
                 'subtitle' => ($p->client_name ?: ($p->client_legal ?? '')) . ' · ' . ($p->project_type ?? ''),
-                'url'      => '/projects',
+                'url'      => '/projects?open=' . $p->id,
             ];
         }
 
@@ -106,7 +106,7 @@ class SearchController extends Controller
                     'id'       => $t->id,
                     'title'    => $t->title,
                     'subtitle' => ($t->project_code ?? 'No project') . ' · ' . ucfirst(strtolower($t->priority ?? '')) . ' priority',
-                    'url'      => '/tasks',
+                    'url'      => '/tasks?open=' . $t->id,
                 ];
             }
         }

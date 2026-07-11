@@ -571,6 +571,13 @@ export default function Clients() {
 
   useEffect(() => {
     api.getClientStats().then(setStats).catch(() => {});
+    const params = new URLSearchParams(window.location.search);
+    const openId = params.get("open");
+    if (openId) {
+      api.getClient(openId).then((c) => { if (c) openEdit(c); }).catch(() => {});
+      params.delete("open");
+      window.history.replaceState({}, "", window.location.pathname + (params.toString() ? "?" + params.toString() : ""));
+    }
   }, []);
 
   useEffect(() => {

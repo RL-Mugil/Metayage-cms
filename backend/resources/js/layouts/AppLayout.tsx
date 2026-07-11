@@ -30,11 +30,36 @@ const TYPE_COLOR: Record<string, string> = {
 };
 
 const SHORTCUTS = [
-  { keys: ["Ctrl", "K"], label: "Focus global search" },
-  { keys: ["/"],          label: "Focus global search" },
-  { keys: ["Esc"],        label: "Close search / modal" },
-  { keys: ["↑", "↓"],    label: "Navigate search results" },
-  { keys: ["Enter"],      label: "Go to selected result" },
+  {
+    group: "Search",
+    items: [
+      { keys: ["Ctrl", "K"],  label: "Focus global search" },
+      { keys: ["/"],           label: "Focus global search (when not in a text field)" },
+      { keys: ["↑", "↓"],     label: "Navigate search results" },
+      { keys: ["Enter"],       label: "Open selected result" },
+      { keys: ["Esc"],         label: "Close search dropdown" },
+    ],
+  },
+  {
+    group: "Navigation",
+    items: [
+      { keys: ["G", "D"],      label: "Go to Dashboard" },
+      { keys: ["G", "C"],      label: "Go to Clients" },
+      { keys: ["G", "P"],      label: "Go to Projects" },
+      { keys: ["G", "T"],      label: "Go to Tasks" },
+      { keys: ["G", "F"],      label: "Go to Financial Suite" },
+      { keys: ["G", "H"],      label: "Go to HRMS" },
+      { keys: ["G", "R"],      label: "Go to Reports" },
+      { keys: ["G", "N"],      label: "Go to Notifications" },
+    ],
+  },
+  {
+    group: "General",
+    items: [
+      { keys: ["?"],           label: "Show this shortcuts panel" },
+      { keys: ["Esc"],         label: "Close any open modal or dialog" },
+    ],
+  },
 ];
 
 export default function AppLayout({ children }: Props) {
@@ -105,18 +130,47 @@ export default function AppLayout({ children }: Props) {
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  // Global keyboard shortcut: "/" or Ctrl+K focuses search
+  // Global keyboard shortcuts
   useEffect(() => {
+    let gPressed = false;
+    let gTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const NAV_MAP: Record<string, string> = {
+      d: "/", c: "/clients", p: "/projects", t: "/tasks",
+      f: "/financial", h: "/hrms", r: "/reports", n: "/notifications",
+    };
+
     const handler = (e: globalThis.KeyboardEvent) => {
       const tag = (e.target as HTMLElement).tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA") return;
-      if (e.key === "/" || (e.ctrlKey && e.key === "k")) {
+      const inField = tag === "INPUT" || tag === "TEXTAREA" || (e.target as HTMLElement).isContentEditable;
+
+      // Ctrl+K — always works
+      if (e.ctrlKey && e.key === "k") { e.preventDefault(); searchRef.current?.focus(); return; }
+
+      if (inField) return;
+
+      // "/" — focus search
+      if (e.key === "/") { e.preventDefault(); searchRef.current?.focus(); return; }
+
+      // "?" — open help
+      if (e.key === "?") { e.preventDefault(); setHelpOpen((v) => !v); return; }
+
+      // "G" + letter — navigate
+      if (e.key.toLowerCase() === "g" && !e.ctrlKey && !e.metaKey && !e.altKey) {
         e.preventDefault();
-        searchRef.current?.focus();
+        gPressed = true;
+        if (gTimer) clearTimeout(gTimer);
+        gTimer = setTimeout(() => { gPressed = false; }, 1500);
+        return;
+      }
+      if (gPressed) {
+        const dest = NAV_MAP[e.key.toLowerCase()];
+        if (dest) { e.preventDefault(); gPressed = false; if (gTimer) clearTimeout(gTimer); router.visit(dest); }
       }
     };
+
     document.addEventListener("keydown", handler);
-    return () => document.removeEventListener("keydown", handler);
+    return () => { document.removeEventListener("keydown", handler); if (gTimer) clearTimeout(gTimer); };
   }, []);
 
   const navigate = useCallback((url: string) => {
@@ -239,26 +293,36 @@ export default function AppLayout({ children }: Props) {
 
       {/* ── Help / keyboard shortcuts modal ── */}
       <Dialog open={helpOpen} onOpenChange={setHelpOpen}>
-        <DialogContent className="max-w-sm">
+        <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Keyboard shortcuts</DialogTitle>
           </DialogHeader>
-          <div className="space-y-2 pt-1">
-            {SHORTCUTS.map(({ keys, label }) => (
-              <div key={label} className="flex items-center justify-between gap-4 text-sm">
-                <span className="text-muted-foreground">{label}</span>
-                <span className="flex gap-1 shrink-0">
-                  {keys.map((k) => (
-                    <kbd key={k} className="rounded border border-border bg-muted px-2 py-0.5 font-mono text-[11px] font-medium">
-                      {k}
-                    </kbd>
+          <div className="space-y-5 pt-1 max-h-[60vh] overflow-y-auto pr-1">
+            {SHORTCUTS.map(({ group, items }) => (
+              <div key={group}>
+                <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">{group}</p>
+                <div className="space-y-1.5">
+                  {items.map(({ keys, label }) => (
+                    <div key={label} className="flex items-center justify-between gap-4 text-sm">
+                      <span className="text-muted-foreground">{label}</span>
+                      <span className="flex gap-1 shrink-0">
+                        {keys.map((k, i) => (
+                          <span key={k} className="flex items-center gap-1">
+                            {i > 0 && <span className="text-[10px] text-muted-foreground">then</span>}
+                            <kbd className="rounded border border-border bg-muted px-2 py-0.5 font-mono text-[11px] font-medium">
+                              {k}
+                            </kbd>
+                          </span>
+                        ))}
+                      </span>
+                    </div>
                   ))}
-                </span>
+                </div>
               </div>
             ))}
           </div>
-          <p className="pt-2 text-xs text-muted-foreground">
-            Search navigates to the list page for the matched entity. Use the page's own filters to narrow further.
+          <p className="pt-2 text-xs text-muted-foreground border-t border-border">
+            Search opens the matched record directly. Navigation shortcuts require you to not be in a text field.
           </p>
         </DialogContent>
       </Dialog>
