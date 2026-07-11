@@ -20,7 +20,7 @@ class FinancialController extends Controller
 {
     public function inertiaIndex(Request $request)
     {
-        return Inertia::render('Financial');
+        return Inertia::render('financial');
     }
 
     public function stats(Request $request)
