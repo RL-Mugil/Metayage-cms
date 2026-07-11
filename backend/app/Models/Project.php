@@ -21,6 +21,7 @@ class Project extends Model
         // IP matter fields
         'docket_number', 'application_number', 'patent_office_code', 'service_code',
         'case_type', 'filing_date', 'secondary_manager_id', 'patent_engineer_id', 'notes', 'circle',
+        'google_task_ids',
     ];
 
     protected $casts = [
@@ -35,6 +36,7 @@ class Project extends Model
         'advance_payment_date'=> 'date',
         'partial_payment_date'=> 'date',
         'full_payment_date'   => 'date',
+        'google_task_ids'     => 'array',
     ];
 
     public function client(): BelongsTo

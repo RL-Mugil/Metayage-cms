@@ -10,6 +10,7 @@ class Task extends Model
 {
     protected $fillable = [
         'task_code',
+        'google_task_id',
         'project_id',
         'title',
         'description',

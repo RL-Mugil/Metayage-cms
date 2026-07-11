@@ -13,6 +13,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Inertia\Inertia;
+use App\Services\GoogleCalendarService;
 
 class TaskController extends Controller
 {
@@ -79,6 +80,11 @@ class TaskController extends Controller
             'user_agent' => $request->userAgent(),
         ]);
 
+        // Sync to Google Tasks if assignee has connected their Google account
+        if ($task->due_date && $task->assignee_id) {
+            rescue(fn () => app(GoogleCalendarService::class)->syncTaskItem($task->fresh()->load('assignee', 'project')));
+        }
+
         Cache::increment('dashboard_v');
         return response()->json($task, 201);
     }
@@ -91,6 +97,10 @@ class TaskController extends Controller
         $validated = $request->validated();
 
         $previousAssignee = $task->assignee_id;
+        $previousStatus   = $task->status;
+        $previousDue      = $task->due_date ? $task->due_date->toDateString() : null;
+        $previousGTaskId  = $task->google_task_id;
+
         $task->update($validated);
 
         // Notify the new assignee when a task is reassigned to someone else.
@@ -118,6 +128,37 @@ class TaskController extends Controller
             'ip_address' => $request->ip(),
             'user_agent' => $request->userAgent(),
         ]);
+
+        $freshTask   = $task->fresh()->load('assignee', 'project');
+        $gcalService = app(GoogleCalendarService::class);
+
+        $nowCompleted  = $freshTask->status === 'Completed' && $previousStatus !== 'Completed';
+        $dueChanged    = array_key_exists('due_date', $validated)
+            && ($freshTask->due_date ? $freshTask->due_date->toDateString() : null) !== $previousDue;
+        $assigneeSwapped = array_key_exists('assignee_id', $validated)
+            && (int) $freshTask->assignee_id !== (int) $previousAssignee;
+
+        rescue(function () use ($gcalService, $freshTask, $nowCompleted, $dueChanged, $assigneeSwapped, $previousAssignee, $previousGTaskId) {
+            if ($nowCompleted) {
+                // Mark complete in Google Tasks for the assignee
+                if ($previousGTaskId && $freshTask->assignee) {
+                    $gcalService->markGoogleTaskComplete($freshTask->assignee, $previousGTaskId);
+                }
+                return;
+            }
+
+            if ($assigneeSwapped && $previousGTaskId) {
+                // Remove old assignee's task; new assignee gets one below
+                $oldAssignee = \App\Models\User::find($previousAssignee);
+                if ($oldAssignee) $gcalService->deleteTask($oldAssignee, $previousGTaskId);
+                $freshTask->google_task_id = null;
+                $freshTask->saveQuietly();
+            }
+
+            if ($dueChanged || $assigneeSwapped) {
+                $gcalService->syncTaskItem($freshTask);
+            }
+        });
 
         Cache::increment('dashboard_v');
         return response()->json($task);
@@ -185,6 +226,10 @@ class TaskController extends Controller
     {
         $task = Task::findOrFail($id);
         $this->authorize('delete', $task);
+
+        if ($task->google_task_id && $task->assignee_id) {
+            rescue(fn () => app(GoogleCalendarService::class)->removeTaskItem($task->load('assignee')));
+        }
 
         $task->delete();
         Cache::increment('dashboard_v');

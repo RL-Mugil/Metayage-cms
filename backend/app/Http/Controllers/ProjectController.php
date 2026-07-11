@@ -15,6 +15,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Inertia\Inertia;
 use Illuminate\Validation\ValidationException;
+use App\Services\GoogleCalendarService;
 
 class ProjectController extends Controller
 {
@@ -176,6 +177,10 @@ class ProjectController extends Controller
             'user_agent' => $request->userAgent(),
         ]);
 
+        if ($project->hard_deadline) {
+            rescue(fn () => app(GoogleCalendarService::class)->syncProjectDeadline($project->fresh()));
+        }
+
         Cache::increment('dashboard_v');
         return response()->json($project, 201);
     }
@@ -309,6 +314,9 @@ class ProjectController extends Controller
         $project = Project::findOrFail($id);
         $validated = $request->validated();
 
+        $deadlineChanged = array_key_exists('hard_deadline', $validated)
+            && $validated['hard_deadline'] !== $project->hard_deadline;
+
         $project->update($validated);
 
         // Audit Log
@@ -321,6 +329,14 @@ class ProjectController extends Controller
             'ip_address' => $request->ip(),
             'user_agent' => $request->userAgent(),
         ]);
+
+        if ($deadlineChanged) {
+            $fresh = $project->fresh();
+            rescue(fn () => $fresh->hard_deadline
+                ? app(GoogleCalendarService::class)->syncProjectDeadline($fresh)
+                : app(GoogleCalendarService::class)->removeProjectDeadline($fresh)
+            );
+        }
 
         Cache::increment('dashboard_v');
         return response()->json($project);

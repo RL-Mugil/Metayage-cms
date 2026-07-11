@@ -1,6 +1,6 @@
-import { Head, usePage, router } from "@inertiajs/react";
+import { Head, usePage } from "@inertiajs/react";
 import { useEffect, useState } from "react";
-import { Plug, Zap, RefreshCw, X, Settings, Globe, CheckCircle, Loader2, Activity, ChevronDown, ChevronUp, Copy, Eye, CalendarDays, Link2Off } from "lucide-react";
+import { Plug, Zap, RefreshCw, X, Settings, CheckCircle, Loader2, Activity, ChevronDown, ChevronUp, Copy, Eye, Link2Off } from "lucide-react";
 import AppLayout from "@/layouts/AppLayout";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -23,6 +23,137 @@ interface Integration {
 
 const MANAGE_ROLES = ["super_admin", "partner", "manager"];
 
+// ── Brand SVG logos keyed by integration slug ─────────────────────────────────
+function LogoSlack() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-7 w-7">
+      <path d="M5.042 15.165a2.528 2.528 0 0 1-2.52 2.523A2.528 2.528 0 0 1 0 15.165a2.527 2.527 0 0 1 2.522-2.52h2.52v2.52zm1.271 0a2.527 2.527 0 0 1 2.521-2.52 2.527 2.527 0 0 1 2.521 2.52v6.313A2.528 2.528 0 0 1 8.834 24a2.528 2.528 0 0 1-2.521-2.522v-6.313zm2.521-10.123a2.528 2.528 0 0 1-2.521-2.52A2.528 2.528 0 0 1 8.834 0a2.528 2.528 0 0 1 2.521 2.522v2.52H8.834zm0 1.271a2.528 2.528 0 0 1 2.521 2.521 2.528 2.528 0 0 1-2.521 2.521H2.522A2.528 2.528 0 0 1 0 8.834a2.528 2.528 0 0 1 2.522-2.521h6.312zm10.123 2.521a2.528 2.528 0 0 1 2.522-2.521A2.528 2.528 0 0 1 24 8.834a2.528 2.528 0 0 1-2.522 2.521h-2.522V8.834zm-1.271 0a2.528 2.528 0 0 1-2.523 2.521 2.527 2.527 0 0 1-2.52-2.521V2.522A2.527 2.527 0 0 1 15.165 0a2.528 2.528 0 0 1 2.523 2.522v6.312zm-2.523 10.123a2.528 2.528 0 0 1 2.523 2.522A2.528 2.528 0 0 1 15.165 24a2.527 2.527 0 0 1-2.52-2.522v-2.522h2.52zm0-1.271a2.527 2.527 0 0 1-2.52-2.523 2.526 2.526 0 0 1 2.52-2.52h6.313A2.527 2.527 0 0 1 24 15.165a2.528 2.528 0 0 1-2.522 2.523h-6.313z" fill="#4A154B"/>
+    </svg>
+  );
+}
+
+function LogoGoogleCalendar() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-7 w-7">
+      <path d="M18.316 5.684H24v12.632h-5.684V5.684z" fill="#EA4335"/>
+      <path d="M5.684 24v-5.684H18.32V24H5.684z" fill="#34A853"/>
+      <path d="M0 18.316v-12.63h5.684v12.63H0z" fill="#4285F4"/>
+      <path d="M24 5.684H18.32V0H24v5.684z" fill="#188038"/>
+      <path d="M0 5.684V0h5.684v5.684H0z" fill="#1967D2"/>
+      <path d="M5.684 0h12.632v5.684H5.684V0z" fill="#FBBC04"/>
+      <path d="M5.684 5.684h12.632v12.632H5.684V5.684z" fill="#fff"/>
+      <text x="12" y="15.5" textAnchor="middle" fontSize="7" fontWeight="bold" fill="#4285F4" fontFamily="Arial">
+        31
+      </text>
+    </svg>
+  );
+}
+
+function LogoGmail() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-7 w-7">
+      <path d="M24 5.457v13.909c0 .904-.732 1.636-1.636 1.636h-3.819V11.73L12 16.64l-6.545-4.91v9.273H1.636A1.636 1.636 0 0 1 0 19.366V5.457c0-2.023 2.309-3.178 3.927-1.964L5.455 4.64 12 9.548l6.545-4.910 1.528-1.145C21.69 2.28 24 3.434 24 5.457z" fill="#EA4335"/>
+      <path d="M12 9.548L5.455 4.64 3.927 3.494C2.31 2.28 0 3.434 0 5.457v.503L12 14.087l12-8.127v-.503c0-2.023-2.309-3.178-3.927-1.964L18.545 4.64 12 9.548z" fill="#C5221F" opacity=".3"/>
+    </svg>
+  );
+}
+
+function LogoMicrosoftTeams() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-7 w-7">
+      <path d="M20.625 5.625h-6.75a.375.375 0 0 0-.375.375v5.625c0 2.071 1.679 3.75 3.75 3.75h.375v1.875c0 .207.168.375.375.375a5.25 5.25 0 0 0 5.25-5.25V6.75a1.125 1.125 0 0 0-2.625-1.125z" fill="#5059C9"/>
+      <circle cx="18.375" cy="3" r="2.25" fill="#5059C9"/>
+      <circle cx="9" cy="3.375" r="2.625" fill="#7B83EB"/>
+      <path d="M13.5 6.375H3.75A1.125 1.125 0 0 0 2.625 7.5v6.375A5.625 5.625 0 0 0 9 19.5a5.625 5.625 0 0 0 6.375-5.625V7.5a1.125 1.125 0 0 0-1.875-1.125z" fill="#7B83EB"/>
+      <path d="M9.375 6.375H13.5v7.5A5.625 5.625 0 0 1 7.875 19.3V8.25a1.875 1.875 0 0 1 1.5-1.875z" fill="#fff" opacity=".1"/>
+    </svg>
+  );
+}
+
+function LogoDocuSign() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-7 w-7">
+      <rect width="24" height="24" rx="4" fill="#FFDD00"/>
+      <path d="M7 6h5.5a3.5 3.5 0 0 1 0 7H7V6z" fill="#333"/>
+      <path d="M7 13h5.5a3.5 3.5 0 0 1 3.5 3.5v.5H7v-4z" fill="#333" opacity=".6"/>
+      <path d="M4 18.5c2 .5 5-1 7-3" stroke="#333" strokeWidth="1.2" strokeLinecap="round" fill="none"/>
+    </svg>
+  );
+}
+
+function LogoUSPTO() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-7 w-7">
+      <path d="M12 1L3 5v6c0 5.25 3.75 10.15 9 11.4C17.25 21.15 21 16.25 21 11V5l-9-4z" fill="#003087"/>
+      <path d="M9 12l2 2 4-4" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+      <text x="12" y="19" textAnchor="middle" fontSize="5" fontWeight="bold" fill="#fff" fontFamily="Arial">USPTO</text>
+    </svg>
+  );
+}
+
+function LogoEPO() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-7 w-7">
+      <circle cx="12" cy="12" r="11" fill="#003399"/>
+      {/* 12 EU stars */}
+      {Array.from({ length: 12 }).map((_, i) => {
+        const angle = (i * 30 - 90) * (Math.PI / 180);
+        const x = 12 + 7.5 * Math.cos(angle);
+        const y = 12 + 7.5 * Math.sin(angle);
+        return <circle key={i} cx={x} cy={y} r="1.1" fill="#FFDD00"/>;
+      })}
+      <text x="12" y="14" textAnchor="middle" fontSize="4.5" fontWeight="bold" fill="#fff" fontFamily="Arial">EPO</text>
+    </svg>
+  );
+}
+
+function LogoZohoBooks() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-7 w-7">
+      <rect width="24" height="24" rx="5" fill="#E42527"/>
+      <text x="12" y="16" textAnchor="middle" fontSize="11" fontWeight="bold" fill="#fff" fontFamily="Arial, sans-serif">Z</text>
+    </svg>
+  );
+}
+
+function LogoQuickBooks() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-7 w-7">
+      <circle cx="12" cy="12" r="12" fill="#2CA01C"/>
+      <path d="M6 12a6 6 0 1 1 12 0 6 6 0 0 1-12 0zm6-3.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7z" fill="#fff"/>
+      <circle cx="12" cy="12" r="1.8" fill="#2CA01C"/>
+    </svg>
+  );
+}
+
+const BRAND_LOGOS: Record<string, () => JSX.Element> = {
+  slack:    LogoSlack,
+  gcal:     LogoGoogleCalendar,
+  gmail:    LogoGmail,
+  teams:    LogoMicrosoftTeams,
+  docusign: LogoDocuSign,
+  uspto:    LogoUSPTO,
+  epo:      LogoEPO,
+  zoho:     LogoZohoBooks,
+  qb:       LogoQuickBooks,
+};
+
+function IntegrationLogo({ slug, initials, color }: { slug: string; initials: string; color: string }) {
+  const Logo = BRAND_LOGOS[slug];
+  if (Logo) {
+    return (
+      <div className="h-12 w-12 rounded-xl bg-white border border-border flex items-center justify-center flex-shrink-0 shadow-sm">
+        <Logo />
+      </div>
+    );
+  }
+  return (
+    <div className={`h-12 w-12 rounded-xl ${color} flex items-center justify-center text-white font-bold text-sm flex-shrink-0`}>
+      {initials}
+    </div>
+  );
+}
+
 export default function Integrations() {
   const { props } = usePage() as any;
   const canManage = MANAGE_ROLES.includes(props.auth?.user?.role ?? "");
@@ -40,24 +171,22 @@ export default function Integrations() {
   const [logsLoading, setLogsLoading] = useState<string | null>(null);
   const webhookBase = `${window.location.origin}/api/webhooks`;
 
-  // Google Calendar personal connection state
+  // Google Tasks / Calendar personal connection state
   const [gcal, setGcal] = useState<{ connected: boolean; email: string | null } | null>(null);
   const [gcalBusy, setGcalBusy] = useState(false);
 
-  // Check Google Calendar status + handle redirect-back query params
   useEffect(() => {
     api.request('/integrations/google-calendar/status')
       .then((d: any) => setGcal({ connected: d.connected, email: d.email ?? null }))
       .catch(() => {});
 
-    // After OAuth redirect, Google appends ?gcal=connected or ?gcal=error
     const params = new URLSearchParams(window.location.search);
     const gcalParam = params.get('gcal');
     if (gcalParam === 'connected') {
-      setBanner({ kind: 'ok', text: 'Google Calendar connected successfully!' });
+      setBanner({ kind: 'ok', text: 'Google account connected! Your project deadlines will now sync as Google Tasks.' });
       window.history.replaceState({}, '', '/integrations');
     } else if (gcalParam === 'error') {
-      setBanner({ kind: 'err', text: 'Google Calendar connection failed: ' + (params.get('reason') ?? 'unknown error') });
+      setBanner({ kind: 'err', text: 'Google connection failed: ' + (params.get('reason') ?? 'unknown error') });
       window.history.replaceState({}, '', '/integrations');
     }
   }, []);
@@ -67,9 +196,9 @@ export default function Integrations() {
     try {
       await api.request('/integrations/google-calendar/disconnect', { method: 'POST' });
       setGcal({ connected: false, email: null });
-      setBanner({ kind: 'ok', text: 'Google Calendar disconnected.' });
+      setBanner({ kind: 'ok', text: 'Google account disconnected.' });
     } catch {
-      setBanner({ kind: 'err', text: 'Failed to disconnect Google Calendar.' });
+      setBanner({ kind: 'err', text: 'Failed to disconnect.' });
     } finally {
       setGcalBusy(false);
     }
@@ -156,7 +285,7 @@ export default function Integrations() {
       />
       <div className="px-8 py-6 space-y-8">
         {banner && (
-          <div className={`rounded-lg border px-4 py-3 text-sm ${banner.kind === "ok" ? "border-green-200 bg-green-50 text-green-700" : "border-red-200 bg-red-50 text-red-700"}`}>
+          <div className={`rounded-lg border px-4 py-3 text-sm ${banner.kind === "ok" ? "border-green-200 bg-green-50 text-green-700 dark:bg-green-950/30 dark:border-green-800 dark:text-green-400" : "border-red-200 bg-red-50 text-red-700 dark:bg-red-950/30 dark:border-red-800 dark:text-red-400"}`}>
             {banner.text}
           </div>
         )}
@@ -167,9 +296,7 @@ export default function Integrations() {
             <Card key={intg.id} className={`border-border transition-all ${configOpen === intg.id ? "ring-2 ring-gold" : ""}`}>
               <CardContent className="p-5">
                 <div className="flex items-start gap-4">
-                  <div className={`h-12 w-12 rounded-xl ${intg.color} flex items-center justify-center text-white font-bold text-sm flex-shrink-0`}>
-                    {intg.initials}
-                  </div>
+                  <IntegrationLogo slug={intg.id} initials={intg.initials} color={intg.color} />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between">
                       <span className="font-semibold text-sm">{intg.name}</span>
@@ -217,7 +344,6 @@ export default function Integrations() {
                   )}
                 </div>
 
-                {/* Config panel — managers only */}
                 {canManage && configOpen === intg.id && (
                   <div className="mt-4 pt-4 border-t border-border space-y-3">
                     <div>
@@ -284,16 +410,24 @@ export default function Integrations() {
           ))}
         </div>
 
-        {/* ── Google Calendar personal sync ──────────────────────────────── */}
-        <Card className="border-border border-blue-500/20 bg-blue-500/5">
+        {/* ── Google Tasks personal sync ─────────────────────────────────────── */}
+        <Card className="border-blue-500/20 bg-blue-500/5">
           <CardContent className="p-5">
             <div className="flex items-center gap-4">
-              <div className="h-12 w-12 rounded-xl bg-blue-600 flex items-center justify-center flex-shrink-0">
-                <CalendarDays className="h-6 w-6 text-white" />
+              {/* Google Tasks logo */}
+              <div className="h-12 w-12 rounded-xl bg-white border border-border flex items-center justify-center flex-shrink-0 shadow-sm">
+                <svg viewBox="0 0 24 24" className="h-7 w-7">
+                  <path d="M12 2a10 10 0 1 0 0 20A10 10 0 0 0 12 2z" fill="#4285F4"/>
+                  <path d="M7.5 12l3 3 6-6" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+                  <path d="M12 2a10 10 0 0 1 10 10" stroke="#EA4335" strokeWidth="2.5" fill="none" strokeLinecap="round"/>
+                  <path d="M22 12a10 10 0 0 1-10 10" stroke="#34A853" strokeWidth="2.5" fill="none" strokeLinecap="round"/>
+                  <path d="M12 22a10 10 0 0 1-10-10" stroke="#FBBC04" strokeWidth="2.5" fill="none" strokeLinecap="round"/>
+                  <path d="M2 12A10 10 0 0 1 12 2" stroke="#4285F4" strokeWidth="2.5" fill="none" strokeLinecap="round"/>
+                </svg>
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-0.5">
-                  <span className="font-semibold text-sm">Google Calendar</span>
+                  <span className="font-semibold text-sm">Google Tasks</span>
                   {gcal?.connected ? (
                     <Badge className="bg-green-100 text-green-700 border-green-200 text-[10px]">Connected</Badge>
                   ) : (
@@ -302,8 +436,8 @@ export default function Integrations() {
                 </div>
                 <p className="text-xs text-muted-foreground">
                   {gcal?.connected
-                    ? `Syncing deadlines to ${gcal.email} — project hard deadlines appear as events in your calendar.`
-                    : "Sync your project deadlines and case hard deadlines directly to your personal Google Calendar."}
+                    ? `Syncing deadlines to ${gcal.email} — project hard deadlines appear as tasks in your Google Tasks.`
+                    : "Sync your project hard deadlines directly to your personal Google Tasks list."}
                 </p>
               </div>
               <div className="flex-shrink-0">
@@ -317,14 +451,13 @@ export default function Integrations() {
                   <Button size="sm" className="h-8 text-xs bg-blue-600 hover:bg-blue-700 text-white"
                     onClick={() => { window.location.href = '/integrations/google/connect'; }}
                     disabled={gcalBusy}>
-                    <CalendarDays className="h-3.5 w-3.5 mr-1.5" />
-                    Connect Google Calendar
+                    Connect Google Account
                   </Button>
                 )}
               </div>
             </div>
             <p className="text-[11px] text-muted-foreground mt-3 border-t border-border pt-2">
-              Each user connects their own Google account. Your calendar stays private — only your deadlines sync, not other users'.
+              Each user connects their own Google account. Deadlines appear in "My Tasks" — one task per project, updated automatically when the deadline changes.
             </p>
           </CardContent>
         </Card>
@@ -354,7 +487,23 @@ export default function Integrations() {
                 <tbody>
                   {list.filter((i) => i.connected).map((intg) => (
                     <tr key={intg.id} className="border-t border-border hover:bg-muted/30">
-                      <td className="px-4 py-3 font-medium">{intg.name}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2.5">
+                          {(() => {
+                            const Logo = BRAND_LOGOS[intg.id];
+                            return Logo ? (
+                              <div className="h-7 w-7 rounded-md bg-white border border-border flex items-center justify-center flex-shrink-0 shadow-sm">
+                                <div className="h-4 w-4 [&_svg]:h-4 [&_svg]:w-4"><Logo /></div>
+                              </div>
+                            ) : (
+                              <div className={`h-7 w-7 rounded-md ${intg.color} flex items-center justify-center text-white font-bold text-[10px] flex-shrink-0`}>
+                                {intg.initials}
+                              </div>
+                            );
+                          })()}
+                          <span className="font-medium">{intg.name}</span>
+                        </div>
+                      </td>
                       <td className="px-4 py-3">
                         <span className="inline-flex items-center gap-1 text-xs text-green-600">
                           <CheckCircle className="h-3 w-3" /> Connected

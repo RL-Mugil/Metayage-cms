@@ -10,3 +10,6 @@ Artisan::command('inspire', function () {
 
 // Send deadline reminder notifications every day at 9:00 AM
 Schedule::command('reminders:send-deadlines')->dailyAt('09:00');
+
+// Pull Google Task completions back into IPFlow every 15 minutes
+Schedule::command('google:sync-completions')->everyFifteenMinutes();
