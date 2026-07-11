@@ -16,6 +16,7 @@ use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\ProjectTrackerController;
 use App\Http\Controllers\ReportsController;
 use App\Http\Controllers\PatentPortfolioController;
+use App\Http\Controllers\SearchController;
 
 // Login happens through the web route (session-based, see routes/web.php).
 // The old public POST /api/login pointed at the same session login and
@@ -33,6 +34,9 @@ Route::middleware(['auth:sanctum', 'throttle:60,1'])->group(function () {
     Route::post('/staff-users', [\App\Http\Controllers\StaffUserController::class, 'store']);
     Route::put('/staff-users/{id}', [\App\Http\Controllers\StaffUserController::class, 'update']);
     Route::delete('/staff-users/{id}', [\App\Http\Controllers\StaffUserController::class, 'destroy']);
+
+    // Global search
+    Route::get('/search', [SearchController::class, 'search'])->middleware('throttle:30,1');
 
     // Dashboard
     Route::get('/dashboard/metrics', [DashboardController::class, 'metrics']);

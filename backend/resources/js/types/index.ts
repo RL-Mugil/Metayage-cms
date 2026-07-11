@@ -283,6 +283,16 @@ export interface ReportResponse {
   generated_at: string
 }
 
+// ── Global search ─────────────────────────────────────────────────────────
+
+export interface SearchResult {
+  type: 'client' | 'project' | 'task'
+  id: number
+  title: string
+  subtitle: string
+  url: string
+}
+
 // ── AI ────────────────────────────────────────────────────────────────────
 
 export interface AIResponse {

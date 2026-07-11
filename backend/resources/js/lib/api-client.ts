@@ -2,7 +2,7 @@ import type {
   User, Client, ClientContact, Project, Task, Invoice, InvoiceItem,
   Employee, Attendance, LeaveRequest, LeaveBalance, PayrollRun, Payslip,
   Notification, ReportResponse, AIResponse, DashboardMetrics,
-  PaginatedResponse,
+  PaginatedResponse, SearchResult,
 } from '@/types'
 
 function getCsrfToken(): string {
@@ -11,7 +11,7 @@ function getCsrfToken(): string {
   return match ? decodeURIComponent(match[1]) : ''
 }
 
-export type { User, Client, Project, Task, Invoice, Employee, PaginatedResponse }
+export type { User, Client, Project, Task, Invoice, Employee, PaginatedResponse, SearchResult }
 
 export const api = {
   async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
@@ -33,6 +33,11 @@ export const api = {
       throw new Error((errData as { message?: string }).message || `Request failed: ${response.status}`)
     }
     return response.json()
+  },
+
+  // ── Global search ──
+  async globalSearch(q: string): Promise<{ results: SearchResult[]; total: number }> {
+    return this.request(`/search?q=${encodeURIComponent(q)}`)
   },
 
   // ── Users ──
