@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 
 const STORAGE_KEY = "analyst_role_filter";
 
-export type RoleFilter = "all" | "pcm" | "scm" | "pr";
+export type RoleFilter = "all" | "pcm" | "scm" | "pr" | "attorney";
 
 export function useAnalystRoleFilter(): [RoleFilter, (v: RoleFilter) => void] {
   const [value, setValue] = useState<RoleFilter>(() => {
@@ -23,12 +23,15 @@ export function useAnalystRoleFilter(): [RoleFilter, (v: RoleFilter) => void] {
   return [value, set];
 }
 
-const OPTIONS: { value: RoleFilter; label: string; short: string }[] = [
-  { value: "all", label: "All Roles",           short: "All" },
-  { value: "pcm", label: "PCM – Case Manager",  short: "PCM" },
-  { value: "scm", label: "SCM – Sec. Manager",  short: "SCM" },
-  { value: "pr",  label: "PR – Patent Rep",      short: "PR" },
+const BASE_OPTIONS: { value: RoleFilter; label: string; short: string }[] = [
+  { value: "all",      label: "All Roles",            short: "All"      },
+  { value: "pcm",      label: "PCM – Case Manager",   short: "PCM"      },
+  { value: "scm",      label: "SCM – Sec. Manager",   short: "SCM"      },
+  { value: "pr",       label: "PR – Patent Rep",       short: "PR"       },
 ];
+
+const ATTORNEY_OPTION: { value: RoleFilter; label: string; short: string } =
+  { value: "attorney", label: "Attorney – Lead Counsel", short: "Attorney" };
 
 interface Props {
   value: RoleFilter;
@@ -39,7 +42,11 @@ export function AnalystRoleFilter({ value, onChange }: Props) {
   const { props } = usePage() as any;
   const role = props.auth?.user?.role;
 
-  if (role !== "associate") return null;
+  if (role !== "associate" && role !== "manager") return null;
+
+  const options = role === "manager"
+    ? [...BASE_OPTIONS, ATTORNEY_OPTION]
+    : BASE_OPTIONS;
 
   return (
     <div className="flex items-center gap-2">
@@ -47,7 +54,7 @@ export function AnalystRoleFilter({ value, onChange }: Props) {
         View as
       </span>
       <div className="flex items-center rounded-lg border border-border bg-background overflow-hidden">
-        {OPTIONS.map((opt) => (
+        {options.map((opt) => (
           <button
             key={opt.value}
             type="button"

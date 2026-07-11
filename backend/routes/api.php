@@ -27,7 +27,7 @@ use App\Http\Controllers\GoogleCalendarController;
 Route::post('/webhooks/{slug}', [\App\Http\Controllers\WebhookController::class, 'receive'])->middleware('throttle:120,1');
 
 // Authenticated routes protected by Sanctum
-Route::middleware(['auth:sanctum', 'throttle:60,1'])->group(function () {
+Route::middleware(['auth:sanctum', 'throttle:120,1'])->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/me', [AuthController::class, 'me']);
     Route::get('/users', [AuthController::class, 'users']);

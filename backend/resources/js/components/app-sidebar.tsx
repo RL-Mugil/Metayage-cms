@@ -110,7 +110,7 @@ const groups = [
     items: [
       { to: "/bulk", title: "Bulk Operations", icon: Layers },
       { to: "/compliance", title: "Compliance", icon: ShieldCheck },
-      { to: "/integrations", title: "Integrations", icon: Plug },
+      { to: "/integrations", title: "Integrations", icon: Plug, roles: ["super_admin", "partner", "manager", "hr", "associate", "finance"] },
       { to: "/staff-users", title: "Staff Users", icon: Users, adminOnly: true },
       { to: "/settings", title: "Settings", icon: Settings },
     ],

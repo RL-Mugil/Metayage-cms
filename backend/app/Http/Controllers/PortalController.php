@@ -13,8 +13,19 @@ use Illuminate\Support\Str;
 
 class PortalController extends Controller
 {
-    private const MANAGE_ROLES = ['super_admin', 'partner', 'manager'];
+    /** Roles that may CRUD portal accounts (add/remove/reset-pw). */
+    private const MANAGE_ROLES = ['super_admin', 'partner', 'manager', 'hr'];
 
+    /** Any internal (non-client) staff may read portal data. */
+    private function denyNonInternal(Request $request): ?\Illuminate\Http\JsonResponse
+    {
+        if ($request->user()->isClientRole()) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+        return null;
+    }
+
+    /** Write/CRUD operations require MANAGE_ROLES. */
     private function denyUnauthorized(Request $request): ?\Illuminate\Http\JsonResponse
     {
         if (! in_array($request->user()->role, self::MANAGE_ROLES)) {
@@ -70,7 +81,7 @@ class PortalController extends Controller
 
     public function clients(Request $request)
     {
-        if ($deny = $this->denyUnauthorized($request)) return $deny;
+        if ($deny = $this->denyNonInternal($request)) return $deny;
 
         return response()->json(
             Client::whereNotNull('portal_user_id')->orderBy('company_name')->limit(500)->get()->map(fn ($c) => [
@@ -187,7 +198,7 @@ class PortalController extends Controller
     /** List all portal users linked to a client. */
     public function clientUsers(Request $request, $id)
     {
-        if ($deny = $this->denyUnauthorized($request)) return $deny;
+        if ($deny = $this->denyNonInternal($request)) return $deny;
 
         $client = Client::findOrFail($id);
 

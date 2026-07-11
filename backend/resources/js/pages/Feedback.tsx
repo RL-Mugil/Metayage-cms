@@ -1,6 +1,6 @@
 import { Head, usePage } from "@inertiajs/react";
 import { useEffect, useRef, useState } from "react";
-import { Star, MessageSquare, Send, Filter, Loader2, Search, X, FileText, CheckCircle, Clock } from "lucide-react";
+import { Star, MessageSquare, Send, Filter, Loader2, Search, X, FileText, CheckCircle, Clock, Users } from "lucide-react";
 import { api } from "@/lib/api-client";
 import AppLayout from "@/layouts/AppLayout";
 import { PageHeader } from "@/components/page-header";
@@ -156,11 +156,14 @@ interface FeedbackRequestRow {
   can_rate: boolean;
 }
 
+const TEAM_SPLIT_ROLES = ["super_admin", "partner", "hr"];
+
 export default function Feedback() {
   const { props: pageProps } = usePage() as any;
   const role: string = pageProps.auth?.user?.role ?? "";
   const isClientUser = ["client", "client_admin"].includes(role);
   const isClientAdmin = role === "client_admin";
+  const canSeeTeamSplit = TEAM_SPLIT_ROLES.includes(role);
   // Any internal staff member can request feedback on a case they work on.
   const canRequest = !isClientUser;
 
@@ -169,6 +172,7 @@ export default function Feedback() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [activeFilter, setActiveFilter] = useState("all");
+  const [teamSplitView, setTeamSplitView] = useState(false);
 
   // Request form (firm side)
   const [showRequestForm, setShowRequestForm] = useState(false);
@@ -272,15 +276,29 @@ export default function Feedback() {
         description={isClientUser
           ? "Rate your case experience when your legal team requests feedback"
           : "Case feedback requests and client satisfaction scores"}
-        actions={canRequest ? (
-          <Button
-            onClick={() => { setShowRequestForm(!showRequestForm); setSendError(""); }}
-            className="bg-gold text-background hover:bg-gold/90"
-          >
-            <Send className="mr-2 h-4 w-4" />
-            Request Feedback
-          </Button>
-        ) : undefined}
+        actions={
+          <div className="flex items-center gap-2">
+            {canSeeTeamSplit && (
+              <Button
+                variant={teamSplitView ? "default" : "outline"}
+                onClick={() => setTeamSplitView((v) => !v)}
+                className={teamSplitView ? "bg-gold text-background hover:bg-gold/90" : ""}
+              >
+                <Users className="mr-2 h-4 w-4" />
+                Team Split
+              </Button>
+            )}
+            {canRequest && (
+              <Button
+                onClick={() => { setShowRequestForm(!showRequestForm); setSendError(""); }}
+                className="bg-gold text-background hover:bg-gold/90"
+              >
+                <Send className="mr-2 h-4 w-4" />
+                Request Feedback
+              </Button>
+            )}
+          </div>
+        }
       />
 
       {/* Rate modal (client_admin) */}
@@ -451,8 +469,90 @@ export default function Feedback() {
           </div>
         )}
 
+        {/* Team member split — HR / Director / SysAdmin */}
+        {canSeeTeamSplit && teamSplitView && (() => {
+          // Group completed requests by requester
+          const byMember: Record<string, { name: string; cases: FeedbackRequestRow[] }> = {};
+          completedRequests.forEach((r) => {
+            const key = r.requester ?? "Unknown";
+            if (!byMember[key]) byMember[key] = { name: key, cases: [] };
+            byMember[key].cases.push(r);
+          });
+          // Sort by avg rating desc
+          const members = Object.values(byMember).sort((a, b) => {
+            const avgA = a.cases.reduce((s, c) => s + (c.rating ?? 0), 0) / (a.cases.length || 1);
+            const avgB = b.cases.reduce((s, c) => s + (c.rating ?? 0), 0) / (b.cases.length || 1);
+            return avgB - avgA;
+          });
+
+          if (members.length === 0) return (
+            <Card className="border-border">
+              <CardContent className="flex flex-col items-center justify-center py-12 text-muted-foreground gap-2">
+                <Users className="h-8 w-8 opacity-30" />
+                <p className="text-sm">No completed feedback requests to split by team member yet.</p>
+              </CardContent>
+            </Card>
+          );
+
+          return (
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">Completed feedback grouped by the team member who requested it.</p>
+              {members.map((m) => {
+                const avg = m.cases.reduce((s, c) => s + (c.rating ?? 0), 0) / (m.cases.length || 1);
+                return (
+                  <Card key={m.name} className="border-border">
+                    <CardHeader className="pb-2">
+                      <div className="flex items-center justify-between">
+                        <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                          <div className="h-6 w-6 rounded-full bg-gold/20 flex items-center justify-center text-[10px] font-bold text-gold">
+                            {m.name.split(" ").map((n) => n[0]).join("").substring(0, 2).toUpperCase()}
+                          </div>
+                          {m.name}
+                        </CardTitle>
+                        <div className="flex items-center gap-3">
+                          <span className="text-xs text-muted-foreground">{m.cases.length} case{m.cases.length !== 1 ? "s" : ""}</span>
+                          <div className="flex items-center gap-1">
+                            <span className="text-sm font-bold text-gold">{avg.toFixed(1)}</span>
+                            <StarDisplay rating={Math.round(avg)} />
+                          </div>
+                        </div>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="p-0">
+                      <table className="w-full text-sm">
+                        <thead className="bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground">
+                          <tr>
+                            <th className="px-4 py-2 text-left">Case UIN</th>
+                            <th className="px-4 py-2 text-left">Client</th>
+                            <th className="px-4 py-2 text-left">Rating</th>
+                            <th className="px-4 py-2 text-left">Comment</th>
+                            <th className="px-4 py-2 text-left">Rated On</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {m.cases.map((r) => (
+                            <tr key={r.id} className="border-t border-border hover:bg-muted/20">
+                              <td className="px-4 py-2.5 font-mono font-medium">{r.docket_number ?? "—"}</td>
+                              <td className="px-4 py-2.5 text-muted-foreground">{r.client ?? "—"}</td>
+                              <td className="px-4 py-2.5"><StarDisplay rating={r.rating ?? 0} /></td>
+                              <td className="px-4 py-2.5 text-muted-foreground text-xs max-w-[240px] truncate" title={r.comment ?? ""}>
+                                {r.comment || "—"}
+                              </td>
+                              <td className="px-4 py-2.5 text-muted-foreground text-xs">{r.completed_at ?? "—"}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          );
+        })()}
+
         {/* CSAT aggregates — firm side only */}
-        {!isClientUser && (
+        {!isClientUser && !teamSplitView && (
           <>
             <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
               <Card className="border-border col-span-1">

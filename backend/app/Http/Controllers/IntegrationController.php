@@ -8,20 +8,23 @@ use Illuminate\Support\Facades\DB;
 
 class IntegrationController extends Controller
 {
-    private const MANAGE_ROLES = ['super_admin', 'partner', 'manager'];
+    /** Roles that may change integration config (toggle/test/configure). Director is read-only. */
+    private const WRITE_ROLES = ['super_admin', 'manager'];
+    /** Roles that may view integrations list (read-only). */
+    private const READ_ROLES  = ['super_admin', 'partner', 'manager', 'hr', 'associate', 'paralegal', 'finance'];
     private const CLIENT_ROLES = ['client', 'client_admin'];
 
     private function writeGate(Request $request): ?\Illuminate\Http\JsonResponse
     {
-        if (! in_array($request->user()->role, self::MANAGE_ROLES)) {
-            return response()->json(['message' => 'Forbidden — only managers and above can configure integrations.'], 403);
+        if (! in_array($request->user()->role, self::WRITE_ROLES)) {
+            return response()->json(['message' => 'Forbidden — only system admins and patent attorneys can configure integrations.'], 403);
         }
         return null;
     }
 
     private function readGate(Request $request): ?\Illuminate\Http\JsonResponse
     {
-        if (in_array($request->user()->role, self::CLIENT_ROLES)) {
+        if (! in_array($request->user()->role, self::READ_ROLES)) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
         return null;

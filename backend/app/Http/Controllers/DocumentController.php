@@ -49,7 +49,7 @@ class DocumentController extends Controller
         if ($user->isClientRole()) {
             // Client portal: own docs only
             $query->where('client_id', $client->id);
-        } elseif (in_array($user->role, ['super_admin', 'partner', 'paralegal'])) {
+        } elseif (in_array($user->role, ['super_admin', 'partner', 'paralegal', 'hr'])) {
             // These roles see everything — no filter needed
         } elseif ($user->role === 'associate') {
             // See docs for projects assigned to them, or un-tagged (internal) docs
@@ -77,14 +77,14 @@ class DocumentController extends Controller
                 $q->whereNull('client_id')
                   ->orWhereIn('project_id', $managedProjectIds);
             });
-        } elseif (in_array($user->role, ['finance', 'hr'])) {
-            // Internal-only docs (not tagged to a specific client)
+        } elseif ($user->role === 'finance') {
+            // Finance sees internal-only docs
             $query->whereNull('client_id');
         }
         // else: any other role falls through to see all (safe fallback)
 
         // Allow filtering by client_id (for roles that can see all)
-        if ($request->filled('client_id') && in_array($user->role, ['super_admin', 'partner', 'paralegal', 'manager'])) {
+        if ($request->filled('client_id') && in_array($user->role, ['super_admin', 'partner', 'paralegal', 'hr', 'manager'])) {
             $cid = (int) $request->client_id;
             $query->where(function ($q) use ($cid) {
                 $q->where('client_id', $cid)

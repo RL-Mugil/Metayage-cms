@@ -44,6 +44,23 @@ class DashboardController extends Controller
                 ->whereHas('client', fn ($q) => $q->where('portal_enabled', true)->visibleToUser($user));
             $tasksQuery
                 ->whereHas('project.client', fn ($q) => $q->where('portal_enabled', true)->visibleToUser($user));
+        } elseif ($user->role === 'manager') {
+            // Patent Attorney: optional role-filter to narrow the full-firm view.
+            // Without a filter (or filter='all') they see everything — no scope applied.
+            $rf = $request->input('role_filter');
+            if ($rf && $rf !== 'all') {
+                $scopeFn = function ($q) use ($user, $rf) {
+                    match ($rf) {
+                        'pcm'      => $q->where('assigned_manager_id', $user->id),
+                        'scm'      => $q->where('secondary_manager_id', $user->id),
+                        'pr'       => $q->where('patent_engineer_id', $user->id),
+                        'attorney' => $q->where('assigned_partner_id', $user->id),
+                        default    => null,
+                    };
+                };
+                $activeMattersQuery->where($scopeFn);
+                $inactiveMattersQuery->where($scopeFn);
+            }
         } elseif ($user->role === 'associate') {
             $rf = $request->input('role_filter');
             $scopeFn = function ($q) use ($user, $rf) {
@@ -106,7 +123,8 @@ class DashboardController extends Controller
             ->groupBy('stage_name')
             ->orderBy('stage_name');
 
-        if ($user->isClientRole() || $user->role === 'associate') {
+        if ($user->isClientRole() || $user->role === 'associate' ||
+            ($user->role === 'manager' && $request->input('role_filter') && $request->input('role_filter') !== 'all')) {
             $stagesQuery->whereIn('project_id', (clone $activeMattersQuery)->pluck('id'));
         }
 
