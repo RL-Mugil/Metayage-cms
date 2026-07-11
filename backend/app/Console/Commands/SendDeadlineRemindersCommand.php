@@ -4,10 +4,12 @@ namespace App\Console\Commands;
 
 use App\Models\Approval;
 use App\Models\Client;
+use App\Models\Employee;
 use App\Models\Project;
 use App\Models\Reminder;
 use App\Models\Task;
 use App\Models\TrackerRow;
+use App\Models\User;
 use App\Support\Notifier;
 use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
@@ -16,14 +18,19 @@ use Illuminate\Support\Facades\DB;
 class SendDeadlineRemindersCommand extends Command
 {
     protected $signature = 'reminders:send-deadlines';
-    protected $description = 'Notify assignees of upcoming/overdue tracker, task and project deadlines, and aging pending approvals. Also materialises them as reminders.';
+    protected $description = 'Notify assignees of upcoming/overdue tracker, task and project deadlines, aging pending approvals, and auto-escalate overdue matters to directors/HR/system admins. Also materialises them as reminders.';
 
     // Days-ahead thresholds for "upcoming" alerts.
     private const THRESHOLDS = [1, 3, 7];
     // Days a client/colleague approval may sit Pending before it is chased.
     private const APPROVAL_AGING_DAYS = 3;
+    // Overdue matters are auto-escalated to these designations (job titles)…
+    private const ESCALATION_DESIGNATIONS = ['Director', 'HR', 'System Admin'];
+    // …and to these login roles (directors ≈ partner in this system).
+    private const ESCALATION_ROLES = ['super_admin', 'partner', 'hr'];
 
     private int $sent = 0;
+    private ?array $escalationIds = null;
 
     public function handle(): int
     {
@@ -82,6 +89,45 @@ class SendDeadlineRemindersCommand extends Command
             $reminder->completed = false; // don't un-complete something the user cleared
         }
         $reminder->save();
+    }
+
+    /**
+     * Directors, HRs and System Admins who oversee overdue matters. Resolved
+     * by BOTH login role and employee designation so no one is missed.
+     */
+    private function escalationRecipients(): array
+    {
+        if ($this->escalationIds !== null) return $this->escalationIds;
+
+        $byRole = User::whereIn('role', self::ESCALATION_ROLES)
+            ->where('status', 'Active')
+            ->pluck('id')->all();
+
+        $byDesignation = Employee::whereNotNull('user_id')
+            ->whereHas('designation', fn ($q) => $q->whereIn('title', self::ESCALATION_DESIGNATIONS))
+            ->pluck('user_id')->all();
+
+        return $this->escalationIds = array_values(array_unique(array_merge($byRole, $byDesignation)));
+    }
+
+    /** Escalate one overdue matter to every escalation recipient (deduped 3-daily). */
+    private function escalate(string $entityKey, string $label, int $daysLate, string $actionUrl, array $meta, ?string $dueDate): void
+    {
+        foreach ($this->escalationRecipients() as $uid) {
+            $this->remind(
+                (int) $uid,
+                'deadline',
+                "ESCALATION — {$daysLate}d overdue: {$label}",
+                "Overdue matter {$label} is {$daysLate} day(s) past its deadline and has been escalated to you for oversight.",
+                $actionUrl,
+                $meta + ['escalated' => true, 'days_overdue' => $daysLate],
+                "escalation:{$entityKey}:{$uid}",
+                'overdue',
+                $dueDate,
+                'Deadline',
+                3,
+            );
+        }
     }
 
     /* ───────────────────────── Tracker rows ───────────────────────── */
@@ -156,6 +202,20 @@ class SendDeadlineRemindersCommand extends Command
                     3,
                 );
             }
+
+            // Auto-escalate the overdue matter to directors, HRs and System Admins.
+            $this->escalate(
+                "tracker:{$row->id}",
+                $row->docket_number ?? $row->client_name ?? 'Case',
+                (int) Carbon::parse($row->delivery_due_date)->diffInDays($today),
+                '/tracker',
+                [
+                    'tracker_row_id' => $row->id,
+                    'docket_number'  => $row->docket_number,
+                    'client_name'    => $row->client_name,
+                ],
+                $row->delivery_due_date?->toDateString(),
+            );
         }
     }
 
@@ -276,6 +336,16 @@ class SendDeadlineRemindersCommand extends Command
                     3,
                 );
             }
+
+            // Auto-escalate the overdue matter to directors, HRs and System Admins.
+            $this->escalate(
+                "project:{$project->id}",
+                $label,
+                $daysLate,
+                "/projects/{$project->id}",
+                ['project_id' => $project->id],
+                Carbon::parse($project->hard_deadline)->toDateString(),
+            );
         }
     }
 
