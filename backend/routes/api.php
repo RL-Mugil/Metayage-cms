@@ -17,6 +17,7 @@ use App\Http\Controllers\ProjectTrackerController;
 use App\Http\Controllers\ReportsController;
 use App\Http\Controllers\PatentPortfolioController;
 use App\Http\Controllers\SearchController;
+use App\Http\Controllers\GoogleCalendarController;
 
 // Login happens through the web route (session-based, see routes/web.php).
 // The old public POST /api/login pointed at the same session login and
@@ -171,6 +172,10 @@ Route::middleware(['auth:sanctum', 'throttle:60,1'])->group(function () {
     Route::put('/settings/notifications', [\App\Http\Controllers\SettingsController::class, 'updateNotifications']);
     Route::put('/settings/system',        [\App\Http\Controllers\SettingsController::class, 'updateSystem']);
     Route::post('/settings/avatar',       [\App\Http\Controllers\SettingsController::class, 'uploadAvatar']);
+
+    // Google Calendar
+    Route::get('/integrations/google-calendar/status',     [GoogleCalendarController::class, 'status']);
+    Route::post('/integrations/google-calendar/disconnect',[GoogleCalendarController::class, 'disconnect']);
 
     // Compliance
     Route::get('/compliance/stats', [\App\Http\Controllers\ComplianceController::class, 'stats']);

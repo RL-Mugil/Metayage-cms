@@ -1,6 +1,6 @@
-import { Head, usePage } from "@inertiajs/react";
+import { Head, usePage, router } from "@inertiajs/react";
 import { useEffect, useState } from "react";
-import { Plug, Zap, RefreshCw, X, Settings, Globe, CheckCircle, Loader2, Activity, ChevronDown, ChevronUp, Copy, Eye } from "lucide-react";
+import { Plug, Zap, RefreshCw, X, Settings, Globe, CheckCircle, Loader2, Activity, ChevronDown, ChevronUp, Copy, Eye, CalendarDays, Link2Off } from "lucide-react";
 import AppLayout from "@/layouts/AppLayout";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -39,6 +39,41 @@ export default function Integrations() {
   const [logs, setLogs] = useState<Record<string, any[]>>({});
   const [logsLoading, setLogsLoading] = useState<string | null>(null);
   const webhookBase = `${window.location.origin}/api/webhooks`;
+
+  // Google Calendar personal connection state
+  const [gcal, setGcal] = useState<{ connected: boolean; email: string | null } | null>(null);
+  const [gcalBusy, setGcalBusy] = useState(false);
+
+  // Check Google Calendar status + handle redirect-back query params
+  useEffect(() => {
+    api.request('/integrations/google-calendar/status')
+      .then((d: any) => setGcal({ connected: d.connected, email: d.email ?? null }))
+      .catch(() => {});
+
+    // After OAuth redirect, Google appends ?gcal=connected or ?gcal=error
+    const params = new URLSearchParams(window.location.search);
+    const gcalParam = params.get('gcal');
+    if (gcalParam === 'connected') {
+      setBanner({ kind: 'ok', text: 'Google Calendar connected successfully!' });
+      window.history.replaceState({}, '', '/integrations');
+    } else if (gcalParam === 'error') {
+      setBanner({ kind: 'err', text: 'Google Calendar connection failed: ' + (params.get('reason') ?? 'unknown error') });
+      window.history.replaceState({}, '', '/integrations');
+    }
+  }, []);
+
+  async function disconnectGcal() {
+    setGcalBusy(true);
+    try {
+      await api.request('/integrations/google-calendar/disconnect', { method: 'POST' });
+      setGcal({ connected: false, email: null });
+      setBanner({ kind: 'ok', text: 'Google Calendar disconnected.' });
+    } catch {
+      setBanner({ kind: 'err', text: 'Failed to disconnect Google Calendar.' });
+    } finally {
+      setGcalBusy(false);
+    }
+  }
 
   const load = () => api.getIntegrations()
     .then((d) => setList(d as unknown as Integration[]))
@@ -248,6 +283,51 @@ export default function Integrations() {
             </Card>
           ))}
         </div>
+
+        {/* ── Google Calendar personal sync ──────────────────────────────── */}
+        <Card className="border-border border-blue-500/20 bg-blue-500/5">
+          <CardContent className="p-5">
+            <div className="flex items-center gap-4">
+              <div className="h-12 w-12 rounded-xl bg-blue-600 flex items-center justify-center flex-shrink-0">
+                <CalendarDays className="h-6 w-6 text-white" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-0.5">
+                  <span className="font-semibold text-sm">Google Calendar</span>
+                  {gcal?.connected ? (
+                    <Badge className="bg-green-100 text-green-700 border-green-200 text-[10px]">Connected</Badge>
+                  ) : (
+                    <Badge variant="outline" className="text-[10px]">Not Connected</Badge>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {gcal?.connected
+                    ? `Syncing deadlines to ${gcal.email} — project hard deadlines appear as events in your calendar.`
+                    : "Sync your project deadlines and case hard deadlines directly to your personal Google Calendar."}
+                </p>
+              </div>
+              <div className="flex-shrink-0">
+                {gcal?.connected ? (
+                  <Button size="sm" variant="outline" className="h-8 text-xs border-red-200 text-red-600 hover:bg-red-50"
+                    onClick={disconnectGcal} disabled={gcalBusy}>
+                    {gcalBusy ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Link2Off className="h-3.5 w-3.5 mr-1" />}
+                    Disconnect
+                  </Button>
+                ) : (
+                  <Button size="sm" className="h-8 text-xs bg-blue-600 hover:bg-blue-700 text-white"
+                    onClick={() => { window.location.href = '/integrations/google/connect'; }}
+                    disabled={gcalBusy}>
+                    <CalendarDays className="h-3.5 w-3.5 mr-1.5" />
+                    Connect Google Calendar
+                  </Button>
+                )}
+              </div>
+            </div>
+            <p className="text-[11px] text-muted-foreground mt-3 border-t border-border pt-2">
+              Each user connects their own Google account. Your calendar stays private — only your deadlines sync, not other users'.
+            </p>
+          </CardContent>
+        </Card>
 
         <Card className="border-border">
           <CardHeader className="flex flex-row items-center justify-between">

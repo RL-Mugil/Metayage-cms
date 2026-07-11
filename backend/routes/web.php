@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\GoogleCalendarController;
 use App\Http\Controllers\ClientController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\FinancialController;
@@ -57,6 +58,10 @@ Route::middleware('auth')->group(function () {
     Route::get('/portal-users', fn () => Inertia::render('PortalUsers'))->name('portal-users');
     Route::get('/staff-users', fn () => Inertia::render('StaffUsers'))->name('staff-users');
 
+    // Google Calendar OAuth
+    Route::get('/integrations/google/connect', [GoogleCalendarController::class, 'connect'])->name('gcal.connect');
+    Route::get('/integrations/google/disconnect', [GoogleCalendarController::class, 'disconnect'])->name('gcal.disconnect');
+
     // HRMS sub-routes
     Route::get('/hrms', [HRMSController::class, 'inertiaIndex'])->name('hrms.index');
     Route::get('/hrms/employees', [HRMSController::class, 'inertiaEmployees'])->name('hrms.employees');
@@ -67,6 +72,11 @@ Route::middleware('auth')->group(function () {
     Route::get('/hrms/recruitment', fn () => Inertia::render('HRMS/Recruitment'))->name('hrms.recruitment');
     Route::get('/hrms/offboarding', fn () => Inertia::render('HRMS/Offboarding'))->name('hrms.offboarding');
 });
+
+// Google Calendar OAuth callback — auth middleware included, session already present
+Route::get('/integrations/google/callback', [GoogleCalendarController::class, 'callback'])
+    ->middleware('auth')
+    ->name('gcal.callback');
 
 // Horizon dashboard (admin only)
 Route::middleware(['auth'])->group(function () {
