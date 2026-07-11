@@ -151,9 +151,11 @@ export function AppSidebar() {
     <Sidebar collapsible="icon">
       <SidebarHeader className="border-b border-sidebar-border">
         <Link href="/" className="flex items-center gap-2 px-2 py-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-md bg-sidebar-primary text-sidebar-primary-foreground font-display text-lg font-bold">
-            IP
-          </div>
+          <img
+            src="/favicon.jpg"
+            alt="Metayage"
+            className="h-9 w-9 rounded-md object-cover"
+          />
           <div className="flex flex-col leading-tight group-data-[collapsible=icon]:hidden">
             <span className="font-display text-base font-semibold text-sidebar-foreground">IPFlow</span>
             <span className="text-[10px] uppercase tracking-widest text-sidebar-foreground/60">Metayage</span>
