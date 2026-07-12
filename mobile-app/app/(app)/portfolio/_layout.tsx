@@ -10,10 +10,10 @@ const headerOpts = {
   headerRight: () => <ProfileButton />,
 };
 
-export default function ClientsLayout() {
+export default function PortfolioLayout() {
   return (
     <Stack screenOptions={headerOpts}>
-      <Stack.Screen name="index" options={{ title: 'Clients' }} />
+      <Stack.Screen name="index" options={{ title: 'Patent Portfolio' }} />
     </Stack>
   );
 }

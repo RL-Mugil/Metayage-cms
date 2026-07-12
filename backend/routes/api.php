@@ -18,6 +18,10 @@ use App\Http\Controllers\ReportsController;
 use App\Http\Controllers\PatentPortfolioController;
 use App\Http\Controllers\SearchController;
 use App\Http\Controllers\GoogleCalendarController;
+use App\Http\Controllers\MobileDeviceController;
+use App\Http\Controllers\MobileAuthController;
+use App\Http\Controllers\AuditLogController;
+use App\Http\Controllers\PatentInvoiceController;
 
 // Login happens through the web route (session-based, see routes/web.php).
 // The old public POST /api/login pointed at the same session login and
@@ -27,6 +31,17 @@ use App\Http\Controllers\GoogleCalendarController;
 Route::post('/webhooks/{slug}', [\App\Http\Controllers\WebhookController::class, 'receive'])->middleware('throttle:120,1');
 
 // Authenticated routes protected by Sanctum
+Route::prefix('mobile')->middleware('throttle:20,1')->group(function () {
+    Route::post('/auth/login', [MobileAuthController::class, 'login']);
+
+    Route::middleware('auth:sanctum')->group(function () {
+        Route::post('/auth/logout', [MobileAuthController::class, 'logout']);
+        Route::get('/me', [MobileAuthController::class, 'me']);
+        Route::post('/push-tokens', [MobileDeviceController::class, 'register']);
+        Route::delete('/push-tokens', [MobileDeviceController::class, 'unregister']);
+    });
+});
+
 Route::middleware(['auth:sanctum', 'throttle:120,1'])->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/me', [AuthController::class, 'me']);
@@ -102,9 +117,15 @@ Route::middleware(['auth:sanctum', 'throttle:120,1'])->group(function () {
     Route::get('/financial/stats', [FinancialController::class, 'stats']);
     Route::get('/financial/invoices', [FinancialController::class, 'invoices']);
     Route::post('/financial/invoices', [FinancialController::class, 'createInvoice']);
+    Route::post('/financial/invoices/batch', [FinancialController::class, 'batchUpdate']);
+    Route::get('/financial/invoices/{id}', [FinancialController::class, 'showInvoice']);
     Route::put('/financial/invoices/{id}', [FinancialController::class, 'updateInvoice']);
     Route::delete('/financial/invoices/{id}', [FinancialController::class, 'deleteInvoice']);
     Route::get('/financial/quotations', [FinancialController::class, 'quotations']);
+    Route::post('/financial/quotations', [FinancialController::class, 'storeQuotation']);
+    Route::post('/financial/quotations/{id}/convert', [FinancialController::class, 'convertToInvoice']);
+    Route::put('/financial/quotations/{id}', [FinancialController::class, 'updateQuotation']);
+    Route::delete('/financial/quotations/{id}', [FinancialController::class, 'deleteQuotation']);
     Route::post('/financial/payments', [FinancialController::class, 'recordPayment']);
 
     // Reports
@@ -247,6 +268,17 @@ Route::middleware(['auth:sanctum', 'throttle:120,1'])->group(function () {
     // Custom project codes (patent office / service)
     Route::get('/project-codes', [\App\Http\Controllers\ProjectCodeController::class, 'index']);
     Route::post('/project-codes', [\App\Http\Controllers\ProjectCodeController::class, 'store']);
+
+    // Audit Log (super_admin / partner only — enforced in controller)
+    Route::get('/audit-logs', [AuditLogController::class, 'index']);
+
+    // Patent Invoices & Quotations — Indian clients (INR)
+    Route::get('/patent-invoices/in',                [PatentInvoiceController::class, 'index']);
+    Route::post('/patent-invoices/in',               [PatentInvoiceController::class, 'store']);
+    Route::post('/patent-invoices/in/batch',         [PatentInvoiceController::class, 'batch']);
+    Route::post('/patent-invoices/in/{id}/convert',  [PatentInvoiceController::class, 'convert']);
+    Route::put('/patent-invoices/in/{id}',           [PatentInvoiceController::class, 'update']);
+    Route::delete('/patent-invoices/in/{id}',        [PatentInvoiceController::class, 'destroy']);
 
     // Bulk operations
     Route::post('/bulk/execute', [\App\Http\Controllers\BulkController::class, 'execute']);

@@ -1,12 +1,19 @@
 import { Stack } from 'expo-router';
 
+import { ProfileButton } from '../../../src/components/ProfileButton';
+
+const headerOpts = {
+  headerStyle: { backgroundColor: '#040d1a' },
+  headerTintColor: '#f8fafc',
+  headerTitleStyle: { fontWeight: '700' as const, fontSize: 17 },
+  headerShadowVisible: false,
+  headerRight: () => <ProfileButton />,
+};
+
 export default function ProjectsLayout() {
   return (
-    <Stack
-      screenOptions={{
-        headerStyle: { backgroundColor: '#0d1321' },
-        headerTintColor: '#f8fafc',
-      }}
-    />
+    <Stack screenOptions={headerOpts}>
+      <Stack.Screen name="index" options={{ title: 'Projects' }} />
+    </Stack>
   );
 }

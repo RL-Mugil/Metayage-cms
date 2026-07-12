@@ -116,6 +116,11 @@ class ProjectController extends Controller
             $query->where('assigned_manager_id', (int) $request->assigned_manager_id);
         }
 
+        if ($request->filled('project_type')) {
+            $types = array_map('trim', explode(',', $request->project_type));
+            count($types) > 1 ? $query->whereIn('project_type', $types) : $query->where('project_type', $types[0]);
+        }
+
         // Filter by current lifecycle stage (the stage currently In Progress)
         if ($request->filled('lifecycle_stage')) {
             $stage = $request->lifecycle_stage;
@@ -288,6 +293,14 @@ class ProjectController extends Controller
 
         $validated['status'] = $validated['status'] ?? 'Open';
         unset($validated['record_mode']);
+
+        // Auto-inherit circle from client if not explicitly provided
+        if (empty($validated['circle']) && !empty($validated['client_id'])) {
+            $clientCircle = \App\Models\Client::where('id', $validated['client_id'])->value('circle');
+            if ($clientCircle) {
+                $validated['circle'] = $clientCircle;
+            }
+        }
 
         $project = Project::create($validated);
 

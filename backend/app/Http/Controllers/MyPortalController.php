@@ -9,6 +9,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Validation\Rules\Password as PasswordRule;
 
 /**
  * Self-service portal user management for client_admin users.
@@ -66,7 +67,7 @@ class MyPortalController extends Controller
         $validated = $request->validate([
             'name'     => 'required|string|max:255',
             'email'    => 'required|email|max:255|unique:users,email',
-            'password' => 'required|string|min:6|max:100',
+            'password' => ['required', 'max:100', PasswordRule::min(8)->mixedCase()->symbols()],
         ]);
 
         $newUser = User::create([

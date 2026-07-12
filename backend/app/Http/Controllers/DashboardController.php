@@ -117,9 +117,10 @@ class DashboardController extends Controller
             $receivedAmount = (float) $invoiceAgg->paid + (float) $invoiceAgg->partial_paid;
         }
 
-        // Stage distribution — scoped to projects the user can see
+        // Stage distribution — only count stages currently "In Progress"
         $stagesQuery = \DB::table('project_stages')
             ->select('stage_name', \DB::raw('count(*) as count'))
+            ->where('status', 'In Progress')
             ->groupBy('stage_name')
             ->orderBy('stage_name');
 

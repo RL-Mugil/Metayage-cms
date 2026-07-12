@@ -17,6 +17,9 @@ class Quotation extends Model
         'hourly_rates',
         'estimated_disbursements',
         'buffer_percentage',
+        'subtotal',
+        'tax_amount',
+        'tax_details',
         'total_amount',
         'currency',
         'status',
@@ -25,10 +28,13 @@ class Quotation extends Model
 
     protected $casts = [
         'hourly_rates' => 'array',
+        'tax_details' => 'array',
         'valid_until' => 'date',
         'estimated_hours' => 'decimal:2',
         'estimated_disbursements' => 'decimal:2',
         'buffer_percentage' => 'decimal:2',
+        'subtotal' => 'decimal:2',
+        'tax_amount' => 'decimal:2',
         'total_amount' => 'decimal:2',
     ];
 

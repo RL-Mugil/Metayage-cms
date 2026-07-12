@@ -18,6 +18,52 @@ use Inertia\Inertia;
 
 class FinancialController extends Controller
 {
+    /**
+     * Compute GST breakdown based on client's location.
+     * Karnataka client  → CGST 9% + SGST 9% (intra-state)
+     * Other Indian      → IGST 18% (inter-state)
+     * Export client     → 0% (zero-rated)
+     */
+    private function computeGst(Client $client, float $subtotal): array
+    {
+        if ($client->gst_type === 'Export' || strtolower($client->nationality ?? 'india') !== 'india') {
+            return ['tax_rate' => 0, 'tax_amount' => 0.0, 'tax_details' => null];
+        }
+
+        $isKarnataka = strtolower(trim($client->state ?? '')) === 'karnataka';
+        $taxAmount   = round($subtotal * 0.18, 2);
+
+        if ($isKarnataka) {
+            return [
+                'tax_rate'    => 18,
+                'tax_amount'  => $taxAmount,
+                'tax_details' => [
+                    'type'        => 'CGST+SGST',
+                    'cgst_rate'   => 9,
+                    'cgst_amount' => round($subtotal * 0.09, 2),
+                    'sgst_rate'   => 9,
+                    'sgst_amount' => round($subtotal * 0.09, 2),
+                    'igst_rate'   => null,
+                    'igst_amount' => null,
+                ],
+            ];
+        }
+
+        return [
+            'tax_rate'    => 18,
+            'tax_amount'  => $taxAmount,
+            'tax_details' => [
+                'type'        => 'IGST',
+                'cgst_rate'   => null,
+                'cgst_amount' => null,
+                'sgst_rate'   => null,
+                'sgst_amount' => null,
+                'igst_rate'   => 18,
+                'igst_amount' => $taxAmount,
+            ],
+        ];
+    }
+
     public function inertiaIndex(Request $request)
     {
         return Inertia::render('financial');
@@ -81,6 +127,13 @@ class FinancialController extends Controller
         return response()->json(PaginationHelper::paginate($query->orderBy('issue_date', 'desc'), $request));
     }
 
+    public function showInvoice(Request $request, $id)
+    {
+        $invoice = Invoice::with(['client', 'project', 'items', 'payments'])->findOrFail($id);
+        $this->authorize('view', $invoice);
+        return response()->json($invoice);
+    }
+
     public function quotations(Request $request)
     {
         $user = $request->user();
@@ -113,17 +166,15 @@ class FinancialController extends Controller
             'notes' => 'nullable|string',
         ]);
 
-        // Determine applicable GST rate: 0% for Export clients, standard rate otherwise.
-        $client = Client::findOrFail($validated['client_id']);
-        $taxRate = $client->gst_type === 'Export'
-            ? config('services.gst.export_rate', 0)
-            : config('services.gst.standard_rate', 18);
-
+        $client   = Client::findOrFail($validated['client_id']);
         $subtotal = collect($validated['items'])->sum('amount');
-        $taxAmount = round($subtotal * ($taxRate / 100), 2);
+        $gst      = $this->computeGst($client, $subtotal);
+        $taxRate  = $gst['tax_rate'];
+        $taxAmount   = $gst['tax_amount'];
+        $taxDetails  = $gst['tax_details'];
         $totalAmount = $subtotal + $taxAmount;
 
-        $invoice = \DB::transaction(function () use ($validated, $subtotal, $taxAmount, $taxRate, $totalAmount) {
+        $invoice = \DB::transaction(function () use ($validated, $subtotal, $taxAmount, $taxRate, $taxDetails, $totalAmount) {
             // Redis atomic counter: O(1) vs locking the entire invoices table.
             // On first use (or after Redis restart) we seed from the DB max.
             $year = date('Y');
@@ -143,12 +194,13 @@ class FinancialController extends Controller
                 'issue_date' => now()->toDateString(),
                 'due_date' => $validated['due_date'],
                 'currency' => $validated['currency'] ?? 'INR',
-                'subtotal' => $subtotal,
-                'tax_amount' => $taxAmount,
-                'total_amount' => $totalAmount,
-                'balance_due' => $totalAmount,
+                'subtotal'      => $subtotal,
+                'tax_amount'    => $taxAmount,
+                'tax_details'   => $taxDetails,
+                'total_amount'  => $totalAmount,
+                'balance_due'   => $totalAmount,
                 'payment_terms' => $validated['payment_terms'] ?? 'Net 30',
-                'status' => 'Draft',
+                'status'        => 'Draft',
             ]);
 
             foreach ($validated['items'] as $item) {
@@ -263,6 +315,328 @@ class FinancialController extends Controller
 
         Cache::increment('dashboard_v');
         return response()->json(['message' => 'Invoice cancelled']);
+    }
+
+    public function storeQuotation(Request $request)
+    {
+        $user = $request->user();
+        $this->authorize('create', \App\Models\Invoice::class);
+
+        $validated = $request->validate([
+            'client_id'                => 'required|exists:clients,id',
+            'project_id'               => 'nullable|exists:projects,id',
+            'valid_until'              => 'required|date',
+            'fee_structure'            => 'required|in:Fixed Fee,Hourly,Blended',
+            'estimated_hours'          => 'nullable|numeric|min:0',
+            'hourly_rates'             => 'nullable|array',
+            'estimated_disbursements'  => 'nullable|numeric|min:0',
+            'buffer_percentage'        => 'nullable|numeric|min:0|max:100',
+            'total_amount'             => 'required|numeric|min:0',
+            'currency'                 => 'nullable|string|max:5',
+        ]);
+
+        $client   = Client::findOrFail($validated['client_id']);
+        $subtotal = (float) $validated['total_amount']; // user enters pre-tax fee amount
+        $gst      = $this->computeGst($client, $subtotal);
+
+        $quotation = \DB::transaction(function () use ($validated, $subtotal, $gst) {
+            $year    = date('Y');
+            $redisKey = "seq:quotation:{$year}";
+            if (!Redis::exists($redisKey)) {
+                $last = Quotation::where('quote_code', 'like', "QUO-{$year}-%")
+                    ->orderBy('quote_code', 'desc')->value('quote_code');
+                Redis::setnx($redisKey, $last ? (int) substr($last, -5) : 0);
+            }
+            $seq  = Redis::incr($redisKey);
+            $code = sprintf('QUO-%s-%05d', $year, $seq);
+
+            return Quotation::create([
+                'quote_code'              => $code,
+                'client_id'               => $validated['client_id'],
+                'project_id'              => $validated['project_id'] ?? null,
+                'valid_until'             => $validated['valid_until'],
+                'fee_structure'           => $validated['fee_structure'],
+                'estimated_hours'         => $validated['estimated_hours'] ?? 0,
+                'hourly_rates'            => $validated['hourly_rates'] ?? null,
+                'estimated_disbursements' => $validated['estimated_disbursements'] ?? 0,
+                'buffer_percentage'       => $validated['buffer_percentage'] ?? 0,
+                'subtotal'                => $subtotal,
+                'tax_amount'              => $gst['tax_amount'],
+                'tax_details'             => $gst['tax_details'],
+                'total_amount'            => $subtotal + $gst['tax_amount'],
+                'currency'                => $validated['currency'] ?? 'INR',
+                'status'                  => 'Draft',
+            ]);
+        });
+
+        AuditLog::create([
+            'user_id'      => $user->id,
+            'action'       => 'create_quotation',
+            'subject_type' => 'Quotation',
+            'subject_id'   => $quotation->id,
+            'metadata'     => ['code' => $quotation->quote_code, 'total' => $validated['total_amount']],
+            'ip_address'   => $request->ip(),
+            'user_agent'   => $request->userAgent(),
+        ]);
+
+        Cache::increment('dashboard_v');
+        return response()->json($quotation->load('client'), 201);
+    }
+
+    public function updateQuotation(Request $request, $id)
+    {
+        $user      = $request->user();
+        $this->authorize('create', \App\Models\Invoice::class);
+        $quotation = Quotation::findOrFail($id);
+
+        $validated = $request->validate([
+            'status'                   => 'sometimes|in:Draft,Internal Pending,Sent,Accepted,Expired,Cancelled',
+            'valid_until'              => 'sometimes|date',
+            'fee_structure'            => 'sometimes|in:Fixed Fee,Hourly,Blended',
+            'estimated_hours'          => 'sometimes|numeric|min:0',
+            'estimated_disbursements'  => 'sometimes|numeric|min:0',
+            'buffer_percentage'        => 'sometimes|numeric|min:0|max:100',
+            'total_amount'             => 'sometimes|numeric|min:0',
+        ]);
+
+        $quotation->update($validated);
+
+        AuditLog::create([
+            'user_id'      => $user->id,
+            'action'       => 'update_quotation',
+            'subject_type' => 'Quotation',
+            'subject_id'   => $quotation->id,
+            'metadata'     => $validated,
+            'ip_address'   => $request->ip(),
+            'user_agent'   => $request->userAgent(),
+        ]);
+
+        return response()->json($quotation->load('client'));
+    }
+
+    public function deleteQuotation(Request $request, $id)
+    {
+        $user      = $request->user();
+        $this->authorize('create', \App\Models\Invoice::class);
+        $quotation = Quotation::findOrFail($id);
+
+        $quotation->update(['status' => 'Cancelled']);
+
+        AuditLog::create([
+            'user_id'      => $user->id,
+            'action'       => 'cancel_quotation',
+            'subject_type' => 'Quotation',
+            'subject_id'   => $quotation->id,
+            'metadata'     => ['quote_code' => $quotation->quote_code],
+            'ip_address'   => $request->ip(),
+            'user_agent'   => $request->userAgent(),
+        ]);
+
+        return response()->json(['message' => 'Quotation cancelled']);
+    }
+
+    public function convertToInvoice(Request $request, $id)
+    {
+        $user      = $request->user();
+        $this->authorize('create', \App\Models\Invoice::class);
+        $quotation = Quotation::with('client')->findOrFail($id);
+
+        if (!in_array($quotation->status, ['Sent', 'Accepted'])) {
+            return response()->json(['message' => 'Only Sent or Accepted quotations can be converted.'], 422);
+        }
+
+        $client      = Client::findOrFail($quotation->client_id);
+        $subtotal    = (float) $quotation->subtotal ?: (float) $quotation->total_amount;
+        $gst         = $this->computeGst($client, $subtotal);
+        $taxRate     = $gst['tax_rate'];
+        $taxAmount   = $gst['tax_amount'];
+        $taxDetails  = $gst['tax_details'];
+        $totalAmount = $subtotal + $taxAmount;
+
+        $invoice = \DB::transaction(function () use ($quotation, $client, $subtotal, $taxAmount, $taxRate, $taxDetails, $totalAmount) {
+            $year     = date('Y');
+            $redisKey = "seq:invoice:{$year}";
+            if (!Redis::exists($redisKey)) {
+                $last = Invoice::where('invoice_code', 'like', "INV-{$year}-%")
+                    ->orderBy('invoice_code', 'desc')->value('invoice_code');
+                Redis::setnx($redisKey, $last ? (int) substr($last, -5) : 0);
+            }
+            $seq  = Redis::incr($redisKey);
+            $code = sprintf('INV-%s-%05d', $year, $seq);
+
+            $invoice = Invoice::create([
+                'invoice_code'  => $code,
+                'client_id'     => $quotation->client_id,
+                'project_id'    => $quotation->project_id,
+                'issue_date'    => now()->toDateString(),
+                'due_date'      => now()->addDays(30)->toDateString(),
+                'currency'      => $quotation->currency,
+                'subtotal'      => $subtotal,
+                'tax_amount'    => $taxAmount,
+                'tax_details'   => $taxDetails,
+                'total_amount'  => $totalAmount,
+                'balance_due'   => $totalAmount,
+                'payment_terms' => 'Net 30',
+                'status'        => 'Draft',
+            ]);
+
+            InvoiceItem::create([
+                'invoice_id'  => $invoice->id,
+                'description' => "Services per Quotation {$quotation->quote_code}",
+                'quantity'    => 1,
+                'unit_rate'   => $subtotal,
+                'amount'      => $subtotal,
+                'tax_rate'    => $taxRate,
+            ]);
+
+            $latestLedger = ClientLedger::where('client_id', $quotation->client_id)
+                ->orderBy('id', 'desc')->lockForUpdate()->first();
+            $runningBalance = ($latestLedger ? $latestLedger->balance : 0.00) + $totalAmount;
+
+            ClientLedger::create([
+                'client_id'          => $quotation->client_id,
+                'transaction_date'   => now()->toDateString(),
+                'document_type'      => 'Invoice',
+                'document_reference' => $code,
+                'debit'              => $totalAmount,
+                'credit'             => 0,
+                'balance'            => $runningBalance,
+                'notes'              => "Converted from {$quotation->quote_code}",
+            ]);
+
+            $quotation->update(['status' => 'Accepted']);
+
+            return $invoice;
+        });
+
+        AuditLog::create([
+            'user_id'      => $user->id,
+            'action'       => 'convert_quotation',
+            'subject_type' => 'Invoice',
+            'subject_id'   => $invoice->id,
+            'metadata'     => ['quote_code' => $quotation->quote_code, 'invoice_code' => $invoice->invoice_code],
+            'ip_address'   => $request->ip(),
+            'user_agent'   => $request->userAgent(),
+        ]);
+
+        Cache::increment('dashboard_v');
+        return response()->json($invoice->load('client'), 201);
+    }
+
+    public function batchUpdate(Request $request)
+    {
+        $user = $request->user();
+        $this->authorize('create', \App\Models\Invoice::class);
+
+        $validated = $request->validate([
+            'ids'            => 'required|array|min:1',
+            'ids.*'          => 'integer',
+            'action'         => 'required|in:mark_sent,mark_paid,cancel',
+            'payment_method' => 'required_if:action,mark_paid|nullable|string',
+        ]);
+
+        $updated = 0;
+        $skipped = 0;
+        $errors  = [];
+
+        foreach ($validated['ids'] as $invId) {
+            try {
+                \DB::transaction(function () use ($invId, $validated, $user, $request, &$updated, &$skipped) {
+                    $invoice = Invoice::lockForUpdate()->findOrFail($invId);
+
+                    if ($validated['action'] === 'mark_sent') {
+                        if ($invoice->status !== 'Draft') { $skipped++; return; }
+                        $invoice->update(['status' => 'Sent']);
+                        AuditLog::create([
+                            'user_id' => $user->id, 'action' => 'batch_mark_sent',
+                            'subject_type' => 'Invoice', 'subject_id' => $invoice->id,
+                            'metadata' => ['invoice_code' => $invoice->invoice_code],
+                            'ip_address' => $request->ip(), 'user_agent' => $request->userAgent(),
+                        ]);
+                        $updated++;
+
+                    } elseif ($validated['action'] === 'mark_paid') {
+                        if (!in_array($invoice->status, ['Sent', 'Overdue', 'Partially Paid'])) { $skipped++; return; }
+
+                        $year   = date('Y');
+                        $recKey = "seq:receipt:{$year}";
+                        if (!Redis::exists($recKey)) {
+                            $last = Payment::where('receipt_code', 'like', "REC-{$year}-%")
+                                ->orderBy('receipt_code', 'desc')->value('receipt_code');
+                            Redis::setnx($recKey, $last ? (int) substr($last, -5) : 0);
+                        }
+                        $receiptCode = sprintf('REC-%s-%05d', $year, Redis::incr($recKey));
+
+                        Payment::create([
+                            'client_id'      => $invoice->client_id,
+                            'invoice_id'     => $invoice->id,
+                            'receipt_code'   => $receiptCode,
+                            'payment_date'   => now()->toDateString(),
+                            'amount'         => $invoice->balance_due,
+                            'payment_method' => $validated['payment_method'] ?? 'Bank Transfer',
+                            'status'         => 'Completed',
+                        ]);
+
+                        $latestLedger = ClientLedger::where('client_id', $invoice->client_id)
+                            ->orderBy('id', 'desc')->lockForUpdate()->first();
+                        $runningBalance = ($latestLedger ? $latestLedger->balance : 0.00) - (float) $invoice->balance_due;
+
+                        ClientLedger::create([
+                            'client_id'          => $invoice->client_id,
+                            'transaction_date'   => now()->toDateString(),
+                            'document_type'      => 'Payment',
+                            'document_reference' => $receiptCode,
+                            'debit'              => 0,
+                            'credit'             => $invoice->balance_due,
+                            'balance'            => $runningBalance,
+                            'notes'              => 'Batch payment',
+                        ]);
+
+                        $invoice->update(['balance_due' => 0, 'status' => 'Paid']);
+                        AuditLog::create([
+                            'user_id' => $user->id, 'action' => 'batch_mark_paid',
+                            'subject_type' => 'Invoice', 'subject_id' => $invoice->id,
+                            'metadata' => ['invoice_code' => $invoice->invoice_code],
+                            'ip_address' => $request->ip(), 'user_agent' => $request->userAgent(),
+                        ]);
+                        $updated++;
+
+                    } elseif ($validated['action'] === 'cancel') {
+                        if ($invoice->status === 'Cancelled') { $skipped++; return; }
+
+                        $amountToReverse = (float) $invoice->balance_due;
+                        $latestLedger = ClientLedger::where('client_id', $invoice->client_id)
+                            ->orderBy('id', 'desc')->lockForUpdate()->first();
+                        $runningBalance = ($latestLedger ? $latestLedger->balance : 0.00) - $amountToReverse;
+
+                        ClientLedger::create([
+                            'client_id'          => $invoice->client_id,
+                            'transaction_date'   => now()->toDateString(),
+                            'document_type'      => 'Credit Note',
+                            'document_reference' => $invoice->invoice_code,
+                            'debit'              => 0,
+                            'credit'             => $amountToReverse,
+                            'balance'            => $runningBalance,
+                            'notes'              => 'Batch cancellation',
+                        ]);
+
+                        $invoice->update(['status' => 'Cancelled']);
+                        AuditLog::create([
+                            'user_id' => $user->id, 'action' => 'batch_cancel',
+                            'subject_type' => 'Invoice', 'subject_id' => $invoice->id,
+                            'metadata' => ['invoice_code' => $invoice->invoice_code],
+                            'ip_address' => $request->ip(), 'user_agent' => $request->userAgent(),
+                        ]);
+                        $updated++;
+                    }
+                });
+            } catch (\Throwable $e) {
+                $errors[] = "Invoice #{$invId}: {$e->getMessage()}";
+            }
+        }
+
+        Cache::increment('dashboard_v');
+        return response()->json(['updated' => $updated, 'skipped' => $skipped, 'errors' => $errors]);
     }
 
     public function recordPayment(Request $request)

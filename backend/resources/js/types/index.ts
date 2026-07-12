@@ -53,6 +53,9 @@ export interface Client {
   gstin?: string | null
   pan_number?: string | null
   cin_number?: string | null
+  state?: string | null
+  address?: string | null
+  referred_by_code?: string | null
   status: ClientStatus
   portal_enabled: boolean
   account_manager_id?: number | null
@@ -93,7 +96,7 @@ export interface Project {
   assigned_partner_id?: number | null
   assigned_manager_id?: number | null
   patent_engineer_id?: number | null
-  client?: Pick<Client, 'id' | 'company_name' | 'client_code'>
+  client?: Pick<Client, 'id' | 'company_name' | 'legal_name' | 'client_code' | 'state' | 'nationality' | 'gst_type' | 'referred_by_code'>
   stages?: ProjectStage[]
   created_at: string
   updated_at: string
@@ -257,6 +260,106 @@ export interface PayrollRun {
   run_by_id: number
   payslips?: Payslip[]
   created_at: string
+}
+
+// ── Quotations ────────────────────────────────────────────────────────────
+
+export type QuotationStatus = 'Draft' | 'Internal Pending' | 'Sent' | 'Accepted' | 'Expired' | 'Cancelled'
+export type FeeStructure = 'Fixed Fee' | 'Hourly' | 'Blended'
+
+export interface Quotation {
+  id: number
+  quote_code: string
+  client_id: number
+  project_id?: number | null
+  valid_until: string
+  fee_structure: FeeStructure
+  estimated_hours: number
+  hourly_rates?: Record<string, number> | null
+  estimated_disbursements: number
+  buffer_percentage: number
+  total_amount: number
+  currency: string
+  status: QuotationStatus
+  approved_by_id?: number | null
+  client?: Pick<Client, 'id' | 'company_name' | 'client_code'>
+  project?: Pick<Project, 'id' | 'project_code' | 'project_name'>
+  created_at: string
+  updated_at: string
+}
+
+// ── Audit Logs ────────────────────────────────────────────────────────────
+
+export interface AuditLog {
+  id: number
+  user_id: number
+  action: string
+  subject_type: string
+  subject_id?: number | null
+  metadata?: Record<string, unknown> | null
+  ip_address?: string | null
+  user_agent?: string | null
+  created_at: string
+  user?: Pick<User, 'id' | 'name' | 'email' | 'avatar_url'>
+}
+
+// ── Patent Invoices — Indian clients ─────────────────────────────────────
+
+export type PatentInvoiceType   = 'invoice' | 'quote'
+export type PatentInvoiceStatus = 'Draft' | 'Sent' | 'Accepted' | 'Rejected' | 'Cancelled'
+
+export interface PatentInvoiceIn {
+  id: number
+  type: PatentInvoiceType
+  status: PatentInvoiceStatus
+  project_id: number
+  client_id: number
+  created_by_id?: number | null
+  // UIN
+  docket_number: string
+  invoice_uin?: string | null
+  // Dates
+  invoice_date?: string | null
+  tax_invoice_date?: string | null
+  tax_serial_number?: string | null
+  // Auto UIN-derived
+  client_code_prefix?: string | null
+  invention_number?: string | null
+  patent_office_code?: string | null
+  // Auto from project
+  first_inventor_name?: string | null
+  invention_title?: string | null
+  service_code?: string | null
+  // Auto from client
+  client_name?: string | null
+  client_reference?: string | null
+  state_of_supply?: string | null
+  // Manual
+  entity_status?: string | null
+  patent_office_application_number?: string | null
+  additional_information?: string | null
+  patent_office_acknowledgement?: string | null
+  remarks?: string | null
+  uin_old?: string | null
+  uin_old_2?: string | null
+  // Financials
+  patent_office_fees: number
+  service_fees: number
+  other_expenses: number
+  igst_amount: number
+  cgst_amount: number
+  sgst_amount: number
+  invoice_amount: number
+  // Internal
+  attorney_fees?: number | null
+  consultant_fees?: number | null
+  referral_fees?: number | null
+  net_revenue?: number | null
+  currency: string
+  created_at: string
+  updated_at: string
+  project?: Pick<Project, 'id' | 'project_code' | 'docket_number'>
+  client?: Pick<Client, 'id' | 'company_name' | 'legal_name' | 'client_code'>
 }
 
 // ── Notifications ─────────────────────────────────────────────────────────

@@ -1,10 +1,10 @@
-import { Head, Link, usePage } from "@inertiajs/react";
+import { Head, Link, router, usePage } from "@inertiajs/react";
 import { useEffect, useState, useMemo, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import {
   Plus, Search, Loader2, X, Download, Pencil, Trash2, AlertCircle,
-  ChevronDown, ChevronUp, Eye, ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown,
-  Upload, FileSpreadsheet, CheckCircle,
+  ChevronDown, ChevronUp, ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown,
+  Upload, FileSpreadsheet, CheckCircle, FileText, Scroll,
 } from "lucide-react";
 import AppLayout from "@/layouts/AppLayout";
 import { PageHeader } from "@/components/page-header";
@@ -674,6 +674,10 @@ export default function Projects() {
 
   const [stageMenu, setStageMenu] = useState<{ projectId: number; stages: string[]; rect: DOMRect } | null>(null);
   const [statusMenu, setStatusMenu] = useState<{ projectId: number; rect: DOMRect } | null>(null);
+  const [raiseModal, setRaiseModal] = useState<{ type: "invoice" | "quote"; project: any } | null>(null);
+  const [raiseForm, setRaiseForm] = useState<{ description: string; amount: string; due_date: string; notes: string }>({ description: "", amount: "", due_date: "", notes: "" });
+  const [raiseSaving, setRaiseSaving] = useState(false);
+  const [raiseErr, setRaiseErr] = useState("");
   const [pickerSearch, setPickerSearch] = useState("");
   useEffect(() => { if (!stageMenu && !statusMenu) setPickerSearch(""); }, [stageMenu, statusMenu]);
 
@@ -1583,12 +1587,14 @@ export default function Projects() {
                               onChange={(e) => setSelectedIds(prev => e.target.checked ? [...prev, p.id] : prev.filter(id => id !== p.id))} />
                           </td>
                           <td className="px-4 py-3">
-                            <div className="font-mono text-xs text-gold font-semibold">
-                              {p.docket_number ?? p.project_code ?? "—"}
-                            </div>
-                            {p.docket_number && p.project_code && p.project_code !== p.docket_number && (
-                              <div className="text-[10px] text-muted-foreground font-mono">{p.project_code}</div>
-                            )}
+                            <Link href={`/projects/${p.id}`} className="block hover:opacity-75 transition-opacity">
+                              <div className="font-mono text-xs text-gold font-semibold underline decoration-dotted underline-offset-2">
+                                {p.docket_number ?? p.project_code ?? "—"}
+                              </div>
+                              {p.docket_number && p.project_code && p.project_code !== p.docket_number && (
+                                <div className="text-[10px] text-muted-foreground font-mono">{p.project_code}</div>
+                              )}
+                            </Link>
                           </td>
                           <td className="px-4 py-3 max-w-[200px]">
                             <div className="font-medium truncate">{p.project_name}</div>
@@ -1662,8 +1668,21 @@ export default function Projects() {
                           </td>
                           <td className="px-4 py-3">
                             <div className="flex gap-1">
-                              <Button asChild variant="ghost" size="sm" className="h-7 w-7 p-0" title="View">
-                                <Link href={`/projects/${p.id}`}><Eye className="h-3.5 w-3.5" /></Link>
+                              <Button size="sm" variant="outline" className="h-7 w-7 p-0 text-blue-500 border-blue-500/30 hover:bg-blue-500/10" title="Raise Invoice"
+                                onClick={() => {
+                                  const isIndian = p.client?.gst_type !== "Export" && (p.client?.nationality ?? "india").toLowerCase() === "india";
+                                  if (isIndian) router.visit(`/financial?india=invoice&project_id=${p.id}`);
+                                  else alert("International (USD) invoicing for foreign clients is not yet available. Please raise manually in Financial Suite.");
+                                }}>
+                                <FileText className="h-3 w-3" />
+                              </Button>
+                              <Button size="sm" variant="outline" className="h-7 w-7 p-0 text-violet-500 border-violet-500/30 hover:bg-violet-500/10" title="Raise Quotation"
+                                onClick={() => {
+                                  const isIndian = p.client?.gst_type !== "Export" && (p.client?.nationality ?? "india").toLowerCase() === "india";
+                                  if (isIndian) router.visit(`/financial?india=quote&project_id=${p.id}`);
+                                  else alert("International (USD) quotations for foreign clients are not yet available.");
+                                }}>
+                                <Scroll className="h-3 w-3" />
                               </Button>
                               <Button size="sm" variant="outline" className="h-7 w-7 p-0" title="Edit" onClick={() => openEdit(p)}>
                                 <Pencil className="h-3 w-3" />
@@ -1718,6 +1737,123 @@ export default function Projects() {
           </Card>
         )}
       </div>
+
+      {/* ── Raise Invoice / Quotation Modal ────────────────────────────────── */}
+      {raiseModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-md flex flex-col">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+              <div>
+                <h2 className="font-display text-base font-semibold">
+                  {raiseModal.type === "invoice" ? "Raise Invoice" : "Raise Quotation"}
+                </h2>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Case: <span className="font-mono text-gold font-semibold">{raiseModal.project.docket_number ?? raiseModal.project.project_code}</span>
+                  {" · "}
+                  {raiseModal.project.client?.legal_name ?? raiseModal.project.client?.company_name ?? `Client #${raiseModal.project.client_id}`}
+                </p>
+              </div>
+              <button onClick={() => setRaiseModal(null)}>
+                <X className="h-5 w-5 text-muted-foreground" />
+              </button>
+            </div>
+            <div className="px-6 py-4 space-y-3">
+              {raiseErr && (
+                <div className="flex items-center gap-2 p-3 rounded-md bg-destructive/10 border border-destructive/20 text-xs text-destructive">
+                  <AlertCircle className="h-3.5 w-3.5 flex-shrink-0" />{raiseErr}
+                </div>
+              )}
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1">Description / Service <span className="text-destructive">*</span></label>
+                <input
+                  value={raiseForm.description}
+                  onChange={(e) => setRaiseForm((f) => ({ ...f, description: e.target.value }))}
+                  placeholder="e.g. Patent Filing Service"
+                  className={ic}
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1">
+                  {raiseModal.type === "invoice" ? "Amount (INR, excl. GST) *" : "Fee Amount (excl. GST) *"}
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={raiseForm.amount}
+                  onChange={(e) => setRaiseForm((f) => ({ ...f, amount: e.target.value }))}
+                  placeholder="0.00"
+                  className={ic}
+                />
+              </div>
+              {raiseModal.type === "invoice" && (
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1">Due Date</label>
+                  <input
+                    type="date"
+                    value={raiseForm.due_date}
+                    onChange={(e) => setRaiseForm((f) => ({ ...f, due_date: e.target.value }))}
+                    className={ic}
+                  />
+                </div>
+              )}
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1">Notes</label>
+                <textarea
+                  value={raiseForm.notes}
+                  onChange={(e) => setRaiseForm((f) => ({ ...f, notes: e.target.value }))}
+                  rows={2}
+                  placeholder="Optional notes…"
+                  className={tc}
+                />
+              </div>
+            </div>
+            <div className="flex gap-2 px-6 py-4 border-t border-border">
+              <Button
+                className="flex-1 bg-gold hover:bg-gold/90 text-black"
+                disabled={raiseSaving || !raiseForm.description.trim() || !raiseForm.amount}
+                onClick={async () => {
+                  if (!raiseForm.description.trim() || !raiseForm.amount) return;
+                  setRaiseSaving(true); setRaiseErr("");
+                  try {
+                    const { project } = raiseModal;
+                    const amount = parseFloat(raiseForm.amount);
+                    if (raiseModal.type === "invoice") {
+                      await api.createInvoice({
+                        client_id: project.client_id,
+                        project_id: project.id,
+                        due_date: raiseForm.due_date || null,
+                        notes: raiseForm.notes || null,
+                        currency: "INR",
+                        items: [{ description: raiseForm.description, quantity: 1, unit_rate: amount, amount, tax_rate: 18 }],
+                      } as any);
+                    } else {
+                      const validUntil = new Date();
+                      validUntil.setDate(validUntil.getDate() + 30);
+                      await api.createQuotation({
+                        client_id: project.client_id,
+                        project_id: project.id,
+                        total_amount: amount,
+                        fee_structure: "Fixed Fee",
+                        valid_until: validUntil.toISOString().split("T")[0],
+                        currency: "INR",
+                      } as any);
+                    }
+                    setRaiseModal(null);
+                  } catch (e: any) {
+                    setRaiseErr(e.message || "Failed to create. Please try again.");
+                  } finally {
+                    setRaiseSaving(false);
+                  }
+                }}
+              >
+                {raiseSaving ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Saving…</> : raiseModal.type === "invoice" ? "Create Invoice" : "Create Quotation"}
+              </Button>
+              <Button variant="outline" onClick={() => setRaiseModal(null)}>Cancel</Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Floating bulk action bar */}
       {selectedIds.length > 0 && (

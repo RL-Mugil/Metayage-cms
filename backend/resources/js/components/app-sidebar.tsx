@@ -110,6 +110,7 @@ const groups = [
     items: [
       { to: "/bulk", title: "Bulk Operations", icon: Layers },
       { to: "/compliance", title: "Compliance", icon: ShieldCheck },
+      { to: "/audit-logs", title: "Audit Log", icon: ShieldCheck, roles: ["super_admin", "partner"] },
       { to: "/integrations", title: "Integrations", icon: Plug, roles: ["super_admin", "partner", "manager", "hr", "associate", "finance"] },
       { to: "/staff-users", title: "Staff Users", icon: Users, adminOnly: true },
       { to: "/settings", title: "Settings", icon: Settings },
@@ -209,7 +210,11 @@ export function AppSidebar() {
       <SidebarFooter className="border-t border-sidebar-border">
         <div className="flex items-center justify-between gap-2 px-2 py-2 group-data-[collapsible=icon]:hidden">
           <div className="flex items-center gap-2">
-            <div className="h-8 w-8 rounded-full bg-gold text-gold-foreground flex items-center justify-center text-xs font-semibold">{initials}</div>
+            {user?.avatar_url ? (
+              <img src={user.avatar_url} alt={user.name} className="h-8 w-8 rounded-full object-cover" />
+            ) : (
+              <div className="h-8 w-8 rounded-full bg-gold text-gold-foreground flex items-center justify-center text-xs font-semibold">{initials}</div>
+            )}
             <div className="flex flex-col leading-tight">
               <span className="text-xs font-medium text-sidebar-foreground">{user?.name || "User"}</span>
               <span className="text-[10px] text-sidebar-foreground/60">{ROLE_LABEL[user?.role] ?? user?.role ?? ""}</span>

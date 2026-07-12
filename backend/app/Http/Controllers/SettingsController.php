@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rules\Password as PasswordRule;
 use Illuminate\Validation\ValidationException;
 
 class SettingsController extends Controller
@@ -126,7 +127,7 @@ class SettingsController extends Controller
         $user = $request->user();
         $validated = $request->validate([
             'current_password' => 'required|string',
-            'password'         => 'required|string|min:8|confirmed',
+            'password'         => ['required', 'confirmed', PasswordRule::min(8)->mixedCase()->symbols()],
         ]);
 
         if (! Hash::check($validated['current_password'], $user->password)) {
@@ -215,7 +216,7 @@ class SettingsController extends Controller
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
-        $request->validate(['password' => 'required|string|min:6']);
+        $request->validate(['password' => ['required', PasswordRule::min(8)->mixedCase()->symbols()]]);
 
         $target = User::findOrFail($id);
         $target->password = Hash::make($request->input('password'));

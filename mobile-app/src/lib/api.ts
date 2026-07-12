@@ -2,6 +2,7 @@ import { Platform } from 'react-native';
 
 import type {
   AppNotification,
+  ApplyLeaveInput,
   ApprovalItem,
   AttendanceActionResponse,
   AttendanceLog,
@@ -9,9 +10,12 @@ import type {
   ClientDetail,
   CreateClientInput,
   CreateProjectInput,
+  DashboardMetrics,
   FinancialStats,
   Invoice,
   InvoiceDetail,
+  LeaveListResponse,
+  LeaveRequest,
   MobileAuthResponse,
   MobileCredentials,
   MobileSession,
@@ -23,6 +27,7 @@ import type {
   InvoicePayment,
   Reminder,
   ReminderPayload,
+  CreateTaskInput,
   Task,
   TaskLogPayload,
   TaskStatus,
@@ -103,6 +108,24 @@ export async function updateTaskStatus(token: string, taskId: number, status: Ta
     method: 'PUT',
     body: JSON.stringify({ status }),
   }, token);
+}
+
+export async function createTask(token: string, data: CreateTaskInput): Promise<Task> {
+  return request('/tasks', {
+    method: 'POST',
+    body: JSON.stringify({
+      title: data.title,
+      description: data.description,
+      priority: data.priority,
+      due_date: data.due_date,
+      project_id: data.project_id,
+      status: 'Pending',
+    }),
+  }, token);
+}
+
+export async function deleteTask(token: string, taskId: number): Promise<void> {
+  await request(`/tasks/${taskId}`, { method: 'DELETE' }, token);
 }
 
 export async function logTaskTime(
@@ -253,12 +276,14 @@ export async function createClient(token: string, data: CreateClientInput): Prom
 
 export async function getProjects(
   token: string,
-  params?: { search?: string; status?: string; overdue?: boolean; page?: number; per_page?: number },
+  params?: { search?: string; status?: string; overdue?: boolean; project_type?: string; lifecycle_stage?: string; page?: number; per_page?: number },
 ): Promise<PaginatedResponse<Project>> {
   const qs = new URLSearchParams();
   if (params?.search) qs.set('search', params.search);
   if (params?.status) qs.set('status', params.status);
   if (params?.overdue) qs.set('overdue', 'true');
+  if (params?.project_type) qs.set('project_type', params.project_type);
+  if (params?.lifecycle_stage) qs.set('lifecycle_stage', params.lifecycle_stage);
   if (params?.page) qs.set('page', String(params.page));
   qs.set('per_page', String(params?.per_page ?? 25));
   return request(`/projects?${qs}`, { method: 'GET' }, token);
@@ -305,6 +330,49 @@ export async function getInvoice(token: string, id: number): Promise<InvoiceDeta
 
 export async function recordPayment(token: string, data: RecordPaymentInput): Promise<InvoicePayment> {
   return request('/financial/payments', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  }, token);
+}
+
+export async function createInvoice(token: string, data: {
+  client_id: number;
+  project_id?: number | null;
+  due_date: string;
+  items: { description: string; amount: number }[];
+  currency?: string;
+  payment_terms?: string;
+  notes?: string;
+}): Promise<Invoice> {
+  return request('/financial/invoices', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  }, token);
+}
+
+export async function updateInvoiceStatus(token: string, id: number, status: string): Promise<Invoice> {
+  return request(`/financial/invoices/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify({ status }),
+  }, token);
+}
+
+export async function getDashboardMetrics(token: string): Promise<DashboardMetrics> {
+  return request('/dashboard/metrics', { method: 'GET' }, token);
+}
+
+export async function getLifecycleStats(token: string): Promise<Record<string, number>> {
+  return request('/projects/lifecycle-stats', { method: 'GET' }, token);
+}
+
+// ── Leave ──────────────────────────────────────────────────────────────────
+
+export async function getLeaves(token: string): Promise<LeaveListResponse> {
+  return request('/hrms/leaves', { method: 'GET' }, token);
+}
+
+export async function applyLeave(token: string, data: ApplyLeaveInput): Promise<LeaveRequest> {
+  return request('/hrms/leaves', {
     method: 'POST',
     body: JSON.stringify(data),
   }, token);

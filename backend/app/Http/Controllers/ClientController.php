@@ -155,10 +155,10 @@ class ClientController extends Controller
         if ($request->filled('search')) {
             $s = str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $request->search);
             $query->where(function ($q) use ($s) {
-                $q->where('company_name', 'like', "%{$s}%")
-                    ->orWhere('client_code', 'like', "%{$s}%")
-                    ->orWhere('legal_name', 'like', "%{$s}%")
-                    ->orWhere('pan_number', 'like', "%{$s}%");
+                $q->where('company_name', 'ilike', "%{$s}%")
+                    ->orWhere('client_code', 'ilike', "%{$s}%")
+                    ->orWhere('legal_name', 'ilike', "%{$s}%")
+                    ->orWhere('pan_number', 'ilike', "%{$s}%");
             });
         }
 
@@ -266,6 +266,12 @@ class ClientController extends Controller
         }
 
         $client->update($v);
+
+        // Sync circle to all projects belonging to this client
+        if (array_key_exists('circle', $v)) {
+            \App\Models\Project::where('client_id', $client->id)
+                ->update(['circle' => $client->circle]);
+        }
 
         AuditLog::create([
             'user_id' => $user->id,

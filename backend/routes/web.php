@@ -57,6 +57,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/patent-lifecycle', fn () => Inertia::render('PatentLifecycle'))->name('patent-lifecycle');
     Route::get('/portal-users', fn () => Inertia::render('PortalUsers'))->name('portal-users');
     Route::get('/staff-users', fn () => Inertia::render('StaffUsers'))->name('staff-users');
+    Route::get('/audit-logs', fn () => Inertia::render('AuditLogs'))->name('audit-logs');
 
     // Google Calendar OAuth
     Route::get('/integrations/google/connect', [GoogleCalendarController::class, 'connect'])->name('gcal.connect');

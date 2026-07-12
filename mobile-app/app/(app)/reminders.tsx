@@ -174,7 +174,7 @@ export default function RemindersScreen() {
                   <View style={styles.categoryRow}>
                     {categories.map((item) => (
                       <Pressable key={item} onPress={() => onChange(item)} style={[styles.categoryChip, value === item && styles.activeChip]}>
-                        <Text style={styles.categoryText}>{item}</Text>
+                        <Text style={[styles.categoryText, value === item && styles.categoryTextActive]}>{item}</Text>
                       </Pressable>
                     ))}
                   </View>
@@ -191,7 +191,7 @@ export default function RemindersScreen() {
                   <View style={styles.categoryRow}>
                     {(['self', 'team'] as const).map((item) => (
                       <Pressable key={item} onPress={() => onChange(item)} style={[styles.categoryChip, value === item && styles.activeChip]}>
-                        <Text style={styles.categoryText}>{item === 'self' ? 'Only me' : 'Team'}</Text>
+                        <Text style={[styles.categoryText, value === item && styles.categoryTextActive]}>{item === 'self' ? 'Only me' : 'Team'}</Text>
                       </Pressable>
                     ))}
                   </View>
@@ -230,29 +230,56 @@ export default function RemindersScreen() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#0d1321' },
+  safeArea: { flex: 1, backgroundColor: '#040d1a' },
   content: { gap: 12, padding: 20 },
-  formCard: { backgroundColor: '#131c31', borderColor: '#21304f', borderRadius: 20, borderWidth: 1, gap: 12, marginBottom: 16, padding: 20 },
-  formTitle: { color: '#f8fafc', fontSize: 18, fontWeight: '700' },
+  formCard: {
+    backgroundColor: '#0b1829',
+    borderColor: 'rgba(100,160,255,0.1)',
+    borderRadius: 20,
+    borderTopColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1,
+    elevation: 6,
+    gap: 12,
+    marginBottom: 16,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.3,
+    shadowRadius: 14,
+  },
+  formTitle: { color: '#f1f5f9', fontSize: 18, fontWeight: '800' },
   field: { gap: 8 },
   flexField: { flex: 1 },
-  label: { color: '#dbe4ff', fontSize: 14, fontWeight: '600' },
-  input: { backgroundColor: '#0b1120', borderColor: '#2a3c61', borderRadius: 14, borderWidth: 1, color: '#f8fafc', fontSize: 15, paddingHorizontal: 14, paddingVertical: 12 },
+  label: { color: '#475569', fontSize: 14, fontWeight: '600' },
+  input: { backgroundColor: 'rgba(255,255,255,0.04)', borderColor: 'rgba(100,160,255,0.2)', borderRadius: 12, borderWidth: 1, color: '#f1f5f9', fontSize: 15, paddingHorizontal: 14, paddingVertical: 12 },
   textArea: { minHeight: 90, textAlignVertical: 'top' },
   dualRow: { flexDirection: 'row', gap: 12 },
   categoryRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  categoryChip: { backgroundColor: '#0b1120', borderColor: '#2a3c61', borderRadius: 999, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 8 },
-  activeChip: { backgroundColor: '#2864ff', borderColor: '#2864ff' },
-  categoryText: { color: '#fff', fontSize: 13, fontWeight: '600' },
-  createButton: { alignItems: 'center', backgroundColor: '#2864ff', borderRadius: 14, justifyContent: 'center', minHeight: 48 },
+  categoryChip: { backgroundColor: 'rgba(255,255,255,0.04)', borderColor: 'rgba(100,160,255,0.2)', borderRadius: 999, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 8 },
+  activeChip: { backgroundColor: '#f0b23d', borderColor: '#f0b23d' },
+  categoryText: { color: '#475569', fontSize: 13, fontWeight: '600' },
+  categoryTextActive: { color: '#040d1a', fontWeight: '800' },
+  createButton: { alignItems: 'center', backgroundColor: '#f0b23d', borderRadius: 16, justifyContent: 'center', minHeight: 50 },
   error: { color: '#fca5a5', fontSize: 13 },
-  card: { backgroundColor: '#131c31', borderColor: '#21304f', borderRadius: 18, borderWidth: 1, gap: 7, padding: 18 },
-  title: { color: '#f8fafc', fontSize: 16, fontWeight: '700' },
+  card: {
+    backgroundColor: '#0b1829',
+    borderColor: 'rgba(100,160,255,0.1)',
+    borderRadius: 20,
+    borderWidth: 1,
+    elevation: 5,
+    gap: 7,
+    padding: 18,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.28,
+    shadowRadius: 12,
+  },
+  title: { color: '#f1f5f9', fontSize: 16, fontWeight: '700' },
   meta: { color: '#f0b23d', fontSize: 13, fontWeight: '700' },
-  body: { color: '#dbe4ff', fontSize: 14, lineHeight: 20 },
+  body: { color: '#94a3b8', fontSize: 14, lineHeight: 20 },
   actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 8 },
-  completeButton: { alignItems: 'center', backgroundColor: '#2c4a24', borderRadius: 12, justifyContent: 'center', minHeight: 40, paddingHorizontal: 14 },
-  helpButton: { alignItems: 'center', backgroundColor: '#2864ff', borderRadius: 12, justifyContent: 'center', minHeight: 40, paddingHorizontal: 14 },
-  deleteButton: { alignItems: 'center', backgroundColor: '#8b1e3f', borderRadius: 12, justifyContent: 'center', minHeight: 40, paddingHorizontal: 14 },
-  buttonText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  completeButton: { alignItems: 'center', backgroundColor: 'rgba(134,239,172,0.1)', borderColor: 'rgba(134,239,172,0.3)', borderRadius: 12, borderWidth: 1, justifyContent: 'center', minHeight: 40, paddingHorizontal: 14 },
+  helpButton: { alignItems: 'center', backgroundColor: 'rgba(96,165,250,0.1)', borderColor: 'rgba(96,165,250,0.3)', borderRadius: 12, borderWidth: 1, justifyContent: 'center', minHeight: 40, paddingHorizontal: 14 },
+  deleteButton: { alignItems: 'center', backgroundColor: 'rgba(248,113,113,0.1)', borderColor: 'rgba(248,113,113,0.3)', borderRadius: 12, borderWidth: 1, justifyContent: 'center', minHeight: 40, paddingHorizontal: 14 },
+  buttonText: { color: '#f1f5f9', fontSize: 13, fontWeight: '700' },
 });

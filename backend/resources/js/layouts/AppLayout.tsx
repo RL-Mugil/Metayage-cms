@@ -10,6 +10,9 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { api } from "@/lib/api-client";
 import type { SearchResult } from "@/lib/api-client";
+import { toast } from "sonner";
+import { Toaster } from "@/components/ui/sonner";
+import echo from "@/lib/echo";
 
 interface Props {
   children: ReactNode;
@@ -65,6 +68,7 @@ const SHORTCUTS = [
 export default function AppLayout({ children }: Props) {
   const { props } = usePage() as any;
   const initialCount = props.auth?.user?.unread_notifications ?? 0;
+  const authUserId: number | undefined = props.auth?.user?.id;
   const [notifCount, setNotifCount] = useState<number>(initialCount);
 
   // ── Search state ──
@@ -80,7 +84,7 @@ export default function AppLayout({ children }: Props) {
   // ── Help modal ──
   const [helpOpen, setHelpOpen] = useState(false);
 
-  // Bell polling
+  // Bell polling (fallback for reconnect scenarios)
   useEffect(() => {
     let active = true;
     const poll = () =>
@@ -91,6 +95,19 @@ export default function AppLayout({ children }: Props) {
     const t = setInterval(poll, 60000);
     return () => { active = false; clearInterval(t); };
   }, []);
+
+  // Real-time notifications via Reverb WebSocket
+  useEffect(() => {
+    if (!authUserId) return;
+    try {
+      const channel = echo.channel(`user.${authUserId}`);
+      channel.listen(".notification", (e: { title: string; body: string }) => {
+        setNotifCount(c => c + 1);
+        toast(e.title, { description: e.body });
+      });
+      return () => { echo.leaveChannel(`user.${authUserId}`); };
+    } catch { /* Reverb not configured — fall back to polling silently */ }
+  }, [authUserId]);
 
   // Debounced search
   useEffect(() => {
@@ -303,6 +320,7 @@ export default function AppLayout({ children }: Props) {
           </header>
 
           <main className="flex-1 min-w-0">{children}</main>
+          <Toaster position="bottom-right" richColors />
         </div>
       </div>
 

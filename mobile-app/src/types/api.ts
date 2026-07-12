@@ -158,6 +158,14 @@ export type TaskLogPayload = {
   description: string;
 };
 
+export type CreateTaskInput = {
+  title: string;
+  description?: string;
+  priority: TaskPriority;
+  due_date?: string;
+  project_id?: number;
+};
+
 // ── Clients ────────────────────────────────────────────────────────────────
 
 export type ClientStatus = 'Active' | 'Inactive' | 'Prospect' | 'On Hold';
@@ -312,6 +320,67 @@ export type RecordPaymentInput = {
   payment_method: string;
   transaction_reference?: string;
   notes?: string;
+};
+
+// ── Leave ──────────────────────────────────────────────────────────────────
+
+export type LeaveType = 'Earned' | 'Casual' | 'Sick' | 'Compensatory' | 'Maternity' | 'Paternity' | 'Unpaid';
+export type LeaveStatus = 'Pending' | 'Approved' | 'Rejected' | 'Cancelled';
+
+export type LeaveRequest = {
+  id: number;
+  employee_id: number;
+  employee_name?: string | null;
+  leave_type: LeaveType;
+  from_date: string;
+  to_date: string;
+  total_days: number;
+  reason: string;
+  status: LeaveStatus;
+  comments?: string | null;
+  is_mine: boolean;
+};
+
+export type LeaveBalance = {
+  id: number;
+  year: number;
+  earned_leave: number;
+  casual_leave: number;
+  sick_leave: number;
+  lop_days: number;
+};
+
+export type LeaveListResponse = {
+  requests: LeaveRequest[];
+  total: number;
+  balances: LeaveBalance | null;
+  is_approver: boolean;
+};
+
+export type ApplyLeaveInput = {
+  leave_type: LeaveType;
+  from_date: string;
+  to_date: string;
+  reason: string;
+};
+
+export type DashboardMetrics = {
+  metrics: {
+    active_matters: number;
+    inactive_matters?: number;
+    clients: number;
+    pending_tasks: number;
+    wip_balance?: number;
+    received_payments?: number;
+    invoiced_total?: number;
+    realization_rate?: number;
+    active_matters_delta?: number;
+    clients_delta?: number;
+    revenue_delta?: number;
+  };
+  charts: {
+    stage_distribution: { stage_name: string; count: number }[];
+  };
 };
 
 // ── Queue ──────────────────────────────────────────────────────────────────

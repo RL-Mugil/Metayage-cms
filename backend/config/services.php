@@ -46,6 +46,10 @@ return [
         'model'   => env('GROQ_MODEL', 'meta-llama/llama-4-scout-17b-16e-instruct'),
     ],
 
+    'expo' => [
+        'access_token' => env('EXPO_ACCESS_TOKEN'),
+    ],
+
     // Indian GST configuration. Override per-client/per-invoice when needed.
     'gst' => [
         'standard_rate'  => (float) env('GST_STANDARD_RATE', 18),  // % — most IP services

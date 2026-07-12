@@ -827,7 +827,7 @@ export default function Clients() {
                               onClick={async (e) => {
                                 e.stopPropagation();
                                 const next = c.circle === "A" ? "B" : c.circle === "B" ? null : "A";
-                                setClients((prev: any[]) => prev.map((x) => x.id === c.id ? { ...x, circle: next } : x));
+                                setPaginatedResult((prev: any) => ({ ...prev, data: prev.data.map((x: any) => x.id === c.id ? { ...x, circle: next } : x) }));
                                 try { await api.updateClient(c.id, { circle: next } as any); } catch {}
                               }}
                               className={`text-[11px] font-bold w-7 h-7 rounded-full border-2 flex items-center justify-center transition-colors ${

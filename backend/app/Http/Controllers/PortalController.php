@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rules\Password as PasswordRule;
 
 class PortalController extends Controller
 {
@@ -149,7 +150,7 @@ class PortalController extends Controller
             'client_id' => 'required|integer|exists:clients,id',
             'name'      => 'nullable|string|max:255',
             'email'     => 'required|email|max:255',
-            'password'  => 'required|string|min:6|max:100',
+            'password'  => ['required', 'max:100', PasswordRule::min(8)->mixedCase()->symbols()],
         ]);
 
         $client      = Client::findOrFail($validated['client_id']);

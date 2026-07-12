@@ -2,7 +2,7 @@ import type {
   User, Client, ClientContact, Project, Task, Invoice, InvoiceItem,
   Employee, Attendance, LeaveRequest, LeaveBalance, PayrollRun, Payslip,
   Notification, ReportResponse, AIResponse, DashboardMetrics,
-  PaginatedResponse, SearchResult,
+  PaginatedResponse, SearchResult, Quotation, AuditLog, PatentInvoiceIn,
 } from '@/types'
 
 function getCsrfToken(): string {
@@ -11,7 +11,7 @@ function getCsrfToken(): string {
   return match ? decodeURIComponent(match[1]) : ''
 }
 
-export type { User, Client, Project, Task, Invoice, Employee, PaginatedResponse, SearchResult }
+export type { User, Client, Project, Task, Invoice, Employee, PaginatedResponse, SearchResult, Quotation, AuditLog, PatentInvoiceIn }
 
 export const api = {
   async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
@@ -246,9 +246,49 @@ export const api = {
   async deleteInvoice(id: number | string): Promise<{ message: string }> {
     return this.request(`/financial/invoices/${id}`, { method: 'DELETE' })
   },
-  async getQuotations(): Promise<Invoice[]> {
-    const res = await this.request<PaginatedResponse<Invoice> | Invoice[]>('/financial/quotations')
-    return Array.isArray(res) ? res : ((res as PaginatedResponse<Invoice>).data ?? [])
+  async getQuotations(params?: URLSearchParams): Promise<PaginatedResponse<Quotation>> {
+    const query = params ? '?' + params.toString() : ''
+    return this.request(`/financial/quotations${query}`)
+  },
+  async createQuotation(data: Partial<Quotation>): Promise<Quotation> {
+    return this.request('/financial/quotations', { method: 'POST', body: JSON.stringify(data) })
+  },
+  async updateQuotation(id: number | string, data: Partial<Quotation>): Promise<Quotation> {
+    return this.request(`/financial/quotations/${id}`, { method: 'PUT', body: JSON.stringify(data) })
+  },
+  async deleteQuotation(id: number | string): Promise<{ message: string }> {
+    return this.request(`/financial/quotations/${id}`, { method: 'DELETE' })
+  },
+  async convertQuotationToInvoice(id: number | string): Promise<Invoice> {
+    return this.request(`/financial/quotations/${id}/convert`, { method: 'POST' })
+  },
+  async batchUpdateInvoices(ids: number[], action: string, extra?: Record<string, unknown>): Promise<{ updated: number; skipped: number; errors: string[] }> {
+    return this.request('/financial/invoices/batch', { method: 'POST', body: JSON.stringify({ ids, action, ...extra }) })
+  },
+  async getAuditLogs(params?: URLSearchParams): Promise<PaginatedResponse<AuditLog>> {
+    const query = params ? '?' + params.toString() : ''
+    return this.request(`/audit-logs${query}`)
+  },
+
+  // ── Patent Invoices — Indian clients ──
+  async getPatentInvoicesIn(params?: URLSearchParams): Promise<PaginatedResponse<PatentInvoiceIn>> {
+    const query = params ? '?' + params.toString() : ''
+    return this.request(`/patent-invoices/in${query}`)
+  },
+  async createPatentInvoiceIn(data: Partial<PatentInvoiceIn>): Promise<PatentInvoiceIn> {
+    return this.request('/patent-invoices/in', { method: 'POST', body: JSON.stringify(data) })
+  },
+  async updatePatentInvoiceIn(id: number, data: Partial<PatentInvoiceIn>): Promise<PatentInvoiceIn> {
+    return this.request(`/patent-invoices/in/${id}`, { method: 'PUT', body: JSON.stringify(data) })
+  },
+  async deletePatentInvoiceIn(id: number): Promise<{ message: string }> {
+    return this.request(`/patent-invoices/in/${id}`, { method: 'DELETE' })
+  },
+  async batchUpdatePatentInvoicesIn(ids: number[], action: string): Promise<{ updated: number }> {
+    return this.request('/patent-invoices/in/batch', { method: 'POST', body: JSON.stringify({ ids, action }) })
+  },
+  async convertPatentQuoteToInvoice(id: number): Promise<PatentInvoiceIn> {
+    return this.request(`/patent-invoices/in/${id}/convert`, { method: 'POST' })
   },
   async recordPayment(data: {
     invoice_id: number; amount: number; payment_method: string

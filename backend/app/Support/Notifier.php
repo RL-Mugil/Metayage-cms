@@ -2,6 +2,7 @@
 
 namespace App\Support;
 
+use App\Jobs\SendMobilePushNotificationJob;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -54,5 +55,29 @@ class Notifier
             // A failed notification must never bubble up and 500 the caller.
             report($e);
         }
+
+        // Real-time push via Reverb WebSocket — one event per recipient.
+        // Wrapped in try/catch so a Reverb failure never breaks the calling transaction.
+        foreach ($ids as $uid) {
+            try {
+                event(new \App\Events\NotificationBroadcast(
+                    type: $type,
+                    title: $title,
+                    body: $description,
+                    userId: (int) $uid,
+                ));
+            } catch (\Throwable $e) {
+                report($e);
+            }
+        }
+
+        SendMobilePushNotificationJob::dispatch(
+            $ids->map(fn ($id) => (int) $id)->all(),
+            $title,
+            $description,
+            $actionUrl,
+            $type,
+            $meta,
+        );
     }
 }
