@@ -158,6 +158,164 @@ export type TaskLogPayload = {
   description: string;
 };
 
+// ── Clients ────────────────────────────────────────────────────────────────
+
+export type ClientStatus = 'Active' | 'Inactive' | 'Prospect' | 'On Hold';
+
+export type Client = {
+  id: number;
+  company_name: string;
+  legal_name: string;
+  client_code: string;
+  status: ClientStatus;
+  gst_type: 'B2B' | 'B2C' | 'Export' | 'Unregistered';
+  pan_number?: string | null;
+  contact_name?: string | null;
+  contact_email?: string | null;
+  phone?: string | null;
+  address?: string | null;
+  state?: string | null;
+  account_manager?: { id: number; name: string; email: string } | null;
+};
+
+export type ClientContact = {
+  id: number;
+  name: string;
+  title?: string | null;
+  email: string;
+  phone?: string | null;
+  role_type?: string | null;
+};
+
+export type ProjectSummary = {
+  id: number;
+  project_code: string;
+  docket_number: string;
+  project_name: string;
+  status: string;
+  hard_deadline?: string | null;
+};
+
+export type ClientDetail = Client & {
+  contacts: ClientContact[];
+  projects: ProjectSummary[];
+};
+
+export type CreateClientInput = {
+  legal_name: string;
+  company_name?: string;
+  client_type: 'individual' | 'organization';
+  nationality: string;
+  contact_name?: string;
+  contact_email?: string;
+  phone?: string;
+  account_manager_id?: number;
+  status?: string;
+};
+
+// ── Projects ───────────────────────────────────────────────────────────────
+
+export type ProjectStatus = 'Draft' | 'Open' | 'Active' | 'In Progress' | 'On Hold' | 'Closed' | 'Completed';
+
+export type Project = {
+  id: number;
+  project_name: string;
+  project_code: string;
+  docket_number: string;
+  status: ProjectStatus;
+  hard_deadline?: string | null;
+  filing_date?: string | null;
+  client: { id: number; company_name: string };
+  manager?: { id: number; name: string } | null;
+  patentEngineer?: { id: number; name: string } | null;
+};
+
+export type Stage = {
+  id: number;
+  stage_name: string;
+  status: 'Pending' | 'In Progress' | 'Completed';
+  sequence_order: number;
+  due_date?: string | null;
+};
+
+export type ProjectDetail = Project & {
+  partner?: { id: number; name: string } | null;
+  stages: Stage[];
+  tasks: Task[];
+};
+
+export type CreateProjectInput = {
+  client_id: number;
+  project_name: string;
+  patent_office_code: string;
+  project_type: string;
+  hard_deadline?: string;
+  assigned_partner_id?: number;
+  assigned_manager_id?: number;
+  record_mode?: 'new' | 'existing';
+};
+
+// ── Invoices ───────────────────────────────────────────────────────────────
+
+export type InvoiceStatus = 'Draft' | 'Sent' | 'Viewed' | 'Partially Paid' | 'Paid' | 'Overdue' | 'Cancelled';
+
+export type Invoice = {
+  id: number;
+  invoice_code: string;
+  issue_date: string;
+  due_date: string;
+  currency: string;
+  subtotal: number;
+  tax_amount: number;
+  total_amount: number;
+  balance_due: number;
+  status: InvoiceStatus;
+  client: { id: number; company_name: string };
+  project?: { id: number; project_name: string } | null;
+};
+
+export type InvoiceItem = {
+  id: number;
+  description: string;
+  quantity: number;
+  unit_rate: number;
+  amount: number;
+  tax_rate: number;
+};
+
+export type InvoicePayment = {
+  id: number;
+  receipt_code: string;
+  amount: number;
+  payment_method: string;
+  payment_date: string;
+  transaction_reference?: string | null;
+};
+
+export type InvoiceDetail = Invoice & {
+  items: InvoiceItem[];
+  payments: InvoicePayment[];
+};
+
+export type FinancialStats = {
+  total_billed: number;
+  total_received: number;
+  total_outstanding: number;
+  overdue_count: number;
+  draft_count: number;
+  paid_count: number;
+};
+
+export type RecordPaymentInput = {
+  invoice_id: number;
+  amount: number;
+  payment_method: string;
+  transaction_reference?: string;
+  notes?: string;
+};
+
+// ── Queue ──────────────────────────────────────────────────────────────────
+
 export type QueuedAction =
   | { id: string; kind: 'attendance.clockIn'; createdAt: string }
   | { id: string; kind: 'attendance.clockOut'; createdAt: string }

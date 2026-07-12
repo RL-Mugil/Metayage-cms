@@ -5,11 +5,22 @@ import type {
   ApprovalItem,
   AttendanceActionResponse,
   AttendanceLog,
+  Client,
+  ClientDetail,
+  CreateClientInput,
+  CreateProjectInput,
+  FinancialStats,
+  Invoice,
+  InvoiceDetail,
   MobileAuthResponse,
   MobileCredentials,
   MobileSession,
   PaginatedResponse,
+  Project,
+  ProjectDetail,
   PushTokenPayload,
+  RecordPaymentInput,
+  InvoicePayment,
   Reminder,
   ReminderPayload,
   Task,
@@ -210,5 +221,91 @@ export async function unregisterPushToken(token: string, pushToken: string): Pro
   await request('/mobile/push-tokens', {
     method: 'DELETE',
     body: JSON.stringify({ push_token: pushToken }),
+  }, token);
+}
+
+// ── Clients ────────────────────────────────────────────────────────────────
+
+export async function getClients(
+  token: string,
+  params?: { search?: string; status?: string; page?: number; per_page?: number },
+): Promise<PaginatedResponse<Client>> {
+  const qs = new URLSearchParams();
+  if (params?.search) qs.set('search', params.search);
+  if (params?.status) qs.set('status', params.status);
+  if (params?.page) qs.set('page', String(params.page));
+  qs.set('per_page', String(params?.per_page ?? 25));
+  return request(`/clients?${qs}`, { method: 'GET' }, token);
+}
+
+export async function getClient(token: string, id: number): Promise<ClientDetail> {
+  return request(`/clients/${id}`, { method: 'GET' }, token);
+}
+
+export async function createClient(token: string, data: CreateClientInput): Promise<Client> {
+  return request('/clients', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  }, token);
+}
+
+// ── Projects ───────────────────────────────────────────────────────────────
+
+export async function getProjects(
+  token: string,
+  params?: { search?: string; status?: string; overdue?: boolean; page?: number; per_page?: number },
+): Promise<PaginatedResponse<Project>> {
+  const qs = new URLSearchParams();
+  if (params?.search) qs.set('search', params.search);
+  if (params?.status) qs.set('status', params.status);
+  if (params?.overdue) qs.set('overdue', 'true');
+  if (params?.page) qs.set('page', String(params.page));
+  qs.set('per_page', String(params?.per_page ?? 25));
+  return request(`/projects?${qs}`, { method: 'GET' }, token);
+}
+
+export async function getProject(token: string, id: number): Promise<ProjectDetail> {
+  return request(`/projects/${id}`, { method: 'GET' }, token);
+}
+
+export async function advanceProjectStage(token: string, id: number, stageName: string): Promise<void> {
+  await request(`/projects/${id}/stage`, {
+    method: 'POST',
+    body: JSON.stringify({ stage_name: stageName, status: 'In Progress' }),
+  }, token);
+}
+
+export async function createProject(token: string, data: CreateProjectInput): Promise<Project> {
+  return request('/projects', {
+    method: 'POST',
+    body: JSON.stringify({ ...data, record_mode: 'new' }),
+  }, token);
+}
+
+// ── Invoices ───────────────────────────────────────────────────────────────
+
+export async function getFinancialStats(token: string): Promise<FinancialStats> {
+  return request('/financial/stats', { method: 'GET' }, token);
+}
+
+export async function getInvoices(
+  token: string,
+  params?: { status?: string; page?: number; per_page?: number },
+): Promise<PaginatedResponse<Invoice>> {
+  const qs = new URLSearchParams();
+  if (params?.status) qs.set('status', params.status);
+  if (params?.page) qs.set('page', String(params.page));
+  qs.set('per_page', String(params?.per_page ?? 25));
+  return request(`/financial/invoices?${qs}`, { method: 'GET' }, token);
+}
+
+export async function getInvoice(token: string, id: number): Promise<InvoiceDetail> {
+  return request(`/financial/invoices/${id}`, { method: 'GET' }, token);
+}
+
+export async function recordPayment(token: string, data: RecordPaymentInput): Promise<InvoicePayment> {
+  return request('/financial/payments', {
+    method: 'POST',
+    body: JSON.stringify(data),
   }, token);
 }

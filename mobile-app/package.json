@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "main": "expo-router/entry",
   "dependencies": {
+    "@expo/vector-icons": "^15.0.2",
     "@hookform/resolvers": "^5.4.0",
     "@react-native-community/netinfo": "12.0.1",
     "@tanstack/react-query": "^5.101.2",
@@ -35,5 +36,12 @@
     "ios": "expo start --ios",
     "web": "expo start --web"
   },
-  "private": true
+  "private": true,
+  "expo": {
+    "install": {
+      "exclude": [
+        "react"
+      ]
+    }
+  }
 }
