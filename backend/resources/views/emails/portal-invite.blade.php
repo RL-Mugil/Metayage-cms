@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Your IPFlow Portal Access</title>
+  <title>Your MyIPStrategy Portal Access</title>
   <style>
     body { margin: 0; padding: 0; background: #f4f4f5; font-family: Inter, Arial, sans-serif; color: #18181b; }
     .wrap { max-width: 560px; margin: 40px auto; background: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 12px rgba(0,0,0,.08); }
@@ -27,12 +27,12 @@
   <div class="wrap">
     <div class="header">
       <div class="logo">IP</div>
-      <h1>Welcome to IPFlow</h1>
+      <h1>Welcome to MyIPStrategy</h1>
       <p>Your client portal is ready</p>
     </div>
     <div class="body">
       <p>Hi <strong>{{ $clientName }}</strong>,</p>
-      <p>Your client portal account has been set up on <strong>IPFlow</strong>, the IP practice management platform of <strong>MYPL / Metayage</strong>. You can use it to track your matters, view invoices, and access documents.</p>
+      <p>Your client portal account has been set up on <strong>MyIPStrategy</strong>, the IP practice management platform of <strong>MYPL / Metayage</strong>. You can use it to track your matters, view invoices, and access documents.</p>
 
       <div class="creds">
         <table>
@@ -56,7 +56,7 @@
       </p>
     </div>
     <div class="footer">
-      &copy; {{ date('Y') }} Metayage / MYPL &mdash; IPFlow Platform &mdash; <a href="mailto:mugilvannan@myipstrategy.com" style="color:#a1a1aa;">mugilvannan@myipstrategy.com</a>
+      &copy; {{ date('Y') }} Metayage / MYPL &mdash; MyIPStrategy Platform &mdash; <a href="mailto:mugilvannan@myipstrategy.com" style="color:#a1a1aa;">mugilvannan@myipstrategy.com</a>
     </div>
   </div>
 </body>

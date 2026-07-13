@@ -42,7 +42,7 @@ export function AnalystRoleFilter({ value, onChange }: Props) {
   const { props } = usePage() as any;
   const role = props.auth?.user?.role;
 
-  if (role !== "associate" && role !== "manager") return null;
+  if (!["associate", "manager", "galvanizer", "partner", "director"].includes(role)) return null;
 
   const options = role === "manager"
     ? [...BASE_OPTIONS, ATTORNEY_OPTION]

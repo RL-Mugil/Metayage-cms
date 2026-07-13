@@ -69,7 +69,7 @@ export default function Documents() {
   const { props: pageProps } = usePage() as any;
   const role = pageProps.auth?.user?.role;
   const isClientUser = ["client", "client_admin"].includes(role);
-  const canDelete = ["super_admin", "partner", "manager"].includes(role);
+  const canDelete = ["super_admin", "partner", "manager", "galvanizer"].includes(role);
 
   const [activeFolder, setActiveFolder] = useState("All Documents");
   const [search, setSearch] = useState("");

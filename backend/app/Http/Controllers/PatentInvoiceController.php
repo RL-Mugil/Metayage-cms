@@ -87,6 +87,8 @@ class PatentInvoiceController extends Controller
         // Client role: own records only
         if (in_array($user->role, ['client', 'client_admin'])) {
             $q->where('client_id', $user->client_id);
+        } elseif ($user->isGalvanizer()) {
+            $q->whereHas('project', fn ($project) => $user->applyProjectScope($project));
         }
 
         $perPage = min((int) $request->get('per_page', 50), 200);
@@ -153,6 +155,9 @@ class PatentInvoiceController extends Controller
 
         // Derive client_id from project
         $project  = Project::findOrFail($v['project_id']);
+        if ($user->isGalvanizer() && ! $user->canAccessCircle($project->circle)) {
+            abort(403);
+        }
         $clientId = $project->client_id;
 
         $record = DB::transaction(function () use ($v, $user, $clientId) {
@@ -189,6 +194,7 @@ class PatentInvoiceController extends Controller
         $record = PatentInvoiceIn::findOrFail($id);
 
         if (in_array($user->role, ['client', 'client_admin'])) abort(403);
+        if ($user->isGalvanizer() && ! $this->galvanizerCanAccessRecord($user, $record)) abort(403);
 
         $v = $request->validate([
             'type'                             => 'sometimes|in:invoice,quote',
@@ -248,7 +254,8 @@ class PatentInvoiceController extends Controller
         $user   = $request->user();
         $record = PatentInvoiceIn::findOrFail($id);
 
-        if (!in_array($user->role, ['super_admin', 'partner', 'finance', 'manager'])) abort(403);
+        if (!in_array($user->role, ['super_admin', 'partner', 'finance', 'manager', 'galvanizer'])) abort(403);
+        if ($user->isGalvanizer() && ! $this->galvanizerCanAccessRecord($user, $record)) abort(403);
 
         $record->update(['status' => 'Cancelled']);
 
@@ -288,7 +295,11 @@ class PatentInvoiceController extends Controller
         $updated   = 0;
 
         DB::transaction(function () use ($v, $user, $newStatus, &$updated) {
-            $records = PatentInvoiceIn::whereIn('id', $v['ids'])->lockForUpdate()->get();
+            $recordsQuery = PatentInvoiceIn::whereIn('id', $v['ids']);
+            if ($user->isGalvanizer()) {
+                $recordsQuery->whereHas('project', fn ($project) => $user->applyProjectScope($project));
+            }
+            $records = $recordsQuery->lockForUpdate()->get();
             foreach ($records as $record) {
                 if ($record->status === 'Cancelled') continue;
                 $record->update(['status' => $newStatus]);
@@ -316,6 +327,7 @@ class PatentInvoiceController extends Controller
         $record = PatentInvoiceIn::findOrFail($id);
 
         if (in_array($user->role, ['client', 'client_admin'])) abort(403);
+        if ($user->isGalvanizer() && ! $this->galvanizerCanAccessRecord($user, $record)) abort(403);
         if ($record->type !== 'quote') abort(422, 'Only quotations can be converted to invoices.');
         if ($record->status === 'Cancelled') abort(422, 'Cannot convert a cancelled quotation.');
 
@@ -352,5 +364,12 @@ class PatentInvoiceController extends Controller
             $invoice->load(['project:id,project_code,docket_number', 'client:id,company_name,legal_name,client_code']),
             201
         );
+    }
+
+    private function galvanizerCanAccessRecord($user, PatentInvoiceIn $record): bool
+    {
+        $project = $record->project ?: Project::find($record->project_id);
+
+        return $project && $user->canAccessCircle($project->circle);
     }
 }

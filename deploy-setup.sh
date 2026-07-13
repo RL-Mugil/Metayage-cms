@@ -6,7 +6,7 @@ DB_NAME="mypl_cms"
 DB_USER="mypl_cms_user"
 DB_PASS="MYPLcms_D0_s3cur3_2024!"
 DB_PORT="5433"
-DOMAIN="mypl-cms.139-59-85-216.sslip.io"
+DOMAIN="myipstrategy.com"
 FPM_SOCK="/run/php/php8.4-fpm-mypl-cms.sock"
 NODE_PORT="3000"
 
@@ -141,7 +141,7 @@ cat > /etc/nginx/sites-available/mypl-cms <<'NGINX'
 server {
     listen 80;
     listen [::]:80;
-    server_name mypl-cms.139-59-85-216.sslip.io;
+    server_name myipstrategy.com;
     return 301 https://$host$request_uri;
 }
 
@@ -149,10 +149,10 @@ server {
     listen 443 ssl;
     listen [::]:443 ssl;
     http2 on;
-    server_name mypl-cms.139-59-85-216.sslip.io;
+    server_name myipstrategy.com;
 
-    ssl_certificate     /etc/letsencrypt/live/mypl-cms.139-59-85-216.sslip.io/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/mypl-cms.139-59-85-216.sslip.io/privkey.pem;
+    ssl_certificate     /etc/letsencrypt/live/myipstrategy.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/myipstrategy.com/privkey.pem;
     include /etc/letsencrypt/options-ssl-nginx.conf;
     ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
 

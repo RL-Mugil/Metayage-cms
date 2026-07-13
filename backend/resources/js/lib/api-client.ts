@@ -116,9 +116,10 @@ export const api = {
   },
 
   // ── Cases / Projects ──
-  async getProjects(search?: string): Promise<Project[]> {
+  async getProjects(search?: string, roleFilter?: string): Promise<Project[]> {
     const params = new URLSearchParams({ per_page: '500' })
     if (search) params.set('search', search)
+    if (roleFilter && roleFilter !== 'all') params.set('role_filter', roleFilter)
     const res = await this.request<PaginatedResponse<Project> | Project[]>(`/projects?${params.toString()}`)
     return Array.isArray(res) ? res : ((res as PaginatedResponse<Project>).data ?? [])
   },
@@ -630,8 +631,9 @@ export const api = {
     const res = await this.request<PaginatedResponse<Payslip> | Payslip[]>('/payroll/my-slips')
     return Array.isArray(res) ? res : ((res as PaginatedResponse<Payslip>).data ?? [])
   },
-  async getLifecycleStats(): Promise<Record<string, number>> {
-    return this.request('/projects/lifecycle-stats')
+  async getLifecycleStats(roleFilter?: string): Promise<Record<string, number>> {
+    const q = roleFilter && roleFilter !== 'all' ? `?role_filter=${roleFilter}` : ''
+    return this.request(`/projects/lifecycle-stats${q}`)
   },
   async importProjects(clientId: number, file: File, skipDuplicates?: boolean): Promise<{ imported: number; skipped: number; errors: string[]; dockets: string[]; client: string } | { requires_confirmation: true; duplicates: { line: number; uin: string; reason: string }[] }> {
     const formData = new FormData()

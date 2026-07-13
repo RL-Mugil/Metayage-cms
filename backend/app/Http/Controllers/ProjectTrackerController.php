@@ -6,6 +6,7 @@ use App\Models\Project;
 use App\Models\ProjectStage;
 use App\Models\TrackerCircle;
 use App\Models\TrackerRow;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Support\Carbon;
@@ -30,52 +31,101 @@ class ProjectTrackerController extends Controller implements HasMiddleware
         ];
     }
 
-    // Status → percentage_of_completion mapping (locked)
+    // Status → percentage_of_completion mapping (locked, auto-computed on save)
     const STATUS_COMPLETION = [
-        'Not Started'                             => 0,
-        'Allocated'                               => 5,
-        'Conducting search'                       => 10,
-        'Shared search report'                    => 15,
-        'Shared key features'                     => 15,
-        'Awaiting the draft from the client'      => 20,
-        'To schedule call'                        => 20,
-        'Scheduled call with client'              => 25,
-        'shared draft & drawings'                 => 30,
-        'Patent Drafting'                         => 35,
-        'To share the claims with client'         => 45,
-        'Internal Review'                         => 55,
-        'received Comments from client - to Update' => 60,
-        'Client Review'                           => 65,
-        'Awaiting feedback'                       => 70,
-        'Awaiting signed forms'                   => 75,
-        'To file'                                 => 80,
-        'Awaiting payment'                        => 90,
-        'On Hold'                                 => null, // preserve current
-        'Completed'                               => 100,
+        'Not Started'                  => 0,
+        'Allocated'                    => 5,
+        'IDF Received'                 => 8,
+        'Discovery Call Scheduled'     => 12,
+        'Discovery Call Done'          => 15,
+        'Prior Art Search'             => 20,
+        'Search Report Ready'          => 25,
+        'Search Report Shared'         => 28,
+        'Awaiting IDF from Client'     => 30,
+        'Patent Drafting'              => 35,
+        'Drafting in Progress'         => 35,
+        'Claims Ready to Share'        => 45,
+        'Internal Review'              => 55,
+        'Draft Shared with Client'     => 60,
+        'Awaiting Client Feedback'     => 65,
+        'Client Comments Received'     => 68,
+        'Draft Being Updated'          => 70,
+        'Revised Draft Shared'         => 72,
+        'Draft Approved'               => 75,
+        'Provisional or Complete Filing Prep' => 78,
+        'Complete or Provisional Filed'      => 80,
+        'Awaiting Signed Forms'        => 82,
+        'Ready to File'                => 85,
+        'Awaiting Payment'             => 90,
+        'Filed'                        => 92,
+        'FER Received'                 => 93,
+        'FER Response in Progress'     => 94,
+        'FER Response Filed'           => 95,
+        'Hearing Scheduled'            => 96,
+        'Hearing Response in Progress' => 97,
+        'Hearing Response Filed'       => 98,
+        'Granted'                      => 100,
+        'Renewal Due'                  => 95,
+        'Completed'                    => 100,
+        'On Hold'                      => null, // preserve current %
     ];
 
-    // Status → lifecycle stage mapping (Patent Process Lifecycle)
+    // Status → lifecycle stage mapping (tracker status change → auto-advance project stage)
     const STATUS_STAGE = [
-        'Not Started'                             => 'Invention Disclosure',
-        'Allocated'                               => 'Invention Disclosure',
-        'To schedule call'                        => 'Invention Disclosure',
-        'Scheduled call with client'              => 'Invention Disclosure',
-        'Conducting search'                       => 'Patent Search',
-        'Shared search report'                    => 'Search Report',
-        'Shared key features'                     => 'Search Report',
-        'Awaiting the draft from the client'      => 'Patent Drafting',
-        'Patent Drafting'                         => 'Patent Drafting',
-        'Internal Review'                         => 'Patent Drafting',
-        'shared draft & drawings'                 => 'Applicant/Inventor Review',
-        'To share the claims with client'         => 'Applicant/Inventor Review',
-        'Client Review'                           => 'Applicant/Inventor Review',
-        'Awaiting feedback'                       => 'Applicant/Inventor Review',
-        'received Comments from client - to Update' => 'Applicant/Inventor Review',
-        'Awaiting signed forms'                   => 'Filing with Patent Office',
-        'To file'                                 => 'Filing with Patent Office',
-        'Awaiting payment'                        => 'Filing with Patent Office',
-        'On Hold'                                 => null, // don't change stage
-        'Completed'                               => 'Granted',
+        'Not Started'                  => 'Invention Disclosure',
+        'Allocated'                    => 'Invention Disclosure',
+        'IDF Received'                 => 'Invention Disclosure',
+        'Discovery Call Scheduled'     => 'Invention Disclosure',
+        'Discovery Call Done'          => 'Invention Disclosure',
+        'Prior Art Search'             => 'Patent Search',
+        'Search Report Ready'          => 'Search Report',
+        'Search Report Shared'         => 'Search Report',
+        'Awaiting IDF from Client'     => 'Invention Disclosure',
+        'Patent Drafting'              => 'Patent Drafting',
+        'Drafting in Progress'         => 'Patent Drafting',
+        'Claims Ready to Share'        => 'Patent Drafting',
+        'Internal Review'              => 'Patent Drafting',
+        'Draft Shared with Client'     => 'Applicant/Inventor Review',
+        'Awaiting Client Feedback'     => 'Applicant/Inventor Review',
+        'Client Comments Received'     => 'Applicant/Inventor Review',
+        'Draft Being Updated'          => 'Applicant/Inventor Review',
+        'Revised Draft Shared'         => 'Applicant/Inventor Review',
+        'Draft Approved'               => 'Applicant/Inventor Review',
+        'Provisional or Complete Filing Prep' => 'Provisional or Complete Application',
+        'Complete or Provisional Filed'      => 'Provisional Filing',
+        'Awaiting Signed Forms'        => 'Filing with Patent Office',
+        'Ready to File'                => 'Filing with Patent Office',
+        'Awaiting Payment'             => 'Filing with Patent Office',
+        'Filed'                        => 'Filing with Patent Office',
+        'FER Received'                 => 'First Examination Report',
+        'FER Response in Progress'     => 'FER Response Preparation',
+        'FER Response Filed'           => 'FER Response Filing',
+        'Hearing Scheduled'            => 'Hearing with Examiner',
+        'Hearing Response in Progress' => 'Hearing Response Preparation',
+        'Hearing Response Filed'       => 'Hearing Response Filing',
+        'Granted'                      => 'Granted',
+        'Renewal Due'                  => 'Renewal',
+        'Completed'                    => 'Granted',
+        'On Hold'                      => null, // don't change stage
+    ];
+
+    // Pipeline stage → tracker status mapping (project stage advance → auto-update tracker row)
+    const STAGE_STATUS = [
+        'Invention Disclosure'    => 'IDF Received',
+        'Patent Search'           => 'Prior Art Search',
+        'Search Report'           => 'Search Report Shared',
+        'Provisional or Complete Application' => 'Provisional or Complete Filing Prep',
+        'Provisional Filing'                  => 'Complete or Provisional Filed',
+        'Patent Drafting'                     => 'Drafting in Progress',
+        'Applicant/Inventor Review'           => 'Draft Shared with Client',
+        'Filing with Patent Office'           => 'Ready to File',
+        'First Examination Report'            => 'FER Received',
+        'FER Response Preparation'            => 'FER Response in Progress',
+        'FER Response Filing'                 => 'FER Response Filed',
+        'Hearing with Examiner'               => 'Hearing Scheduled',
+        'Hearing Response Preparation'        => 'Hearing Response in Progress',
+        'Hearing Response Filing'             => 'Hearing Response Filed',
+        // Granted and Renewal are always manual entry — no auto-fill
     ];
 
     public function inertiaIndex()
@@ -83,15 +133,22 @@ class ProjectTrackerController extends Controller implements HasMiddleware
         return Inertia::render('ProjectTracker');
     }
 
-    public function circles()
+    public function circles(Request $request)
     {
-        $circles = TrackerCircle::with(['members:id,name,email,role'])->get();
+        $query = TrackerCircle::with(['members:id,name,email,role']);
+        if ($request->user()->isGalvanizer()) {
+            $query->whereIn('slug', $request->user()->galvanizerCircleSlugs());
+        }
+        $circles = $query->get();
         return response()->json($circles);
     }
 
     public function rows(Request $request)
     {
         $circle = TrackerCircle::where('slug', $request->circle ?? 'a')->firstOrFail();
+        if (! $this->canAccessTrackerCircle($request, $circle)) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
         $rows = TrackerRow::with(['pcmUser:id,name', 'scmUser:id,name', 'prUser:id,name'])
             ->where('circle_id', $circle->id)
             ->orderBy('sort_order')
@@ -116,6 +173,9 @@ class ProjectTrackerController extends Controller implements HasMiddleware
 
         if ($circle) {
             $query->where('circle', $circle);
+        }
+        if ($request->user()->isGalvanizer()) {
+            $query->whereIn('circle', $request->user()->galvanizerCircleCodes());
         }
 
         if ($q) {
@@ -151,7 +211,7 @@ class ProjectTrackerController extends Controller implements HasMiddleware
 
     private function denyNonManagement(Request $request): ?\Illuminate\Http\JsonResponse
     {
-        if (! in_array($request->user()->role, ['super_admin', 'partner', 'manager'])) {
+        if (! in_array($request->user()->role, ['super_admin', 'partner', 'manager', 'galvanizer'])) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
         return null;
@@ -162,6 +222,9 @@ class ProjectTrackerController extends Controller implements HasMiddleware
         if ($deny = $this->denyNonManagement($request)) return $deny;
 
         $circle = TrackerCircle::where('slug', $request->circle_slug ?? 'a')->firstOrFail();
+        if (! $this->canAccessTrackerCircle($request, $circle)) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
 
         $row = TrackerRow::create([
             'circle_id'               => $circle->id,
@@ -179,6 +242,9 @@ class ProjectTrackerController extends Controller implements HasMiddleware
         if ($deny = $this->denyNonManagement($request)) return $deny;
 
         $row = TrackerRow::findOrFail($id);
+        if (! $this->canAccessTrackerCircle($request, $row->circle)) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
 
         $allowed = [
             'project_id', 'docket_number', 'client_name', 'record_type',
@@ -216,7 +282,7 @@ class ProjectTrackerController extends Controller implements HasMiddleware
                 }
 
                 // Map tracker row status to project.status
-                if ($data['status'] === 'Completed') {
+                if (in_array($data['status'], ['Completed', 'Granted'])) {
                     $projStatus = 'Completed';
                 } elseif ($data['status'] === 'On Hold') {
                     $projStatus = 'On Hold';
@@ -236,18 +302,28 @@ class ProjectTrackerController extends Controller implements HasMiddleware
     {
         if ($deny = $this->denyNonManagement($request)) return $deny;
 
-        TrackerRow::findOrFail($id)->delete();
+        $row = TrackerRow::findOrFail($id);
+        if (! $this->canAccessTrackerCircle($request, $row->circle)) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+        $row->delete();
         return response()->json(['message' => 'Deleted']);
     }
 
     public function trackerAnalytics(Request $request)
     {
-        if (! in_array($request->user()->role, ['super_admin', 'partner', 'manager'])) {
+        $user = $request->user();
+        if (! in_array($user->role, ['super_admin', 'partner', 'manager', 'galvanizer'])) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
         // All aggregation done in SQL — no full table load into PHP.
-        $summary = \DB::table('tracker_rows')->selectRaw("
+        $baseRows = \DB::table('tracker_rows');
+        if ($user->isGalvanizer()) {
+            $baseRows->whereIn('circle_id', $this->allowedCircleIds($user));
+        }
+
+        $summary = (clone $baseRows)->selectRaw("
             COUNT(*) as total,
             SUM(CASE WHEN delivery_due_date < CURRENT_DATE THEN 1 ELSE 0 END) as overdue
         ")->first();
@@ -255,20 +331,20 @@ class ProjectTrackerController extends Controller implements HasMiddleware
         $total   = (int) $summary->total;
         $overdue = (int) $summary->overdue;
 
-        $byPayment = \DB::table('tracker_rows')
+        $byPayment = (clone $baseRows)
             ->selectRaw("COALESCE(payment_status, 'Not Set') as label, COUNT(*) as value")
             ->groupBy('payment_status')
             ->get()
             ->map(fn($r) => ['label' => $r->label, 'value' => (int) $r->value]);
 
-        $byType = \DB::table('tracker_rows')
+        $byType = (clone $baseRows)
             ->selectRaw("COALESCE(record_type, 'Unknown') as type, COUNT(*) as count")
             ->groupBy('record_type')
             ->orderByDesc('count')
             ->get()
             ->map(fn($r) => ['type' => $r->type, 'count' => (int) $r->count]);
 
-        $byStatus = \DB::table('tracker_rows')
+        $byStatus = (clone $baseRows)
             ->whereNotNull('status')
             ->selectRaw('status, COUNT(*) as count')
             ->groupBy('status')
@@ -278,14 +354,20 @@ class ProjectTrackerController extends Controller implements HasMiddleware
             ->map(fn($r) => ['status' => $r->status, 'count' => (int) $r->count]);
 
         // Workload per team member via UNION — returns one row per (user, role) pair
+        $circleFilter = '';
+        if ($user->isGalvanizer()) {
+            $ids = implode(',', array_map('intval', $this->allowedCircleIds($user)));
+            $circleFilter = $ids !== '' ? " AND circle_id IN ({$ids})" : ' AND 1=0';
+        }
+
         $workloadRaw = \DB::select("
             SELECT u.id, u.name, role_col as role, COUNT(*) as cnt
             FROM (
-                SELECT pcm_id as uid, 'PCM' as role_col FROM tracker_rows WHERE pcm_id IS NOT NULL
+                SELECT pcm_id as uid, 'PCM' as role_col FROM tracker_rows WHERE pcm_id IS NOT NULL {$circleFilter}
                 UNION ALL
-                SELECT scm_id,        'SCM'             FROM tracker_rows WHERE scm_id IS NOT NULL
+                SELECT scm_id,        'SCM'             FROM tracker_rows WHERE scm_id IS NOT NULL {$circleFilter}
                 UNION ALL
-                SELECT pr_id,         'PR'              FROM tracker_rows WHERE pr_id  IS NOT NULL
+                SELECT pr_id,         'PR'              FROM tracker_rows WHERE pr_id  IS NOT NULL {$circleFilter}
             ) t
             JOIN users u ON u.id = t.uid
             GROUP BY u.id, u.name, role_col
@@ -339,6 +421,8 @@ class ProjectTrackerController extends Controller implements HasMiddleware
             } else {
                 $projectQuery->whereRaw('1=0');
             }
+        } elseif ($user->isGalvanizer()) {
+            $user->applyProjectScope($projectQuery);
         } elseif (!$hasGlobalAccess) {
             $uid = $user->id;
             $projectQuery->where(function ($q) use ($uid) {
@@ -414,6 +498,8 @@ class ProjectTrackerController extends Controller implements HasMiddleware
         if ($isClientUser) {
             // Client portal users see no orphan tracker rows (rows without a project_id have no client link)
             $trackerQuery->whereRaw('1=0');
+        } elseif ($user->isGalvanizer()) {
+            $trackerQuery->whereIn('circle_id', $this->allowedCircleIds($user));
         } elseif (!$hasGlobalAccess) {
             $uid = $user->id;
             $trackerQuery->where(function ($q) use ($uid) {
@@ -463,7 +549,21 @@ class ProjectTrackerController extends Controller implements HasMiddleware
         if ($deny = $this->denyNonManagement($request)) return $deny;
 
         $circle = TrackerCircle::findOrFail($id);
+        if (! $this->canAccessTrackerCircle($request, $circle)) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
         $request->validate(['user_id' => 'required|exists:users,id']);
+        $member = User::findOrFail($request->user_id);
+        if ($member->isGalvanizer()) {
+            $existingGalvanizerIds = $circle->members()
+                ->where('role', 'galvanizer')
+                ->where('users.id', '!=', $member->id)
+                ->pluck('users.id')
+                ->all();
+            if ($existingGalvanizerIds) {
+                $circle->members()->detach($existingGalvanizerIds);
+            }
+        }
         $circle->members()->syncWithoutDetaching([$request->user_id]);
         return response()->json($circle->load('members:id,name,email,role'));
     }
@@ -473,8 +573,30 @@ class ProjectTrackerController extends Controller implements HasMiddleware
         if ($deny = $this->denyNonManagement($request)) return $deny;
 
         $circle = TrackerCircle::findOrFail($id);
+        if (! $this->canAccessTrackerCircle($request, $circle)) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
         $circle->members()->detach($userId);
         return response()->json($circle->load('members:id,name,email,role'));
+    }
+
+    private function canAccessTrackerCircle(Request $request, ?TrackerCircle $circle): bool
+    {
+        $user = $request->user();
+        if (! $user->isGalvanizer()) {
+            return true;
+        }
+
+        return $circle && in_array(strtolower($circle->slug), $user->galvanizerCircleSlugs(), true);
+    }
+
+    private function allowedCircleIds($user): array
+    {
+        if (! $user->isGalvanizer()) {
+            return TrackerCircle::pluck('id')->all();
+        }
+
+        return TrackerCircle::whereIn('slug', $user->galvanizerCircleSlugs())->pluck('id')->all();
     }
 
     private function syncProjectStage(int $projectId, string $stageName): void
@@ -513,5 +635,26 @@ class ProjectTrackerController extends Controller implements HasMiddleware
         ProjectStage::where('project_id', $projectId)
             ->where('sequence_order', '>', $targetStage->sequence_order)
             ->update(['status' => 'Pending', 'actual_start_at' => null, 'actual_end_at' => null]);
+    }
+
+    /**
+     * Called by ProjectController when a pipeline stage is manually advanced.
+     * Writes the matching tracker status onto the linked tracker row (if any),
+     * preserving manual overrides — only updates when STAGE_STATUS has a mapping.
+     */
+    public static function syncTrackerRowStatus(int $projectId, string $stageName): void
+    {
+        $newStatus = self::STAGE_STATUS[$stageName] ?? null;
+        if (! $newStatus) return;
+
+        $row = TrackerRow::where('project_id', $projectId)->first();
+        if (! $row) return;
+
+        $pct = self::STATUS_COMPLETION[$newStatus] ?? null;
+        $update = ['status' => $newStatus];
+        if ($pct !== null) {
+            $update['percentage_of_completion'] = $pct;
+        }
+        $row->update($update);
     }
 }

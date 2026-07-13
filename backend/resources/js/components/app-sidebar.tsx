@@ -55,6 +55,7 @@ const clientGroups = (isAdmin: boolean) => [
 const ROLE_LABEL: Record<string, string> = {
   super_admin: "System Admin", partner: "Director", manager: "Patent Attorney",
   hr: "HR", finance: "Accountant", associate: "Patent Analyst", paralegal: "Paralegal",
+  galvanizer: "Galvanizer",
   client: "Client", client_admin: "Client Admin",
 };
 
@@ -111,7 +112,7 @@ const groups = [
       { to: "/bulk", title: "Bulk Operations", icon: Layers },
       { to: "/compliance", title: "Compliance", icon: ShieldCheck },
       { to: "/audit-logs", title: "Audit Log", icon: ShieldCheck, roles: ["super_admin", "partner"] },
-      { to: "/integrations", title: "Integrations", icon: Plug, roles: ["super_admin", "partner", "manager", "hr", "associate", "finance"] },
+      { to: "/integrations", title: "Integrations", icon: Plug, roles: ["super_admin", "partner", "manager", "hr", "associate", "finance", "galvanizer"] },
       { to: "/staff-users", title: "Staff Users", icon: Users, adminOnly: true },
       { to: "/settings", title: "Settings", icon: Settings },
     ],
@@ -122,9 +123,9 @@ const groups = [
       { to: "/hrms",             title: "HR Overview",  icon: IdCard },
       { to: "/hrms/attendance",  title: "Attendance",   icon: CalendarDays },
       { to: "/hrms/leave",       title: "Leave",        icon: ListChecks },
-      { to: "/hrms/employees",   title: "Employees",    icon: Users,       roles: ["super_admin","partner","hr","finance"] },
+      { to: "/hrms/employees",   title: "Employees",    icon: Users,       roles: ["super_admin","partner","hr","finance","galvanizer"] },
       { to: "/hrms/payroll",     title: "Payroll",      icon: Wallet,      roles: ["super_admin","partner","hr","finance"] },
-      { to: "/hrms/performance", title: "Performance",  icon: BarChart3,   roles: ["super_admin","partner","hr","finance"] },
+      { to: "/hrms/performance", title: "Performance",  icon: BarChart3,   roles: ["super_admin","partner","hr","finance","galvanizer"] },
       { to: "/hrms/recruitment", title: "Recruitment",  icon: Briefcase,   roles: ["super_admin","partner","hr","finance"] },
       { to: "/hrms/offboarding", title: "Offboarding",  icon: Scale,       roles: ["super_admin","partner","hr","finance"] },
     ],
@@ -170,7 +171,7 @@ export function AppSidebar() {
             className="h-9 w-9 rounded-md object-cover"
           />
           <div className="flex flex-col leading-tight group-data-[collapsible=icon]:hidden">
-            <span className="font-display text-base font-semibold text-sidebar-foreground">IPFlow</span>
+            <span className="font-display text-base font-semibold text-sidebar-foreground">MyIPStrategy</span>
             <span className="text-[10px] uppercase tracking-widest text-sidebar-foreground/60">Metayage</span>
           </div>
         </Link>

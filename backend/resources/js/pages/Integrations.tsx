@@ -21,7 +21,7 @@ interface Integration {
   hasKey?: boolean;
 }
 
-const MANAGE_ROLES = ["super_admin", "manager"];
+const MANAGE_ROLES = ["super_admin", "manager", "galvanizer"];
 
 // ── Brand SVG logos keyed by integration slug ─────────────────────────────────
 function LogoSlack() {

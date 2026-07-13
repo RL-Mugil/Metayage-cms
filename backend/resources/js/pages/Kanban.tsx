@@ -1,17 +1,18 @@
-import { Head, router } from "@inertiajs/react";
+import { Head, router, usePage } from "@inertiajs/react";
 import { useEffect, useState } from "react";
 import { Loader2, Calendar, AlertTriangle, Layers } from "lucide-react";
 import AppLayout from "@/layouts/AppLayout";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api-client";
+import { AnalystRoleFilter, useAnalystRoleFilter } from "@/components/analyst-role-filter";
 
 // ── Stage → Column mapping (16 real stages → 4 columns) ─────────────────────
 const STAGE_COLUMN: Record<string, string> = {
   "Invention Disclosure":      "Intake & Research",
   "Patent Search":             "Intake & Research",
   "Search Report":             "Intake & Research",
-  "Provisional Application":   "Drafting & Filing",
+  "Provisional or Complete Application": "Drafting & Filing",
   "Provisional Filing":        "Drafting & Filing",
   "Patent Drafting":           "Drafting & Filing",
   "Applicant/Inventor Review": "Drafting & Filing",
@@ -66,16 +67,22 @@ function getColumn(stageName: string | null): string {
 }
 
 export default function Kanban() {
+  const { props } = usePage() as any;
+  const role = props.auth?.user?.role;
+  const isAnalyst = ['associate', 'galvanizer', 'partner', 'director'].includes(role);
+  const [roleFilter, setRoleFilter] = useAnalystRoleFilter();
+
   const [projects, setProjects] = useState<any[]>([]);
   const [loading, setLoading]   = useState(true);
   const [filterType, setFilterType] = useState("all");
 
   useEffect(() => {
-    api.getProjects()
+    const rf = isAnalyst ? roleFilter : undefined;
+    api.getProjects(undefined, rf)
       .then((data) => setProjects(Array.isArray(data) ? data : []))
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, []);
+  }, [roleFilter]);
 
   const projectTypes = Array.from(new Set(projects.map((p) => p.project_type).filter(Boolean)));
 
@@ -106,6 +113,7 @@ export default function Kanban() {
         description={`${displayed.length} matters auto-grouped by workflow stage`}
         actions={
           <div className="flex items-center gap-2">
+            <AnalystRoleFilter value={roleFilter} onChange={(v) => { setRoleFilter(v); }} />
             <select
               value={filterType}
               onChange={(e) => setFilterType(e.target.value)}

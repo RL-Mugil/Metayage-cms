@@ -50,7 +50,7 @@ npm run build
 echo "--- Updating .env: Sanctum stateful domains ---"
 if ! grep -q "SANCTUM_STATEFUL_DOMAINS" .env; then
     echo "" >> .env
-    echo "SANCTUM_STATEFUL_DOMAINS=mypl-cms.139-59-85-216.sslip.io" >> .env
+    echo "SANCTUM_STATEFUL_DOMAINS=myipstrategy.com,www.myipstrategy.com" >> .env
     echo "SESSION_DRIVER=file" >> .env
     echo "SESSION_LIFETIME=120" >> .env
 fi
@@ -140,7 +140,7 @@ supervisorctl start mypl-scheduler || supervisorctl restart mypl-scheduler || tr
 
 echo ""
 echo "=== Rebuild deployment complete! ==="
-echo "=== Visit: https://mypl-cms.139-59-85-216.sslip.io ==="
+echo "=== Visit: https://myipstrategy.com ==="
 ENDSSH
 
 rm -f /tmp/mypl-cms-rebuild.tar.gz

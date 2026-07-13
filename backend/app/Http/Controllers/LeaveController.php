@@ -6,7 +6,10 @@ use App\Models\AuditLog;
 use App\Models\Employee;
 use App\Models\LeaveBalance;
 use App\Models\LeaveRequest;
+use App\Models\User;
 use App\Http\PaginationHelper;
+use App\Services\LeaveBalanceService;
+use App\Support\Notifier;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -19,7 +22,7 @@ class LeaveController extends Controller
         if ($user->isClientRole()) return response()->json(['message' => 'Forbidden'], 403);
 
         $employee   = Employee::where('user_id', $user->id)->first();
-        $isApprover = in_array($user->role, ['super_admin', 'hr', 'manager', 'partner']);
+        $isApprover = in_array($user->role, User::LEAVE_APPROVER_ROLES, true);
 
         $query = LeaveRequest::with(['employee:id,full_name,user_id', 'employee.user:id,avatar_url'])->orderBy('from_date', 'desc');
         if (! $isApprover) {
@@ -45,9 +48,8 @@ class LeaveController extends Controller
             'is_mine'       => $employee ? $r->employee_id === $employee->id : false,
         ]);
 
-        $balances = $employee
-            ? LeaveBalance::where('employee_id', $employee->id)->where('year', date('Y'))->first()
-            : null;
+        $balanceService = app(LeaveBalanceService::class);
+        $balances = $employee ? $balanceService->currentYearBalance($employee) : null;
 
         return response()->json([
             'requests'       => $items,
@@ -56,6 +58,7 @@ class LeaveController extends Controller
             'current_page'   => $page,
             'last_page'      => (int) ceil($total / $perPage),
             'balances'       => $balances,
+            'entitlements'   => $balanceService->entitlements(),
             'is_approver'    => $isApprover,
         ]);
     }
@@ -66,6 +69,8 @@ class LeaveController extends Controller
         $employee = Employee::where('user_id', $user->id)->first();
 
         if (! $employee) return response()->json(['message' => 'No employee profile linked to your account.'], 422);
+
+        app(LeaveBalanceService::class)->currentYearBalance($employee);
 
         $request->validate([
             'leave_type' => 'required|string',
@@ -118,6 +123,24 @@ class LeaveController extends Controller
             'user_agent'   => $request->userAgent(),
         ]);
 
+        $recipientIds = User::where('status', 'Active')
+            ->where(function ($query) {
+                $query->whereIn('role', User::LEAVE_APPROVER_ROLES)
+                    ->orWhere('role', 'galvanizer');
+            })
+            ->where('id', '!=', $user->id)
+            ->pluck('id')
+            ->all();
+
+        Notifier::push(
+            $recipientIds,
+            'leave',
+            'Leave request submitted',
+            "{$employee->full_name} requested {$leaveReq->total_days} day(s) of {$leaveReq->leave_type}.",
+            '/hrms/leave',
+            ['leave_request_id' => $leaveReq->id],
+        );
+
         return response()->json($leaveReq, 201);
     }
 
@@ -127,15 +150,6 @@ class LeaveController extends Controller
         $this->authorize('approveLeave', \App\Models\Employee::class);
 
         $leave = LeaveRequest::findOrFail($id);
-
-        if ($user->role === 'manager') {
-            $allowed = Employee::where('reporting_manager_id', $user->id)
-                ->orWhere('dotted_line_manager_id', $user->id)
-                ->pluck('id')->all();
-            if (! in_array($leave->employee_id, $allowed)) {
-                return response()->json(['message' => 'Forbidden'], 403);
-            }
-        }
 
         $request->validate(['status' => 'required|in:Approved,Rejected,Cancelled']);
 

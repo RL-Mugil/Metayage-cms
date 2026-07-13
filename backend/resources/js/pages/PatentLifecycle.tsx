@@ -1,10 +1,11 @@
-import { Head } from "@inertiajs/react";
+import { Head, usePage } from "@inertiajs/react";
 import { useEffect, useState } from "react";
 import { Loader2, X, FileText, ExternalLink, RefreshCw, MapPin } from "lucide-react";
 import AppLayout from "@/layouts/AppLayout";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api-client";
+import { AnalystRoleFilter, useAnalystRoleFilter } from "@/components/analyst-role-filter";
 
 // ── Lifecycle structure (mirrors the seeded project_stages names) ────────────
 const PHASES: {
@@ -29,8 +30,8 @@ const PHASES: {
     n: 2,
     topCard: {
       stages: [
-        { name: "Provisional Application", label: "Provisional Application" },
-        { name: "Provisional Filing", label: "Filing provisional Application" },
+        { name: "Provisional or Complete Application", label: "Provisional or Complete Application" },
+        { name: "Provisional Filing", label: "Filing Provisional or Complete Application" },
       ],
     },
     abandonedRight: true,
@@ -104,6 +105,11 @@ function AbandonedCircle() {
 }
 
 export default function PatentLifecycle() {
+  const { props } = usePage() as any;
+  const role = props.auth?.user?.role;
+  const isAnalyst = ['associate', 'galvanizer', 'partner', 'director'].includes(role);
+  const [roleFilter, setRoleFilter] = useAnalystRoleFilter();
+
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
 
@@ -112,11 +118,13 @@ export default function PatentLifecycle() {
   const [projects, setProjects] = useState<any[]>([]);
   const [projLoading, setProjLoading] = useState(false);
 
-  const load = () => {
+  const load = (rf?: string) => {
     setLoading(true);
-    api.getLifecycleStats().then(setCounts).catch(() => {}).finally(() => setLoading(false));
+    const effectiveRf = isAnalyst ? (rf ?? roleFilter) : undefined;
+    api.getLifecycleStats(effectiveRf).then(setCounts).catch(() => {}).finally(() => setLoading(false));
   };
-  useEffect(load, []);
+  useEffect(() => { load(roleFilter); }, [roleFilter]);
+  useEffect(() => { load(); }, []);
 
   async function openStagePopup(stage: { name: string; label: string }) {
     setOpenStage(stage);
@@ -124,6 +132,7 @@ export default function PatentLifecycle() {
     setProjects([]);
     try {
       const params = new URLSearchParams({ lifecycle_stage: stage.name, per_page: "200" });
+      if (isAnalyst && roleFilter !== 'all') params.set('role_filter', roleFilter);
       const res = await api.getProjectsPaged(params) as any;
       setProjects(Array.isArray(res) ? res : res?.data ?? []);
     } catch { /* show empty */ }
@@ -140,10 +149,13 @@ export default function PatentLifecycle() {
         title="Patent Process Lifecycle"
         description="End-to-end patent workflow. Click any stage to see the cases currently in it."
         actions={
-          <button onClick={load}
-            className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
-            <RefreshCw className="h-3.5 w-3.5" /> Refresh
-          </button>
+          <div className="flex items-center gap-2">
+            <AnalystRoleFilter value={roleFilter} onChange={(v) => { setRoleFilter(v); }} />
+            <button onClick={() => load(roleFilter)}
+              className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
+              <RefreshCw className="h-3.5 w-3.5" /> Refresh
+            </button>
+          </div>
         }
       />
 

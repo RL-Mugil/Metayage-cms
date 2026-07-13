@@ -28,6 +28,8 @@ class PatentPortfolioController extends Controller
 
         // Patent Analysts (associate) only see cases where they are PR, CM or
         // SCM, or have a task assigned. role_filter narrows to one relationship.
+        // Galvanizers see their circle + personally-assigned cases; role_filter
+        // lets them narrow to a specific assignment column.
         $analystIds = null;
         if ($user->role === 'associate') {
             $rf = $request->input('role_filter');
@@ -42,6 +44,29 @@ class PatentPortfolioController extends Controller
                                   ->orWhereHas('tasks', fn ($t) => $t->where('assignee_id', $user->id)),
                 };
             })->pluck('id')->all();
+        } elseif ($user->isGalvanizer()) {
+            $rf = $request->input('role_filter');
+            $analystIds = Project::where(function ($q) use ($user, $rf) {
+                match ($rf) {
+                    'pcm' => $q->where('assigned_manager_id', $user->id),
+                    'scm' => $q->where('secondary_manager_id', $user->id),
+                    'pr'  => $q->where('patent_engineer_id', $user->id),
+                    default => $user->applyProjectScope($q),
+                };
+            })->pluck('id')->all();
+        } elseif (in_array($user->role, ['partner', 'director'], true)) {
+            $rf = $request->input('role_filter');
+            if ($rf && $rf !== 'all') {
+                $analystIds = Project::where(function ($q) use ($user, $rf) {
+                    match ($rf) {
+                        'pcm' => $q->where('assigned_manager_id', $user->id),
+                        'scm' => $q->where('secondary_manager_id', $user->id),
+                        'pr'  => $q->where('patent_engineer_id', $user->id),
+                        default => null,
+                    };
+                })->pluck('id')->all();
+            }
+            // else: $analystIds stays null — partner/director sees all
         }
 
         $base = Project::where(function ($q) {
@@ -136,7 +161,7 @@ class PatentPortfolioController extends Controller
                 $stage?->stage_name === 'Hearing Response Preparation'      => 'Hearing response in preparation',
                 $stage?->stage_name === 'Hearing Response Filing'           => 'Hearing response to be filed',
                 $stage?->stage_name === 'Filing with Patent Office'         => 'Application to be filed',
-                $stage?->stage_name === 'Provisional Filing'                => 'Provisional to be filed',
+                $stage?->stage_name === 'Provisional Filing'                => 'Provisional/Complete application to be filed',
                 $stage?->stage_name === 'Patent Drafting'                   => 'Awaiting draft approval',
                 $stage?->stage_name === 'Applicant/Inventor Review'         => 'Awaiting applicant review',
                 $stage?->stage_name === 'Patent Search'                     => 'Search in progress',
@@ -155,11 +180,19 @@ class PatentPortfolioController extends Controller
             ];
         });
 
-        // Client list for the selector — hidden for clients and analysts (both
-        // are locked to a scoped view, so there is nothing to switch between).
-        $clients = ($isClient || $analystIds !== null)
-            ? collect()
-            : Client::orderBy('company_name')->get(['id', 'client_code', 'company_name', 'legal_name', 'nationality']);
+        // Client list for the selector.
+        // - Clients / associates: hidden (they're locked to their own scope)
+        // - Galvanizers: circle-scoped
+        // - Partner / director / other staff: full list (even when role_filter narrows projects)
+        if ($isClient || $user->role === 'associate') {
+            $clients = collect();
+        } elseif ($user->isGalvanizer()) {
+            $clients = Client::where(fn ($q) => $user->applyClientScope($q))
+                ->orderBy('company_name')
+                ->get(['id', 'client_code', 'company_name', 'legal_name', 'nationality']);
+        } else {
+            $clients = Client::orderBy('company_name')->get(['id', 'client_code', 'company_name', 'legal_name', 'nationality']);
+        }
 
         return response()->json([
             'granted_by_office'   => $granted,

@@ -71,7 +71,7 @@ function fmtDuration(minutes: number): string {
 function toHM(hms: string): string { return hms ? hms.substring(0, 5) : "" }
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 const STATUSES = ["Present","Absent","Half Day","On Leave","LOP","Weekend","Holiday"];
-const HR_ADMIN_ROLES = ["super_admin","partner","hr","finance"];
+const HR_ADMIN_ROLES = ["super_admin","partner","hr","finance","galvanizer"];
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 export default function HRMSAttendance() {

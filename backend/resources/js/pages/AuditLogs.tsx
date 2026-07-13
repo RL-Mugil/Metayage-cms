@@ -77,7 +77,7 @@ export default function AuditLogs() {
 
   return (
     <AppLayout>
-      <Head title="Audit Log — IPFlow" />
+      <Head title="Audit Log — MyIPStrategy" />
       <PageHeader
         eyebrow="Admin"
         title="Audit Log"

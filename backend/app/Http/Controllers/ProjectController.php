@@ -16,6 +16,7 @@ use Illuminate\Support\Facades\Cache;
 use Inertia\Inertia;
 use Illuminate\Validation\ValidationException;
 use App\Services\GoogleCalendarService;
+use App\Http\Controllers\ProjectTrackerController;
 
 class ProjectController extends Controller
 {
@@ -38,6 +39,14 @@ class ProjectController extends Controller
             $base->whereHas('client', function ($q) use ($user) {
                 $q->visibleToUser($user);
             });
+        } elseif ($user->isGalvanizer()) {
+            $base->where($this->galvanizerWhereClause($user, $request->input('role_filter')));
+        } elseif (in_array($user->role, ['partner', 'director'], true)) {
+            $rf = $request->input('role_filter');
+            if ($rf && $rf !== 'all') {
+                $base->where($this->analystWhereClause($user, $rf));
+            }
+            // else: no restriction — partner/director sees all projects
         } elseif ($user->role === 'associate') {
             $base->where($this->analystWhereClause($user, $request->input('role_filter')));
         }
@@ -76,6 +85,13 @@ class ProjectController extends Controller
             $query->whereHas('client', function ($q) use ($user) {
                 $q->visibleToUser($user);
             });
+        } elseif ($user->isGalvanizer()) {
+            $query->where($this->galvanizerWhereClause($user, $request->input('role_filter')));
+        } elseif (in_array($user->role, ['partner', 'director'], true)) {
+            $rf = $request->input('role_filter');
+            if ($rf && $rf !== 'all') {
+                $query->where($this->analystWhereClause($user, $rf));
+            }
         } elseif ($user->role === 'associate') {
             $query->where($this->analystWhereClause($user, $request->input('role_filter')));
         }
@@ -149,6 +165,22 @@ class ProjectController extends Controller
             $client = $request->attributes->get('portal_client') ?? Client::forUser($user);
             if (! $client) return response()->json([]);
             $q->where('p.client_id', $client->id);
+        } elseif ($user->isGalvanizer()) {
+            $rf = $request->input('role_filter');
+            $q->where($this->galvanizerWhereClauseRaw($user, $rf));
+        } elseif (in_array($user->role, ['partner', 'director'], true)) {
+            $rf  = $request->input('role_filter');
+            $uid = $user->id;
+            if ($rf && $rf !== 'all') {
+                $q->where(function ($w) use ($uid, $rf) {
+                    match ($rf) {
+                        'pcm' => $w->where('p.assigned_manager_id', $uid),
+                        'scm' => $w->where('p.secondary_manager_id', $uid),
+                        'pr'  => $w->where('p.patent_engineer_id', $uid),
+                        default => null,
+                    };
+                });
+            }
         }
 
         $counts = $q->selectRaw('ps.stage_name, COUNT(*) as count')
@@ -174,6 +206,17 @@ class ProjectController extends Controller
 
         $validated['assigned_partner_id'] = $validated['assigned_partner_id'] ?? $user->id;
         $validated['assigned_manager_id'] = $validated['assigned_manager_id'] ?? $user->id;
+
+        if ($user->isGalvanizer()) {
+            $clientCircle = Client::where('id', $validated['client_id'])->value('circle');
+            if ($clientCircle && ! $user->canAccessCircle($clientCircle)) {
+                return response()->json(['message' => 'Selected client is outside your assigned circle.'], 403);
+            }
+            $validated['circle'] = $validated['circle'] ?? $clientCircle ?? $user->defaultGalvanizerCircleCode();
+            if (! $user->canAccessCircle($validated['circle'] ?? null)) {
+                return response()->json(['message' => 'Select one of your assigned circles.'], 422);
+            }
+        }
 
         $project = \DB::transaction(fn () => $this->createProjectWithCodes($validated));
 
@@ -307,7 +350,7 @@ class ProjectController extends Controller
         // Seed default pipeline stages for new projects
         $defaultStages = [
             "Invention Disclosure", "Patent Search", "Search Report",
-            "Provisional Application", "Provisional Filing",
+            "Provisional or Complete Application", "Provisional Filing",
             "Patent Drafting", "Applicant/Inventor Review", "Filing with Patent Office",
             "First Examination Report", "FER Response Preparation", "FER Response Filing",
             "Hearing with Examiner", "Hearing Response Preparation", "Hearing Response Filing",
@@ -331,7 +374,12 @@ class ProjectController extends Controller
     {
         $user = $request->user();
         $project = Project::findOrFail($id);
+        $this->authorize('update', $project);
         $validated = $request->validated();
+
+        if ($user->isGalvanizer() && array_key_exists('circle', $validated) && ! $user->canAccessCircle($validated['circle'])) {
+            return response()->json(['message' => 'You cannot move a case outside your assigned circle.'], 403);
+        }
 
         $deadlineChanged = array_key_exists('hard_deadline', $validated)
             && $validated['hard_deadline'] !== $project->hard_deadline;
@@ -420,6 +468,9 @@ class ProjectController extends Controller
                 'actual_end_at' => null
             ]);
 
+        // Reverse sync: update linked tracker row status to match the new stage.
+        ProjectTrackerController::syncTrackerRowStatus($project->id, $stageName);
+
         // Log audit event
         AuditLog::create([
             'user_id' => $user->id,
@@ -480,6 +531,47 @@ class ProjectController extends Controller
                               ->orWhere('assigned_manager_id', $user->id)
                               ->orWhere('secondary_manager_id', $user->id)
                               ->orWhereHas('tasks', fn ($t) => $t->where('assignee_id', $user->id)),
+            };
+        };
+    }
+
+    /**
+     * Galvanizer: when role_filter is pcm/scm/pr, narrow to that assignment column only.
+     * When filter is "all" (or absent), apply full circle + assigned scope.
+     * For Eloquent queries (projects table, no alias).
+     */
+    private function galvanizerWhereClause($user, ?string $roleFilter): \Closure
+    {
+        return function ($q) use ($user, $roleFilter) {
+            match ($roleFilter) {
+                'pcm' => $q->where('assigned_manager_id', $user->id),
+                'scm' => $q->where('secondary_manager_id', $user->id),
+                'pr'  => $q->where('patent_engineer_id', $user->id),
+                default => $user->applyProjectScope($q),
+            };
+        };
+    }
+
+    /**
+     * Galvanizer scope for raw DB queries that use the "p" table alias.
+     */
+    private function galvanizerWhereClauseRaw($user, ?string $roleFilter): \Closure
+    {
+        return function ($q) use ($user, $roleFilter) {
+            $uid = $user->id;
+            match ($roleFilter) {
+                'pcm' => $q->where('p.assigned_manager_id', $uid),
+                'scm' => $q->where('p.secondary_manager_id', $uid),
+                'pr'  => $q->where('p.patent_engineer_id', $uid),
+                default => (function () use ($q, $user, $uid) {
+                    $codes = $user->galvanizerCircleCodes();
+                    $q->where(function ($w) use ($codes, $uid) {
+                        $w->whereIn('p.circle', $codes)
+                          ->orWhere('p.assigned_manager_id', $uid)
+                          ->orWhere('p.secondary_manager_id', $uid)
+                          ->orWhere('p.patent_engineer_id', $uid);
+                    });
+                })(),
             };
         };
     }

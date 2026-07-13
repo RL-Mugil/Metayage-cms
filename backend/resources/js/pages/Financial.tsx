@@ -1,5 +1,6 @@
 import { Head, usePage } from "@inertiajs/react";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
+import { createPortal } from "react-dom";
 import { Loader2, Plus, X, Trash2, Download, DollarSign, Clock, CheckCircle, AlertCircle, Search, ChevronLeft, ChevronRight, CheckSquare, Square, FileText, Pencil, IndianRupee } from "lucide-react";
 import AppLayout from "@/layouts/AppLayout";
 import { PageHeader } from "@/components/page-header";
@@ -17,6 +18,106 @@ function fmt(n: number) {
 }
 
 const blankItem = { description: "", amount: "" };
+
+function ProjectCaseCombobox({
+  value,
+  projects,
+  onSelect,
+  placeholder = "Search docket number or case name…",
+  className = "w-full h-9 rounded-md border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold",
+}: {
+  value: string;
+  projects: any[];
+  onSelect: (id: string) => void;
+  placeholder?: string;
+  className?: string;
+}) {
+  const [q, setQ] = useState("");
+  const [open, setOpen] = useState(false);
+  const [rect, setRect] = useState<DOMRect | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const selected = projects.find((project) => String(project.id) === value);
+  const filtered = projects
+    .filter((project) => {
+      if (!q) return true;
+      const lq = q.toLowerCase();
+      return (
+        String(project.docket_number ?? "").toLowerCase().includes(lq) ||
+        String(project.project_code ?? "").toLowerCase().includes(lq) ||
+        String(project.project_name ?? "").toLowerCase().includes(lq) ||
+        String(project.invention_title ?? "").toLowerCase().includes(lq)
+      );
+    })
+    .slice(0, 30);
+
+  useEffect(() => {
+    if (!open) return;
+    const updatePos = () => {
+      if (inputRef.current) setRect(inputRef.current.getBoundingClientRect());
+    };
+    window.addEventListener("scroll", updatePos, true);
+    return () => window.removeEventListener("scroll", updatePos, true);
+  }, [open]);
+
+  const selectedLabel = selected
+    ? `${selected.docket_number ?? selected.project_code} — ${selected.project_name ?? selected.invention_title ?? "Untitled case"}`
+    : "";
+
+  const dropdown = open && rect
+    ? createPortal(
+        <div
+          style={{ position: "fixed", top: rect.bottom + 2, left: rect.left, width: rect.width, zIndex: 9999 }}
+          className="bg-background border border-border rounded-md shadow-2xl max-h-56 overflow-y-auto"
+        >
+          {filtered.map((project) => (
+            <button
+              key={project.id}
+              type="button"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                onSelect(String(project.id));
+                setOpen(false);
+              }}
+              className={`w-full text-left px-3 py-2 text-sm hover:bg-muted/40 ${
+                String(project.id) === value ? "bg-gold/10 text-gold font-medium" : ""
+              }`}
+            >
+              <div className="flex items-baseline gap-2">
+                <span className="font-mono text-[11px] text-gold flex-shrink-0">
+                  {project.docket_number ?? project.project_code}
+                </span>
+                <span className="truncate text-xs text-muted-foreground">
+                  {project.project_name ?? project.invention_title ?? "Untitled case"}
+                </span>
+              </div>
+            </button>
+          ))}
+          {filtered.length === 0 && <p className="px-3 py-3 text-xs text-muted-foreground text-center">No matching cases</p>}
+        </div>,
+        document.body
+      )
+    : null;
+
+  return (
+    <div>
+      <input
+        ref={inputRef}
+        value={open ? q : selectedLabel}
+        onFocus={() => {
+          if (inputRef.current) setRect(inputRef.current.getBoundingClientRect());
+          setOpen(true);
+          setQ("");
+        }}
+        onBlur={() => setTimeout(() => setOpen(false), 200)}
+        onChange={(e) => setQ(e.target.value)}
+        placeholder={placeholder}
+        className={className}
+      />
+      {dropdown}
+    </div>
+  );
+}
 
 // GST computation — mirrors backend computeGst()
 function computeGstInfo(client: any | null | undefined, subtotal: number) {
@@ -231,6 +332,24 @@ export default function Financial() {
   const [indiaForm, setIndiaForm] = useState(blankIndia());
   const sif = (f: string, v: string) => setIndiaForm(p => ({ ...p, [f]: v }));
 
+  function syncInvoiceProject(projectId: string) {
+    const project = projects.find((p) => String(p.id) === projectId);
+    setForm((prev) => ({
+      ...prev,
+      project_id: projectId,
+      client_id: project ? String(project.client_id ?? "") : prev.client_id,
+    }));
+  }
+
+  function syncQuotationProject(projectId: string) {
+    const project = projects.find((p) => String(p.id) === projectId);
+    setQuotForm((prev) => ({
+      ...prev,
+      project_id: projectId,
+      client_id: project ? String(project.client_id ?? "") : prev.client_id,
+    }));
+  }
+
   // Auto-fill from project selection
   function fillFromProject(projectId: string) {
     const proj = projects.find(p => String(p.id) === projectId);
@@ -425,6 +544,12 @@ export default function Financial() {
   const subtotal = items.reduce((s, item) => s + (parseFloat(item.amount) || 0), 0);
   const selectedInvoiceClient = clients.find((c: any) => c.id === parseInt(form.client_id));
   const invoiceGst = computeGstInfo(selectedInvoiceClient, subtotal);
+  const invoiceProjects = form.client_id
+    ? projects.filter((project: any) => String(project.client_id) === form.client_id)
+    : projects;
+  const quotationProjects = quotForm.client_id
+    ? projects.filter((project: any) => String(project.client_id) === quotForm.client_id)
+    : projects;
 
   async function handleCreate() {
     if (!form.client_id || !form.due_date) { setSaveError("Client and due date are required."); return; }
@@ -659,17 +784,20 @@ export default function Financial() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs text-muted-foreground mb-1">Client *</label>
-                  <select value={form.client_id} onChange={e => setForm(p => ({ ...p, client_id: e.target.value }))} className={inputCls}>
+                  <select value={form.client_id} onChange={e => setForm(p => ({ ...p, client_id: e.target.value, project_id: "" }))} className={inputCls}>
                     <option value="">Select client</option>
                     {clients.map(c => <option key={c.id} value={c.id}>{c.company_name}</option>)}
                   </select>
                 </div>
                 <div>
                   <label className="block text-xs text-muted-foreground mb-1">Case (optional)</label>
-                  <select value={form.project_id} onChange={e => setForm(p => ({ ...p, project_id: e.target.value }))} className={inputCls}>
-                    <option value="">None</option>
-                    {projects.map(p => <option key={p.id} value={p.id}>{p.project_code} — {p.project_name}</option>)}
-                  </select>
+                  <ProjectCaseCombobox
+                    value={form.project_id}
+                    projects={invoiceProjects}
+                    onSelect={syncInvoiceProject}
+                    placeholder="Search assigned case…"
+                    className={inputCls}
+                  />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
@@ -741,17 +869,20 @@ export default function Financial() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs text-muted-foreground mb-1">Client *</label>
-                  <select value={quotForm.client_id} onChange={e => setQuotForm(p => ({ ...p, client_id: e.target.value }))} className={inputCls}>
+                  <select value={quotForm.client_id} onChange={e => setQuotForm(p => ({ ...p, client_id: e.target.value, project_id: "" }))} className={inputCls}>
                     <option value="">Select client</option>
                     {clients.map(c => <option key={c.id} value={c.id}>{c.company_name}</option>)}
                   </select>
                 </div>
                 <div>
                   <label className="block text-xs text-muted-foreground mb-1">Case (optional)</label>
-                  <select value={quotForm.project_id} onChange={e => setQuotForm(p => ({ ...p, project_id: e.target.value }))} className={inputCls}>
-                    <option value="">None</option>
-                    {projects.map(p => <option key={p.id} value={p.id}>{p.project_code} — {p.project_name}</option>)}
-                  </select>
+                  <ProjectCaseCombobox
+                    value={quotForm.project_id}
+                    projects={quotationProjects}
+                    onSelect={syncQuotationProject}
+                    placeholder="Search assigned case…"
+                    className={inputCls}
+                  />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
@@ -1351,12 +1482,16 @@ export default function Financial() {
                   <div className="grid grid-cols-4 gap-2">
                     <div className="col-span-2">
                       {lbl("Project / Case *", true)}
-                      <select value={indiaForm.project_id} onChange={e => fillFromProject(e.target.value)} className={inp}>
-                        <option value="">— Select project —</option>
-                        {projects.map(p => (
-                          <option key={p.id} value={p.id}>{p.docket_number ?? p.project_code} — {p.project_name}</option>
-                        ))}
-                      </select>
+                      <ProjectCaseCombobox
+                        value={indiaForm.project_id}
+                        projects={projects}
+                        onSelect={fillFromProject}
+                        placeholder="Search assigned case…"
+                        className={inp}
+                      />
+                      {!indiaForm.project_id && (
+                        <p className="mt-1 text-[10px] text-muted-foreground">Pick a case to auto-fill client and docket details.</p>
+                      )}
                     </div>
                     <div>
                       {lbl("Docket Number - UIN *", true)}

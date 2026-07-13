@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\Storage;
 
 class DocumentController extends Controller
 {
-    private const INTERNAL_ROLES = ['super_admin', 'partner', 'manager', 'associate', 'paralegal', 'finance', 'hr'];
+    private const INTERNAL_ROLES = ['super_admin', 'partner', 'manager', 'associate', 'paralegal', 'finance', 'hr', 'galvanizer'];
 
     private function denyNonInternal(Request $request)
     {
@@ -80,11 +80,18 @@ class DocumentController extends Controller
         } elseif ($user->role === 'finance') {
             // Finance sees internal-only docs
             $query->whereNull('client_id');
+        } elseif ($user->isGalvanizer()) {
+            $query->where(function ($q) use ($user) {
+                $q->whereNull('project_id')
+                    ->whereNull('client_id')
+                    ->orWhereHas('project', fn ($p) => $user->applyProjectScope($p))
+                    ->orWhereHas('client', fn ($c) => $user->applyClientScope($c));
+            });
         }
         // else: any other role falls through to see all (safe fallback)
 
         // Allow filtering by client_id (for roles that can see all)
-        if ($request->filled('client_id') && in_array($user->role, ['super_admin', 'partner', 'paralegal', 'hr', 'manager'])) {
+        if ($request->filled('client_id') && in_array($user->role, ['super_admin', 'partner', 'paralegal', 'hr', 'manager', 'galvanizer'])) {
             $cid = (int) $request->client_id;
             $query->where(function ($q) use ($cid) {
                 $q->where('client_id', $cid)
@@ -137,6 +144,20 @@ class DocumentController extends Controller
         // Client uploads are always tagged to their own client record.
         if ($ownClient) {
             $request->merge(['client_id' => $ownClient->id, 'project_id' => null]);
+        }
+        if ($user->isGalvanizer()) {
+            if ($request->project_id) {
+                $project = \App\Models\Project::findOrFail($request->project_id);
+                if (! $user->canAccessCircle($project->circle)) {
+                    return response()->json(['message' => 'Selected case is outside your assigned circle.'], 403);
+                }
+            }
+            if ($request->client_id) {
+                $client = \App\Models\Client::findOrFail($request->client_id);
+                if (! $user->canAccessCircle($client->circle)) {
+                    return response()->json(['message' => 'Selected client is outside your assigned circle.'], 403);
+                }
+            }
         }
 
         $file   = $request->file('file');
@@ -239,6 +260,12 @@ class DocumentController extends Controller
                 }
             }
         }
+        if ($user->isGalvanizer()) {
+            $doc = Document::where('storage_path', $path)->first();
+            if ($doc && ! $this->galvanizerCanAccessDocument($user, $doc)) {
+                return response()->json(['message' => 'Forbidden'], 403);
+            }
+        }
 
         if (! Storage::disk('local')->exists($path)) {
             return response()->json(['message' => 'File not found'], 404);
@@ -250,7 +277,7 @@ class DocumentController extends Controller
     public function destroy(Request $request)
     {
         $user = $request->user();
-        if (! in_array($user->role, ['super_admin', 'partner', 'manager'])) {
+        if (! in_array($user->role, ['super_admin', 'partner', 'manager', 'galvanizer'])) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
@@ -275,6 +302,9 @@ class DocumentController extends Controller
                     return response()->json(['message' => 'Forbidden'], 403);
                 }
             }
+            if ($user->isGalvanizer() && ! $this->galvanizerCanAccessDocument($user, $doc)) {
+                return response()->json(['message' => 'Forbidden'], 403);
+            }
 
             // Hard-delete version records (DocumentVersion has no SoftDeletes).
             // Physical files are preserved so the document can be restored from
@@ -297,5 +327,20 @@ class DocumentController extends Controller
         ]);
 
         return response()->json(['ok' => true]);
+    }
+
+    private function galvanizerCanAccessDocument($user, Document $doc): bool
+    {
+        if ($doc->project_id) {
+            $project = \App\Models\Project::find($doc->project_id);
+            return $project && $user->canAccessCircle($project->circle);
+        }
+
+        if ($doc->client_id) {
+            $client = \App\Models\Client::find($doc->client_id);
+            return $client && $user->canAccessCircle($client->circle);
+        }
+
+        return true;
     }
 }

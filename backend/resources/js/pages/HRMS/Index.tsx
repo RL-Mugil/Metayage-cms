@@ -126,7 +126,7 @@ const deptColors: Record<string, string> = {
   "People Ops": "bg-amber-500/10 text-amber-600 border-amber-200",
 };
 
-const HR_ADMIN_ROLES = ["super_admin", "partner", "hr", "finance"];
+const HR_ADMIN_ROLES = ["super_admin", "partner", "hr", "finance", "galvanizer"];
 
 // v2 — Team Availability board with real-time clock status
 export default function HRMSIndex() {

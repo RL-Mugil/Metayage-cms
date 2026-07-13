@@ -13,7 +13,7 @@ use Illuminate\Validation\Rule;
  */
 class StaffUserController extends Controller
 {
-    private const STAFF_ROLES = ['super_admin', 'partner', 'manager', 'hr', 'finance', 'associate', 'paralegal'];
+    private const STAFF_ROLES = User::STAFF_ROLES;
 
     private function denyNonAdmin(Request $request): ?\Illuminate\Http\JsonResponse
     {

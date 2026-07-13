@@ -42,7 +42,7 @@ export default function Approvals() {
   const canCreateApproval = !isClientUser;
   // Internal approvers act on Leave/Expense; client_admin acts on Client type;
   // colleague approvals are resolvable by whoever the backend flags (can_resolve).
-  const canActInternal = ["super_admin", "hr", "manager", "partner"].includes(role);
+  const canActInternal = ["super_admin", "hr", "partner"].includes(role);
 
   const [items, setItems] = useState<Approval[]>([]);
   const [loading, setLoading] = useState(true);

@@ -24,11 +24,11 @@ export default function Login() {
 
         <div className="w-full max-w-md space-y-6 z-10">
           <div className="text-center space-y-2">
-            <div className="inline-flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-tr from-primary to-gold text-primary-foreground font-display text-2xl font-bold shadow-lg shadow-primary/20">
-              IP
+            <div className="inline-flex h-16 w-16 items-center justify-center rounded-2xl shadow-lg shadow-primary/20 overflow-hidden">
+              <img src="/favicon.png" alt="MyIPStrategy" className="h-16 w-16 object-cover rounded-2xl" />
             </div>
             <h1 className="text-3xl font-display font-semibold tracking-tight text-white mt-4">
-              Welcome back to IPFlow
+              Welcome back to MyIPStrategy
             </h1>
             <p className="text-sm text-zinc-400">Enterprise IP Practice & Operations Platform</p>
           </div>

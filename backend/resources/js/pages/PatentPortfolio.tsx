@@ -169,8 +169,8 @@ export default function PatentPortfolio() {
   const [sortDir, setSortDir]     = useState<"asc" | "desc">("asc");
   const [page, setPage]           = useState(1);
 
-  // Only pass role_filter to the API when the logged-in user is a Patent Analyst.
-  const isAnalyst = role === 'associate';
+  // Pass role_filter for roles that can be assigned as PCM/SCM/PR.
+  const isAnalyst = ['associate', 'galvanizer', 'partner', 'director'].includes(role);
   const effectiveRf = (rf?: string) => isAnalyst ? (rf ?? roleFilter) : undefined;
 
   const load = (clientId?: number | null, rf?: string) => {

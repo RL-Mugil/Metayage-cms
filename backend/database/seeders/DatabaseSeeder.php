@@ -21,6 +21,7 @@ class DatabaseSeeder extends Seeder
             ['name' => 'paralegal',   'guard_name' => 'web'],
             ['name' => 'finance',     'guard_name' => 'web'],
             ['name' => 'hr',          'guard_name' => 'web'],
+            ['name' => 'galvanizer',  'guard_name' => 'web'],
             ['name' => 'client',      'guard_name' => 'web'],
         ];
         foreach ($roles as $role) {

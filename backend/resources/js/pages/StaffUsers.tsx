@@ -18,10 +18,11 @@ interface StaffUser {
   created_at: string;
 }
 
-const STAFF_ROLES = ["super_admin", "partner", "manager", "hr", "finance", "associate", "paralegal"];
+const STAFF_ROLES = ["super_admin", "partner", "manager", "hr", "finance", "associate", "paralegal", "galvanizer"];
 const ROLE_LABEL: Record<string, string> = {
   super_admin: "System Admin", partner: "Director", manager: "Patent Attorney",
   hr: "HR", finance: "Accountant", associate: "Patent Analyst", paralegal: "Paralegal",
+  galvanizer: "Galvanizer",
 };
 const ROLE_COLOR: Record<string, string> = {
   super_admin: "bg-red-500/10 text-red-500 border-red-500/30",
@@ -31,6 +32,7 @@ const ROLE_COLOR: Record<string, string> = {
   finance: "bg-blue-500/10 text-blue-500 border-blue-500/30",
   associate: "bg-green-500/10 text-green-600 border-green-500/30",
   paralegal: "bg-teal-500/10 text-teal-600 border-teal-500/30",
+  galvanizer: "bg-cyan-500/10 text-cyan-600 border-cyan-500/30",
 };
 
 const inputCls = "w-full h-9 rounded-md border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold";

@@ -23,13 +23,17 @@ class SearchController extends Controller
 
         // ── Clients (not visible to client/hr roles) ──
         if (!in_array($role, ['client', 'client_admin', 'hr'])) {
-            $clients = DB::table('clients')
+            $clientQuery = DB::table('clients')
                 ->whereNull('deleted_at')
                 ->where(function ($w) use ($like) {
                     $w->where('legal_name',    'ilike', $like)
                       ->orWhere('company_name', 'ilike', $like)
                       ->orWhere('client_code',  'ilike', $like);
-                })
+                });
+            if ($user->isGalvanizer()) {
+                $user->applyClientScope($clientQuery);
+            }
+            $clients = $clientQuery
                 ->select('id', 'legal_name', 'company_name', 'client_code', 'status')
                 ->limit(self::PER_TYPE)
                 ->get();
@@ -77,6 +81,15 @@ class SearchController extends Controller
                   ->orWhere('projects.assigned_manager_id', $user->id)
                   ->orWhere('projects.patent_engineer_id', $user->id);
             });
+        } elseif ($user->isGalvanizer()) {
+            $codes = $user->galvanizerCircleCodes();
+            $uid   = $user->id;
+            $pq->where(function ($w) use ($codes, $uid) {
+                $w->whereIn('projects.circle', $codes)
+                  ->orWhere('projects.assigned_manager_id', $uid)
+                  ->orWhere('projects.secondary_manager_id', $uid)
+                  ->orWhere('projects.patent_engineer_id', $uid);
+            });
         }
 
         foreach ($pq->limit(self::PER_TYPE)->get() as $p) {
@@ -98,6 +111,15 @@ class SearchController extends Controller
 
             if (in_array($role, ['associate', 'paralegal'])) {
                 $tq->where('tasks.assignee_id', $user->id);
+            } elseif ($user->isGalvanizer()) {
+                $codes = $user->galvanizerCircleCodes();
+                $uid   = $user->id;
+                $tq->where(function ($w) use ($codes, $uid) {
+                    $w->whereIn('projects.circle', $codes)
+                      ->orWhere('projects.assigned_manager_id', $uid)
+                      ->orWhere('projects.secondary_manager_id', $uid)
+                      ->orWhere('projects.patent_engineer_id', $uid);
+                });
             }
 
             foreach ($tq->limit(self::PER_TYPE)->get() as $t) {

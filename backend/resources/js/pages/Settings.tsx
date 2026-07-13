@@ -85,8 +85,8 @@ export default function Settings() {
     language: user?.language || "English",
   });
   const [notifs, setNotifs] = useState({ taskAssigned: true, deadlineEmail: true, paymentReceived: true, pushNotif: false, weeklyDigest: true, monthlyReport: true });
-  const [theme, setTheme] = useState<"light" | "dark" | "system">(() => loadPrefs("ipflow.appearance", { theme: "dark" as const }).theme);
-  const [accentColor, setAccentColor] = useState(() => loadPrefs("ipflow.appearance", { accent: "gold" }).accent);
+  const [theme, setTheme] = useState<"light" | "dark" | "system">(() => loadPrefs("myipstrategy.appearance", { theme: "dark" as const }).theme);
+  const [accentColor, setAccentColor] = useState(() => loadPrefs("myipstrategy.appearance", { accent: "gold" }).accent);
   const [pwForm, setPwForm] = useState({ current: "", next: "", confirm: "" });
   const [system, setSystem] = useState({ company: "My IP Law Firm", currency: "INR", fiscalMonth: "April", maxUploadMB: "50" });
   const visibleTabs = canManageSystem ? tabs : tabs.filter((item) => item.id !== "system");
@@ -299,7 +299,7 @@ export default function Settings() {
   };
 
   const saveAppearance = () => {
-    localStorage.setItem("ipflow.appearance", JSON.stringify({ theme, accent: accentColor }));
+    localStorage.setItem("myipstrategy.appearance", JSON.stringify({ theme, accent: accentColor }));
     const root = document.documentElement;
     if (theme === "dark") root.classList.add("dark");
     else if (theme === "light") root.classList.remove("dark");

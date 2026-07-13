@@ -21,7 +21,7 @@ class PortalInviteMail extends Mailable
 
     public function envelope(): Envelope
     {
-        return new Envelope(subject: 'Your IPFlow Client Portal Access');
+        return new Envelope(subject: 'Your MyIPStrategy Client Portal Access');
     }
 
     public function content(): Content

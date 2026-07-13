@@ -13,15 +13,51 @@ import { downloadCSV } from "@/lib/api-client";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
+// Ordered by workflow sequence — IDF receipt → filing → post-filing → terminal
 const STATUSES = [
-  "Not Started", "Allocated", "Patent Drafting", "Internal Review",
-  "Client Review", "Awaiting payment", "Completed", "On Hold",
-  "Conducting search", "Awaiting feedback",
-  "Awaiting the draft from the client", "To share the claims with client",
-  "To file", "Awaiting signed forms",
-  "received Comments from client - to Update", "To schedule call",
-  "shared draft & drawings", "shared search report",
-  "Shared key features", "Scheduled call with client",
+  // Pre-work
+  "Not Started",
+  "Allocated",
+  // IDF & Discovery
+  "IDF Received",
+  "Discovery Call Scheduled",
+  "Discovery Call Done",
+  // Search
+  "Prior Art Search",
+  "Search Report Ready",
+  "Search Report Shared",
+  // Drafting
+  "Awaiting IDF from Client",
+  "Patent Drafting",
+  "Drafting in Progress",
+  "Claims Ready to Share",
+  "Internal Review",
+  // Client Review
+  "Draft Shared with Client",
+  "Awaiting Client Feedback",
+  "Client Comments Received",
+  "Draft Being Updated",
+  "Revised Draft Shared",
+  "Draft Approved",
+  // Filing
+  "Provisional or Complete Filing Prep",
+  "Complete or Provisional Filed",
+  "Awaiting Signed Forms",
+  "Ready to File",
+  "Awaiting Payment",
+  "Filed",
+  // Post-Filing
+  "FER Received",
+  "FER Response in Progress",
+  "FER Response Filed",
+  "Hearing Scheduled",
+  "Hearing Response in Progress",
+  "Hearing Response Filed",
+  // Terminal
+  "Granted",
+  "Renewal Due",
+  "Completed",
+  "On Hold",
 ];
 
 const RECORD_TYPES = ["Patent", "FTO", "Design", "TM"];
@@ -29,30 +65,87 @@ const PAYMENT_STATUSES = ["Pending", "Partial", "Paid"];
 
 // Locked: % completion per status (mirrors backend STATUS_COMPLETION)
 const STATUS_COMPLETION: Record<string, number | null> = {
-  "Not Started": 0, "Allocated": 5, "Conducting search": 10,
-  "Shared search report": 15, "Shared key features": 15,
-  "Awaiting the draft from the client": 20, "To schedule call": 20,
-  "Scheduled call with client": 25, "shared draft & drawings": 30,
-  "Patent Drafting": 35, "To share the claims with client": 45,
-  "Internal Review": 55, "received Comments from client - to Update": 60,
-  "Client Review": 65, "Awaiting feedback": 70,
-  "Awaiting signed forms": 75, "To file": 80,
-  "Awaiting payment": 90, "On Hold": null, "Completed": 100,
+  "Not Started": 0,
+  "Allocated": 5,
+  "IDF Received": 8,
+  "Discovery Call Scheduled": 12,
+  "Discovery Call Done": 15,
+  "Prior Art Search": 20,
+  "Search Report Ready": 25,
+  "Search Report Shared": 28,
+  "Awaiting IDF from Client": 30,
+  "Patent Drafting": 35,
+  "Drafting in Progress": 35,
+  "Claims Ready to Share": 45,
+  "Internal Review": 55,
+  "Draft Shared with Client": 60,
+  "Awaiting Client Feedback": 65,
+  "Client Comments Received": 68,
+  "Draft Being Updated": 70,
+  "Revised Draft Shared": 72,
+  "Draft Approved": 75,
+  "Provisional or Complete Filing Prep": 78,
+  "Complete or Provisional Filed": 80,
+  "Awaiting Signed Forms": 82,
+  "Ready to File": 85,
+  "Awaiting Payment": 90,
+  "Filed": 92,
+  "FER Received": 93,
+  "FER Response in Progress": 94,
+  "FER Response Filed": 95,
+  "Hearing Scheduled": 96,
+  "Hearing Response in Progress": 97,
+  "Hearing Response Filed": 98,
+  "Granted": 100,
+  "Renewal Due": 95,
+  "Completed": 100,
+  "On Hold": null,
 };
 
 const STATUS_DOT: Record<string, string> = {
-  "Not Started": "bg-gray-400", "Allocated": "bg-blue-500",
-  "Patent Drafting": "bg-indigo-500", "Internal Review": "bg-purple-500",
-  "Client Review": "bg-violet-500", "Awaiting payment": "bg-amber-500",
-  "Completed": "bg-green-500", "On Hold": "bg-red-500",
-  "Conducting search": "bg-blue-400", "Awaiting feedback": "bg-orange-400",
-  "Awaiting the draft from the client": "bg-orange-500",
-  "To share the claims with client": "bg-teal-500",
-  "To file": "bg-blue-600", "Awaiting signed forms": "bg-amber-400",
-  "received Comments from client - to Update": "bg-orange-500",
-  "To schedule call": "bg-teal-400", "shared draft & drawings": "bg-blue-400",
-  "shared search report": "bg-blue-400", "Shared key features": "bg-teal-500",
-  "Scheduled call with client": "bg-teal-500",
+  // Pre-work
+  "Not Started": "bg-gray-400",
+  "Allocated": "bg-slate-500",
+  // IDF & Discovery
+  "IDF Received": "bg-sky-400",
+  "Discovery Call Scheduled": "bg-sky-500",
+  "Discovery Call Done": "bg-cyan-500",
+  // Search
+  "Prior Art Search": "bg-blue-400",
+  "Search Report Ready": "bg-blue-500",
+  "Search Report Shared": "bg-blue-600",
+  // Drafting
+  "Awaiting IDF from Client": "bg-orange-400",
+  "Patent Drafting": "bg-indigo-400",
+  "Drafting in Progress": "bg-indigo-500",
+  "Claims Ready to Share": "bg-indigo-600",
+  "Internal Review": "bg-purple-500",
+  // Client Review
+  "Draft Shared with Client": "bg-teal-400",
+  "Awaiting Client Feedback": "bg-teal-500",
+  "Client Comments Received": "bg-orange-500",
+  "Draft Being Updated": "bg-amber-500",
+  "Revised Draft Shared": "bg-teal-600",
+  "Draft Approved": "bg-emerald-500",
+  // Filing
+  "Provisional or Complete Filing Prep": "bg-violet-400",
+  "Complete or Provisional Filed": "bg-violet-500",
+  "Awaiting Signed Forms": "bg-amber-400",
+  "Ready to File": "bg-blue-600",
+  "Awaiting Payment": "bg-amber-600",
+  "Filed": "bg-green-500",
+  // Post-Filing
+  "FER Received": "bg-rose-400",
+  "FER Response in Progress": "bg-rose-500",
+  "FER Response Filed": "bg-rose-600",
+  "Hearing Scheduled": "bg-fuchsia-400",
+  "Hearing Response in Progress": "bg-fuchsia-500",
+  "Hearing Response Filed": "bg-fuchsia-600",
+  // Terminal
+  "Granted": "bg-green-600",
+  "Renewal Due": "bg-amber-500",
+  "Completed": "bg-green-500",
+  "On Hold": "bg-red-500",
 };
 
 // Column config — docket_number handled separately (DocketCell)

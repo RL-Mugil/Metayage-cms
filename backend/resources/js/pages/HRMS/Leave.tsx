@@ -40,10 +40,11 @@ function countWorkingDays(from: string, to: string): number {
 export default function HRMSLeave() {
   const { props } = usePage() as any;
   const role = props.auth?.user?.role || "";
-  const isApprover = ["super_admin", "hr", "manager", "partner"].includes(role);
+  const isApprover = ["super_admin", "hr", "partner"].includes(role);
 
   const [requests, setRequests] = useState<any[]>([]);
   const [balances, setBalances] = useState<any>(null);
+  const [entitlements, setEntitlements] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [activeTab, setActiveTab] = useState("All");
@@ -56,6 +57,7 @@ export default function HRMSLeave() {
       .then((data) => {
         setRequests(data.requests || []);
         setBalances(data.balances || null);
+        setEntitlements(data.entitlements || {});
       })
       .catch(() => setError("Failed to load leave data."))
       .finally(() => setLoading(false));
@@ -133,9 +135,10 @@ export default function HRMSLeave() {
         {/* Leave Balance Cards */}
         <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
           {BALANCE_CONFIG.map((cfg) => {
+            const total = Number(entitlements[cfg.column] ?? cfg.total);
             const remaining = balances ? Math.max(0, Number(balances[cfg.column] ?? 0)) : 0;
-            const used = Math.max(0, cfg.total - remaining);
-            const pct = Math.round((remaining / cfg.total) * 100);
+            const used = Math.max(0, total - remaining);
+            const pct = total > 0 ? Math.round((remaining / total) * 100) : 0;
             return (
               <Card key={cfg.type} className="border-border">
                 <CardContent className="p-5">
@@ -144,7 +147,7 @@ export default function HRMSLeave() {
                     <CalendarDays className="h-4 w-4 text-muted-foreground" />
                   </div>
                   <div className="text-3xl font-bold text-gold mb-0.5">{remaining}</div>
-                  <div className="text-xs text-muted-foreground mb-3">of {cfg.total} days remaining</div>
+                  <div className="text-xs text-muted-foreground mb-3">of {total} days remaining</div>
                   <div className="h-1.5 bg-muted rounded-full overflow-hidden">
                     <div className={`h-full ${cfg.color} rounded-full`} style={{ width: `${pct}%` }} />
                   </div>

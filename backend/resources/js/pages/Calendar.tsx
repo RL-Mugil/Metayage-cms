@@ -190,7 +190,7 @@ function YearMiniMonth({
 export default function Calendar() {
   const { props } = usePage() as any;
   const user = props.auth?.user;
-  const isAdmin = ["super_admin", "partner", "manager"].includes(user?.role);
+  const isAdmin = ["super_admin", "partner", "manager", "galvanizer"].includes(user?.role);
 
   const [events, setEvents] = useState<CaseEvent[]>([]);
   const [loading, setLoading] = useState(true);

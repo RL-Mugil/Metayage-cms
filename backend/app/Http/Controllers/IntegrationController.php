@@ -9,9 +9,9 @@ use Illuminate\Support\Facades\DB;
 class IntegrationController extends Controller
 {
     /** Roles that may change integration config (toggle/test/configure). Director is read-only. */
-    private const WRITE_ROLES = ['super_admin', 'manager'];
+    private const WRITE_ROLES = ['super_admin', 'manager', 'galvanizer'];
     /** Roles that may view integrations list (read-only). */
-    private const READ_ROLES  = ['super_admin', 'partner', 'manager', 'hr', 'associate', 'paralegal', 'finance'];
+    private const READ_ROLES  = ['super_admin', 'partner', 'manager', 'hr', 'associate', 'paralegal', 'finance', 'galvanizer'];
     private const CLIENT_ROLES = ['client', 'client_admin'];
 
     private function writeGate(Request $request): ?\Illuminate\Http\JsonResponse

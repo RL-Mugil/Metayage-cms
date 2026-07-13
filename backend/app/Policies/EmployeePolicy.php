@@ -37,6 +37,6 @@ class EmployeePolicy
 
     public function approveLeave(User $user): bool
     {
-        return in_array($user->role, ['super_admin', 'hr', 'manager', 'partner']);
+        return in_array($user->role, User::LEAVE_APPROVER_ROLES, true);
     }
 }

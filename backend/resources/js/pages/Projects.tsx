@@ -192,7 +192,7 @@ const CASE_TYPES = [
 
 const URGENCIES = ["Low", "Normal", "High", "Critical"];
 const STATUSES  = ["Open", "In Progress", "On Hold", "Closed", "Completed"];
-const PIPELINE_STAGES = ["Invention Disclosure", "Patent Search", "Search Report", "Provisional Application", "Provisional Filing", "Patent Drafting", "Applicant/Inventor Review", "Filing with Patent Office", "First Examination Report", "FER Response Preparation", "FER Response Filing", "Hearing with Examiner", "Hearing Response Preparation", "Hearing Response Filing", "Granted", "Renewal"];
+const PIPELINE_STAGES = ["Invention Disclosure", "Patent Search", "Search Report", "Provisional or Complete Application", "Provisional Filing", "Patent Drafting", "Applicant/Inventor Review", "Filing with Patent Office", "First Examination Report", "FER Response Preparation", "FER Response Filing", "Hearing with Examiner", "Hearing Response Preparation", "Hearing Response Filing", "Granted", "Renewal"];
 
 // ── Shared UI ─────────────────────────────────────────────────────────────────
 
@@ -636,7 +636,7 @@ function ProjectKpiModal({ kpi, onClose }: { kpi: KpiDef; onClose: () => void })
 export default function Projects() {
   const { props: pageProps } = usePage() as any;
   const currentUserRole = pageProps.auth?.user?.role ?? "";
-  const isAnalyst = pageProps.auth?.user?.role === "associate";
+  const isAnalyst = ["associate", "galvanizer", "partner", "director"].includes(currentUserRole);
   const canBulkImport = !["client", "client_admin"].includes(currentUserRole);
   const [roleFilter, setRoleFilter] = useAnalystRoleFilter();
 

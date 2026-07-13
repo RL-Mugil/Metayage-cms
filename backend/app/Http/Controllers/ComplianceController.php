@@ -12,7 +12,7 @@ use Illuminate\Support\Str;
 
 class ComplianceController extends Controller
 {
-    private const ALLOWED_ROLES = ['super_admin', 'partner', 'manager'];
+    private const ALLOWED_ROLES = ['super_admin', 'partner', 'manager', 'galvanizer'];
 
     private function denyClients(Request $request): ?\Illuminate\Http\JsonResponse
     {
@@ -42,8 +42,18 @@ class ComplianceController extends Controller
         $d76   = Carbon::today()->addDays(76)->toDateString();
         $d150  = Carbon::today()->addDays(150)->toDateString();
 
-        $row = ComplianceItem::where('status', '!=', 'Resolved')
-            ->selectRaw("
+        $user  = $request->user();
+        $statsQ = ComplianceItem::where('status', '!=', 'Resolved');
+        if ($user->isGalvanizer()) {
+            $codes = $user->galvanizerCircleCodes();
+            $circleUserIds = \Illuminate\Support\Facades\DB::table('tracker_circle_members as tcm')
+                ->join('tracker_circles as tc', 'tc.id', '=', 'tcm.circle_id')
+                ->whereIn('tc.code', $codes)
+                ->pluck('tcm.user_id')
+                ->all();
+            $statsQ->whereIn('assignee_id', $circleUserIds ?: [-1]);
+        }
+        $row = $statsQ->selectRaw("
                 SUM(CASE WHEN deadline <= ? THEN 1 ELSE 0 END) as critical,
                 SUM(CASE WHEN deadline BETWEEN ? AND ? THEN 1 ELSE 0 END) as at_risk,
                 SUM(CASE WHEN deadline BETWEEN ? AND ? THEN 1 ELSE 0 END) as on_track,
@@ -63,7 +73,19 @@ class ComplianceController extends Controller
     {
         if ($deny = $this->denyClients($request)) return $deny;
 
+        $user  = $request->user();
         $query = ComplianceItem::where('status', '!=', 'Resolved')->orderBy('deadline');
+
+        // Galvanizers see only items assigned to users in their circle(s).
+        if ($user->isGalvanizer()) {
+            $codes = $user->galvanizerCircleCodes();
+            $circleUserIds = \Illuminate\Support\Facades\DB::table('tracker_circle_members as tcm')
+                ->join('tracker_circles as tc', 'tc.id', '=', 'tcm.circle_id')
+                ->whereIn('tc.code', $codes)
+                ->pluck('tcm.user_id')
+                ->all();
+            $query->whereIn('assignee_id', $circleUserIds ?: [-1]);
+        }
 
         if ($request->filled('status')) {
             $today = Carbon::today();

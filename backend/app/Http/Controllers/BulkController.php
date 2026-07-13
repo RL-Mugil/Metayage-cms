@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\DB;
 
 class BulkController extends Controller
 {
-    private const MANAGE_ROLES = ['super_admin', 'partner', 'manager'];
+    private const MANAGE_ROLES = ['super_admin', 'partner', 'manager', 'galvanizer'];
 
     /** Per-entity allowed status values for bulk Change Status. */
     private const STATUS_WHITELIST = [
@@ -66,6 +66,15 @@ class BulkController extends Controller
             if (empty($ids)) {
                 return response()->json(['message' => 'No records found within your scope.'], 403);
             }
+        } elseif ($user->isGalvanizer()) {
+            $ids = match ($entity) {
+                'clients'  => Client::whereIn('id', $ids)->where(fn ($q) => $user->applyClientScope($q))->pluck('id')->all(),
+                'projects' => Project::whereIn('id', $ids)->where(fn ($q) => $user->applyProjectScope($q))->pluck('id')->all(),
+                'tasks'    => Task::whereIn('id', $ids)->whereHas('project', fn ($q) => $user->applyProjectScope($q))->pluck('id')->all(),
+            };
+            if (empty($ids)) {
+                return response()->json(['message' => 'No records found within your circle.'], 403);
+            }
         }
 
         $affected = 0;
@@ -115,9 +124,8 @@ class BulkController extends Controller
                 break;
 
             case 'delete':
-                // Only super_admin can bulk delete
-                if ($user->role !== 'super_admin') {
-                    return response()->json(['message' => 'Only super admins can bulk delete.'], 403);
+                if (! in_array($user->role, ['super_admin', 'galvanizer'], true)) {
+                    return response()->json(['message' => 'Only super admins and circle galvanizers can bulk delete.'], 403);
                 }
                 $affected = $model::whereIn('id', $ids)->delete();
                 break;

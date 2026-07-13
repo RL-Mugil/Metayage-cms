@@ -206,8 +206,15 @@ class AttendanceController extends Controller
     {
         $this->requireHrAdmin($request);
 
+        $user  = $request->user();
         $query = Attendance::with('employee.user')
             ->orderBy('attendance_date', 'desc');
+
+        // Galvanizers see only the attendance of employees in their circle(s).
+        if ($user->isGalvanizer()) {
+            $empIds = Employee::where(fn ($q) => $user->applyEmployeeScope($q))->pluck('id')->all();
+            $query->whereIn('employee_id', $empIds ?: [-1]);
+        }
 
         if ($request->filled('employee_id')) {
             $query->where('employee_id', (int) $request->employee_id);
@@ -581,7 +588,7 @@ class AttendanceController extends Controller
     private function requireHrAdmin(Request $request): void
     {
         $role = $request->user()->role;
-        if (!in_array($role, ['super_admin', 'partner', 'hr', 'finance'])) {
+        if (!in_array($role, ['super_admin', 'partner', 'hr', 'finance', 'galvanizer'])) {
             abort(403, 'Access denied.');
         }
     }

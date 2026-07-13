@@ -390,6 +390,60 @@ class LeaveManagementTest extends TestCase
         $this->assertNotNull($response['balances']);
     }
 
+    public function test_employee_without_balance_row_gets_current_year_entitlement(): void
+    {
+        $user = $this->user('associate');
+        $employee = $this->employeeFor($user);
+
+        Sanctum::actingAs($user);
+
+        $response = $this->getJson('/api/hrms/leaves')->assertOk()->json();
+
+        $this->assertSame($employee->id, $response['balances']['employee_id']);
+        $this->assertEquals(15.0, (float) $response['balances']['earned_leave']);
+        $this->assertEquals(8.0, (float) $response['balances']['casual_leave']);
+        $this->assertEquals(7.0, (float) $response['balances']['sick_leave']);
+        $this->assertDatabaseHas('leave_balances', [
+            'employee_id' => $employee->id,
+            'year' => now()->year,
+        ]);
+    }
+
+    public function test_missing_balance_row_is_created_from_approved_leave_history(): void
+    {
+        $user = $this->user('associate');
+        $employee = $this->employeeFor($user);
+
+        LeaveRequest::create([
+            'employee_id' => $employee->id,
+            'leave_type' => 'Annual',
+            'from_date' => now()->startOfYear()->addWeekdays(5)->toDateString(),
+            'to_date' => now()->startOfYear()->addWeekdays(6)->toDateString(),
+            'total_days' => 2,
+            'reason' => 'Approved history',
+            'status' => 'Approved',
+        ]);
+
+        LeaveRequest::create([
+            'employee_id' => $employee->id,
+            'leave_type' => 'Sick',
+            'from_date' => now()->startOfYear()->addWeekdays(10)->toDateString(),
+            'to_date' => now()->startOfYear()->addWeekdays(10)->toDateString(),
+            'total_days' => 1,
+            'reason' => 'Approved history',
+            'status' => 'Approved',
+        ]);
+
+        Sanctum::actingAs($user);
+
+        $response = $this->getJson('/api/hrms/leaves')->assertOk()->json();
+
+        $this->assertEquals(13.0, (float) $response['balances']['earned_leave']);
+        $this->assertEquals(8.0, (float) $response['balances']['casual_leave']);
+        $this->assertEquals(6.0, (float) $response['balances']['sick_leave']);
+        $this->assertEquals(0.0, (float) $response['balances']['lop_days']);
+    }
+
     public function test_approver_can_view_all_leaves(): void
     {
         $employee1 = $this->employeeFor($this->user('associate'));

@@ -37,6 +37,8 @@ class TaskController extends Controller
         } elseif ($user->role === 'associate') {
             // Patent Analysts see their assigned tasks
             $query->where('assignee_id', $user->id);
+        } elseif ($user->isGalvanizer()) {
+            $query->whereHas('project', fn ($q) => $user->applyProjectScope($q));
         }
 
         if ($request->filled('status')) {
@@ -52,6 +54,13 @@ class TaskController extends Controller
         $user = $request->user();
         $this->authorize('create', \App\Models\Task::class);
         $validated = $request->validated();
+
+        if ($user->isGalvanizer()) {
+            $project = Project::findOrFail($validated['project_id']);
+            if (! $user->canAccessCircle($project->circle)) {
+                return response()->json(['message' => 'Selected case is outside your assigned circle.'], 403);
+            }
+        }
 
         $validated['assignee_id']   = $validated['assignee_id'] ?? $user->id;
         $validated['reviewer_id']   = $validated['reviewer_id'] ?? $user->id;
@@ -184,12 +193,18 @@ class TaskController extends Controller
 
         if (! in_array($user->role, ['super_admin', 'partner', 'manager'])) {
             $project = Project::findOrFail($validated['project_id']);
+            if ($user->isGalvanizer()) {
+                if (! $user->canAccessCircle($project->circle)) {
+                    return response()->json(['message' => 'Selected case is outside your assigned circle.'], 403);
+                }
+            } else {
             $isTeamMember = $project->assigned_manager_id === $user->id
                 || $project->assigned_partner_id === $user->id
                 || $project->patent_engineer_id === $user->id
                 || $project->tasks()->where('assignee_id', $user->id)->exists();
             if (! $isTeamMember) {
                 return response()->json(['message' => 'You are not assigned to this project.'], 403);
+            }
             }
         }
 

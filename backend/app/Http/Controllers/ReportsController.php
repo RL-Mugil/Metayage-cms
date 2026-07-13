@@ -19,16 +19,16 @@ use Illuminate\Support\Facades\DB;
 class ReportsController extends Controller
 {
     private const REPORT_ACCESS = [
-        'client-portfolio' => ['super_admin', 'partner', 'manager'],
-        'matter-status' => ['super_admin', 'partner', 'manager', 'finance'],
-        'financial-summary' => ['super_admin', 'partner', 'manager', 'finance'],
+        'client-portfolio' => ['super_admin', 'partner', 'manager', 'galvanizer'],
+        'matter-status' => ['super_admin', 'partner', 'manager', 'finance', 'galvanizer'],
+        'financial-summary' => ['super_admin', 'partner', 'manager', 'finance', 'galvanizer'],
         'hrms' => ['super_admin', 'partner', 'hr'],
-        'ip-deadline' => ['super_admin', 'partner', 'manager'],
-        'productivity' => ['super_admin', 'partner', 'manager'],
-        'tracker-workload' => ['super_admin', 'partner', 'manager'],
-        'overdue-cases' => ['super_admin', 'partner', 'manager'],
-        'deadline-forecast' => ['super_admin', 'partner', 'manager'],
-        'payment-collection' => ['super_admin', 'partner', 'manager', 'finance'],
+        'ip-deadline' => ['super_admin', 'partner', 'manager', 'galvanizer'],
+        'productivity' => ['super_admin', 'partner', 'manager', 'galvanizer'],
+        'tracker-workload' => ['super_admin', 'partner', 'manager', 'galvanizer'],
+        'overdue-cases' => ['super_admin', 'partner', 'manager', 'galvanizer'],
+        'deadline-forecast' => ['super_admin', 'partner', 'manager', 'galvanizer'],
+        'payment-collection' => ['super_admin', 'partner', 'manager', 'finance', 'galvanizer'],
     ];
 
     private const REPORT_NAMES = [
@@ -139,11 +139,11 @@ class ReportsController extends Controller
             'financial-summary' => $this->financialSummary($user, $perPage, $page, $from, $to),
             'hrms' => $this->hrmsReport($perPage, $page, $from, $to),
             'ip-deadline' => $this->ipDeadline($user, $perPage, $page, $from, $to),
-            'productivity' => $this->productivity($perPage, $page, $from, $to),
-            'tracker-workload' => $this->trackerWorkload($perPage, $page, $from, $to),
-            'overdue-cases' => $this->overdueCases($perPage, $page, $from, $to),
-            'deadline-forecast' => $this->deadlineForecast($perPage, $page, $from, $to),
-            'payment-collection' => $this->paymentCollection($perPage, $page, $from, $to),
+            'productivity' => $this->productivity($user, $perPage, $page, $from, $to),
+            'tracker-workload' => $this->trackerWorkload($user, $perPage, $page, $from, $to),
+            'overdue-cases' => $this->overdueCases($user, $perPage, $page, $from, $to),
+            'deadline-forecast' => $this->deadlineForecast($user, $perPage, $page, $from, $to),
+            'payment-collection' => $this->paymentCollection($user, $perPage, $page, $from, $to),
             default => [
                 'type' => $type,
                 'rows' => [],
@@ -171,6 +171,8 @@ class ReportsController extends Controller
 
         if ($user->role === 'manager') {
             $query->where('account_manager_id', $user->id);
+        } elseif ($user->isGalvanizer()) {
+            $user->applyClientScope($query);
         }
 
         $paginator = $query->paginate($perPage, ['*'], 'page', $page);
@@ -195,6 +197,8 @@ class ReportsController extends Controller
         $this->applyProjectOperationalDateRange($query, $from, $to);
         if ($user->role === 'manager') {
             $query->where('assigned_manager_id', $user->id);
+        } elseif ($user->isGalvanizer()) {
+            $user->applyProjectScope($query);
         }
 
         $paginator = $query->paginate($perPage, ['*'], 'page', $page);
@@ -219,6 +223,8 @@ class ReportsController extends Controller
         $this->applyDateRange($query, 'issue_date', $from, $to);
         if ($user->role === 'manager') {
             $query->whereHas('project', fn ($q) => $q->where('assigned_manager_id', $user->id));
+        } elseif ($user->isGalvanizer()) {
+            $query->whereHas('project', fn ($q) => $user->applyProjectScope($q));
         }
 
         $paginator = $query->paginate($perPage, ['*'], 'page', $page);
@@ -305,6 +311,8 @@ class ReportsController extends Controller
         $this->applyDateRange($query, 'hard_deadline', $from, $to);
         if ($user->role === 'manager') {
             $query->where('assigned_manager_id', $user->id);
+        } elseif ($user->isGalvanizer()) {
+            $user->applyProjectScope($query);
         }
 
         $paginator = $query->orderBy('hard_deadline')->paginate($perPage, ['*'], 'page', $page);
@@ -322,10 +330,13 @@ class ReportsController extends Controller
         return $this->paginatedResponse('ip-deadline', $rows, $paginator, $perPage);
     }
 
-    private function productivity(int $perPage, int $page, ?Carbon $from, ?Carbon $to): array
+    private function productivity($user, int $perPage, int $page, ?Carbon $from, ?Carbon $to): array
     {
         $query = TimeEntry::with(['user', 'project', 'task', 'approvedBy']);
         $this->applyDateRange($query, 'entry_date', $from, $to);
+        if ($user->isGalvanizer()) {
+            $query->whereHas('project', fn ($q) => $user->applyProjectScope($q));
+        }
         $paginator = $query->paginate($perPage, ['*'], 'page', $page);
         $rows = $paginator->getCollection()->map(fn ($entry) => [
             'entry_date' => $entry->entry_date?->toDateString(),
@@ -342,10 +353,11 @@ class ReportsController extends Controller
         return $this->paginatedResponse('productivity', $rows, $paginator, $perPage);
     }
 
-    private function trackerWorkload(int $perPage, int $page, ?Carbon $from, ?Carbon $to): array
+    private function trackerWorkload($user, int $perPage, int $page, ?Carbon $from, ?Carbon $to): array
     {
         $params = [];
         $rangeSql = $this->trackerDateSql($from, $to, $params);
+        $circleSql = $this->trackerCircleSql($user);
 
         $rows = collect(DB::select("
             SELECT u.name AS team_member,
@@ -358,17 +370,17 @@ class ReportsController extends Controller
                 SELECT pcm_id AS uid, 1 AS is_pcm, 0 AS is_scm, 0 AS is_pr,
                        CASE WHEN delivery_due_date < CURRENT_DATE THEN 1 ELSE 0 END AS is_overdue
                 FROM tracker_rows
-                WHERE pcm_id IS NOT NULL {$rangeSql}
+                WHERE pcm_id IS NOT NULL {$rangeSql} {$circleSql}
                 UNION ALL
                 SELECT scm_id AS uid, 0 AS is_pcm, 1 AS is_scm, 0 AS is_pr,
                        CASE WHEN delivery_due_date < CURRENT_DATE THEN 1 ELSE 0 END AS is_overdue
                 FROM tracker_rows
-                WHERE scm_id IS NOT NULL {$rangeSql}
+                WHERE scm_id IS NOT NULL {$rangeSql} {$circleSql}
                 UNION ALL
                 SELECT pr_id AS uid, 0 AS is_pcm, 0 AS is_scm, 1 AS is_pr,
                        CASE WHEN delivery_due_date < CURRENT_DATE THEN 1 ELSE 0 END AS is_overdue
                 FROM tracker_rows
-                WHERE pr_id IS NOT NULL {$rangeSql}
+                WHERE pr_id IS NOT NULL {$rangeSql} {$circleSql}
             ) t
             JOIN users u ON u.id = t.uid
             GROUP BY u.id, u.name
@@ -385,13 +397,16 @@ class ReportsController extends Controller
         return $this->collectionPaginatedResponse('tracker-workload', $rows, $perPage, $page);
     }
 
-    private function overdueCases(int $perPage, int $page, ?Carbon $from, ?Carbon $to): array
+    private function overdueCases($user, int $perPage, int $page, ?Carbon $from, ?Carbon $to): array
     {
         $query = TrackerRow::with(['pcmUser:id,name', 'scmUser:id,name', 'prUser:id,name'])
             ->whereNotNull('delivery_due_date')
             ->whereDate('delivery_due_date', '<', now()->toDateString())
             ->orderBy('delivery_due_date');
         $this->applyDateRange($query, 'delivery_due_date', $from, $to);
+        if ($user->isGalvanizer()) {
+            $query->whereIn('circle_id', $this->allowedTrackerCircleIds($user));
+        }
 
         $paginator = $query->paginate($perPage, ['*'], 'page', $page);
         $rows = $paginator->getCollection()->map(fn ($row) => [
@@ -410,13 +425,16 @@ class ReportsController extends Controller
         return $this->paginatedResponse('overdue-cases', $rows, $paginator, $perPage);
     }
 
-    private function deadlineForecast(int $perPage, int $page, ?Carbon $from, ?Carbon $to): array
+    private function deadlineForecast($user, int $perPage, int $page, ?Carbon $from, ?Carbon $to): array
     {
         $query = TrackerRow::with(['pcmUser:id,name'])
             ->whereNotNull('delivery_due_date')
             ->whereDate('delivery_due_date', '>=', now()->toDateString())
             ->orderBy('delivery_due_date');
         $this->applyDateRange($query, 'delivery_due_date', $from, $to);
+        if ($user->isGalvanizer()) {
+            $query->whereIn('circle_id', $this->allowedTrackerCircleIds($user));
+        }
 
         $paginator = $query->paginate($perPage, ['*'], 'page', $page);
         $rows = $paginator->getCollection()->map(fn ($row) => [
@@ -434,10 +452,13 @@ class ReportsController extends Controller
         return $this->paginatedResponse('deadline-forecast', $rows, $paginator, $perPage);
     }
 
-    private function paymentCollection(int $perPage, int $page, ?Carbon $from, ?Carbon $to): array
+    private function paymentCollection($user, int $perPage, int $page, ?Carbon $from, ?Carbon $to): array
     {
         $query = DB::table('tracker_rows')->whereNotNull('client_name');
         $this->applyDateRange($query, 'delivery_due_date', $from, $to);
+        if ($user->isGalvanizer()) {
+            $query->whereIn('circle_id', $this->allowedTrackerCircleIds($user));
+        }
         $paginator = $query
             ->selectRaw("
                 client_name AS client,
@@ -515,6 +536,29 @@ class ReportsController extends Controller
         }
 
         return $sql;
+    }
+
+    private function trackerCircleSql($user): string
+    {
+        if (! $user->isGalvanizer()) {
+            return '';
+        }
+
+        $ids = implode(',', array_map('intval', $this->allowedTrackerCircleIds($user)));
+
+        return $ids !== '' ? " AND circle_id IN ({$ids})" : ' AND 1=0';
+    }
+
+    private function allowedTrackerCircleIds($user): array
+    {
+        if (! $user->isGalvanizer()) {
+            return [];
+        }
+
+        return DB::table('tracker_circles')
+            ->whereIn('slug', $user->galvanizerCircleSlugs())
+            ->pluck('id')
+            ->all();
     }
 
     private function applyProjectOperationalDateRange($query, ?Carbon $from, ?Carbon $to): void

@@ -44,6 +44,7 @@ class StoreClientRequest extends FormRequest
             'accounts_person'      => 'nullable|string|max:255',
             'remarks'              => 'nullable|string',
             'status'               => 'nullable|string|max:50',
+            'circle'               => 'nullable|in:A,B',
         ];
     }
 }

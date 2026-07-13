@@ -77,6 +77,12 @@ class DashboardController extends Controller
             $activeMattersQuery->where($scopeFn);
             $inactiveMattersQuery->where($scopeFn);
             $tasksQuery->where('assignee_id', $user->id);
+        } elseif ($user->isGalvanizer()) {
+            $user->applyProjectScope($activeMattersQuery);
+            $user->applyProjectScope($inactiveMattersQuery);
+            $user->applyClientScope($clientsQuery);
+            $invoicesQuery->whereHas('project', fn ($q) => $user->applyProjectScope($q));
+            $tasksQuery->whereHas('project', fn ($q) => $user->applyProjectScope($q));
         }
 
         // Calculations — cached per user to avoid N queries on every page load.
@@ -94,7 +100,7 @@ class DashboardController extends Controller
 
         // Financial aggregates — only for roles with financial visibility per RBAC matrix.
         // associate, paralegal, hr have Financial = ❌; zeroing out prevents firm-wide data leaks.
-        $canSeeFinancials = in_array($user->role, ['super_admin', 'partner', 'manager', 'finance', 'client', 'client_admin']);
+        $canSeeFinancials = in_array($user->role, ['super_admin', 'partner', 'manager', 'finance', 'galvanizer', 'client', 'client_admin']);
 
         $wipAmount      = 0;
         $invoicedAmount = 0;
@@ -104,6 +110,8 @@ class DashboardController extends Controller
             $wipQuery = TimeEntry::where('status', 'Approved')->where('billable', true);
             if ($user->isClientRole()) {
                 $wipQuery->whereHas('project.client.contacts', fn ($q) => $q->where('email', $user->email));
+            } elseif ($user->isGalvanizer()) {
+                $wipQuery->whereHas('project', fn ($q) => $user->applyProjectScope($q));
             }
             $wipAmount = $wipQuery->sum(\DB::raw('duration_hours * 150'));
 
@@ -124,7 +132,7 @@ class DashboardController extends Controller
             ->groupBy('stage_name')
             ->orderBy('stage_name');
 
-        if ($user->isClientRole() || $user->role === 'associate' ||
+        if ($user->isClientRole() || $user->role === 'associate' || $user->isGalvanizer() ||
             ($user->role === 'manager' && $request->input('role_filter') && $request->input('role_filter') !== 'all')) {
             $stagesQuery->whereIn('project_id', (clone $activeMattersQuery)->pluck('id'));
         }

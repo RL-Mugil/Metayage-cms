@@ -114,9 +114,11 @@ class ClientController extends Controller
 
         if ($user->isClientRole()) {
             $base->visibleToUser($user);
+        } elseif ($user->isGalvanizer()) {
+            $user->applyClientScope($base);
         }
 
-        $cacheKey = "client_stats_{$user->id}_{$user->role}";
+        $cacheKey = "client_stats_{$user->id}_{$user->role}_" . implode('-', $user->galvanizerCircleCodes());
         $stats = Cache::remember($cacheKey, 300, function () use ($base) {
             $row = (clone $base)->selectRaw("
                 COUNT(*) as total,
@@ -150,6 +152,8 @@ class ClientController extends Controller
 
         if ($user->isClientRole()) {
             $query->visibleToUser($user);
+        } elseif ($user->isGalvanizer()) {
+            $user->applyClientScope($query);
         }
 
         if ($request->filled('search')) {
@@ -190,6 +194,7 @@ class ClientController extends Controller
         if ($user->isClientRole() && ! $client->isVisibleToUser($user)) {
             return response()->json(['message' => 'Unauthorized Access'], 403);
         }
+        $this->authorize('view', $client);
 
         return response()->json($client);
     }
@@ -204,6 +209,15 @@ class ClientController extends Controller
         $clientType = $v['client_type'];
 
         $client = \DB::transaction(function () use ($v, $nationality, $hasGstin, $clientType, $user, $request) {
+            if ($user->isGalvanizer()) {
+                $v['circle'] = $v['circle'] ?? $user->defaultGalvanizerCircleCode();
+                if (! $user->canAccessCircle($v['circle'] ?? null)) {
+                    throw \Illuminate\Validation\ValidationException::withMessages([
+                        'circle' => 'Select one of your assigned circles.',
+                    ]);
+                }
+            }
+
             $recordMode = $v['record_mode'] ?? 'new';
             $v['client_code'] = $recordMode === 'existing'
                 ? strtoupper(trim((string) $v['client_code']))
@@ -253,6 +267,11 @@ class ClientController extends Controller
         $user = $request->user();
         $client = Client::findOrFail($id);
         $v = $request->validated();
+        $this->authorize('update', $client);
+
+        if ($user->isGalvanizer() && array_key_exists('circle', $v) && ! $user->canAccessCircle($v['circle'])) {
+            return response()->json(['message' => 'You cannot move a client outside your assigned circle.'], 403);
+        }
 
         $nationality = $v['nationality'] ?? $client->nationality ?? 'India';
         $hasGstin = array_key_exists('has_gstin', $v) ? (bool) $v['has_gstin'] : (bool) $client->has_gstin;
@@ -322,7 +341,7 @@ class ClientController extends Controller
     public function import(Request $request)
     {
         $user = $request->user();
-        if (!in_array($user->role, ['super_admin', 'partner', 'manager'])) {
+        if (!in_array($user->role, ['super_admin', 'partner', 'manager', 'galvanizer'])) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
@@ -558,11 +577,12 @@ class ClientController extends Controller
     public function addContact(Request $request, $id)
     {
         $user = $request->user();
-        if (!in_array($user->role, ['super_admin', 'partner', 'manager'])) {
+        if (!in_array($user->role, ['super_admin', 'partner', 'manager', 'galvanizer'])) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
         $client = Client::findOrFail($id);
+        $this->authorize('update', $client);
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'title' => 'nullable|string|max:255',

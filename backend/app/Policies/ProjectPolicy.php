@@ -18,6 +18,10 @@ class ProjectPolicy
             return $project->client && $project->client->isVisibleToUser($user);
         }
 
+        if ($user->isGalvanizer()) {
+            return $user->canAccessCircle($project->circle);
+        }
+
         // Associates and paralegals may only view projects they are directly assigned to.
         // Mirrors the scope in ProjectController::index() exactly to prevent
         // policy/controller divergence causing spurious 403s.
@@ -36,18 +40,20 @@ class ProjectPolicy
 
     public function create(User $user): bool
     {
-        return in_array($user->role, ['super_admin', 'partner', 'manager']);
+        return in_array($user->role, ['super_admin', 'partner', 'manager', 'galvanizer']);
     }
 
     public function update(User $user, Project $project): bool
     {
         if (in_array($user->role, ['super_admin', 'partner'])) return true;
+        if ($user->isGalvanizer()) return $user->canAccessCircle($project->circle);
         if ($user->role === 'manager' && $project->assigned_manager_id === $user->id) return true;
         return false;
     }
 
     public function delete(User $user, Project $project): bool
     {
+        if ($user->isGalvanizer()) return $user->canAccessCircle($project->circle);
         return in_array($user->role, ['super_admin', 'partner']);
     }
 }

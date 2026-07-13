@@ -9,6 +9,7 @@ use App\Models\ClientLedger;
 use App\Models\Quotation;
 use App\Models\Client;
 use App\Models\AuditLog;
+use App\Models\Project;
 use App\Http\PaginationHelper;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -79,6 +80,8 @@ class FinancialController extends Controller
             $base->whereHas('client', function ($q) use ($user) {
                 $q->visibleToUser($user);
             });
+        } elseif ($user->isGalvanizer()) {
+            $base->whereHas('project', fn ($q) => $user->applyProjectScope($q));
         }
 
         $cacheKey = "financial_stats_{$user->id}_{$user->role}_v" . Cache::get('dashboard_v', 0);
@@ -114,6 +117,10 @@ class FinancialController extends Controller
             $query->whereHas('client', function ($q) use ($user) {
                 $q->visibleToUser($user);
             });
+        } elseif ($user->isGalvanizer()) {
+            $query->whereHas('project', fn ($q) => $user->applyProjectScope($q));
+        } elseif ($user->role === 'associate') {
+            $query->whereHas('project', fn ($q) => $q->where($this->analystProjectScope($user)));
         }
 
         if ($request->filled('status')) {
@@ -144,6 +151,10 @@ class FinancialController extends Controller
             $query->whereHas('client', function ($q) use ($user) {
                 $q->visibleToUser($user);
             });
+        } elseif ($user->isGalvanizer()) {
+            $query->whereHas('project', fn ($q) => $user->applyProjectScope($q));
+        } elseif ($user->role === 'associate') {
+            $query->whereHas('project', fn ($q) => $q->where($this->analystProjectScope($user)));
         }
 
         return response()->json(PaginationHelper::paginate($query->orderBy('created_at', 'desc'), $request));
@@ -165,6 +176,18 @@ class FinancialController extends Controller
             'payment_terms' => 'nullable|string',
             'notes' => 'nullable|string',
         ]);
+
+        $project = $this->resolveAuthorizedProject($user, $validated['project_id'] ?? null);
+        if ($user->role === 'associate' && !$project) {
+            return response()->json(['message' => 'Patent analysts must raise invoices against an assigned case.'], 422);
+        }
+        if ($user->isGalvanizer() && !$project) {
+            return response()->json(['message' => 'Galvanizers must raise invoices against a case in their assigned circle.'], 422);
+        }
+
+        if ($project && (int) $project->client_id !== (int) $validated['client_id']) {
+            return response()->json(['message' => 'Selected case does not belong to the selected client.'], 422);
+        }
 
         $client   = Client::findOrFail($validated['client_id']);
         $subtotal = collect($validated['items'])->sum('amount');
@@ -335,6 +358,18 @@ class FinancialController extends Controller
             'currency'                 => 'nullable|string|max:5',
         ]);
 
+        $project = $this->resolveAuthorizedProject($user, $validated['project_id'] ?? null);
+        if ($user->role === 'associate' && !$project) {
+            return response()->json(['message' => 'Patent analysts must raise quotations against an assigned case.'], 422);
+        }
+        if ($user->isGalvanizer() && !$project) {
+            return response()->json(['message' => 'Galvanizers must raise quotations against a case in their assigned circle.'], 422);
+        }
+
+        if ($project && (int) $project->client_id !== (int) $validated['client_id']) {
+            return response()->json(['message' => 'Selected case does not belong to the selected client.'], 422);
+        }
+
         $client   = Client::findOrFail($validated['client_id']);
         $subtotal = (float) $validated['total_amount']; // user enters pre-tax fee amount
         $gst      = $this->computeGst($client, $subtotal);
@@ -388,6 +423,9 @@ class FinancialController extends Controller
         $user      = $request->user();
         $this->authorize('create', \App\Models\Invoice::class);
         $quotation = Quotation::findOrFail($id);
+        if ($user->isGalvanizer() && (! $quotation->project || ! $user->canAccessCircle($quotation->project->circle))) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
 
         $validated = $request->validate([
             'status'                   => 'sometimes|in:Draft,Internal Pending,Sent,Accepted,Expired,Cancelled',
@@ -419,6 +457,9 @@ class FinancialController extends Controller
         $user      = $request->user();
         $this->authorize('create', \App\Models\Invoice::class);
         $quotation = Quotation::findOrFail($id);
+        if ($user->isGalvanizer() && (! $quotation->project || ! $user->canAccessCircle($quotation->project->circle))) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
 
         $quotation->update(['status' => 'Cancelled']);
 
@@ -440,6 +481,9 @@ class FinancialController extends Controller
         $user      = $request->user();
         $this->authorize('create', \App\Models\Invoice::class);
         $quotation = Quotation::with('client')->findOrFail($id);
+        if ($user->isGalvanizer() && (! $quotation->project || ! $user->canAccessCircle($quotation->project->circle))) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
 
         if (!in_array($quotation->status, ['Sent', 'Accepted'])) {
             return response()->json(['message' => 'Only Sent or Accepted quotations can be converted.'], 422);
@@ -523,6 +567,28 @@ class FinancialController extends Controller
         return response()->json($invoice->load('client'), 201);
     }
 
+    private function resolveAuthorizedProject($user, ?int $projectId): ?Project
+    {
+        if (!$projectId) {
+            return null;
+        }
+
+        $project = Project::findOrFail($projectId);
+        $this->authorize('view', $project);
+
+        return $project;
+    }
+
+    private function analystProjectScope($user): \Closure
+    {
+        return function ($q) use ($user) {
+            $q->where('patent_engineer_id', $user->id)
+                ->orWhere('assigned_manager_id', $user->id)
+                ->orWhere('secondary_manager_id', $user->id)
+                ->orWhereHas('tasks', fn ($t) => $t->where('assignee_id', $user->id));
+        };
+    }
+
     public function batchUpdate(Request $request)
     {
         $user = $request->user();
@@ -543,6 +609,10 @@ class FinancialController extends Controller
             try {
                 \DB::transaction(function () use ($invId, $validated, $user, $request, &$updated, &$skipped) {
                     $invoice = Invoice::lockForUpdate()->findOrFail($invId);
+                    $this->authorize(
+                        $validated['action'] === 'mark_paid' ? 'pay' : ($validated['action'] === 'cancel' ? 'delete' : 'update'),
+                        $invoice
+                    );
 
                     if ($validated['action'] === 'mark_sent') {
                         if ($invoice->status !== 'Draft') { $skipped++; return; }

@@ -10,8 +10,8 @@ use Illuminate\Http\Request;
 
 class PerformanceController extends Controller
 {
-    private const READ_ROLES = ['super_admin', 'partner', 'manager', 'hr'];
-    private const WRITE_ROLES = ['super_admin', 'partner', 'manager', 'hr'];
+    private const READ_ROLES = ['super_admin', 'partner', 'manager', 'hr', 'galvanizer'];
+    private const WRITE_ROLES = ['super_admin', 'partner', 'manager', 'hr', 'galvanizer'];
 
     private function gate(Request $request, array $roles): ?\Illuminate\Http\JsonResponse
     {
@@ -25,23 +25,31 @@ class PerformanceController extends Controller
     {
         if ($deny = $this->gate($request, self::READ_ROLES)) return $deny;
 
+        $user = $request->user();
+        $empIds = null;
+        if ($user->isGalvanizer()) {
+            $empIds = \App\Models\Employee::where(fn ($q) => $user->applyEmployeeScope($q))->pluck('id')->all();
+        }
+
         return response()->json([
-            'reviews' => PerformanceReview::orderBy('id')->get()->map(fn ($r) => [
-                'id' => $r->id,
-                'employee' => $r->employee,
-                'reviewer' => $r->reviewer,
-                'period' => $r->period,
-                'rating' => (float) $r->rating,
-                'status' => $r->status,
-            ]),
-            'goals' => PerformanceGoal::orderBy('id')->get()->map(fn ($g) => [
-                'id' => $g->id,
-                'title' => $g->title,
-                'employee' => $g->employee,
-                'due' => $g->due_label,
-                'progress' => $g->progress,
-                'status' => $g->status,
-            ]),
+            'reviews' => PerformanceReview::when($empIds !== null, fn ($q) => $q->whereIn('employee_id', $empIds ?: [-1]))
+                ->orderBy('id')->get()->map(fn ($r) => [
+                    'id' => $r->id,
+                    'employee' => $r->employee,
+                    'reviewer' => $r->reviewer,
+                    'period' => $r->period,
+                    'rating' => (float) $r->rating,
+                    'status' => $r->status,
+                ]),
+            'goals' => PerformanceGoal::when($empIds !== null, fn ($q) => $q->whereIn('employee_id', $empIds ?: [-1]))
+                ->orderBy('id')->get()->map(fn ($g) => [
+                    'id' => $g->id,
+                    'title' => $g->title,
+                    'employee' => $g->employee,
+                    'due' => $g->due_label,
+                    'progress' => $g->progress,
+                    'status' => $g->status,
+                ]),
             'feedback360' => PerformanceFeedback360::orderBy('id')->get()->map(fn ($f) => [
                 'id' => $f->id,
                 'from' => $f->from_name,

@@ -35,7 +35,7 @@ export default function ProjectShow({ projectId }: Props) {
     );
   }
 
-  const stages = ["Invention Disclosure", "Patent Search", "Search Report", "Provisional Application", "Provisional Filing", "Patent Drafting", "Applicant/Inventor Review", "Filing with Patent Office", "First Examination Report", "FER Response Preparation", "FER Response Filing", "Hearing with Examiner", "Hearing Response Preparation", "Hearing Response Filing", "Granted", "Renewal"];
+  const stages = ["Invention Disclosure", "Patent Search", "Search Report", "Provisional or Complete Application", "Provisional Filing", "Patent Drafting", "Applicant/Inventor Review", "Filing with Patent Office", "First Examination Report", "FER Response Preparation", "FER Response Filing", "Hearing with Examiner", "Hearing Response Preparation", "Hearing Response Filing", "Granted", "Renewal"];
 
   return (
     <AppLayout>

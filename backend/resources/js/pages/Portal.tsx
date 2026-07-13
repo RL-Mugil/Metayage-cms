@@ -407,7 +407,7 @@ export default function Portal() {
                   <span className="text-muted-foreground">Login email</span>
                   <span className="font-mono font-medium">{createdEmail}</span>
                 </div>
-                <div className="text-xs text-muted-foreground text-center">Login: mypl-cms.139-59-85-216.sslip.io</div>
+                <div className="text-xs text-muted-foreground text-center">Login: myipstrategy.com</div>
                 <p className="text-xs text-muted-foreground text-center">
                   To add more users to this portal, click the company name in the table below.
                 </p>

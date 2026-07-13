@@ -16,7 +16,7 @@ use Illuminate\Support\Facades\DB;
 
 class ApprovalController extends Controller
 {
-    private const APPROVER_ROLES = ['super_admin', 'hr', 'manager', 'partner'];
+    private const APPROVER_ROLES = User::LEAVE_APPROVER_ROLES;
     private const CLIENT_APPROVAL_CREATORS = ['super_admin', 'partner', 'manager'];
 
     /** List approvals for a client portal user (their own client only). */
@@ -81,16 +81,10 @@ class ApprovalController extends Controller
         $page    = max(1, (int) $request->query('page', 1));
         $offset  = ($page - 1) * $perPage;
 
-        // Leave/expense scoping: non-approvers see none; managers see their
-        // reports; hr/partner/super_admin see all.
+        // Leave/expense scoping: non-approvers see none; hr/partner/super_admin see all.
         $scopedEmployeeIds = null; // null = all
         if (! $canSeeHrApprovals) {
             $scopedEmployeeIds = [-1]; // none
-        } elseif ($user->role === 'manager') {
-            $scopedEmployeeIds = Employee::where('reporting_manager_id', $user->id)
-                ->orWhere('dotted_line_manager_id', $user->id)
-                ->pluck('id')
-                ->all() ?: [-1];
         }
 
         $leavesQuery   = LeaveRequest::query();
@@ -403,26 +397,10 @@ class ApprovalController extends Controller
 
         if ($validated['type'] === 'Leave') {
             $leave = LeaveRequest::findOrFail($validated['id']);
-            if ($user->role === 'manager') {
-                $allowed = Employee::where('reporting_manager_id', $user->id)
-                    ->orWhere('dotted_line_manager_id', $user->id)
-                    ->pluck('id')->all();
-                if (! in_array($leave->employee_id, $allowed)) {
-                    return response()->json(['message' => 'Forbidden'], 403);
-                }
-            }
             app(LeaveApprovalService::class)->resolve($leave, $validated['action'], $user->id);
             $subjectType = 'LeaveRequest';
         } else {
             $claim = ExpenseClaim::findOrFail($validated['id']);
-            if ($user->role === 'manager') {
-                $allowed = Employee::where('reporting_manager_id', $user->id)
-                    ->orWhere('dotted_line_manager_id', $user->id)
-                    ->pluck('id')->all();
-                if (! in_array($claim->employee_id, $allowed)) {
-                    return response()->json(['message' => 'Forbidden'], 403);
-                }
-            }
             if ($claim->status !== 'Pending') {
                 return response()->json(['message' => "Claim already {$claim->status}."], 422);
             }

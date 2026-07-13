@@ -21,7 +21,7 @@ class TeamInviteMail extends Mailable
 
     public function envelope(): Envelope
     {
-        return new Envelope(subject: 'Your IPFlow Workspace Access');
+        return new Envelope(subject: 'Your MyIPStrategy Workspace Access');
     }
 
     public function content(): Content

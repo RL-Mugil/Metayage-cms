@@ -8,7 +8,11 @@ class UpdateClientRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return in_array($this->user()->role, ['super_admin', 'partner', 'manager', 'hr']);
+        $client = $this->route('id') ? \App\Models\Client::find($this->route('id')) : null;
+
+        return $client
+            ? $this->user()->can('update', $client)
+            : in_array($this->user()->role, ['super_admin', 'partner', 'manager', 'hr', 'galvanizer']);
     }
 
     public function rules(): array
