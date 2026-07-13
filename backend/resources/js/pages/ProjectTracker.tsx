@@ -13,8 +13,8 @@ import { downloadCSV } from "@/lib/api-client";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-// Ordered by workflow sequence — IDF receipt → filing → post-filing → terminal
-const STATUSES = [
+// All statuses — superset used when no service code is known
+const ALL_STATUSES = [
   // Pre-work
   "Not Started",
   "Allocated",
@@ -22,15 +22,16 @@ const STATUSES = [
   "IDF Received",
   "Discovery Call Scheduled",
   "Discovery Call Done",
-  // Search
+  // PAS (Prior Art Search)
   "Prior Art Search",
   "Search Report Ready",
   "Search Report Shared",
-  // Drafting
   "Awaiting IDF from Client",
+  // Drafting
   "Patent Drafting",
   "Drafting in Progress",
   "Claims Ready to Share",
+  "Claims Approved",
   "Internal Review",
   // Client Review
   "Draft Shared with Client",
@@ -44,6 +45,7 @@ const STATUSES = [
   "Complete or Provisional Filed",
   "Awaiting Signed Forms",
   "Ready to File",
+  "Filing",
   "Awaiting Payment",
   "Filed",
   // Post-Filing
@@ -57,8 +59,33 @@ const STATUSES = [
   "Granted",
   "Renewal Due",
   "Completed",
+  "Abandoned",
   "On Hold",
 ];
+
+// Statuses visible per service code (derived from docket_number.slice(9))
+const STATUSES_BY_SERVICE: Record<string, string[]> = {
+  PAS: ["Not Started", "Allocated", "Prior Art Search", "Search Report Ready", "Search Report Shared", "Awaiting IDF from Client", "On Hold", "Abandoned"],
+  SRH: ["Not Started", "Allocated", "Prior Art Search", "Search Report Ready", "Search Report Shared", "Awaiting IDF from Client", "On Hold", "Abandoned"],
+  PAT: ["Not Started", "Allocated", "Prior Art Search", "Search Report Ready", "Search Report Shared", "Awaiting IDF from Client", "On Hold", "Abandoned"],
+  FTO: ["Not Started", "Allocated", "Prior Art Search", "Search Report Ready", "Search Report Shared", "Awaiting IDF from Client", "On Hold", "Abandoned"],
+  PRV: ["Not Started", "Allocated", "IDF Received", "Drafting in Progress", "Internal Review", "Awaiting Signed Forms", "Filing", "Filed", "On Hold", "Abandoned"],
+  CPT: ["Not Started", "Allocated", "IDF Received", "Claims Ready to Share", "Claims Approved", "Drafting in Progress", "Internal Review", "Draft Shared with Client", "Awaiting Client Feedback", "Client Comments Received", "Draft Being Updated", "Revised Draft Shared", "Draft Approved", "Awaiting Signed Forms", "Filing", "Filed", "On Hold", "Abandoned"],
+  NPA: ["Not Started", "Allocated", "IDF Received", "Claims Ready to Share", "Claims Approved", "Drafting in Progress", "Internal Review", "Draft Shared with Client", "Awaiting Client Feedback", "Client Comments Received", "Draft Being Updated", "Revised Draft Shared", "Draft Approved", "Awaiting Signed Forms", "Filing", "Filed", "On Hold", "Abandoned"],
+  FER: ["Not Started", "Allocated", "FER Received", "FER Response in Progress", "FER Response Filed", "On Hold", "Abandoned"],
+  SER: ["Not Started", "Allocated", "FER Received", "FER Response in Progress", "FER Response Filed", "On Hold", "Abandoned"],
+  TER: ["Not Started", "Allocated", "FER Received", "FER Response in Progress", "FER Response Filed", "On Hold", "Abandoned"],
+  HRG: ["Not Started", "Allocated", "Hearing Scheduled", "Hearing Response in Progress", "Hearing Response Filed", "Granted", "On Hold", "Abandoned"],
+};
+
+function getStatusesForServiceCode(docketNumber: string | null | undefined): string[] {
+  if (!docketNumber || docketNumber.length < 10) return ALL_STATUSES;
+  const svc = docketNumber.slice(9).toUpperCase();
+  return STATUSES_BY_SERVICE[svc] ?? ALL_STATUSES;
+}
+
+// Keep STATUSES as alias for backwards compatibility in COLS config
+const STATUSES = ALL_STATUSES;
 
 const RECORD_TYPES = ["Patent", "FTO", "Design", "TM"];
 const PAYMENT_STATUSES = ["Pending", "Partial", "Paid"];
@@ -77,6 +104,7 @@ const STATUS_COMPLETION: Record<string, number | null> = {
   "Patent Drafting": 35,
   "Drafting in Progress": 35,
   "Claims Ready to Share": 45,
+  "Claims Approved": 48,
   "Internal Review": 55,
   "Draft Shared with Client": 60,
   "Awaiting Client Feedback": 65,
@@ -88,6 +116,7 @@ const STATUS_COMPLETION: Record<string, number | null> = {
   "Complete or Provisional Filed": 80,
   "Awaiting Signed Forms": 82,
   "Ready to File": 85,
+  "Filing": 88,
   "Awaiting Payment": 90,
   "Filed": 92,
   "FER Received": 93,
@@ -99,6 +128,7 @@ const STATUS_COMPLETION: Record<string, number | null> = {
   "Granted": 100,
   "Renewal Due": 95,
   "Completed": 100,
+  "Abandoned": null,
   "On Hold": null,
 };
 
@@ -119,6 +149,7 @@ const STATUS_DOT: Record<string, string> = {
   "Patent Drafting": "bg-indigo-400",
   "Drafting in Progress": "bg-indigo-500",
   "Claims Ready to Share": "bg-indigo-600",
+  "Claims Approved": "bg-violet-500",
   "Internal Review": "bg-purple-500",
   // Client Review
   "Draft Shared with Client": "bg-teal-400",
@@ -132,6 +163,7 @@ const STATUS_DOT: Record<string, string> = {
   "Complete or Provisional Filed": "bg-violet-500",
   "Awaiting Signed Forms": "bg-amber-400",
   "Ready to File": "bg-blue-600",
+  "Filing": "bg-blue-500",
   "Awaiting Payment": "bg-amber-600",
   "Filed": "bg-green-500",
   // Post-Filing
@@ -145,6 +177,7 @@ const STATUS_DOT: Record<string, string> = {
   "Granted": "bg-green-600",
   "Renewal Due": "bg-amber-500",
   "Completed": "bg-green-500",
+  "Abandoned": "bg-red-600",
   "On Hold": "bg-red-500",
 };
 
@@ -632,7 +665,11 @@ export default function ProjectTracker() {
         onClick={(e) => {
           if (type === "select" && opts) {
             const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-            setSelectPickerMenu({ rowId: row.id, col, opts, rect });
+            // For status column, filter options by the row's service code
+            const effectiveOpts = col === "status"
+              ? getStatusesForServiceCode(row.docket_number)
+              : opts;
+            setSelectPickerMenu({ rowId: row.id, col, opts: effectiveOpts, rect });
           } else {
             setActiveCell({ rowId: row.id, col });
             setEditVal(strVal);

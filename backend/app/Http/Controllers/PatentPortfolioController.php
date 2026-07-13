@@ -77,21 +77,36 @@ class PatentPortfolioController extends Controller
             ->when($clientId, fn($q) => $q->where('client_id', $clientId))
             ->when($analystIds !== null, fn($q) => $q->whereIn('id', $analystIds));
 
-        // Granted patents by office
+        // Unique cases grouped by 9-char case_base (client+seq+office portion of docket_number)
+        $totalUniqueCases = (clone $base)
+            ->whereNotNull('docket_number')
+            ->selectRaw("LEFT(docket_number, 9) as case_base")
+            ->groupByRaw("LEFT(docket_number, 9)")
+            ->get()->count();
+
+        $grantedUniqueCases = (clone $base)
+            ->where('patent_granted', true)
+            ->whereNotNull('docket_number')
+            ->selectRaw("LEFT(docket_number, 9) as case_base")
+            ->groupByRaw("LEFT(docket_number, 9)")
+            ->get()->count();
+
+        // Granted patents by office (uses patent_granted flag, not status)
         $granted = (clone $base)
-            ->whereIn('status', ['Granted', 'Completed', 'Closed'])
+            ->where('patent_granted', true)
             ->selectRaw('patent_office_code, COUNT(*) as count')
             ->groupBy('patent_office_code')
             ->pluck('count', 'patent_office_code');
 
-        // Pending patents by office
+        // Pending patents by office (not yet granted)
         $pending = (clone $base)
-            ->whereNotIn('status', ['Granted', 'Completed', 'Closed'])
+            ->where('patent_granted', false)
+            ->whereNotIn('status', ['Closed'])
             ->selectRaw('patent_office_code, COUNT(*) as count')
             ->groupBy('patent_office_code')
             ->pluck('count', 'patent_office_code');
 
-        // Pending by tracker status (from tracker_rows.status)
+        // Pending by tracker status (from tracker_rows.status) — excludes granted cases
         $pendingByStage = DB::table('tracker_rows as tr')
             ->join('projects as p', 'tr.project_id', '=', 'p.id')
             ->where(function ($q) {
@@ -99,7 +114,8 @@ class PatentPortfolioController extends Controller
                   ->orWhere('p.project_type', 'Design')
                   ->orWhere('p.project_type', 'Trade Secret');
             })
-            ->whereNotIn('p.status', ['Granted', 'Completed', 'Closed'])
+            ->where('p.patent_granted', false)
+            ->whereNotIn('p.status', ['Closed'])
             ->whereNotNull('tr.status')
             ->when($clientId, fn($q) => $q->where('p.client_id', $clientId))
             ->when($analystIds !== null, fn($q) => $q->whereIn('p.id', $analystIds))
@@ -111,7 +127,7 @@ class PatentPortfolioController extends Controller
         // Upcoming renewals (projects nearing hard_deadline, sorted soonest first)
         $renewals = (clone $base)
             ->whereNotNull('hard_deadline')
-            ->whereNotIn('status', ['Granted', 'Completed', 'Closed'])
+            ->whereNotIn('status', ['Closed'])
             ->with('client')
             ->orderBy('hard_deadline')
             ->limit(5)
@@ -138,9 +154,10 @@ class PatentPortfolioController extends Controller
             return $inv;
         });
 
-        // Action required: projects with in-progress tracker rows
+        // Action required: projects with in-progress tracker rows (exclude granted/closed)
         $actionRequired = (clone $base)
-            ->whereNotIn('status', ['Granted', 'Completed', 'Closed'])
+            ->where('patent_granted', false)
+            ->whereNotIn('status', ['Closed'])
             ->with(['stages' => fn($q) => $q->where('status', 'In Progress')])
             ->orderByRaw("CASE WHEN urgency='Critical' THEN 1 WHEN urgency='High' THEN 2 ELSE 3 END")
             ->limit(100)
@@ -154,18 +171,33 @@ class PatentPortfolioController extends Controller
             $pendingAction = match (true) {
                 $p->urgency === 'Critical'                                  => 'Urgent — immediate action needed',
                 $p->urgency === 'High'                                      => 'Review and respond',
+                $stage?->stage_name === 'FER Received'                      => 'FER received — review needed',
+                $stage?->stage_name === 'FER Response in Progress'          => 'FER response in progress',
+                $stage?->stage_name === 'FER Response Filed'                => 'FER response filed, awaiting decision',
                 $stage?->stage_name === 'First Examination Report'          => 'FER received — review needed',
                 $stage?->stage_name === 'FER Response Preparation'          => 'Need technical inputs',
                 $stage?->stage_name === 'FER Response Filing'               => 'Response to be filed',
+                $stage?->stage_name === 'Hearing Scheduled'                 => 'Hearing preparation underway',
+                $stage?->stage_name === 'Hearing Response in Progress'      => 'Hearing response in preparation',
+                $stage?->stage_name === 'Hearing Response Filed'            => 'Hearing response filed, awaiting decision',
                 $stage?->stage_name === 'Hearing with Examiner'             => 'Hearing to be scheduled',
                 $stage?->stage_name === 'Hearing Response Preparation'      => 'Hearing response in preparation',
                 $stage?->stage_name === 'Hearing Response Filing'           => 'Hearing response to be filed',
+                $stage?->stage_name === 'Filing'                            => 'Application being filed',
                 $stage?->stage_name === 'Filing with Patent Office'         => 'Application to be filed',
+                $stage?->stage_name === 'Awaiting Signed Forms'             => 'Awaiting signed forms from client',
                 $stage?->stage_name === 'Provisional Filing'                => 'Provisional/Complete application to be filed',
+                $stage?->stage_name === 'Draft Approved'                    => 'Draft approved — ready for filing prep',
+                $stage?->stage_name === 'Claims Approved'                   => 'Claims approved — drafting in progress',
+                $stage?->stage_name === 'Claims Ready to Share'             => 'Claims ready — awaiting client approval',
                 $stage?->stage_name === 'Patent Drafting'                   => 'Awaiting draft approval',
+                $stage?->stage_name === 'Drafting in Progress'              => 'Draft in progress',
                 $stage?->stage_name === 'Applicant/Inventor Review'         => 'Awaiting applicant review',
+                $stage?->stage_name === 'Prior Art Search'                  => 'Search in progress',
                 $stage?->stage_name === 'Patent Search'                     => 'Search in progress',
+                $stage?->stage_name === 'Search Report Ready'               => 'Search report ready to share',
                 $stage?->stage_name === 'Search Report'                     => 'Search report to be shared',
+                $stage?->stage_name === 'Awaiting IDF from Client'          => 'Awaiting IDF from client',
                 default                                                     => 'Awaiting next action',
             };
             return [
@@ -202,6 +234,8 @@ class PatentPortfolioController extends Controller
             'pending_invoices'    => $invoices,
             'action_required'     => $actionRequired,
             'clients'             => $clients,
+            'total_unique_cases'  => $totalUniqueCases,
+            'granted_unique_cases' => $grantedUniqueCases,
         ]);
     }
 }

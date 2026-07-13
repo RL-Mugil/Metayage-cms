@@ -88,13 +88,18 @@ class DashboardController extends Controller
         // Calculations — cached per user to avoid N queries on every page load.
         // dashboard_v is incremented by any mutative endpoint (projects, tasks, invoices).
         $rf = $request->input('role_filter', 'all');
+        $grantedMattersQuery = Project::where('patent_granted', true)
+            ->when($user->isClientRole(), fn ($q) => $q->whereHas('client', fn ($cq) => $cq->where('portal_enabled', true)->visibleToUser($user)))
+            ->when($user->isGalvanizer(), fn ($q) => $user->applyProjectScope($q));
+
         $cacheKey = "dashboard_metrics_{$user->id}_{$user->role}_{$rf}_v" . Cache::get('dashboard_v', 0);
-        [$activeMattersCount, $inactiveMattersCount, $clientsCount, $tasksCount] = Cache::remember($cacheKey, 300, function () use ($activeMattersQuery, $inactiveMattersQuery, $clientsQuery, $tasksQuery) {
+        [$activeMattersCount, $inactiveMattersCount, $clientsCount, $tasksCount, $grantedMattersCount] = Cache::remember($cacheKey, 300, function () use ($activeMattersQuery, $inactiveMattersQuery, $clientsQuery, $tasksQuery, $grantedMattersQuery) {
             return [
                 $activeMattersQuery->count(),
                 $inactiveMattersQuery->count(),
                 $clientsQuery->count(),
                 $tasksQuery->count(),
+                $grantedMattersQuery->count(),
             ];
         });
 
@@ -190,6 +195,7 @@ class DashboardController extends Controller
             'metrics' => [
                 'active_matters'        => $activeMattersCount,
                 'inactive_matters'      => $inactiveMattersCount,
+                'granted_matters'       => $grantedMattersCount,
                 'clients'               => $clientsCount,
                 'pending_tasks'         => $tasksCount,
                 'wip_balance'           => $wipAmount,

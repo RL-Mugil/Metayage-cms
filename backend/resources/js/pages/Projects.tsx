@@ -94,9 +94,11 @@ const PATENT_OFFICES = [
 // ── Service Codes ─────────────────────────────────────────────────────────────
 
 const SERVICE_CODES = [
-  { code: "DFT",   label: "DFT – Patent Drafting" },
+  { code: "PAS",   label: "PAS – Prior Art Search" },
   { code: "PRV",   label: "PRV – Provisional Application Filing" },
+  { code: "CPT",   label: "CPT – Complete Application Filing" },
   { code: "NPA",   label: "NPA – Non-Provisional Application Filing" },
+  { code: "DFT",   label: "DFT – Patent Drafting" },
   { code: "FIL",   label: "FIL – Patent Filing (General)" },
   { code: "PCT",   label: "PCT – PCT International Filing" },
   { code: "NPE",   label: "NPE – National Phase Entry" },
@@ -192,7 +194,26 @@ const CASE_TYPES = [
 
 const URGENCIES = ["Low", "Normal", "High", "Critical"];
 const STATUSES  = ["Open", "In Progress", "On Hold", "Closed", "Completed"];
-const PIPELINE_STAGES = ["Invention Disclosure", "Patent Search", "Search Report", "Provisional or Complete Application", "Provisional Filing", "Patent Drafting", "Applicant/Inventor Review", "Filing with Patent Office", "First Examination Report", "FER Response Preparation", "FER Response Filing", "Hearing with Examiner", "Hearing Response Preparation", "Hearing Response Filing", "Granted", "Renewal"];
+// All possible stage names across all service codes (for pipeline filter)
+const PIPELINE_STAGES = [
+  // PAS / Prior Art Search
+  "Prior Art Search", "Search Report Ready", "Search Report Shared", "Awaiting IDF from Client",
+  // PRV / CPT shared
+  "IDF Received", "Drafting in Progress", "Internal Review", "Awaiting Signed Forms", "Filing", "Filed",
+  // CPT extras
+  "Claims Ready to Share", "Claims Approved",
+  "Draft Shared with Client", "Awaiting Client Feedback", "Client Comments Received",
+  "Revised Draft Shared", "Draft Approved",
+  // FER
+  "FER Received", "FER Response in Progress", "FER Response Filed",
+  // HRG
+  "Hearing Scheduled", "Hearing Response in Progress", "Hearing Response Filed", "Granted",
+  // Legacy / other service codes
+  "Invention Disclosure", "Patent Search", "Search Report", "Provisional or Complete Application",
+  "Provisional Filing", "Patent Drafting", "Applicant/Inventor Review", "Filing with Patent Office",
+  "First Examination Report", "FER Response Preparation", "FER Response Filing",
+  "Hearing with Examiner", "Hearing Response Preparation", "Hearing Response Filing", "Renewal",
+];
 
 // ── Shared UI ─────────────────────────────────────────────────────────────────
 
@@ -452,6 +473,7 @@ interface PF {
   idf_received_date: string; advance_payment_date: string;
   partial_payment_date: string; full_payment_date: string;
   urgency: string; status: string;
+  patent_granted: boolean;
   assigned_partner_id: string; assigned_manager_id: string;
   secondary_manager_id: string; patent_engineer_id: string;
   notes: string; circle: string;
@@ -466,6 +488,7 @@ const BLANK: PF = {
   idf_received_date: "", advance_payment_date: "",
   partial_payment_date: "", full_payment_date: "",
   urgency: "Normal", status: "Open",
+  patent_granted: false,
   assigned_partner_id: "", assigned_manager_id: "",
   secondary_manager_id: "", patent_engineer_id: "",
   notes: "", circle: "",
@@ -710,7 +733,7 @@ export default function Projects() {
 
   useEffect(() => { loadProjects(roleFilter); }, [roleFilter]);
 
-  const sf = (f: keyof PF, v: string) => setForm((p) => ({ ...p, [f]: v }));
+  const sf = (f: keyof PF, v: string | boolean) => setForm((p) => ({ ...p, [f]: v }));
 
   const clientOptions = useMemo(() =>
     clients.map((c) => ({
@@ -775,6 +798,7 @@ export default function Projects() {
       patent_office_code:  p.patent_office_code    ?? "IN",
       service_code:        p.service_code          ?? "FIL",
       filing_date:         p.filing_date           ? p.filing_date.split("T")[0] : "",
+      patent_granted:      p.patent_granted        ?? false,
       target_filing_date:  p.target_filing_date    ? p.target_filing_date.split("T")[0] : "",
       hard_deadline:       p.hard_deadline         ? p.hard_deadline.split("T")[0] : "",
       idf_received_date:   p.idf_received_date     ? p.idf_received_date.split("T")[0] : "",
@@ -1259,6 +1283,14 @@ export default function Projects() {
                     <Lbl>Filing Date</Lbl>
                     <input type="date" value={form.filing_date}
                       onChange={(e) => sf("filing_date", e.target.value)} className={ic} />
+                  </div>
+                  <div className="flex items-end pb-1">
+                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                      <input type="checkbox" checked={form.patent_granted}
+                        onChange={(e) => sf("patent_granted", e.target.checked)}
+                        className="h-4 w-4 rounded border-border accent-green-600" />
+                      <span className="text-xs font-medium text-foreground">Patent Granted</span>
+                    </label>
                   </div>
                   <div>
                     <Lbl>Target Filing Date</Lbl>

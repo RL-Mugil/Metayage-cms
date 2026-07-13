@@ -92,6 +92,8 @@ export interface Project {
   urgency: Urgency
   hard_deadline?: string | null
   filing_date?: string | null
+  patent_granted?: boolean
+  service_code?: string | null
   client_id: number
   assigned_partner_id?: number | null
   assigned_manager_id?: number | null

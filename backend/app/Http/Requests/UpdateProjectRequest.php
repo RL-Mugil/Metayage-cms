@@ -29,6 +29,7 @@ class UpdateProjectRequest extends FormRequest
             'patent_office_code'    => 'nullable|string|max:10',
             'service_code'          => 'nullable|string|max:50',
             'filing_date'           => 'nullable|date',
+            'patent_granted'        => 'nullable|boolean',
             'assigned_partner_id'   => 'nullable|exists:users,id',
             'assigned_manager_id'   => 'nullable|exists:users,id',
             'secondary_manager_id'  => 'nullable|exists:users,id',

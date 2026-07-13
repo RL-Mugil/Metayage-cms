@@ -20,7 +20,7 @@ class Project extends Model
         'status', 'urgency', 'tags',
         // IP matter fields
         'docket_number', 'application_number', 'patent_office_code', 'service_code',
-        'case_type', 'filing_date', 'secondary_manager_id', 'patent_engineer_id', 'notes', 'circle',
+        'case_type', 'filing_date', 'patent_granted', 'secondary_manager_id', 'patent_engineer_id', 'notes', 'circle',
         'google_task_ids',
     ];
 
@@ -32,6 +32,7 @@ class Project extends Model
         'target_filing_date'  => 'date',
         'hard_deadline'       => 'date',
         'filing_date'         => 'date',
+        'patent_granted'      => 'boolean',
         'idf_received_date'   => 'date',
         'advance_payment_date'=> 'date',
         'partial_payment_date'=> 'date',

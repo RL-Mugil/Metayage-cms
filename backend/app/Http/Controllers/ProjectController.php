@@ -347,16 +347,67 @@ class ProjectController extends Controller
 
         $project = Project::create($validated);
 
-        // Seed default pipeline stages for new projects
-        $defaultStages = [
-            "Invention Disclosure", "Patent Search", "Search Report",
-            "Provisional or Complete Application", "Provisional Filing",
-            "Patent Drafting", "Applicant/Inventor Review", "Filing with Patent Office",
-            "First Examination Report", "FER Response Preparation", "FER Response Filing",
-            "Hearing with Examiner", "Hearing Response Preparation", "Hearing Response Filing",
-            "Granted", "Renewal",
-        ];
-        foreach ($defaultStages as $index => $stageName) {
+        // Seed pipeline stages based on service code
+        $svc = strtoupper($validated['service_code'] ?? '');
+        $serviceStages = match (true) {
+            $svc === 'PAS' || $svc === 'SRH' || $svc === 'PAT' || $svc === 'FTO' => [
+                "Prior Art Search",
+                "Search Report Ready",
+                "Search Report Shared",
+                "Awaiting IDF from Client",
+            ],
+            $svc === 'PRV' => [
+                "IDF Received",
+                "Drafting in Progress",
+                "Internal Review",
+                "Awaiting Signed Forms",
+                "Filing",
+                "Filed",
+            ],
+            $svc === 'CPT' || $svc === 'NPA' => [
+                "IDF Received",
+                "Claims Ready to Share",
+                "Claims Approved",
+                "Drafting in Progress",
+                "Internal Review",
+                "Draft Shared with Client",
+                "Awaiting Client Feedback",
+                "Client Comments Received",
+                "Revised Draft Shared",
+                "Draft Approved",
+                "Awaiting Signed Forms",
+                "Filing",
+                "Filed",
+            ],
+            $svc === 'FER' || $svc === 'SER' || $svc === 'TER' => [
+                "FER Received",
+                "FER Response in Progress",
+                "FER Response Filed",
+            ],
+            $svc === 'HRG' => [
+                "Hearing Scheduled",
+                "Hearing Response in Progress",
+                "Hearing Response Filed",
+                "Granted",
+            ],
+            default => [
+                "Invention Disclosure",
+                "Patent Search",
+                "Search Report",
+                "Provisional or Complete Application",
+                "Provisional Filing",
+                "Patent Drafting",
+                "Applicant/Inventor Review",
+                "Filing with Patent Office",
+                "First Examination Report",
+                "FER Response Preparation",
+                "FER Response Filing",
+                "Hearing with Examiner",
+                "Hearing Response Preparation",
+                "Hearing Response Filing",
+            ],
+        };
+        foreach ($serviceStages as $index => $stageName) {
             ProjectStage::create([
                 'project_id' => $project->id,
                 'stage_name' => $stageName,
@@ -385,6 +436,20 @@ class ProjectController extends Controller
             && $validated['hard_deadline'] !== $project->hard_deadline;
 
         $project->update($validated);
+
+        // When filing_date is set, auto-advance the "Filing" stage to "Filed"
+        if (array_key_exists('filing_date', $validated) && !empty($validated['filing_date'])) {
+            $filedStage = $project->stages()->where('stage_name', 'Filed')->first();
+            if ($filedStage && $filedStage->status !== 'In Progress' && $filedStage->status !== 'Completed') {
+                $project->stages()
+                    ->where('sequence_order', '<', $filedStage->sequence_order)
+                    ->update(['status' => 'Completed']);
+                $filedStage->update(['status' => 'In Progress']);
+                $project->stages()
+                    ->where('sequence_order', '>', $filedStage->sequence_order)
+                    ->update(['status' => 'Pending']);
+            }
+        }
 
         // Audit Log
         AuditLog::create([
