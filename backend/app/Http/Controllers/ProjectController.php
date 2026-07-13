@@ -441,13 +441,15 @@ class ProjectController extends Controller
         if (array_key_exists('filing_date', $validated) && !empty($validated['filing_date'])) {
             $filedStage = $project->stages()->where('stage_name', 'Filed')->first();
             if ($filedStage && $filedStage->status !== 'In Progress' && $filedStage->status !== 'Completed') {
+                $now = Carbon::now();
                 $project->stages()
                     ->where('sequence_order', '<', $filedStage->sequence_order)
-                    ->update(['status' => 'Completed']);
-                $filedStage->update(['status' => 'In Progress']);
+                    ->update(['status' => 'Completed', 'actual_end_at' => $now]);
+                $filedStage->update(['status' => 'In Progress', 'actual_start_at' => $now]);
                 $project->stages()
                     ->where('sequence_order', '>', $filedStage->sequence_order)
-                    ->update(['status' => 'Pending']);
+                    ->update(['status' => 'Pending', 'actual_start_at' => null, 'actual_end_at' => null]);
+                ProjectTrackerController::syncTrackerRowStatus($project->id, 'Filed');
             }
         }
 
@@ -615,6 +617,105 @@ class ProjectController extends Controller
                 default => $user->applyProjectScope($q),
             };
         };
+    }
+
+    /**
+     * Full project detail: stages (with dates + working-day durations), tasks,
+     * invoices, and per-project ledger entries. Used by the project detail panel.
+     */
+    public function detail(Request $request, $id)
+    {
+        $user = $request->user();
+        $project = Project::with([
+            'stages' => fn ($q) => $q->orderBy('sequence_order'),
+            'client:id,company_name,legal_name,client_code',
+        ])->findOrFail($id);
+        $this->authorize('view', $project);
+
+        // Tasks for this project
+        $tasks = \App\Models\Task::where('project_id', $project->id)
+            ->with('assignee:id,name')
+            ->orderBy('created_at')
+            ->get(['id', 'title', 'status', 'priority', 'due_date', 'assignee_id',
+                   'estimated_hours', 'actual_hours', 'billable', 'created_at', 'updated_at']);
+
+        // Invoices for this project
+        $invoices = \App\Models\Invoice::where('project_id', $project->id)
+            ->orderBy('created_at')
+            ->get(['id', 'invoice_code', 'status', 'total_amount', 'balance_due',
+                   'subtotal', 'tax_amount', 'currency', 'created_at', 'due_date']);
+
+        // Ledger entries for this project's invoices
+        $invoiceIds = $invoices->pluck('id');
+        $ledger = \App\Models\ClientLedger::whereIn('document_reference', $invoices->pluck('invoice_code'))
+            ->orderBy('created_at')
+            ->get(['id', 'document_type', 'document_reference', 'debit', 'credit', 'balance', 'created_at']);
+
+        // Working-day duration helper (excludes Sat & Sun)
+        $workingDays = function (?string $start, ?string $end): ?int {
+            if (!$start || !$end) return null;
+            $s = Carbon::parse($start)->startOfDay();
+            $e = Carbon::parse($end)->startOfDay();
+            if ($e->lt($s)) return 0;
+            $days = 0;
+            $cur = $s->copy();
+            while ($cur->lte($e)) {
+                if (!$cur->isWeekend()) $days++;
+                $cur->addDay();
+            }
+            return $days;
+        };
+
+        // Enrich stages with working-day durations and total
+        $stages = $project->stages->map(function ($stage) use ($workingDays) {
+            $dur = $workingDays(
+                $stage->actual_start_at?->toDateTimeString(),
+                $stage->actual_end_at?->toDateTimeString()
+            );
+            return [
+                'id'             => $stage->id,
+                'stage_name'     => $stage->stage_name,
+                'status'         => $stage->status,
+                'sequence_order' => $stage->sequence_order,
+                'actual_start_at' => $stage->actual_start_at?->toDateTimeString(),
+                'actual_end_at'   => $stage->actual_end_at?->toDateTimeString(),
+                'due_date'       => $stage->due_date,
+                'working_days'   => $dur,
+            ];
+        });
+
+        $totalStageDays = $stages->sum(fn ($s) => $s['working_days'] ?? 0);
+
+        // Enrich tasks with working-day durations
+        // Use created_at as start proxy; completed_at = updated_at when status is Completed
+        $enrichedTasks = $tasks->map(function ($task) use ($workingDays) {
+            $endDate = ($task->status === 'Completed') ? $task->updated_at : null;
+            $dur = $workingDays($task->created_at, $endDate);
+            $t = $task->toArray();
+            $t['working_days'] = $dur;
+            $t['completed_at'] = $endDate;
+            return $t;
+        });
+
+        // Invoice summary
+        $totalInvoiced  = $invoices->whereNotIn('status', ['Draft'])->sum('total_amount');
+        $totalReceived  = $invoices->whereIn('status', ['Paid'])->sum('total_amount')
+            + $invoices->where('status', 'Partially Paid')->sum(fn ($i) => $i->total_amount - $i->balance_due);
+        $totalPending   = $invoices->whereIn('status', ['Sent', 'Overdue', 'Partially Paid', 'Viewed'])->sum('balance_due');
+
+        return response()->json([
+            'project'              => $project,
+            'stages'               => $stages,
+            'total_stage_days'     => $totalStageDays,
+            'tasks'                => $enrichedTasks,
+            'invoices'             => $invoices,
+            'ledger'               => $ledger,
+            'invoice_summary'      => [
+                'total_invoiced' => $totalInvoiced,
+                'total_received' => $totalReceived,
+                'total_pending'  => $totalPending,
+            ],
+        ]);
     }
 
     /**

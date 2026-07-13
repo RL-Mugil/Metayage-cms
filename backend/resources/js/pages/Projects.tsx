@@ -5,6 +5,7 @@ import {
   Plus, Search, Loader2, X, Download, Pencil, Trash2, AlertCircle,
   ChevronDown, ChevronUp, ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown,
   Upload, FileSpreadsheet, CheckCircle, FileText, Scroll,
+  ExternalLink, Calendar, Clock, ReceiptText, BookOpen,
 } from "lucide-react";
 import AppLayout from "@/layouts/AppLayout";
 import { PageHeader } from "@/components/page-header";
@@ -510,7 +511,7 @@ const KPI_DEFS: KpiDef[] = [
   { label: "Overdue",      key: "overdue",     color: "text-destructive",   filterParams: { overdue: "1" } },
 ];
 
-function ProjectKpiModal({ kpi, onClose }: { kpi: KpiDef; onClose: () => void }) {
+function ProjectKpiModal({ kpi, onClose, onOpenDetail }: { kpi: KpiDef; onClose: () => void; onOpenDetail?: (id: number) => void }) {
   const [result, setResult]   = useState<{ data: any[]; total: number }>({ data: [], total: 0 });
   const [search, setSearch]   = useState("");
   const [loading, setLoading] = useState(false);
@@ -617,7 +618,12 @@ function ProjectKpiModal({ kpi, onClose }: { kpi: KpiDef; onClose: () => void })
                   return (
                     <tr key={p.id} className="border-t border-border hover:bg-muted/30">
                       <td className="px-4 py-2.5 font-mono text-xs text-gold font-semibold whitespace-nowrap">
-                        {p.docket_number ?? p.project_code ?? "—"}
+                        <button
+                          className="hover:underline hover:text-primary transition-colors"
+                          onClick={() => onOpenDetail?.(p.id)}
+                        >
+                          {p.docket_number ?? p.project_code ?? "—"}
+                        </button>
                       </td>
                       <td className="px-4 py-2.5 max-w-[240px] truncate font-medium">{p.project_name}</td>
                       <td className="px-4 py-2.5 text-xs text-muted-foreground">{p.patent_office_code ?? "—"}</td>
@@ -694,6 +700,26 @@ export default function Projects() {
   const [deleting, setDeleting]  = useState(false);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [bulkAction, setBulkAction]   = useState("");
+
+  const [detailId, setDetailId] = useState<number | null>(null);
+  const [detailData, setDetailData] = useState<any>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailTab, setDetailTab] = useState<"stages" | "tasks" | "invoices" | "ledger">("stages");
+
+  const openDetail = async (projectId: number) => {
+    setDetailId(projectId);
+    setDetailData(null);
+    setDetailLoading(true);
+    setDetailTab("stages");
+    try {
+      const res = await api.request(`/projects/${projectId}/detail`);
+      setDetailData(res);
+    } catch {
+      setDetailData(null);
+    } finally {
+      setDetailLoading(false);
+    }
+  };
 
   const [stageMenu, setStageMenu] = useState<{ projectId: number; stages: string[]; rect: DOMRect } | null>(null);
   const [statusMenu, setStatusMenu] = useState<{ projectId: number; rect: DOMRect } | null>(null);
@@ -1556,7 +1582,7 @@ export default function Projects() {
         ))}
       </div>
 
-      {kpiModal && <ProjectKpiModal kpi={kpiModal} onClose={() => setKpiModal(null)} />}
+      {kpiModal && <ProjectKpiModal kpi={kpiModal} onClose={() => setKpiModal(null)} onOpenDetail={openDetail} />}
 
       {/* ── Table ─────────────────────────────────────────────────────────── */}
       <div className="px-8 py-6 space-y-4">
@@ -1924,6 +1950,257 @@ export default function Projects() {
             <X className="h-4 w-4" />
           </button>
         </div>
+      )}
+
+      {/* ── Project Detail Slide-over ───────────────────────────────────────── */}
+      {detailId !== null && createPortal(
+        <>
+          {/* Backdrop */}
+          <div className="fixed inset-0 bg-black/50 z-40" onClick={() => setDetailId(null)} />
+          {/* Panel */}
+          <div className="fixed right-0 top-0 h-full w-full max-w-3xl bg-background border-l border-border z-50 flex flex-col shadow-2xl">
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-border flex-shrink-0">
+              <div>
+                <p className="text-xs text-muted-foreground font-mono">
+                  {detailData?.project?.docket_number ?? "Loading…"}
+                </p>
+                <h2 className="text-base font-semibold truncate max-w-[500px]">
+                  {detailData?.project?.project_name ?? ""}
+                </h2>
+                {detailData?.project && (
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {detailData.project.client?.company_name ?? detailData.project.client?.legal_name ?? ""}
+                    {detailData.project.patent_office_code ? ` · ${detailData.project.patent_office_code}` : ""}
+                    {detailData.project.service_code ? ` · ${detailData.project.service_code}` : ""}
+                  </p>
+                )}
+              </div>
+              <button onClick={() => setDetailId(null)} className="p-1.5 rounded hover:bg-muted/50">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Tabs */}
+            <div className="flex border-b border-border flex-shrink-0 px-6">
+              {(["stages", "tasks", "invoices", "ledger"] as const).map((t) => (
+                <button key={t} onClick={() => setDetailTab(t)}
+                  className={`px-4 py-2.5 text-xs font-medium capitalize border-b-2 transition-colors ${
+                    detailTab === t
+                      ? "border-primary text-primary"
+                      : "border-transparent text-muted-foreground hover:text-foreground"
+                  }`}>
+                  {t === "stages" ? "Pipeline" : t === "invoices" ? "Invoices" : t === "ledger" ? "Ledger" : "Tasks"}
+                </button>
+              ))}
+            </div>
+
+            {/* Body */}
+            <div className="flex-1 overflow-y-auto">
+              {detailLoading ? (
+                <div className="flex items-center justify-center h-40">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                </div>
+              ) : !detailData ? (
+                <div className="flex items-center justify-center h-40 text-muted-foreground text-sm">
+                  Failed to load details.
+                </div>
+              ) : (
+                <>
+                  {/* ── Pipeline tab ─────────────────────────────────────── */}
+                  {detailTab === "stages" && (
+                    <div className="p-6 space-y-4">
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs text-muted-foreground">
+                          Total working days across stages: <span className="font-semibold text-foreground">{detailData.total_stage_days ?? 0}</span>
+                        </p>
+                        {detailData.project?.filing_date && (
+                          <p className="text-xs text-muted-foreground">
+                            Filed: <span className="font-mono font-semibold text-foreground">{fmtDate(detailData.project.filing_date)}</span>
+                          </p>
+                        )}
+                      </div>
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="text-left border-b border-border text-muted-foreground">
+                            <th className="pb-2 font-medium">Stage</th>
+                            <th className="pb-2 font-medium">Status</th>
+                            <th className="pb-2 font-medium">Start</th>
+                            <th className="pb-2 font-medium">End</th>
+                            <th className="pb-2 font-medium text-right">Working Days</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {detailData.stages.map((s: any) => (
+                            <tr key={s.id} className="border-b border-border/50 hover:bg-muted/20">
+                              <td className="py-2.5 pr-3 font-medium">{s.stage_name}</td>
+                              <td className="py-2.5 pr-3">
+                                <span className={`inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                                  s.status === "Completed" ? "bg-green-100 text-green-700" :
+                                  s.status === "In Progress" ? "bg-blue-100 text-blue-700" :
+                                  "bg-muted text-muted-foreground"
+                                }`}>{s.status}</span>
+                              </td>
+                              <td className="py-2.5 pr-3 font-mono text-muted-foreground">{fmtDate(s.actual_start_at)}</td>
+                              <td className="py-2.5 pr-3 font-mono text-muted-foreground">{fmtDate(s.actual_end_at)}</td>
+                              <td className="py-2.5 text-right font-semibold">
+                                {s.working_days != null ? s.working_days : "—"}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  {/* ── Tasks tab ────────────────────────────────────────── */}
+                  {detailTab === "tasks" && (
+                    <div className="p-6 space-y-4">
+                      {detailData.tasks.length === 0 ? (
+                        <p className="text-muted-foreground text-sm text-center py-10">No tasks for this case.</p>
+                      ) : (
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="text-left border-b border-border text-muted-foreground">
+                              <th className="pb-2 font-medium">Task</th>
+                              <th className="pb-2 font-medium">Assignee</th>
+                              <th className="pb-2 font-medium">Status</th>
+                              <th className="pb-2 font-medium">Start</th>
+                              <th className="pb-2 font-medium">Completed</th>
+                              <th className="pb-2 font-medium text-right">W.Days</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {detailData.tasks.map((t: any) => (
+                              <tr key={t.id} className="border-b border-border/50 hover:bg-muted/20">
+                                <td className="py-2.5 pr-3 font-medium max-w-[180px] truncate">{t.title}</td>
+                                <td className="py-2.5 pr-3 text-muted-foreground">{t.assignee?.name ?? "—"}</td>
+                                <td className="py-2.5 pr-3">
+                                  <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                                    t.status === "Completed" ? "bg-green-100 text-green-700" :
+                                    t.status === "In Progress" ? "bg-blue-100 text-blue-700" :
+                                    t.status === "Blocked" ? "bg-red-100 text-red-700" :
+                                    "bg-muted text-muted-foreground"
+                                  }`}>{t.status}</span>
+                                </td>
+                                <td className="py-2.5 pr-3 font-mono text-muted-foreground">{fmtDate(t.created_at)}</td>
+                                <td className="py-2.5 pr-3 font-mono text-muted-foreground">{fmtDate(t.completed_at)}</td>
+                                <td className="py-2.5 text-right font-semibold">{t.working_days != null ? t.working_days : "—"}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
+                    </div>
+                  )}
+
+                  {/* ── Invoices tab ─────────────────────────────────────── */}
+                  {detailTab === "invoices" && (
+                    <div className="p-6 space-y-4">
+                      {/* Summary cards */}
+                      <div className="grid grid-cols-3 gap-3">
+                        {[
+                          { label: "Total Invoiced", value: detailData.invoice_summary.total_invoiced },
+                          { label: "Received", value: detailData.invoice_summary.total_received },
+                          { label: "Pending", value: detailData.invoice_summary.total_pending },
+                        ].map((c) => (
+                          <div key={c.label} className="rounded-lg border border-border bg-muted/30 p-3">
+                            <p className="text-[10px] text-muted-foreground">{c.label}</p>
+                            <p className="text-sm font-semibold font-mono mt-1">
+                              ₹{Number(c.value).toLocaleString("en-IN", { maximumFractionDigits: 0 })}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                      {detailData.invoices.length === 0 ? (
+                        <p className="text-muted-foreground text-sm text-center py-8">No invoices for this case.</p>
+                      ) : (
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="text-left border-b border-border text-muted-foreground">
+                              <th className="pb-2 font-medium">Invoice #</th>
+                              <th className="pb-2 font-medium">Status</th>
+                              <th className="pb-2 font-medium">Date</th>
+                              <th className="pb-2 font-medium text-right">Total</th>
+                              <th className="pb-2 font-medium text-right">Balance</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {detailData.invoices.map((inv: any) => (
+                              <tr key={inv.id} className="border-b border-border/50 hover:bg-muted/20">
+                                <td className="py-2.5 pr-3 font-mono text-gold font-semibold">{inv.invoice_code}</td>
+                                <td className="py-2.5 pr-3">
+                                  <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                                    inv.status === "Paid" ? "bg-green-100 text-green-700" :
+                                    inv.status === "Overdue" ? "bg-red-100 text-red-700" :
+                                    inv.status === "Sent" || inv.status === "Viewed" ? "bg-blue-100 text-blue-700" :
+                                    inv.status === "Partially Paid" ? "bg-amber-100 text-amber-700" :
+                                    "bg-muted text-muted-foreground"
+                                  }`}>{inv.status}</span>
+                                </td>
+                                <td className="py-2.5 pr-3 font-mono text-muted-foreground">{fmtDate(inv.created_at)}</td>
+                                <td className="py-2.5 pr-3 text-right font-mono">
+                                  {inv.currency === "INR" ? "₹" : inv.currency + " "}
+                                  {Number(inv.total_amount).toLocaleString("en-IN", { maximumFractionDigits: 0 })}
+                                </td>
+                                <td className="py-2.5 text-right font-mono text-muted-foreground">
+                                  {Number(inv.balance_due) > 0
+                                    ? `₹${Number(inv.balance_due).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`
+                                    : <span className="text-green-600">Cleared</span>}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
+                    </div>
+                  )}
+
+                  {/* ── Ledger tab ───────────────────────────────────────── */}
+                  {detailTab === "ledger" && (
+                    <div className="p-6 space-y-4">
+                      {detailData.ledger.length === 0 ? (
+                        <p className="text-muted-foreground text-sm text-center py-8">No ledger entries for this case.</p>
+                      ) : (
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="text-left border-b border-border text-muted-foreground">
+                              <th className="pb-2 font-medium">Date</th>
+                              <th className="pb-2 font-medium">Type</th>
+                              <th className="pb-2 font-medium">Reference</th>
+                              <th className="pb-2 font-medium text-right">Debit</th>
+                              <th className="pb-2 font-medium text-right">Credit</th>
+                              <th className="pb-2 font-medium text-right">Balance</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {detailData.ledger.map((l: any) => (
+                              <tr key={l.id} className="border-b border-border/50 hover:bg-muted/20">
+                                <td className="py-2.5 pr-3 font-mono text-muted-foreground">{fmtDate(l.created_at)}</td>
+                                <td className="py-2.5 pr-3 capitalize text-muted-foreground">{l.document_type}</td>
+                                <td className="py-2.5 pr-3 font-mono text-gold text-[10px]">{l.document_reference}</td>
+                                <td className="py-2.5 pr-3 text-right font-mono">
+                                  {Number(l.debit) > 0 ? `₹${Number(l.debit).toLocaleString("en-IN", { maximumFractionDigits: 0 })}` : "—"}
+                                </td>
+                                <td className="py-2.5 pr-3 text-right font-mono text-green-600">
+                                  {Number(l.credit) > 0 ? `₹${Number(l.credit).toLocaleString("en-IN", { maximumFractionDigits: 0 })}` : "—"}
+                                </td>
+                                <td className="py-2.5 text-right font-mono font-semibold">
+                                  ₹{Number(l.balance).toLocaleString("en-IN", { maximumFractionDigits: 0 })}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        </>,
+        document.body
       )}
     </AppLayout>
   );

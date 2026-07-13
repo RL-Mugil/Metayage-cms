@@ -81,6 +81,7 @@ Route::middleware(['auth:sanctum', 'throttle:120,1'])->group(function () {
     Route::put('/projects/{id}', [ProjectController::class, 'update']);
     Route::delete('/projects/{id}', [ProjectController::class, 'destroy']);
     Route::post('/projects/{id}/stage', [ProjectController::class, 'updateStage']);
+    Route::get('/projects/{id}/detail', [ProjectController::class, 'detail']);
 
     // Tasks & Time tracking
     Route::get('/tasks', [TaskController::class, 'index']);
