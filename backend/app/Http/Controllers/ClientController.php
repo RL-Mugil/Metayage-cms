@@ -118,7 +118,7 @@ class ClientController extends Controller
             $user->applyClientScope($base);
         }
 
-        $cacheKey = "client_stats_{$user->id}_{$user->role}_" . implode('-', $user->galvanizerCircleCodes());
+        $cacheKey = "client_stats_{$user->id}_{$user->role}_" . implode('-', $user->galvanizerCircleCodes()) . "_v" . Cache::get('dashboard_v', 0);
         $stats = Cache::remember($cacheKey, 300, function () use ($base) {
             $row = (clone $base)->selectRaw("
                 COUNT(*) as total,
@@ -259,6 +259,7 @@ class ClientController extends Controller
             return $client;
         });
 
+        Cache::increment('dashboard_v');
         return response()->json($client->load('accountManager'), 201);
     }
 
@@ -333,6 +334,7 @@ class ClientController extends Controller
             'user_agent' => $request->userAgent(),
         ]);
 
+        Cache::increment('dashboard_v');
         return response()->json(['message' => 'Client deleted']);
     }
 
@@ -379,23 +381,34 @@ class ClientController extends Controller
         $skipped = 0;
         $errors = [];
 
-        \DB::transaction(function () use ($rows, $user, $skipDuplicates, $dupIndexes, &$imported, &$skipped, &$errors) {
-            foreach ($rows as $index => $row) {
-                $legalName = trim((string) ($row['legal_name'] ?? $row['company_name'] ?? $row['full_name'] ?? ''));
-                if (!$legalName) {
+        // Each row gets its own transaction so a single failure cannot abort
+        // the entire batch (PostgreSQL SQLSTATE 25P02 cascade).
+        foreach ($rows as $index => $row) {
+            $legalName = trim((string) ($row['legal_name'] ?? $row['company_name'] ?? $row['full_name'] ?? ''));
+            if (!$legalName) {
+                $skipped++;
+                continue;
+            }
+
+            if (isset($dupIndexes[$index])) {
+                if ($skipDuplicates) { $skipped++; continue; }
+            }
+
+            // For Google Sheet imports, silently skip codes that already exist
+            // rather than erroring — the user chose "import anyway" for name
+            // duplicates, not necessarily for code conflicts.
+            if (!empty($row['_use_existing_code']) && !empty($row['client_code'])) {
+                if (Client::where('client_code', (string) $row['client_code'])->exists()) {
                     $skipped++;
                     continue;
                 }
+            }
 
-                // Handle duplicate rows per user decision
-                if (isset($dupIndexes[$index])) {
-                    if ($skipDuplicates) { $skipped++; continue; }
-                    // Import anyway — allow the duplicate client to be created
-                }
-
-                try {
+            try {
+                \DB::transaction(function () use ($row, $user, $legalName, &$imported) {
                     $nationality = trim((string) ($row['nationality'] ?? 'India')) ?: 'India';
                     $hasGstin = filter_var($row['has_gstin'] ?? false, FILTER_VALIDATE_BOOLEAN);
+                    $gstin = $hasGstin ? (isset($row['gstin']) ? strtoupper(trim((string) $row['gstin'])) : null) : null;
                     $clientType = in_array($row['client_type'] ?? '', ['individual', 'organization'])
                         ? (string) $row['client_type'] : 'organization';
 
@@ -405,38 +418,51 @@ class ClientController extends Controller
                     $validStatuses = ['Active', 'Inactive', 'Prospect', 'On Hold'];
                     $status = in_array($row['status'] ?? '', $validStatuses) ? (string) $row['status'] : 'Active';
 
+                    $useExistingCode = !empty($row['_use_existing_code']);
+                    $clientCode = $useExistingCode
+                        ? (string) $row['client_code']
+                        : $this->generateClientCode($nationality);
+                    $gstType = !empty($row['gst_type'])
+                        ? (string) $row['gst_type']
+                        : $this->computeGstType($nationality, $hasGstin, $clientType);
+
                     Client::create([
-                        'client_code' => $this->generateClientCode($nationality),
-                        'legal_name' => $legalName,
-                        'company_name' => $legalName,
-                        'client_type' => $clientType,
-                        'nationality' => $nationality,
-                        'has_gstin' => $hasGstin,
-                        'gst_type' => $this->computeGstType($nationality, $hasGstin, $clientType),
-                        'pan_number' => isset($row['pan_number']) ? strtoupper(trim((string) $row['pan_number'])) : null,
-                        'cin_number' => isset($row['cin_number']) ? strtoupper(trim((string) $row['cin_number'])) : null,
+                        'client_code'    => $clientCode,
+                        'legal_name'     => $legalName,
+                        'company_name'   => $legalName,
+                        'client_type'    => $clientType,
+                        'nationality'    => $nationality,
+                        'has_gstin'      => $hasGstin,
+                        'gstin'          => $gstin,
+                        'gst_type'       => $gstType,
+                        'pan_number'     => isset($row['pan_number']) ? strtoupper(trim((string) $row['pan_number'])) : null,
+                        'cin_number'     => isset($row['cin_number']) ? strtoupper(trim((string) $row['cin_number'])) : null,
                         'entity_subtype' => $row['entity_subtype'] ?? null,
-                        'trade_name' => $row['trade_name'] ?? null,
-                        'website' => $row['website'] ?? null,
-                        'contact_name' => $row['contact_name'] ?? null,
-                        'contact_email' => $email,
-                        'phone' => $row['phone'] ?? null,
-                        'address' => $row['address'] ?? null,
-                        'state' => $row['state'] ?? null,
-                        'industry' => $row['industry'] ?? null,
-                        'payment_terms' => $row['payment_terms'] ?? 'Net 30',
+                        'trade_name'     => $row['trade_name'] ?? null,
+                        'website'        => $row['website'] ?? null,
+                        'contact_name'   => $row['contact_name'] ?? null,
+                        'contact_email'  => $email,
+                        'phone'          => $row['phone'] ?? null,
+                        'address'        => $row['address'] ?? null,
+                        'state'          => $row['state'] ?? null,
+                        'industry'       => $row['industry'] ?? null,
+                        'payment_terms'  => $row['payment_terms'] ?? 'Net 30',
                         'account_manager_id' => $user->id,
                         'date_onboarded' => now()->toDateString(),
-                        'status' => $status,
-                        'remarks' => $row['remarks'] ?? null,
+                        'status'         => $status,
+                        'remarks'        => $row['remarks'] ?? null,
                     ]);
                     $imported++;
-                } catch (\Exception $e) {
-                    $errors[] = 'Row ' . ($index + 2) . ': ' . $e->getMessage();
-                    $skipped++;
-                }
+                });
+            } catch (\Exception $e) {
+                $errors[] = 'Row ' . ($index + 2) . ': ' . $e->getMessage();
+                $skipped++;
             }
-        });
+        }
+
+        if ($imported > 0) {
+            Cache::increment('dashboard_v');
+        }
 
         return response()->json([
             'imported' => $imported,
@@ -449,12 +475,29 @@ class ClientController extends Controller
     {
         $duplicates = [];
         $seenInFile = [];
+        $seenCodesInFile = [];
         foreach ($rows as $i => $row) {
             $name = mb_strtolower(trim((string) ($row['legal_name'] ?? $row['company_name'] ?? $row['full_name'] ?? '')));
             if ($name === '') continue;
             $line = $i + 2;
+            $displayName = trim((string) ($row['legal_name'] ?? $row['company_name'] ?? $row['full_name'] ?? ''));
+
+            // Client-code check (Google Sheet imports use existing codes)
+            if (!empty($row['_use_existing_code']) && !empty($row['client_code'])) {
+                $code = (string) $row['client_code'];
+                if (isset($seenCodesInFile[$code])) {
+                    $duplicates[] = ['line' => $line, 'name' => $displayName, 'reason' => "code {$code} duplicated in file (row {$seenCodesInFile[$code]})"];
+                    continue;
+                }
+                $seenCodesInFile[$code] = $line;
+                if (\App\Models\Client::where('client_code', $code)->exists()) {
+                    $duplicates[] = ['line' => $line, 'name' => $displayName, 'reason' => "code {$code} already in system"];
+                    continue;
+                }
+            }
+
             if (isset($seenInFile[$name])) {
-                $duplicates[] = ['line' => $line, 'name' => trim((string) ($row['legal_name'] ?? $row['company_name'] ?? $row['full_name'] ?? '')), 'reason' => "same as row {$seenInFile[$name]} in this file"];
+                $duplicates[] = ['line' => $line, 'name' => $displayName, 'reason' => "same as row {$seenInFile[$name]} in this file"];
                 continue;
             }
             $seenInFile[$name] = $line;
@@ -462,7 +505,7 @@ class ClientController extends Controller
                 ->orWhereRaw('LOWER(company_name) = ?', [$name])
                 ->exists();
             if ($exists) {
-                $duplicates[] = ['line' => $line, 'name' => trim((string) ($row['legal_name'] ?? $row['company_name'] ?? $row['full_name'] ?? '')), 'reason' => 'already exists in system'];
+                $duplicates[] = ['line' => $line, 'name' => $displayName, 'reason' => 'already exists in system'];
             }
         }
         return $duplicates;
@@ -472,9 +515,18 @@ class ClientController extends Controller
     {
         $indexes    = [];
         $seenInFile = [];
+        $seenCodesInFile = [];
         foreach ($rows as $i => $row) {
             $name = mb_strtolower(trim((string) ($row['legal_name'] ?? $row['company_name'] ?? $row['full_name'] ?? '')));
             if ($name === '') continue;
+
+            if (!empty($row['_use_existing_code']) && !empty($row['client_code'])) {
+                $code = (string) $row['client_code'];
+                if (isset($seenCodesInFile[$code])) { $indexes[$i] = true; continue; }
+                $seenCodesInFile[$code] = $i;
+                if (\App\Models\Client::where('client_code', $code)->exists()) { $indexes[$i] = true; continue; }
+            }
+
             if (isset($seenInFile[$name])) { $indexes[$i] = true; continue; }
             $seenInFile[$name] = $i;
             $exists = \App\Models\Client::whereRaw('LOWER(legal_name) = ?', [$name])
@@ -558,7 +610,7 @@ class ClientController extends Controller
         }
 
         $csvUrl = "https://docs.google.com/spreadsheets/d/{$sheetId}/export?format=csv&gid={$gid}";
-        $response = Http::timeout(15)->get($csvUrl);
+        $response = Http::timeout(30)->get($csvUrl);
 
         if (!$response->ok()) {
             throw new \Exception('Could not fetch Google Sheet. Make sure it is set to "Anyone with link can view".');
@@ -566,13 +618,170 @@ class ClientController extends Controller
 
         $tmpFile = tempnam(sys_get_temp_dir(), 'gsheet_');
         file_put_contents($tmpFile, $response->body());
-        $rows = $this->parseCsvFile($tmpFile);
+
+        $rows = [];
+        $handle = fopen($tmpFile, 'r');
+        $rowNum = 0;
+        $lcHeaders = null;
+
+        while (($cols = fgetcsv($handle, 0, ',', '"', '\\')) !== false) {
+            $rowNum++;
+
+            // Row 1 might be an instruction row (first cell empty or not a column name)
+            // Row 2 might be the real headers — detect by checking if first cell looks like a data header
+            if ($lcHeaders === null) {
+                $firstCell = strtolower(trim((string)($cols[0] ?? '')));
+                if ($firstCell === 'clientcode' || $firstCell === 'client_code' || $firstCell === 'client code') {
+                    $lcHeaders = array_map(fn($h) => strtolower(trim((string)$h)), $cols);
+                }
+                // else: skip this row (instruction row), keep reading for the real header
+                continue;
+            }
+
+            $mapped = $this->normalizeGoogleSheetClientRow($cols, $lcHeaders);
+            if ($mapped !== null) {
+                $rows[] = $mapped;
+            }
+        }
+
+        fclose($handle);
         @unlink($tmpFile);
 
         return $rows;
     }
 
+    private function normalizeGoogleSheetClientRow(array $cols, array $lcHeaders): ?array
+    {
+        $get = function (string $needle) use ($cols, $lcHeaders): string {
+            $idx = array_search($needle, $lcHeaders);
+            return $idx !== false ? trim((string)($cols[$idx] ?? '')) : '';
+        };
+
+        $clientCode = $get('clientcode') ?: $get('client_code') ?: $get('client code');
+        if ($clientCode === '') return null;
+
+        $legalName = $get('legal name [no mr.etc]') ?: $get('legal name');
+        if ($legalName === '') return null;
+
+        // GSTIN: valid if 15 alphanumeric chars matching Indian GSTIN pattern
+        $gstnRaw = $get('gstn') ?: $get('gstin');
+        $hasGstin = preg_match('/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][0-9A-Z]Z[0-9A-Z]$/i', $gstnRaw) === 1;
+
+        // Territory from 4th character of client code (M = Indian, Y = abroad)
+        $fourthChar = strlen($clientCode) >= 4 ? strtoupper($clientCode[3]) : '';
+        $isIndian = $fourthChar === 'M';
+
+        if ($hasGstin) {
+            $gstType = 'B2B';
+        } elseif ($isIndian) {
+            $gstType = 'B2C';
+        } else {
+            $gstType = 'Export';
+        }
+
+        // Nationality: ResidentOf column holds ISO country code (IN, GB, US, …)
+        $residentOf = $get('residentof') ?: $get('resident of');
+        $nationality = strtoupper($residentOf) === 'IN' ? 'India' : ($residentOf ?: ($isIndian ? 'India' : ''));
+
+        // Contact name — field header is "contact name (if different from name), phone"
+        // May contain "Name, Phone" so take the part before the first digit-looking segment
+        $contactNameRaw = '';
+        foreach ($lcHeaders as $idx => $h) {
+            if (str_contains($h, 'contact name')) {
+                $contactNameRaw = trim((string)($cols[$idx] ?? ''));
+                break;
+            }
+        }
+        // Strip trailing phone if appended (e.g. "Ravi Kumar, 9876543210")
+        $contactName = preg_replace('/,\s*[\d\s\+\-\(\)]{7,}$/', '', $contactNameRaw) ?: null;
+
+        // Email — header "email " (with trailing space); find first valid address
+        $emailRaw = '';
+        foreach ($lcHeaders as $idx => $h) {
+            if (str_contains($h, 'email') || str_contains($h, 'e-mail') || str_contains($h, 'e mail')) {
+                $emailRaw = trim((string)($cols[$idx] ?? ''));
+                break;
+            }
+        }
+        $email = null;
+        foreach (array_map('trim', explode(',', $emailRaw)) as $e) {
+            if (filter_var($e, FILTER_VALIDATE_EMAIL)) { $email = $e; break; }
+        }
+
+        // Address
+        $address = $get('address');
+        $address = $address !== '' ? str_replace(["\r\n", "\r", "\n"], ', ', $address) : null;
+
+        return [
+            'client_code'        => $clientCode,
+            'legal_name'         => $legalName,
+            'has_gstin'          => $hasGstin,
+            'gstin'              => $hasGstin ? strtoupper($gstnRaw) : null,
+            'gst_type'           => $gstType,
+            'nationality'        => $nationality,
+            'client_type'        => 'organization',
+            'contact_name'       => $contactName,
+            'contact_email'      => $email,
+            'address'            => $address,
+            'status'             => 'Active',
+            '_use_existing_code' => true,
+        ];
+    }
+
     // ── Contacts ──────────────────────────────────────────────────────────────
+
+    public function detail(Request $request, $id)
+    {
+        $user = $request->user();
+        $client = Client::with('contacts')->findOrFail($id);
+
+        // RBAC: clients can only view their own
+        if ($user->role === 'client' || $user->role === 'client_admin') {
+            if ($client->id !== ($user->client_id ?? null)) {
+                return response()->json(['message' => 'Forbidden'], 403);
+            }
+        }
+
+        $projectsQuery = \App\Models\Project::with(['stages' => fn($q) => $q->orderBy('sequence_order')])
+            ->where('client_id', $client->id)
+            ->orderBy('created_at', 'desc');
+
+        $projects = $projectsQuery->get()->map(function ($p) {
+            $active = $p->stages->firstWhere('status', 'In Progress');
+            return [
+                'id'           => $p->id,
+                'docket_number'=> $p->docket_number,
+                'project_name' => $p->project_name,
+                'service_code' => $p->service_code,
+                'status'       => $p->status,
+                'filing_date'  => $p->filing_date,
+                'hard_deadline'=> $p->hard_deadline,
+                'current_stage'=> $active?->stage_name ?? $p->stages->last()?->stage_name,
+            ];
+        });
+
+        $invoices = \App\Models\Invoice::where('client_id', $client->id)
+            ->orderBy('created_at', 'desc')
+            ->get(['id', 'invoice_code', 'status', 'total_amount', 'balance_due', 'currency', 'created_at']);
+
+        $invoiceSummary = [
+            'total_invoiced' => $invoices->sum('total_amount'),
+            'total_received' => $invoices->sum(fn($i) => $i->total_amount - $i->balance_due),
+            'total_pending'  => $invoices->sum('balance_due'),
+        ];
+
+        $ledger = \App\Models\ClientLedger::where('client_id', $client->id)
+            ->orderBy('created_at', 'asc')
+            ->get(['id', 'document_type', 'document_reference', 'debit', 'credit', 'balance', 'created_at']);
+
+        return response()->json([
+            'client'          => $client,
+            'projects'        => $projects,
+            'invoice_summary' => $invoiceSummary,
+            'invoices'        => $invoices,
+            'ledger'          => $ledger,
+        ]);
+    }
 
     public function addContact(Request $request, $id)
     {

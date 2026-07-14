@@ -1,4 +1,4 @@
-import { Head } from "@inertiajs/react";
+import { Head, usePage } from "@inertiajs/react";
 import { useEffect, useState, useRef } from "react";
 import { createPortal } from "react-dom";
 import { Plus, Loader2, Search, X, Trash2, Download, Pencil } from "lucide-react";
@@ -86,6 +86,10 @@ function ProjectCombobox({ value, projects, onSelect }: {
 }
 
 export default function Tasks() {
+  const { props: pageProps } = usePage() as any;
+  const currentUserRole = pageProps.auth?.user?.role ?? "";
+  const isClientUser = ["client", "client_admin"].includes(currentUserRole);
+
   const [tasks, setTasks]     = useState<any[]>([]);
   const [projects, setProjects] = useState<any[]>([]);
   const [users, setUsers]     = useState<any[]>([]);
@@ -105,9 +109,10 @@ export default function Tasks() {
   const [deleting, setDeleting]   = useState(false);
 
   useEffect(() => {
-    Promise.all([api.getTasks(), api.getProjects(), api.getUsers()])
+    const userCall = isClientUser ? Promise.resolve([] as any[]) : api.getUsers();
+    Promise.all([api.getTasks(), api.getProjects(), userCall])
       .then(([t, p, u]) => {
-        setTasks(t); setProjects(p); setUsers(u);
+        setTasks(t); setProjects(p); setUsers(u as any[]);
         const params = new URLSearchParams(window.location.search);
         const openId = params.get("open");
         if (openId) {
@@ -213,7 +218,7 @@ export default function Tasks() {
         actions={
           <>
             <Button variant="outline" onClick={handleExport}><Download className="h-4 w-4 mr-2" />Export CSV</Button>
-            <Button onClick={openCreate}><Plus className="h-4 w-4 mr-2" />New Task</Button>
+            {!isClientUser && <Button onClick={openCreate}><Plus className="h-4 w-4 mr-2" />New Task</Button>}
           </>
         }
       />
@@ -362,7 +367,7 @@ export default function Tasks() {
                     <th className="px-4 py-3 text-left">Priority</th>
                     <th className="px-4 py-3 text-left">Status</th>
                     <th className="px-4 py-3 text-left">Due Date</th>
-                    <th className="px-4 py-3 text-left">Actions</th>
+                    {!isClientUser && <th className="px-4 py-3 text-left">Actions</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -387,23 +392,25 @@ export default function Tasks() {
                         <Badge variant={statusColor(t.status)}>{t.status}</Badge>
                       </td>
                       <td className="px-4 py-3 text-muted-foreground font-mono text-xs">{fmtDate(t.due_date)}</td>
-                      <td className="px-4 py-3">
-                        <div className="flex gap-1">
-                          <Button size="sm" variant="outline" className="h-7 w-7 p-0" title="Edit" onClick={() => openEdit(t)}>
-                            <Pencil className="h-3 w-3" />
-                          </Button>
-                          <Button size="sm" variant="outline" title="Delete"
-                            className="h-7 w-7 p-0 text-destructive border-destructive/30 hover:bg-destructive/10"
-                            onClick={() => setDelTarget(t)}>
-                            <Trash2 className="h-3 w-3" />
-                          </Button>
-                        </div>
-                      </td>
+                      {!isClientUser && (
+                        <td className="px-4 py-3">
+                          <div className="flex gap-1">
+                            <Button size="sm" variant="outline" className="h-7 w-7 p-0" title="Edit" onClick={() => openEdit(t)}>
+                              <Pencil className="h-3 w-3" />
+                            </Button>
+                            <Button size="sm" variant="outline" title="Delete"
+                              className="h-7 w-7 p-0 text-destructive border-destructive/30 hover:bg-destructive/10"
+                              onClick={() => setDelTarget(t)}>
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        </td>
+                      )}
                     </tr>
                   ))}
                   {filtered.length === 0 && (
                     <tr>
-                      <td colSpan={7} className="px-4 py-12 text-center text-muted-foreground">
+                      <td colSpan={isClientUser ? 6 : 7} className="px-4 py-12 text-center text-muted-foreground">
                         {tasks.length === 0 ? "No tasks yet. Create your first task." : "No tasks match your filter."}
                       </td>
                     </tr>

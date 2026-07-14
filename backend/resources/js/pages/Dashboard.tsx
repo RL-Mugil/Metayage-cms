@@ -277,7 +277,18 @@ export default function Dashboard() {
         )}
 
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
-          <StatCard label="Active Cases" value={metrics.active_matters.toString()} delta={metrics.active_matters_delta ?? undefined} trend={metrics.active_matters_delta_trend ?? "up"} icon={Briefcase} accent="primary" onClick={() => setDrillKey("active_cases")} />
+          <StatCard
+            label="Active Cases"
+            value={metrics.active_matters.toString()}
+            delta={metrics.active_matters_delta ?? undefined}
+            trend={metrics.active_matters_delta_trend ?? "up"}
+            icon={Briefcase}
+            accent="primary"
+            onClick={() => setDrillKey("active_cases")}
+            subtitle={metrics.distinct_matters != null && metrics.distinct_matters !== metrics.active_matters
+              ? `${metrics.distinct_matters} distinct matters`
+              : undefined}
+          />
           <StatCard label="Inactive Cases" value={(metrics.inactive_matters ?? 0).toString()} icon={Archive} accent="neutral" onClick={() => setDrillKey("inactive_cases")} />
           <StatCard label="Active Clients" value={metrics.clients.toString()} delta={metrics.clients_delta ?? undefined} trend={metrics.clients_delta_trend ?? "up"} icon={Users} accent="gold" onClick={() => setDrillKey("active_clients")} />
           <StatCard label="WIP (unbilled)" value={formatCurrency(metrics.wip_balance)} delta={metrics.wip_delta ?? undefined} trend={metrics.wip_delta_trend ?? "neutral"} icon={Clock} accent="info" onClick={() => setDrillKey("wip")} />

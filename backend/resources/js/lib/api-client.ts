@@ -452,6 +452,12 @@ export const api = {
   async updateSystemSettings(data: { company: string; currency: string; fiscalMonth: string; maxUploadMB: string }): Promise<any> {
     return this.request('/settings/system', { method: 'PUT', body: JSON.stringify(data) })
   },
+  async updateFeatureFlags(data: { feature_link_predecessor: boolean; feature_legacy_case: boolean; feature_existing_client: boolean }): Promise<any> {
+    return this.request('/settings/feature-flags', { method: 'PUT', body: JSON.stringify(data) })
+  },
+  async updateDropdown(key: 'dropdown_service_codes' | 'dropdown_country_codes', items: { code: string; label: string }[]): Promise<any> {
+    return this.request('/settings/dropdown', { method: 'PUT', body: JSON.stringify({ key, items }) })
+  },
   async uploadAvatar(file: File): Promise<{ ok: boolean; avatar_url: string }> {
     const form = new FormData()
     form.append('avatar', file)
@@ -594,14 +600,6 @@ export const api = {
     return this.request(`/portal/clients/${clientId}/users/${userId}/reset-password`, { method: 'POST', body: JSON.stringify({ password }) })
   },
 
-  // ── Project codes (custom office / service) ──
-  async getProjectCodes(type: 'office' | 'service'): Promise<{ code: string; description: string }[]> {
-    return this.request(`/project-codes?type=${type}`)
-  },
-  async addProjectCode(type: 'office' | 'service', code: string, description: string): Promise<{ code: string; description: string }> {
-    return this.request('/project-codes', { method: 'POST', body: JSON.stringify({ type, code, description }) })
-  },
-
   // ── Bulk operations ──
   async bulkExecute(data: { entity: string; ids: number[]; action: string; status?: string; stage?: string }): Promise<{ ok: boolean; affected: number }> {
     return this.request('/bulk/execute', { method: 'POST', body: JSON.stringify(data) })
@@ -635,11 +633,27 @@ export const api = {
     const q = roleFilter && roleFilter !== 'all' ? `?role_filter=${roleFilter}` : ''
     return this.request(`/projects/lifecycle-stats${q}`)
   },
-  async importProjects(clientId: number, file: File, skipDuplicates?: boolean): Promise<{ imported: number; skipped: number; errors: string[]; dockets: string[]; client: string } | { requires_confirmation: true; duplicates: { line: number; uin: string; reason: string }[] }> {
+  async inspectImportSheets(file: File): Promise<{ sheets: { name: string; rows: number; is_data_sheet: boolean }[] }> {
+    const formData = new FormData()
+    formData.append('file', file)
+    const response = await fetch('/api/projects/import/sheets', {
+      method: 'POST',
+      headers: { 'X-XSRF-TOKEN': getCsrfToken(), Accept: 'application/json' },
+      credentials: 'same-origin',
+      body: formData,
+    })
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}))
+      throw new Error((err as { message?: string }).message || `Inspect failed: ${response.status}`)
+    }
+    return response.json()
+  },
+  async importProjects(clientId: number, file: File, skipDuplicates?: boolean, sheetName?: string): Promise<{ imported: number; skipped: number; errors: string[]; dockets: string[]; client: string } | { requires_confirmation: true; duplicates: { line: number; uin: string; reason: string }[] }> {
     const formData = new FormData()
     formData.append('client_id', String(clientId))
     formData.append('file', file)
     if (skipDuplicates !== undefined) formData.append('skip_duplicates', String(skipDuplicates))
+    if (sheetName) formData.append('sheet_name', sheetName)
     const response = await fetch('/api/projects/import', {
       method: 'POST',
       headers: { 'X-XSRF-TOKEN': getCsrfToken(), Accept: 'application/json' },
@@ -718,6 +732,67 @@ export const api = {
   // Integration logs
   async getIntegrationLogs(slug: string): Promise<Record<string, unknown>[]> {
     return this.request(`/integrations/${slug}/logs`)
+  },
+
+  // ── Recycle Bin ──
+  async getRecycleBin(): Promise<{ projects: Record<string, unknown>[]; clients: Record<string, unknown>[]; documents: Record<string, unknown>[] }> {
+    return this.request('/recycle-bin')
+  },
+  async recycleBinRestore(type: 'project' | 'client' | 'document', id: number): Promise<{ message: string }> {
+    return this.request('/recycle-bin/restore', { method: 'POST', body: JSON.stringify({ type, id }) })
+  },
+  async recycleBinHardDelete(type: 'project' | 'client' | 'document', id: number): Promise<{ message: string }> {
+    return this.request('/recycle-bin/hard-delete', { method: 'DELETE', body: JSON.stringify({ type, id }) })
+  },
+  async recycleBinBulkRestore(type: 'project' | 'client' | 'document', ids: number[]): Promise<{ message: string; restored: number }> {
+    return this.request('/recycle-bin/bulk-restore', { method: 'POST', body: JSON.stringify({ type, ids }) })
+  },
+  async recycleBinBulkHardDelete(type: 'project' | 'client' | 'document', ids: number[]): Promise<{ message: string; deleted: number }> {
+    return this.request('/recycle-bin/bulk-hard-delete', { method: 'DELETE', body: JSON.stringify({ type, ids }) })
+  },
+
+  async elevateProject(id: number, toService: string, note?: string): Promise<{ message: string; project: Project }> {
+    return this.request(`/projects/${id}/elevate`, { method: 'POST', body: JSON.stringify({ to_service: toService, note }) })
+  },
+
+  async linkProjectPredecessor(id: number, predecessorId: number, note?: string): Promise<{ message: string }> {
+    return this.request(`/projects/${id}/link-predecessor`, { method: 'POST', body: JSON.stringify({ predecessor_id: predecessorId, note }) })
+  },
+
+  async detectProjectChains(): Promise<{ chains: any[]; total: number }> {
+    return this.request('/projects/detect-chains')
+  },
+
+  async bulkLinkProjectChains(pairs: { predecessor_id: number; successor_id: number; note?: string }[]): Promise<{ message: string; created: number; skipped: number }> {
+    return this.request('/projects/bulk-link-chains', { method: 'POST', body: JSON.stringify({ pairs }) })
+  },
+
+  async docketImportPreview(file: File): Promise<{
+    total: number; importable: number; skipped: number; abandoned: number; granted: number;
+    known_clients: number; unknown_clients: string[]; docket_conflicts: string[]; sample: any[];
+  }> {
+    const form = new FormData()
+    form.append('file', file)
+    const headers: Record<string, string> = { Accept: 'application/json', 'X-XSRF-TOKEN': getCsrfToken() }
+    const res = await fetch('/api/projects/docket-import/preview', { method: 'POST', body: form, headers, credentials: 'same-origin' })
+    if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error((e as any).message || `Error ${res.status}`) }
+    return res.json()
+  },
+
+  async docketImport(file: File, opts: {
+    skip_conflicts?: boolean; skip_transferred?: boolean;
+    default_partner_id?: number; default_manager_id?: number;
+  }): Promise<{ imported: number; skipped: number; errors: string[] }> {
+    const form = new FormData()
+    form.append('file', file)
+    if (opts.skip_conflicts !== undefined) form.append('skip_conflicts', opts.skip_conflicts ? '1' : '0')
+    if (opts.skip_transferred !== undefined) form.append('skip_transferred', opts.skip_transferred ? '1' : '0')
+    if (opts.default_partner_id) form.append('default_partner_id', String(opts.default_partner_id))
+    if (opts.default_manager_id) form.append('default_manager_id', String(opts.default_manager_id))
+    const headers: Record<string, string> = { Accept: 'application/json', 'X-XSRF-TOKEN': getCsrfToken() }
+    const res = await fetch('/api/projects/docket-import/import', { method: 'POST', body: form, headers, credentials: 'same-origin' })
+    if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error((e as any).message || `Error ${res.status}`) }
+    return res.json()
   },
 }
 

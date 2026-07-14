@@ -1,6 +1,6 @@
 import { Head, usePage, router } from "@inertiajs/react";
 import { useState, useEffect, useRef, useCallback } from "react";
-import { User, Bell, Shield, Palette, Settings as SettingsIcon, Key, Building, Loader2, Camera, Trash2, ZoomIn, ZoomOut, RotateCcw } from "lucide-react";
+import { User, Bell, Shield, Palette, Settings as SettingsIcon, Key, Building, Loader2, Camera, Trash2, ZoomIn, ZoomOut, RotateCcw, Plus, X } from "lucide-react";
 import AppLayout from "@/layouts/AppLayout";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -89,6 +89,30 @@ export default function Settings() {
   const [accentColor, setAccentColor] = useState(() => loadPrefs("myipstrategy.appearance", { accent: "gold" }).accent);
   const [pwForm, setPwForm] = useState({ current: "", next: "", confirm: "" });
   const [system, setSystem] = useState({ company: "My IP Law Firm", currency: "INR", fiscalMonth: "April", maxUploadMB: "50" });
+
+  const isSuperAdmin = user?.role === "super_admin";
+  const sysSettings = (props.systemSettings ?? {}) as any;
+
+  const [flags, setFlags] = useState({
+    feature_link_predecessor:    sysSettings.feature_link_predecessor    ?? true,
+    feature_legacy_case:         sysSettings.feature_legacy_case         ?? true,
+    feature_existing_client:     sysSettings.feature_existing_client     ?? true,
+    feature_lock_code_dropdowns: sysSettings.feature_lock_code_dropdowns ?? true,
+  });
+  const [savingFlags, setSavingFlags] = useState(false);
+
+  const [svcCodes, setSvcCodes]   = useState<{code:string;label:string}[]>(sysSettings.dropdown_service_codes ?? []);
+  const [ctyCodes, setCtyCodes]   = useState<{code:string;label:string}[]>(sysSettings.dropdown_country_codes ?? []);
+  const [newSvcCode,  setNewSvcCode]  = useState("");
+  const [newSvcLabel, setNewSvcLabel] = useState("");
+  const [newCtyCode,  setNewCtyCode]  = useState("");
+  const [newCtyLabel, setNewCtyLabel] = useState("");
+  const [svcSearch, setSvcSearch] = useState("");
+  const [ctySearch, setCtySearch] = useState("");
+  const [svcAddErr, setSvcAddErr] = useState("");
+  const [ctyAddErr, setCtyAddErr] = useState("");
+  const [savingDropdown, setSavingDropdown] = useState<"service"|"country"|null>(null);
+
   const visibleTabs = canManageSystem ? tabs : tabs.filter((item) => item.id !== "system");
 
   useEffect(() => {
@@ -545,27 +569,250 @@ export default function Settings() {
 
           {/* ── System ── */}
           {tab === "system" && (
-            <Card className="border-border">
-              <CardHeader><CardTitle className="font-display">System Configuration</CardTitle></CardHeader>
-              <CardContent className="space-y-4">
-                {[
-                  { label: "Company / Firm Name",      key: "company" },
-                  { label: "Currency",                 key: "currency" },
-                  { label: "Fiscal Year Start Month",  key: "fiscalMonth" },
-                  { label: "Max File Upload (MB)",     key: "maxUploadMB" },
-                ].map(({ label, key }) => (
-                  <div key={key}>
-                    <label className="block text-xs font-medium text-muted-foreground mb-1">{label}</label>
-                    <input value={(system as any)[key]}
-                      onChange={(e) => setSystem((p) => ({ ...p, [key]: e.target.value }))}
-                      className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
-                  </div>
-                ))}
-                <Button onClick={saveSystem} disabled={saving} className="bg-gold hover:bg-gold/90 text-black mt-2">
-                  {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <SettingsIcon className="h-4 w-4 mr-2" />}Save System Settings
-                </Button>
-              </CardContent>
-            </Card>
+            <div className="space-y-6">
+              {/* General config */}
+              <Card className="border-border">
+                <CardHeader><CardTitle className="font-display">System Configuration</CardTitle></CardHeader>
+                <CardContent className="space-y-4">
+                  {[
+                    { label: "Company / Firm Name",      key: "company" },
+                    { label: "Currency",                 key: "currency" },
+                    { label: "Fiscal Year Start Month",  key: "fiscalMonth" },
+                    { label: "Max File Upload (MB)",     key: "maxUploadMB" },
+                  ].map(({ label, key }) => (
+                    <div key={key}>
+                      <label className="block text-xs font-medium text-muted-foreground mb-1">{label}</label>
+                      <input value={(system as any)[key]}
+                        onChange={(e) => setSystem((p) => ({ ...p, [key]: e.target.value }))}
+                        className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+                    </div>
+                  ))}
+                  <Button onClick={saveSystem} disabled={saving} className="bg-gold hover:bg-gold/90 text-black mt-2">
+                    {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <SettingsIcon className="h-4 w-4 mr-2" />}Save System Settings
+                  </Button>
+                </CardContent>
+              </Card>
+
+              {/* Feature Flags — super_admin only */}
+              {isSuperAdmin && (
+                <Card className="border-border">
+                  <CardHeader>
+                    <CardTitle className="font-display">Feature Visibility</CardTitle>
+                    <p className="text-xs text-muted-foreground mt-1">Toggle off to hide these options for all users portal-wide.</p>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {([
+                      { key: "feature_link_predecessor",    label: "Link Predecessor",             desc: "Show 'Link Predecessor' button on cases" },
+                      { key: "feature_legacy_case",         label: "Existing / Legacy Case",       desc: "Show the 'Existing / Legacy' tab when creating a new case" },
+                      { key: "feature_existing_client",     label: "Existing Client",              desc: "Show the 'Existing' tab when creating a new client" },
+                      { key: "feature_lock_code_dropdowns", label: "Lock Code Dropdowns",          desc: "Prevent users from adding custom country/service codes from the project form (manage codes only via Settings)" },
+                    ] as const).map(({ key, label, desc }) => (
+                      <div key={key} className="flex items-center justify-between gap-4 py-1">
+                        <div>
+                          <p className="text-sm font-medium">{label}</p>
+                          <p className="text-xs text-muted-foreground">{desc}</p>
+                        </div>
+                        <Toggle checked={flags[key]} onChange={(v) => setFlags((f) => ({ ...f, [key]: v }))} />
+                      </div>
+                    ))}
+                    <Button
+                      onClick={async () => {
+                        setSavingFlags(true);
+                        try { await api.updateFeatureFlags(flags); flashSaved(); } catch { setError("Failed to save flags."); }
+                        finally { setSavingFlags(false); }
+                      }}
+                      disabled={savingFlags}
+                      className="bg-gold hover:bg-gold/90 text-black mt-2"
+                    >
+                      {savingFlags ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Shield className="h-4 w-4 mr-2" />}Save Feature Flags
+                    </Button>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Dropdown Managers — super_admin only */}
+              {isSuperAdmin && (
+                <>
+                  {/* Service Codes */}
+                  <Card className="border-border">
+                    <CardHeader>
+                      <CardTitle className="font-display">Service Codes</CardTitle>
+                      <p className="text-xs text-muted-foreground mt-1">All codes listed here appear in the Service Code dropdown across the portal. {svcCodes.length} total.</p>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      {/* Search */}
+                      <div className="relative">
+                        <input
+                          value={svcSearch}
+                          onChange={(e) => setSvcSearch(e.target.value)}
+                          placeholder="Search codes or descriptions…"
+                          className="w-full h-8 rounded border border-border bg-background pl-3 pr-8 text-xs focus:outline-none focus:ring-1 focus:ring-gold"
+                        />
+                        {svcSearch && (
+                          <button onClick={() => setSvcSearch("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                            <X className="h-3 w-3" />
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Chip list filtered by search */}
+                      {(() => {
+                        const q = svcSearch.trim().toLowerCase();
+                        const filtered = q
+                          ? svcCodes.filter((x) => x.code.toLowerCase().includes(q) || x.label.toLowerCase().includes(q))
+                          : svcCodes;
+                        return (
+                          <div className="flex flex-wrap gap-2 min-h-[40px] max-h-60 overflow-y-auto pr-1">
+                            {filtered.length === 0 && (
+                              <p className="text-xs text-muted-foreground italic py-2">
+                                {q ? `No codes match "${svcSearch}" — you can add it below.` : "No service codes yet."}
+                              </p>
+                            )}
+                            {filtered.map((item) => {
+                              const i = svcCodes.findIndex((x) => x.code === item.code);
+                              return (
+                                <span key={item.code} className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-muted text-xs font-mono">
+                                  <span className="font-semibold text-gold">{item.code}</span>
+                                  <span className="text-muted-foreground">– {item.label.replace(/^[A-Z\-]+ [–-] /, "")}</span>
+                                  <button onClick={() => { setSvcCodes(svcCodes.filter((_, j) => j !== i)); setSvcAddErr(""); }}
+                                    className="ml-1 text-muted-foreground hover:text-destructive"><X className="h-3 w-3" /></button>
+                                </span>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()}
+
+                      {/* Add new */}
+                      <div className="border-t border-border pt-3 space-y-2">
+                        <p className="text-xs font-medium text-muted-foreground">Add new code</p>
+                        <div className="flex gap-2">
+                          <input value={newSvcCode}
+                            onChange={(e) => { setNewSvcCode(e.target.value.toUpperCase()); setSvcAddErr(""); }}
+                            placeholder="CODE" maxLength={10}
+                            className="w-24 h-8 rounded border border-border bg-background px-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-gold" />
+                          <input value={newSvcLabel} onChange={(e) => setNewSvcLabel(e.target.value)}
+                            placeholder="Description (e.g. Complete Patent Draft)"
+                            className="flex-1 h-8 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
+                          <Button size="sm" variant="outline" className="h-8 px-3 shrink-0"
+                            onClick={() => {
+                              const code = newSvcCode.trim().toUpperCase();
+                              const lbl  = newSvcLabel.trim();
+                              if (!code) { setSvcAddErr("Enter a code."); return; }
+                              if (!lbl)  { setSvcAddErr("Enter a description."); return; }
+                              const dup = svcCodes.find((x) => x.code.toUpperCase() === code);
+                              if (dup) { setSvcAddErr(`"${code}" already exists: "${dup.label}"`); return; }
+                              setSvcCodes([...svcCodes, { code, label: `${code} – ${lbl}` }]);
+                              setNewSvcCode(""); setNewSvcLabel(""); setSvcAddErr("");
+                              setSvcSearch(code); // jump to the newly added chip
+                            }}>
+                            <Plus className="h-3 w-3" />
+                          </Button>
+                        </div>
+                        {svcAddErr && <p className="text-xs text-destructive">{svcAddErr}</p>}
+                      </div>
+
+                      <Button size="sm" onClick={async () => {
+                        setSavingDropdown("service");
+                        try { await api.updateDropdown("dropdown_service_codes", svcCodes); flashSaved(); } catch { setError("Failed to save."); }
+                        finally { setSavingDropdown(null); }
+                      }} disabled={savingDropdown === "service"} className="bg-gold hover:bg-gold/90 text-black">
+                        {savingDropdown === "service" ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : null}Save Service Codes
+                      </Button>
+                    </CardContent>
+                  </Card>
+
+                  {/* Country / Patent Office Codes */}
+                  <Card className="border-border">
+                    <CardHeader>
+                      <CardTitle className="font-display">Country / Patent Office Codes</CardTitle>
+                      <p className="text-xs text-muted-foreground mt-1">Codes listed here appear in the Patent Office dropdown when creating a case. {ctyCodes.length} total.</p>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      {/* Search */}
+                      <div className="relative">
+                        <input
+                          value={ctySearch}
+                          onChange={(e) => setCtySearch(e.target.value)}
+                          placeholder="Search country codes…"
+                          className="w-full h-8 rounded border border-border bg-background pl-3 pr-8 text-xs focus:outline-none focus:ring-1 focus:ring-gold"
+                        />
+                        {ctySearch && (
+                          <button onClick={() => setCtySearch("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                            <X className="h-3 w-3" />
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Chip list filtered by search */}
+                      {(() => {
+                        const q = ctySearch.trim().toLowerCase();
+                        const filtered = q
+                          ? ctyCodes.filter((x) => x.code.toLowerCase().includes(q) || x.label.toLowerCase().includes(q))
+                          : ctyCodes;
+                        return (
+                          <div className="flex flex-wrap gap-2 min-h-[40px] max-h-60 overflow-y-auto pr-1">
+                            {filtered.length === 0 && (
+                              <p className="text-xs text-muted-foreground italic py-2">
+                                {q ? `No codes match "${ctySearch}" — you can add it below.` : "No country codes yet."}
+                              </p>
+                            )}
+                            {filtered.map((item) => {
+                              const i = ctyCodes.findIndex((x) => x.code === item.code);
+                              return (
+                                <span key={item.code} className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-muted text-xs font-mono">
+                                  <span className="font-semibold text-gold">{item.code}</span>
+                                  <span className="text-muted-foreground">– {item.label.replace(/^[A-Z]+ [–-] /, "")}</span>
+                                  <button onClick={() => { setCtyCodes(ctyCodes.filter((_, j) => j !== i)); setCtyAddErr(""); }}
+                                    className="ml-1 text-muted-foreground hover:text-destructive"><X className="h-3 w-3" /></button>
+                                </span>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()}
+
+                      {/* Add new */}
+                      <div className="border-t border-border pt-3 space-y-2">
+                        <p className="text-xs font-medium text-muted-foreground">Add new code</p>
+                        <div className="flex gap-2">
+                          <input value={newCtyCode}
+                            onChange={(e) => { setNewCtyCode(e.target.value.toUpperCase()); setCtyAddErr(""); }}
+                            placeholder="XX" maxLength={4}
+                            className="w-16 h-8 rounded border border-border bg-background px-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-gold" />
+                          <input value={newCtyLabel} onChange={(e) => setNewCtyLabel(e.target.value)}
+                            placeholder="Country / Office name"
+                            className="flex-1 h-8 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
+                          <Button size="sm" variant="outline" className="h-8 px-3 shrink-0"
+                            onClick={() => {
+                              const code = newCtyCode.trim().toUpperCase();
+                              const lbl  = newCtyLabel.trim();
+                              if (!code) { setCtyAddErr("Enter a code."); return; }
+                              if (!lbl)  { setCtyAddErr("Enter a description."); return; }
+                              const dup = ctyCodes.find((x) => x.code.toUpperCase() === code);
+                              if (dup) { setCtyAddErr(`"${code}" already exists: "${dup.label}"`); return; }
+                              setCtyCodes([...ctyCodes, { code, label: `${code} – ${lbl}` }]);
+                              setNewCtyCode(""); setNewCtyLabel(""); setCtyAddErr("");
+                              setCtySearch(code);
+                            }}>
+                            <Plus className="h-3 w-3" />
+                          </Button>
+                        </div>
+                        {ctyAddErr && <p className="text-xs text-destructive">{ctyAddErr}</p>}
+                      </div>
+
+                      <Button size="sm" onClick={async () => {
+                        setSavingDropdown("country");
+                        try { await api.updateDropdown("dropdown_country_codes", ctyCodes); flashSaved(); } catch { setError("Failed to save."); }
+                        finally { setSavingDropdown(null); }
+                      }} disabled={savingDropdown === "country"} className="bg-gold hover:bg-gold/90 text-black">
+                        {savingDropdown === "country" ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : null}Save Country Codes
+                      </Button>
+                    </CardContent>
+                  </Card>
+                </>
+              )}
+            </div>
           )}
         </div>
       </div>

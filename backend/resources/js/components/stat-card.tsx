@@ -7,16 +7,18 @@ interface Props {
   delta?: string;
   trend?: "up" | "down" | "flat";
   icon?: LucideIcon;
-  accent?: "primary" | "gold" | "info" | "success";
+  accent?: "primary" | "gold" | "info" | "success" | "neutral";
   onClick?: () => void;
+  subtitle?: string;
 }
 
-export function StatCard({ label, value, delta, trend = "flat", icon: Icon, accent = "primary", onClick }: Props) {
+export function StatCard({ label, value, delta, trend = "flat", icon: Icon, accent = "primary", onClick, subtitle }: Props) {
   const accents: Record<string, string> = {
     primary: "bg-primary/5 text-primary",
     gold: "bg-gold/10 text-gold",
     info: "bg-info/10 text-info",
     success: "bg-success/10 text-success",
+    neutral: "bg-muted text-muted-foreground",
   };
   return (
     <div
@@ -42,6 +44,9 @@ export function StatCard({ label, value, delta, trend = "flat", icon: Icon, acce
           trend === "flat" && "text-muted-foreground")}>
           {delta}
         </div>
+      )}
+      {subtitle && (
+        <div className="mt-1 text-[10px] text-muted-foreground">{subtitle}</div>
       )}
     </div>
   );

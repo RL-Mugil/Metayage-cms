@@ -11,6 +11,7 @@ import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api-client";
+import { ProjectDetailPanel } from "@/components/project-detail-panel";
 
 const OFFICE_LABELS: Record<string, string> = {
   IN: "India", US: "USA", JP: "Japan", EP: "EP", KR: "Korea",
@@ -168,6 +169,8 @@ export default function PatentPortfolio() {
   const [sortCol, setSortCol]     = useState<"docket_number" | "filing_date" | "status">("docket_number");
   const [sortDir, setSortDir]     = useState<"asc" | "desc">("asc");
   const [page, setPage]           = useState(1);
+
+  const [detailId, setDetailId] = useState<number | null>(null);
 
   // Pass role_filter for roles that can be assigned as PCM/SCM/PR.
   const isAnalyst = ['associate', 'galvanizer', 'partner', 'director'].includes(role);
@@ -353,8 +356,8 @@ export default function PatentPortfolio() {
                   {(data.upcoming_renewals as any[]).length === 0 ? (
                     <p className="text-xs text-muted-foreground px-4 py-6">No upcoming renewals.</p>
                   ) : (data.upcoming_renewals as any[]).map((r: any, i: number) => (
-                    <a key={i} href={r.id ? `/projects/${r.id}` : "#"}
-                      className="block px-4 py-3 border-b border-border last:border-0 hover:bg-muted/20 transition-colors group">
+                    <button key={i} onClick={() => r.id && setDetailId(r.id)}
+                      className="block w-full text-left px-4 py-3 border-b border-border last:border-0 hover:bg-muted/20 transition-colors group">
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-1.5 text-xs font-mono font-medium text-foreground group-hover:text-gold transition-colors">
                           <FileText className="h-3 w-3 text-muted-foreground" />
@@ -370,7 +373,7 @@ export default function PatentPortfolio() {
                           {r.hard_deadline ? new Date(r.hard_deadline).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "2-digit" }) : "—"}
                         </span>
                       </div>
-                    </a>
+                    </button>
                   ))}
                 </CardContent>
               </Card>
@@ -504,11 +507,11 @@ export default function PatentPortfolio() {
                           {paged.map((row: any, i: number) => (
                             <tr key={i} className="border-t border-border hover:bg-muted/20 transition-colors group">
                               <td className="px-3 py-2.5">
-                                <a href={row.id ? `/projects/${row.id}` : "#"}
+                                <button onClick={() => row.id && setDetailId(row.id)}
                                   className="font-mono font-medium text-foreground group-hover:text-gold transition-colors flex items-center gap-1">
                                   {row.docket_number}
                                   {row.id && <ExternalLink className="h-2.5 w-2.5 opacity-0 group-hover:opacity-100 transition-opacity" />}
-                                </a>
+                                </button>
                               </td>
                               <td className="px-3 py-2.5 text-muted-foreground">
                                 {row.filing_date ? new Date(row.filing_date).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "2-digit" }) : "—"}
@@ -549,6 +552,9 @@ export default function PatentPortfolio() {
           </>
         )}
       </div>
+      {detailId !== null && (
+        <ProjectDetailPanel projectId={detailId} onClose={() => setDetailId(null)} />
+      )}
     </AppLayout>
   );
 }

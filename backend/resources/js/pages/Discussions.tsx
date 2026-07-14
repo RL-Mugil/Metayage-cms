@@ -231,9 +231,11 @@ export default function Discussions() {
         title="Discussions"
         description="Team conversations — like a chat room, per topic."
         actions={
-          <Button onClick={() => setShowNewForm((v) => !v)}>
-            <Plus className="h-4 w-4 mr-2" />New Discussion
-          </Button>
+          !isClientUser ? (
+            <Button onClick={() => setShowNewForm((v) => !v)}>
+              <Plus className="h-4 w-4 mr-2" />New Discussion
+            </Button>
+          ) : undefined
         }
       />
 

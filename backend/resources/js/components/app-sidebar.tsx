@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Users, Briefcase, GitBranch, ListChecks,
   BellRing, UserCircle2, FolderLock, MessagesSquare, CheckCircle2,
   Bell, BarChart3, FileBarChart2, Wallet, Sparkles, Building2, Star, Layers,
-  CalendarDays, Plug, Settings, IdCard, Scale, LogOut, TableProperties, ShieldCheck, Award, LayoutGrid,
+  CalendarDays, Plug, Settings, IdCard, Scale, LogOut, TableProperties, ShieldCheck, Award, LayoutGrid, Trash2,
 } from "lucide-react";
 import {
   Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel,
@@ -112,6 +112,7 @@ const groups = [
       { to: "/bulk", title: "Bulk Operations", icon: Layers },
       { to: "/compliance", title: "Compliance", icon: ShieldCheck },
       { to: "/audit-logs", title: "Audit Log", icon: ShieldCheck, roles: ["super_admin", "partner"] },
+      { to: "/recycle-bin", title: "Recycle Bin", icon: Trash2, roles: ["super_admin", "partner", "manager"] },
       { to: "/integrations", title: "Integrations", icon: Plug, roles: ["super_admin", "partner", "manager", "hr", "associate", "finance", "galvanizer"] },
       { to: "/staff-users", title: "Staff Users", icon: Users, adminOnly: true },
       { to: "/settings", title: "Settings", icon: Settings },

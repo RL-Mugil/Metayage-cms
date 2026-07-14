@@ -197,11 +197,78 @@ class SettingsController extends Controller
         }
 
         Cache::forget('system_settings');
+        Cache::forget('system_settings_shared');
 
         AuditLog::create([
             'user_id'    => $user->id,
             'action'     => 'update_system_settings',
             'metadata'   => array_keys($validated),
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+        ]);
+
+        return response()->json(['ok' => true]);
+    }
+
+    public function updateFeatureFlags(Request $request)
+    {
+        $user = $request->user();
+        if ($user->role !== 'super_admin') {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        $validated = $request->validate([
+            'feature_link_predecessor'    => 'required|boolean',
+            'feature_legacy_case'         => 'required|boolean',
+            'feature_existing_client'     => 'required|boolean',
+            'feature_lock_code_dropdowns' => 'required|boolean',
+        ]);
+
+        foreach ($validated as $key => $value) {
+            DB::table('system_settings')->updateOrInsert(
+                ['key' => $key],
+                ['value' => $value ? 'true' : 'false', 'updated_at' => now()]
+            );
+        }
+
+        Cache::forget('system_settings_shared');
+
+        AuditLog::create([
+            'user_id'    => $user->id,
+            'action'     => 'update_feature_flags',
+            'metadata'   => $validated,
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+        ]);
+
+        return response()->json(['ok' => true]);
+    }
+
+    public function updateDropdown(Request $request)
+    {
+        $user = $request->user();
+        if ($user->role !== 'super_admin') {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        $validated = $request->validate([
+            'key'    => 'required|in:dropdown_service_codes,dropdown_country_codes',
+            'items'  => 'required|array|min:1',
+            'items.*.code'  => 'required|string|max:20',
+            'items.*.label' => 'required|string|max:200',
+        ]);
+
+        DB::table('system_settings')->updateOrInsert(
+            ['key' => $validated['key']],
+            ['value' => json_encode($validated['items']), 'updated_at' => now()]
+        );
+
+        Cache::forget('system_settings_shared');
+
+        AuditLog::create([
+            'user_id'    => $user->id,
+            'action'     => 'update_dropdown_' . $validated['key'],
+            'metadata'   => ['count' => count($validated['items'])],
             'ip_address' => $request->ip(),
             'user_agent' => $request->userAgent(),
         ]);

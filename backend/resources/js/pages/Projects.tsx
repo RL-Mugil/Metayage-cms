@@ -6,6 +6,7 @@ import {
   ChevronDown, ChevronUp, ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown,
   Upload, FileSpreadsheet, CheckCircle, FileText, Scroll,
   ExternalLink, Calendar, Clock, ReceiptText, BookOpen,
+  ArrowUpCircle, Link2, GitMerge,
 } from "lucide-react";
 import AppLayout from "@/layouts/AppLayout";
 import { PageHeader } from "@/components/page-header";
@@ -195,25 +196,64 @@ const CASE_TYPES = [
 
 const URGENCIES = ["Low", "Normal", "High", "Critical"];
 const STATUSES  = ["Open", "In Progress", "On Hold", "Closed", "Completed"];
+
+const ELEVATION_PATHS: Record<string, string[]> = {
+  PAS: ["PRV", "CPT"], SRH: ["PRV", "CPT"], PAT: ["PRV", "CPT"], FTO: ["PRV", "CPT"],
+  PRV: ["CPT"],
+  CPT: ["FER"], NPA: ["FER"],
+  FER: ["HRG"], SER: ["HRG"], TER: ["HRG"],
+  HRG: [],
+};
+
+const SERVICE_LABELS: Record<string, string> = {
+  PAS: "PAS — Prior Art Search", SRH: "SRH — Search Report", PAT: "PAT — Patent",
+  FTO: "FTO — Freedom to Operate", PRV: "PRV — Provisional",
+  CPT: "CPT — Complete Specification", NPA: "NPA — National Phase",
+  FER: "FER — First Examination", SER: "SER — Second Examination", TER: "TER — Third Examination",
+  HRG: "HRG — Hearing",
+};
 // All possible stage names across all service codes (for pipeline filter)
-const PIPELINE_STAGES = [
-  // PAS / Prior Art Search
-  "Prior Art Search", "Search Report Ready", "Search Report Shared", "Awaiting IDF from Client",
-  // PRV / CPT shared
-  "IDF Received", "Drafting in Progress", "Internal Review", "Awaiting Signed Forms", "Filing", "Filed",
-  // CPT extras
-  "Claims Ready to Share", "Claims Approved",
-  "Draft Shared with Client", "Awaiting Client Feedback", "Client Comments Received",
-  "Revised Draft Shared", "Draft Approved",
-  // FER
-  "FER Received", "FER Response in Progress", "FER Response Filed",
-  // HRG
-  "Hearing Scheduled", "Hearing Response in Progress", "Hearing Response Filed", "Granted",
-  // Legacy / other service codes
+const STAGES_BY_SERVICE: Record<string, string[]> = {
+  PAS: ["Awaiting IDF from Client", "Prior Art Search", "Search Report Ready", "Search Report Shared"],
+  SRH: ["Awaiting IDF from Client", "Prior Art Search", "Search Report Ready", "Search Report Shared"],
+  PAT: ["Awaiting IDF from Client", "Prior Art Search", "Search Report Ready", "Search Report Shared"],
+  FTO: ["Awaiting IDF from Client", "Prior Art Search", "Search Report Ready", "Search Report Shared"],
+  PRV: ["IDF Received", "Drafting", "Internal Review", "Awaiting Signed Forms", "Filing", "Filed"],
+  CPT: [
+    "IDF Received", "Claims Ready to Share", "Claims Approved", "Drafting",
+    "Internal Review", "Draft Shared with Client", "Awaiting Client Feedback",
+    "Client Comments Received", "Revised Draft Shared", "Drafted",
+    "Awaiting Signed Forms", "Filing", "Filed — Waiting for FER or Grant",
+  ],
+  NPA: [
+    "IDF Received", "Claims Ready to Share", "Claims Approved", "Drafting",
+    "Internal Review", "Draft Shared with Client", "Awaiting Client Feedback",
+    "Client Comments Received", "Revised Draft Shared", "Drafted",
+    "Awaiting Signed Forms", "Filing", "Filed — Waiting for FER or Grant",
+  ],
+  FER: ["FER Received", "FER Response in Progress", "FER Response Filed"],
+  SER: ["FER Received", "FER Response in Progress", "FER Response Filed"],
+  TER: ["FER Received", "FER Response in Progress", "FER Response Filed"],
+  HRG: ["Hearing Scheduled", "Hearing Response in Progress", "Hearing Response Filed", "Granted"],
+};
+
+const PIPELINE_STAGES_LEGACY = [
   "Invention Disclosure", "Patent Search", "Search Report", "Provisional or Complete Application",
   "Provisional Filing", "Patent Drafting", "Applicant/Inventor Review", "Filing with Patent Office",
   "First Examination Report", "FER Response Preparation", "FER Response Filing",
-  "Hearing with Examiner", "Hearing Response Preparation", "Hearing Response Filing", "Renewal",
+  "Hearing with Examiner", "Hearing Response Preparation", "Hearing Response Filing",
+];
+
+function stagesForProject(p: { service_code?: string | null; docket_number?: string | null; stages?: any[] }): string[] {
+  // service_code takes precedence; fall back to extracting from docket_number (chars 9+)
+  const svc = (p.service_code ?? p.docket_number?.slice(9) ?? "").toUpperCase();
+  return STAGES_BY_SERVICE[svc] ?? p.stages?.map((s: any) => s.stage_name) ?? PIPELINE_STAGES_LEGACY;
+}
+
+// Keep alias so rest of file compiles without changes
+const PIPELINE_STAGES = [
+  ...Object.values(STAGES_BY_SERVICE).flat().filter((v, i, a) => a.indexOf(v) === i),
+  ...PIPELINE_STAGES_LEGACY,
 ];
 
 // ── Shared UI ─────────────────────────────────────────────────────────────────
@@ -315,42 +355,28 @@ function Combobox({ value, options, onSelect, placeholder }: {
   );
 }
 
-// Combobox with "Add entry" — fetches custom DB codes and merges with base list
-function CodeCombobox({ value, baseOptions, codeType, onSelect, placeholder }: {
+// Combobox with optional "Add entry" — uses Settings-managed codes (baseOptions) only
+function CodeCombobox({ value, baseOptions, codeType, onSelect, placeholder, locked }: {
   value: string;
   baseOptions: { id: string; label: string }[];
   codeType: "office" | "service";
   onSelect: (id: string) => void;
   placeholder?: string;
+  locked?: boolean;
 }) {
   const [q, setQ]               = useState("");
   const [open, setOpen]         = useState(false);
   const [rect, setRect]         = useState<DOMRect | null>(null);
   const inputRef                = useRef<HTMLInputElement>(null);
-  const [customCodes, setCustomCodes] = useState<{ id: string; label: string }[]>([]);
   const [adding, setAdding]     = useState(false);
   const [newCode, setNewCode]   = useState("");
   const [newDesc, setNewDesc]   = useState("");
   const [addErr, setAddErr]     = useState("");
-  const [saving, setSaving]     = useState(false);
 
-  // Fetch custom codes once
-  useEffect(() => {
-    api.getProjectCodes(codeType).then((rows) =>
-      setCustomCodes(rows.map((r) => ({ id: r.code, label: `${r.code} – ${r.description}` })))
-    ).catch(() => {});
-  }, [codeType]);
-
-  const allOptions = useMemo(() => {
-    const existing = new Set(baseOptions.map((o) => o.id.toUpperCase()));
-    const extra = customCodes.filter((c) => !existing.has(c.id.toUpperCase()));
-    return [...baseOptions, ...extra];
-  }, [baseOptions, customCodes]);
-
-  const selected = allOptions.find((o) => o.id === value);
-  const filtered = allOptions
+  const selected = baseOptions.find((o) => o.id === value);
+  const filtered = baseOptions
     .filter((o) => !q || o.label.toLowerCase().includes(q.toLowerCase()))
-    .slice(0, 30);
+    .slice(0, 50);
 
   useEffect(() => {
     if (!open) return;
@@ -366,24 +392,12 @@ function CodeCombobox({ value, baseOptions, codeType, onSelect, placeholder }: {
     setQ("");
   }
 
-  async function handleAdd() {
+  function handleAdd() {
     const code = newCode.trim().toUpperCase();
     const desc = newDesc.trim();
     if (!code || !desc) { setAddErr("Code and description are required."); return; }
-    setSaving(true); setAddErr("");
-    try {
-      const created = await api.addProjectCode(codeType, code, desc);
-      const entry = { id: created.code, label: `${created.code} – ${created.description}` };
-      setCustomCodes((prev) => [...prev, entry]);
-      onSelect(created.code);
-      setAdding(false);
-      setOpen(false);
-      setNewCode(""); setNewDesc("");
-    } catch (e: any) {
-      setAddErr(e.message ?? "Failed to add code.");
-    } finally {
-      setSaving(false);
-    }
+    // Redirect to Settings → System to add new codes
+    setAddErr("New codes must be added via Settings → System → Service/Country Codes.");
   }
 
   const dropdownContent = adding ? (
@@ -427,11 +441,13 @@ function CodeCombobox({ value, baseOptions, codeType, onSelect, placeholder }: {
         </button>
       ))}
       {filtered.length === 0 && <p className="px-3 py-2 text-xs text-muted-foreground">No matches</p>}
-      <button type="button"
-        onMouseDown={(e) => { e.preventDefault(); setAdding(true); setNewCode(q.toUpperCase()); setNewDesc(""); setAddErr(""); }}
-        className="w-full text-left px-3 py-2 text-xs text-gold hover:bg-gold/10 border-t border-border font-medium">
-        + Add entry
-      </button>
+      {!locked && (
+        <button type="button"
+          onMouseDown={(e) => { e.preventDefault(); setAdding(true); setNewCode(q.toUpperCase()); setNewDesc(""); setAddErr(""); }}
+          className="w-full text-left px-3 py-2 text-xs text-gold hover:bg-gold/10 border-t border-border font-medium">
+          + Add entry
+        </button>
+      )}
     </>
   );
 
@@ -667,10 +683,28 @@ export default function Projects() {
   const currentUserRole = pageProps.auth?.user?.role ?? "";
   const isAnalyst = ["associate", "galvanizer", "partner", "director"].includes(currentUserRole);
   const canBulkImport = !["client", "client_admin"].includes(currentUserRole);
+
+  // System settings from server (feature flags + configurable dropdowns)
+  const sysCfg = (pageProps.systemSettings ?? {}) as any;
+  const featLinkPred        = sysCfg.feature_link_predecessor   ?? true;
+  const featLegacyCase      = sysCfg.feature_legacy_case        ?? true;
+  const featLockCodeDropdown = sysCfg.feature_lock_code_dropdowns ?? true;
+  const dynamicSvcCodes   = (sysCfg.dropdown_service_codes  ?? []) as {code:string;label:string}[];
+  const dynamicCtyCodes   = (sysCfg.dropdown_country_codes  ?? []) as {code:string;label:string}[];
   const [roleFilter, setRoleFilter] = useAnalystRoleFilter();
 
   const [projects, setProjects]  = useState<any[]>([]);
   const [clients, setClients]    = useState<any[]>([]);
+
+  // DocketTrak import modal
+  const [showDocketImport, setShowDocketImport] = useState(false);
+  const [docketFile, setDocketFile] = useState<File | null>(null);
+  const [docketPreviewing, setDocketPreviewing] = useState(false);
+  const [docketImporting, setDocketImporting] = useState(false);
+  const [docketImportPreview, setDocketImportPreview] = useState<any | null>(null);
+  const [docketResult, setDocketResult] = useState<{ imported: number; skipped: number; errors: string[] } | null>(null);
+  const [docketError, setDocketError] = useState("");
+  const [docketSkipTransferred, setDocketSkipTransferred] = useState(true);
 
   // Bulk import modal
   const [showImport, setShowImport] = useState(false);
@@ -681,6 +715,9 @@ export default function Projects() {
   const [importError, setImportError] = useState("");
   const [importResult, setImportResult] = useState<{ imported: number; skipped: number; errors: string[]; dockets: string[]; client: string } | null>(null);
   const [importDuplicates, setImportDuplicates] = useState<{ line: number; uin: string; reason: string }[] | null>(null);
+  const [importSheets, setImportSheets] = useState<{ name: string; rows: number; is_data_sheet: boolean }[] | null>(null);
+  const [importSelectedSheet, setImportSelectedSheet] = useState<string | null>(null);
+  const [inspecting, setInspecting] = useState(false);
   const [users, setUsers]        = useState<any[]>([]);
   const [loading, setLoading]    = useState(true);
   const [search, setSearch]      = useState("");
@@ -724,12 +761,37 @@ export default function Projects() {
   const [stageMenu, setStageMenu] = useState<{ projectId: number; stages: string[]; rect: DOMRect } | null>(null);
   const [statusMenu, setStatusMenu] = useState<{ projectId: number; rect: DOMRect } | null>(null);
   const [raiseModal, setRaiseModal] = useState<{ type: "invoice" | "quote"; project: any } | null>(null);
+
+  // ── Elevate / Link Predecessor modals ─────────────────────────────────────
+  const [elevateModal, setElevateModal] = useState<{ project: any } | null>(null);
+  const [elevateToService, setElevateToService] = useState("");
+  const [elevateNote, setElevateNote] = useState("");
+  const [elevateSaving, setElevateSaving] = useState(false);
+  const [elevateErr, setElevateErr] = useState("");
+
+  const [linkModal, setLinkModal] = useState<{ project: any } | null>(null);
+  const [linkSearch, setLinkSearch] = useState("");
+  const [linkPredecessorId, setLinkPredecessorId] = useState<number | null>(null);
+  const [linkNote, setLinkNote] = useState("");
+  const [linkSaving, setLinkSaving] = useState(false);
+  const [linkErr, setLinkErr] = useState("");
+
+  // ── Chain auto-detection wizard ────────────────────────────────────────────
+  const [chainWizard, setChainWizard] = useState<{ chains: any[]; total: number } | null>(null);
+  const [chainLoading, setChainLoading] = useState(false);
+  const [chainSelected, setChainSelected] = useState<Set<string>>(new Set());
+  const [chainLinking, setChainLinking] = useState(false);
+  const [chainResult, setChainResult] = useState<{ created: number; skipped: number } | null>(null);
   const [raiseForm, setRaiseForm] = useState<{ description: string; amount: string; due_date: string; notes: string }>({ description: "", amount: "", due_date: "", notes: "" });
   const [raiseSaving, setRaiseSaving] = useState(false);
   const [raiseErr, setRaiseErr] = useState("");
   const [pickerSearch, setPickerSearch] = useState("");
   useEffect(() => { if (!stageMenu && !statusMenu) setPickerSearch(""); }, [stageMenu, statusMenu]);
 
+
+  const isClientUser   = ["client", "client_admin"].includes(currentUserRole);
+  const canElevate     = !isClientUser;
+  const canLinkPred    = !isClientUser;
 
   const loadProjects = (rf: string) => {
     setLoading(true);
@@ -738,12 +800,16 @@ export default function Projects() {
     api.getProjectStats(rf_param).then(setStats).catch(() => {});
     const params = new URLSearchParams({ per_page: '500' });
     if (rf_param) params.set('role_filter', rf_param);
-    Promise.all([api.getProjectsPaged(params), api.getAllClients(), api.getUsers()])
+    // Client users get 403 on /api/users and /api/clients — skip those calls entirely.
+    const extraCalls = isClientUser
+      ? [Promise.resolve([] as any[]), Promise.resolve([] as any[])]
+      : [api.getAllClients(), api.getUsers()];
+    Promise.all([api.getProjectsPaged(params), ...extraCalls])
       .then(([p, c, u]) => {
         const list = Array.isArray(p) ? p : (p as any).data || [];
         setProjects(list);
-        setClients(c);
-        setUsers(u);
+        setClients(c as any[]);
+        setUsers(u as any[]);
         const sp = new URLSearchParams(window.location.search);
         const openId = sp.get("open");
         if (openId) {
@@ -770,8 +836,13 @@ export default function Projects() {
   const staffOptions = useMemo(() =>
     users.map((u) => ({ id: String(u.id), label: u.name })), [users]);
 
-  const officeOptions = useMemo(() => PATENT_OFFICES.map((o) => ({ id: o.code, label: o.label })), []);
-  const serviceOptions = useMemo(() => SERVICE_CODES.map((s) => ({ id: s.code, label: s.label })), []);
+  // Use DB-driven lists when available, otherwise fall back to local constants
+  const officeOptions  = useMemo(() =>
+    (dynamicCtyCodes.length > 0 ? dynamicCtyCodes : PATENT_OFFICES).map((o) => ({ id: o.code, label: o.label })),
+  [dynamicCtyCodes]);
+  const serviceOptions = useMemo(() =>
+    (dynamicSvcCodes.length > 0 ? dynamicSvcCodes : SERVICE_CODES).map((s) => ({ id: s.code, label: s.label })),
+  [dynamicSvcCodes]);
 
   const docketPreview = useMemo(() => {
     if (!form.client_id) return "—";
@@ -890,6 +961,74 @@ export default function Projects() {
     } finally { setDeleting(false); }
   }
 
+  async function handleElevate() {
+    if (!elevateModal || !elevateToService) return;
+    setElevateSaving(true);
+    setElevateErr("");
+    try {
+      const res = await api.elevateProject(elevateModal.project.id, elevateToService, elevateNote || undefined);
+      setProjects((prev) => prev.map((p) => p.id === elevateModal.project.id ? { ...p, ...res.project } : p));
+      setElevateModal(null);
+      setElevateToService("");
+      setElevateNote("");
+    } catch (e: any) { setElevateErr(e.message || "Elevation failed."); }
+    finally { setElevateSaving(false); }
+  }
+
+  async function handleLinkPredecessor() {
+    if (!linkModal || !linkPredecessorId) return;
+    setLinkSaving(true);
+    setLinkErr("");
+    try {
+      await api.linkProjectPredecessor(linkModal.project.id, linkPredecessorId, linkNote || undefined);
+      setLinkModal(null);
+      setLinkSearch("");
+      setLinkPredecessorId(null);
+      setLinkNote("");
+    } catch (e: any) { setLinkErr(e.message || "Linking failed."); }
+    finally { setLinkSaving(false); }
+  }
+
+  async function openChainWizard() {
+    setChainLoading(true);
+    setChainWizard(null);
+    setChainSelected(new Set());
+    setChainResult(null);
+    try {
+      const res = await api.detectProjectChains();
+      setChainWizard(res);
+      // Pre-select all detected pairs
+      const allKeys = new Set<string>();
+      for (const chain of res.chains) {
+        for (const pair of chain.pairs) {
+          allKeys.add(`${pair.predecessor_id}-${pair.successor_id}`);
+        }
+      }
+      setChainSelected(allKeys);
+    } catch (e: any) { alert(e.message || "Detection failed"); }
+    finally { setChainLoading(false); }
+  }
+
+  async function handleBulkLink() {
+    if (!chainWizard) return;
+    const pairs: { predecessor_id: number; successor_id: number; note: string }[] = [];
+    for (const chain of chainWizard.chains) {
+      for (const pair of chain.pairs) {
+        const key = `${pair.predecessor_id}-${pair.successor_id}`;
+        if (chainSelected.has(key)) {
+          pairs.push({ predecessor_id: pair.predecessor_id, successor_id: pair.successor_id, note: "Auto-detected chain link" });
+        }
+      }
+    }
+    if (pairs.length === 0) { alert("No pairs selected."); return; }
+    setChainLinking(true);
+    try {
+      const res = await api.bulkLinkProjectChains(pairs);
+      setChainResult({ created: res.created, skipped: res.skipped });
+    } catch (e: any) { alert(e.message || "Linking failed"); }
+    finally { setChainLinking(false); }
+  }
+
   const statuses     = ["All", "Open", "In Progress", "On Hold", "Closed", "Completed"];
   const userName     = (id: any) => users.find((u) => u.id === id)?.name ?? "—";
   const managerName       = (p: any) => p.manager?.name        ?? userName(p.assigned_manager_id);
@@ -929,13 +1068,31 @@ export default function Projects() {
               <Button variant="outline" onClick={() => {
                 setShowImport(true); setImportClientId(""); setImportClientSearch("");
                 setImportFile(null); setImportError(""); setImportResult(null); setImportDuplicates(null);
+                setImportSheets(null); setImportSelectedSheet(null);
               }}>
                 <Upload className="h-4 w-4 mr-2" />Bulk Import
               </Button>
             )}
-            <Button className="bg-gold hover:bg-gold/90 text-black" onClick={openCreate}>
-              <Plus className="h-4 w-4 mr-2" />New Case
-            </Button>
+            {["super_admin", "partner"].includes(currentUserRole) && (
+              <Button variant="outline" onClick={() => {
+                setShowDocketImport(true); setDocketFile(null); setDocketImportPreview(null);
+                setDocketResult(null); setDocketError(""); setDocketSkipTransferred(true);
+              }}>
+                <FileSpreadsheet className="h-4 w-4 mr-2" />DocketTrak Import
+              </Button>
+            )}
+            {canLinkPred && (
+              <Button variant="outline" onClick={openChainWizard} disabled={chainLoading}>
+                {chainLoading
+                  ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Detecting…</>
+                  : <><GitMerge className="h-4 w-4 mr-2" />Detect Chains</>}
+              </Button>
+            )}
+            {!isClientUser && (
+              <Button className="bg-gold hover:bg-gold/90 text-black" onClick={openCreate}>
+                <Plus className="h-4 w-4 mr-2" />New Case
+              </Button>
+            )}
           </>
         }
       />
@@ -1025,7 +1182,7 @@ export default function Projects() {
                       if (!importClientId || !importFile) return;
                       setImporting(true); setImportError("");
                       try {
-                        const res = await api.importProjects(Number(importClientId), importFile, true) as any;
+                        const res = await api.importProjects(Number(importClientId), importFile, true, importSelectedSheet ?? undefined) as any;
                         setImportDuplicates(null); setImportResult(res);
                       } catch (e: any) { setImportError(e?.message || "Import failed."); }
                       finally { setImporting(false); }
@@ -1038,7 +1195,7 @@ export default function Projects() {
                       if (!importClientId || !importFile) return;
                       setImporting(true); setImportError("");
                       try {
-                        const res = await api.importProjects(Number(importClientId), importFile, false) as any;
+                        const res = await api.importProjects(Number(importClientId), importFile, false, importSelectedSheet ?? undefined) as any;
                         setImportDuplicates(null); setImportResult(res);
                       } catch (e: any) { setImportError(e?.message || "Import failed."); }
                       finally { setImporting(false); }
@@ -1093,20 +1250,79 @@ export default function Projects() {
                     3. Upload the filled sheet
                   </label>
                   <input type="file" accept=".xlsx,.xls,.csv"
-                    onChange={(e) => setImportFile(e.target.files?.[0] ?? null)}
+                    onChange={async (e) => {
+                      const f = e.target.files?.[0] ?? null;
+                      setImportFile(f);
+                      setImportSheets(null); setImportSelectedSheet(null); setImportError("");
+                      if (!f) return;
+                      const ext = f.name.split(".").pop()?.toLowerCase();
+                      if (ext === "csv") return; // CSV has no sheets to pick
+                      setInspecting(true);
+                      try {
+                        const res = await api.inspectImportSheets(f);
+                        if (res.sheets.length === 1) {
+                          // Single data sheet — skip picker, auto-select
+                          setImportSelectedSheet(res.sheets[0].name);
+                        } else {
+                          setImportSheets(res.sheets);
+                        }
+                      } catch {
+                        // Inspection failed — fallback to auto-detect
+                      } finally { setInspecting(false); }
+                    }}
                     className="w-full text-sm text-muted-foreground file:mr-3 file:rounded-md file:border-0 file:bg-gold/15 file:text-gold file:px-3 file:py-1.5 file:text-xs file:font-medium hover:file:bg-gold/25 file:cursor-pointer" />
+
+                  {/* Sheet picker — shown when file has multiple sheets */}
+                  {inspecting && (
+                    <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" /> Reading sheets…
+                    </div>
+                  )}
+                  {importSheets && !inspecting && (
+                    <div className="mt-3 rounded-lg border border-border overflow-hidden">
+                      <div className="bg-muted/40 px-3 py-2 text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
+                        This file has multiple sheets — select the one to import:
+                      </div>
+                      {importSheets.map((s) => (
+                        <button
+                          key={s.name}
+                          type="button"
+                          onClick={() => setImportSelectedSheet(s.name)}
+                          className={`w-full flex items-center justify-between px-3 py-2.5 text-sm border-t border-border transition-colors ${
+                            importSelectedSheet === s.name
+                              ? "bg-gold/10 text-gold"
+                              : "hover:bg-muted/40 text-foreground"
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <FileSpreadsheet className="h-3.5 w-3.5 shrink-0" />
+                            <span className="font-medium">{s.name}</span>
+                            {!s.is_data_sheet && <span className="text-[10px] text-muted-foreground">(empty)</span>}
+                          </div>
+                          <span className="text-xs text-muted-foreground font-mono">
+                            {s.rows > 0 ? `${s.rows} row${s.rows !== 1 ? "s" : ""}` : "—"}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {importSelectedSheet && !importSheets && (
+                    <p className="mt-1.5 text-xs text-muted-foreground">
+                      Sheet: <span className="font-medium text-gold">{importSelectedSheet}</span>
+                    </p>
+                  )}
                 </div>
 
                 {importError && <p className="text-xs text-red-500">{importError}</p>}
 
                 <div className="flex gap-2">
                   <Button className="bg-gold hover:bg-gold/90 text-black flex-1"
-                    disabled={!importClientId || !importFile || importing}
+                    disabled={!importClientId || !importFile || importing || inspecting || (!!importSheets && !importSelectedSheet)}
                     onClick={async () => {
                       if (!importClientId || !importFile) return;
                       setImporting(true); setImportError("");
                       try {
-                        const res = await api.importProjects(Number(importClientId), importFile) as any;
+                        const res = await api.importProjects(Number(importClientId), importFile, undefined, importSelectedSheet ?? undefined) as any;
                         if (res.requires_confirmation) {
                           setImportDuplicates(res.duplicates);
                         } else {
@@ -1116,9 +1332,173 @@ export default function Projects() {
                         setImportError(e?.message || "Import failed.");
                       } finally { setImporting(false); }
                     }}>
-                    {importing ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Checking…</> : <><Upload className="h-4 w-4 mr-2" />Import Cases</>}
+                    {importing ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Checking…</>
+                      : inspecting ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Reading file…</>
+                      : (importSheets && !importSelectedSheet) ? "Select a sheet above"
+                      : <><Upload className="h-4 w-4 mr-2" />Import Cases</>}
                   </Button>
                   <Button variant="outline" onClick={() => setShowImport(false)}>Cancel</Button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── DocketTrak Import Modal ──────────────────────────────────────────── */}
+      {showDocketImport && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-2xl p-6 m-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-5">
+              <div>
+                <h2 className="font-display text-lg font-semibold">Import from DocketTrak</h2>
+                <p className="text-xs text-muted-foreground mt-0.5">Upload the DocketTrak Excel export (.xlsx) to bulk-create cases.</p>
+              </div>
+              <button onClick={() => setShowDocketImport(false)}><X className="h-5 w-5 text-muted-foreground" /></button>
+            </div>
+
+            {docketResult ? (
+              <div className="space-y-4">
+                <div className="flex items-center gap-3 p-4 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+                  <CheckCircle className="h-6 w-6 text-emerald-500 flex-shrink-0" />
+                  <div>
+                    <p className="font-semibold text-sm">Import complete</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {docketResult.imported} case{docketResult.imported !== 1 ? "s" : ""} imported,{" "}
+                      {docketResult.skipped} skipped.
+                    </p>
+                  </div>
+                </div>
+                {docketResult.errors.length > 0 && (
+                  <div className="rounded-lg border border-destructive/20 bg-destructive/5 p-3 max-h-40 overflow-y-auto">
+                    <p className="text-xs font-semibold text-destructive mb-1">Errors ({docketResult.errors.length})</p>
+                    {docketResult.errors.map((e, i) => (
+                      <p key={i} className="text-xs text-destructive font-mono">{e}</p>
+                    ))}
+                  </div>
+                )}
+                <div className="flex gap-2">
+                  <Button className="flex-1" onClick={() => { setShowDocketImport(false); loadProjects(roleFilter); }}>
+                    <CheckCircle className="h-4 w-4 mr-2" />Done — View Cases
+                  </Button>
+                  <Button variant="outline" onClick={() => {
+                    setDocketFile(null); setDocketImportPreview(null); setDocketResult(null); setDocketError("");
+                  }}>Import Another</Button>
+                </div>
+              </div>
+            ) : docketImportPreview ? (
+              <div className="space-y-4">
+                <div className="grid grid-cols-3 gap-3">
+                  {([
+                    { label: "Total rows", value: docketImportPreview.total, color: "text-foreground" },
+                    { label: "Importable", value: docketImportPreview.importable, color: "text-emerald-500" },
+                    { label: "Skipped/empty", value: docketImportPreview.skipped, color: "text-muted-foreground" },
+                    { label: "Abandoned", value: docketImportPreview.abandoned, color: "text-orange-400" },
+                    { label: "Granted", value: docketImportPreview.granted, color: "text-blue-400" },
+                    { label: "Known clients", value: docketImportPreview.known_clients, color: "text-emerald-400" },
+                  ] as const).map((s) => (
+                    <div key={s.label} className="rounded-lg border border-border p-3 text-center">
+                      <p className={`text-2xl font-bold font-mono ${s.color}`}>{s.value}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">{s.label}</p>
+                    </div>
+                  ))}
+                </div>
+
+                {docketImportPreview.unknown_clients?.length > 0 && (
+                  <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3">
+                    <p className="text-xs font-semibold text-amber-400 mb-1">
+                      {docketImportPreview.unknown_clients.length} clients not found in system — will be auto-created
+                    </p>
+                    <div className="max-h-28 overflow-y-auto space-y-0.5">
+                      {docketImportPreview.unknown_clients.map((c: string) => (
+                        <p key={c} className="text-xs text-muted-foreground font-mono">{c}</p>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {docketImportPreview.docket_conflicts?.length > 0 && (
+                  <div className="rounded-lg border border-destructive/20 bg-destructive/5 p-3">
+                    <p className="text-xs font-semibold text-destructive mb-1">
+                      {docketImportPreview.docket_conflicts.length} docket conflicts (will be skipped)
+                    </p>
+                    <div className="max-h-20 overflow-y-auto">
+                      {docketImportPreview.docket_conflicts.map((d: string) => (
+                        <p key={d} className="text-xs font-mono text-muted-foreground">{d}</p>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex items-center gap-2 p-3 rounded-lg border border-border">
+                  <input
+                    type="checkbox" id="skipTransferred" checked={docketSkipTransferred}
+                    onChange={(e) => setDocketSkipTransferred(e.target.checked)}
+                    className="h-4 w-4 accent-gold"
+                  />
+                  <label htmlFor="skipTransferred" className="text-sm cursor-pointer">
+                    Skip cases where client changed attorney (recommended)
+                  </label>
+                </div>
+
+                {docketError && <p className="text-xs text-red-500">{docketError}</p>}
+
+                <div className="flex gap-2">
+                  <Button className="bg-gold hover:bg-gold/90 text-black flex-1"
+                    disabled={docketImporting}
+                    onClick={async () => {
+                      if (!docketFile) return;
+                      setDocketImporting(true); setDocketError("");
+                      try {
+                        const res = await api.docketImport(docketFile, { skip_conflicts: true, skip_transferred: docketSkipTransferred });
+                        setDocketResult(res);
+                      } catch (e: any) {
+                        setDocketError(e?.message || "Import failed.");
+                      } finally { setDocketImporting(false); }
+                    }}>
+                    {docketImporting ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Importing…</> : <><Upload className="h-4 w-4 mr-2" />Confirm Import</>}
+                  </Button>
+                  <Button variant="outline" onClick={() => { setDocketImportPreview(null); setDocketFile(null); }}>Back</Button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="border-2 border-dashed border-border rounded-lg p-8 text-center hover:border-gold/50 transition-colors">
+                  <FileSpreadsheet className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
+                  <p className="text-sm font-medium mb-1">Select DocketTrak Excel export</p>
+                  <p className="text-xs text-muted-foreground mb-3">Supports .xlsx files exported from DocketTrak</p>
+                  <input
+                    type="file" accept=".xlsx,.xls" className="hidden" id="docket-file-input"
+                    onChange={(e) => setDocketFile(e.target.files?.[0] ?? null)}
+                  />
+                  <label htmlFor="docket-file-input">
+                    <Button variant="outline" size="sm" asChild>
+                      <span className="cursor-pointer"><Upload className="h-3.5 w-3.5 mr-1.5" />Choose file</span>
+                    </Button>
+                  </label>
+                  {docketFile && (
+                    <p className="mt-2 text-xs text-emerald-400 font-mono">{docketFile.name}</p>
+                  )}
+                </div>
+
+                {docketError && <p className="text-xs text-red-500">{docketError}</p>}
+
+                <div className="flex gap-2">
+                  <Button className="bg-gold hover:bg-gold/90 text-black flex-1"
+                    disabled={!docketFile || docketPreviewing}
+                    onClick={async () => {
+                      if (!docketFile) return;
+                      setDocketPreviewing(true); setDocketError("");
+                      try {
+                        const res = await api.docketImportPreview(docketFile);
+                        setDocketImportPreview(res);
+                      } catch (e: any) {
+                        setDocketError(e?.message || "Preview failed.");
+                      } finally { setDocketPreviewing(false); }
+                    }}>
+                    {docketPreviewing ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Analysing…</> : "Analyse File"}
+                  </Button>
+                  <Button variant="outline" onClick={() => setShowDocketImport(false)}>Cancel</Button>
                 </div>
               </div>
             )}
@@ -1159,11 +1539,11 @@ export default function Projects() {
               {/* ── 1. Case Identification ───────────────────────────── */}
               {!editProj && (
                 <Section title="Record Type">
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className={`grid gap-3 ${featLegacyCase ? "grid-cols-2" : "grid-cols-1"}`}>
                     {([
-                      { key: "new", label: "New Case", hint: "Generate project code and UIN automatically." },
-                      { key: "existing", label: "Existing / Legacy Case", hint: "Enter the existing case ID once." },
-                    ] as const).map((option) => (
+                      { key: "new",      label: "New Case",             hint: "Generate project code and UIN automatically.", always: true },
+                      { key: "existing", label: "Existing / Legacy Case", hint: "Enter the existing case ID once.",           always: false },
+                    ] as const).filter((o) => o.always || featLegacyCase).map((option) => (
                       <button
                         key={option.key}
                         type="button"
@@ -1273,6 +1653,7 @@ export default function Projects() {
                       codeType="office"
                       onSelect={(v) => sf("patent_office_code", v)}
                       placeholder="Search office…"
+                      locked={featLockCodeDropdown}
                     />
                   </div>
                   <div>
@@ -1283,6 +1664,7 @@ export default function Projects() {
                       codeType="service"
                       onSelect={(v) => sf("service_code", v)}
                       placeholder="Search service code…"
+                      locked={featLockCodeDropdown}
                     />
                   </div>
                   <div>
@@ -1468,14 +1850,16 @@ export default function Projects() {
                       try { await api.updateProjectStage(pid, s); } catch {}
                       setProjects((prev) => prev.map((p) => {
                         if (p.id !== pid) return p;
-                        const existing = p.stages ?? PIPELINE_STAGES.map((name: string, i: number) => ({
-                          stage_name: name, status: "Pending", sequence_order: i,
-                        }));
+                        const stageNames = stagesForProject(p);
+                        const existing = p.stages && p.stages.length > 0
+                          ? p.stages
+                          : stageNames.map((name: string, i: number) => ({ stage_name: name, status: "Pending", sequence_order: i }));
+                        const targetIdx = stageNames.indexOf(s);
                         return {
                           ...p,
-                          stages: existing.map((st: any) => ({
-                            ...st,
-                            status: st.stage_name === s ? "In Progress" : "Pending",
+                          stages: stageNames.map((name: string, i: number) => ({
+                            ...(existing.find((st: any) => st.stage_name === name) ?? { stage_name: name, sequence_order: i }),
+                            status: i < targetIdx ? "Completed" : i === targetIdx ? "In Progress" : "Pending",
                           })),
                         };
                       }));
@@ -1565,6 +1949,279 @@ export default function Projects() {
         </div>
       )}
 
+      {/* ── Elevate Service Modal ─────────────────────────────────────────── */}
+      {elevateModal && (() => {
+        // Derive from field first, then last 3 chars of docket as fallback
+        const svc = (elevateModal.project.service_code
+          ?? elevateModal.project.docket_number?.slice(-3)
+          ?? "").toUpperCase();
+        const knownOptions = ELEVATION_PATHS[svc] ?? [];
+        // If service code is unknown/unrecognised, show all valid service codes as options
+        const options = knownOptions.length > 0
+          ? knownOptions
+          : Object.keys(ELEVATION_PATHS);
+        const isUnknownSvc = knownOptions.length === 0;
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+            <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-sm p-6 m-4">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="h-10 w-10 rounded-full bg-amber-500/10 flex items-center justify-center flex-shrink-0">
+                  <ArrowUpCircle className="h-5 w-5 text-amber-500" />
+                </div>
+                <div>
+                  <h3 className="font-semibold">Elevate Service</h3>
+                  <p className="text-sm text-muted-foreground mt-0.5">
+                    <span className="font-mono text-xs">{elevateModal.project.docket_number}</span>
+                    {svc ? <> — currently <strong>{svc}</strong></> : " — no service code set"}
+                  </p>
+                  {isUnknownSvc && (
+                    <p className="text-[10px] text-amber-500 mt-0.5">Service code not recognised — all options shown.</p>
+                  )}
+                </div>
+              </div>
+              {elevateErr && <p className="text-sm text-destructive mb-3">{elevateErr}</p>}
+              <div className="space-y-3">
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground mb-1 block">Elevate to</label>
+                  <select
+                    value={elevateToService}
+                    onChange={(e) => setElevateToService(e.target.value)}
+                    className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold"
+                  >
+                    <option value="">Select service…</option>
+                    {options.map((opt) => (
+                      <option key={opt} value={opt}>{SERVICE_LABELS[opt] ?? opt}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground mb-1 block">Note (optional)</label>
+                  <textarea
+                    value={elevateNote}
+                    onChange={(e) => setElevateNote(e.target.value)}
+                    rows={2}
+                    placeholder="Reason for elevation…"
+                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-gold"
+                  />
+                </div>
+              </div>
+              <div className="flex gap-2 justify-end mt-4">
+                <Button variant="outline" onClick={() => setElevateModal(null)}>Cancel</Button>
+                <Button
+                  className="bg-amber-500 hover:bg-amber-600 text-black"
+                  onClick={handleElevate}
+                  disabled={elevateSaving || !elevateToService}
+                >
+                  {elevateSaving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                  Elevate
+                </Button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ── Link Predecessor Modal ────────────────────────────────────────── */}
+      {linkModal && (() => {
+        const clientId = linkModal.project.client_id;
+        const candidateProjects = projects.filter(
+          (p) => p.id !== linkModal.project.id && p.client_id === clientId
+        );
+        const filtered = linkSearch.trim()
+          ? candidateProjects.filter((p) =>
+              (p.docket_number ?? "").toLowerCase().includes(linkSearch.toLowerCase()) ||
+              (p.project_type ?? "").toLowerCase().includes(linkSearch.toLowerCase()) ||
+              (p.service_code ?? "").toLowerCase().includes(linkSearch.toLowerCase())
+            )
+          : candidateProjects;
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+            <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-md p-6 m-4">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="h-10 w-10 rounded-full bg-teal-500/10 flex items-center justify-center flex-shrink-0">
+                  <Link2 className="h-5 w-5 text-teal-500" />
+                </div>
+                <div>
+                  <h3 className="font-semibold">Link Predecessor</h3>
+                  <p className="text-sm text-muted-foreground mt-0.5">
+                    Choose the predecessor case for <span className="font-mono text-xs">{linkModal.project.docket_number}</span>
+                  </p>
+                </div>
+              </div>
+              {linkErr && <p className="text-sm text-destructive mb-3">{linkErr}</p>}
+              <div className="space-y-3">
+                <input
+                  type="text"
+                  placeholder="Search by docket or service code…"
+                  value={linkSearch}
+                  onChange={(e) => setLinkSearch(e.target.value)}
+                  className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold"
+                />
+                <div className="max-h-48 overflow-y-auto rounded-md border border-border divide-y divide-border">
+                  {filtered.length === 0 ? (
+                    <p className="px-3 py-4 text-sm text-muted-foreground text-center">No cases found for this client.</p>
+                  ) : filtered.map((p) => (
+                    <button
+                      key={p.id}
+                      onClick={() => setLinkPredecessorId(p.id === linkPredecessorId ? null : p.id)}
+                      className={`w-full text-left px-3 py-2.5 flex items-center justify-between hover:bg-muted/50 transition-colors ${linkPredecessorId === p.id ? "bg-teal-500/10" : ""}`}
+                    >
+                      <div>
+                        <span className="font-mono text-xs text-gold">{p.docket_number}</span>
+                        <span className="ml-2 text-xs text-muted-foreground">{p.service_code} · {p.project_type}</span>
+                      </div>
+                      {linkPredecessorId === p.id && <CheckCircle className="h-4 w-4 text-teal-500 shrink-0" />}
+                    </button>
+                  ))}
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground mb-1 block">Note (optional)</label>
+                  <textarea
+                    value={linkNote}
+                    onChange={(e) => setLinkNote(e.target.value)}
+                    rows={2}
+                    placeholder="Context for this link…"
+                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-gold"
+                  />
+                </div>
+              </div>
+              <div className="flex gap-2 justify-end mt-4">
+                <Button variant="outline" onClick={() => setLinkModal(null)}>Cancel</Button>
+                <Button
+                  className="bg-teal-600 hover:bg-teal-700 text-white"
+                  onClick={handleLinkPredecessor}
+                  disabled={linkSaving || !linkPredecessorId}
+                >
+                  {linkSaving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                  Link Predecessor
+                </Button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ── Chain Detection Wizard ───────────────────────────────────────── */}
+      {chainWizard !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-2xl m-4 flex flex-col max-h-[90vh]">
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-border flex-shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="h-9 w-9 rounded-full bg-teal-500/10 flex items-center justify-center">
+                  <GitMerge className="h-5 w-5 text-teal-500" />
+                </div>
+                <div>
+                  <h3 className="font-semibold">Detect & Link Case Chains</h3>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {chainWizard.total === 0
+                      ? "No unlinked chains found — all existing cases are already linked."
+                      : `${chainWizard.total} potential chain${chainWizard.total !== 1 ? "s" : ""} found. Review and confirm.`}
+                  </p>
+                </div>
+              </div>
+              <button onClick={() => setChainWizard(null)} className="p-1.5 rounded hover:bg-muted/50">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+              {chainResult ? (
+                <div className="flex flex-col items-center justify-center py-12 text-center">
+                  <CheckCircle className="h-12 w-12 text-green-500 mb-3" />
+                  <p className="text-lg font-semibold">Chains linked successfully</p>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    {chainResult.created} pair{chainResult.created !== 1 ? "s" : ""} linked
+                    {chainResult.skipped ? ` · ${chainResult.skipped} skipped (already linked)` : ""}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-3">History tabs in the detail panel will now show the service chain.</p>
+                </div>
+              ) : chainWizard.total === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16 text-center">
+                  <CheckCircle className="h-12 w-12 text-green-500 mb-3 opacity-50" />
+                  <p className="text-muted-foreground text-sm">All existing cases with matching docket prefixes are already linked.</p>
+                </div>
+              ) : (
+                chainWizard.chains.map((chain: any) => (
+                  <div key={chain.prefix} className="rounded-lg border border-border p-4 space-y-3">
+                    {/* Chain header */}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {(chain.members as any[]).map((m: any, i: number) => (
+                        <div key={m.id} className="flex items-center gap-1.5">
+                          {i > 0 && <span className="text-muted-foreground text-xs">→</span>}
+                          <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
+                            i === chain.members.length - 1 ? "border-gold text-gold bg-gold/10" : "border-border text-muted-foreground bg-muted/40"
+                          }`}>{m.service_code}</span>
+                          <span className="font-mono text-xs text-foreground">{m.docket}</span>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Pair checkboxes */}
+                    <div className="space-y-2">
+                      {(chain.pairs as any[]).map((pair: any) => {
+                        const key = `${pair.predecessor_id}-${pair.successor_id}`;
+                        const checked = chainSelected.has(key);
+                        return (
+                          <label key={key} className="flex items-center gap-3 cursor-pointer group">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => {
+                                setChainSelected((prev) => {
+                                  const next = new Set(prev);
+                                  if (next.has(key)) next.delete(key); else next.add(key);
+                                  return next;
+                                });
+                              }}
+                              className="h-4 w-4 rounded border-border accent-teal-500"
+                            />
+                            <span className="text-xs text-muted-foreground group-hover:text-foreground transition-colors">
+                              Link{" "}
+                              <span className="font-mono text-gold font-semibold">{pair.predecessor_docket}</span>
+                              <span className="mx-1 text-[10px]">({pair.predecessor_service})</span>
+                              →{" "}
+                              <span className="font-mono text-gold font-semibold">{pair.successor_docket}</span>
+                              <span className="mx-1 text-[10px]">({pair.successor_service})</span>
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Footer */}
+            {!chainResult && chainWizard.total > 0 && (
+              <div className="flex items-center justify-between px-6 py-4 border-t border-border flex-shrink-0">
+                <span className="text-xs text-muted-foreground">
+                  {chainSelected.size} pair{chainSelected.size !== 1 ? "s" : ""} selected
+                </span>
+                <div className="flex gap-2">
+                  <Button variant="outline" onClick={() => setChainWizard(null)}>Cancel</Button>
+                  <Button
+                    className="bg-teal-600 hover:bg-teal-700 text-white"
+                    onClick={handleBulkLink}
+                    disabled={chainLinking || chainSelected.size === 0}
+                  >
+                    {chainLinking ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                    Link {chainSelected.size} Pair{chainSelected.size !== 1 ? "s" : ""}
+                  </Button>
+                </div>
+              </div>
+            )}
+            {(chainResult || chainWizard.total === 0) && (
+              <div className="flex justify-end px-6 py-4 border-t border-border flex-shrink-0">
+                <Button variant="outline" onClick={() => setChainWizard(null)}>Close</Button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* ── KPI Cards ─────────────────────────────────────────────────────── */}
       <div className="px-8 pt-6 grid gap-4 grid-cols-2 md:grid-cols-4">
         {KPI_DEFS.map((kpi) => (
@@ -1615,14 +2272,16 @@ export default function Projects() {
                 <table className="w-full text-sm min-w-[1100px]">
                   <thead className="bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground">
                     <tr>
-                      <th className="px-4 py-3 w-8">
-                        <input type="checkbox" className="rounded border-border"
-                          checked={paginated.length > 0 && paginated.every(p => selectedIds.includes(p.id))}
-                          onChange={(e) => setSelectedIds(e.target.checked ? paginated.map(p => p.id) : [])} />
-                      </th>
+                      {!isClientUser && (
+                        <th className="px-4 py-3 w-8">
+                          <input type="checkbox" className="rounded border-border"
+                            checked={paginated.length > 0 && paginated.every(p => selectedIds.includes(p.id))}
+                            onChange={(e) => setSelectedIds(e.target.checked ? paginated.map(p => p.id) : [])} />
+                        </th>
+                      )}
                       <th className="px-4 py-3 text-left">Case ID</th>
                       <th className="px-4 py-3 text-left">Patent Title</th>
-                      <th className="px-4 py-3 text-left">Circle</th>
+                      {!isClientUser && <th className="px-4 py-3 text-left">Circle</th>}
                       <th className="px-4 py-3 text-left">Country</th>
                       <th className="px-4 py-3 text-left">Filed</th>
                       <th className="px-4 py-3 text-left">Status</th>
@@ -1630,7 +2289,7 @@ export default function Projects() {
                       <th className="px-4 py-3 text-left">Deadline</th>
                       <th className="px-4 py-3 text-left">Client Manager</th>
                       <th className="px-4 py-3 text-left">Person Responsible</th>
-                      <th className="px-4 py-3 text-left">Actions</th>
+                      {!isClientUser && <th className="px-4 py-3 text-left">Actions</th>}
                     </tr>
                   </thead>
                   <tbody>
@@ -1639,11 +2298,13 @@ export default function Projects() {
                       const isOverdue = p.hard_deadline && new Date(p.hard_deadline) < new Date();
                       return (
                         <tr key={p.id} className={`border-t border-border hover:bg-muted/30 ${selectedIds.includes(p.id) ? "bg-gold/5" : ""}`}>
-                          <td className="px-4 py-3 w-8">
-                            <input type="checkbox" className="rounded border-border"
-                              checked={selectedIds.includes(p.id)}
-                              onChange={(e) => setSelectedIds(prev => e.target.checked ? [...prev, p.id] : prev.filter(id => id !== p.id))} />
-                          </td>
+                          {!isClientUser && (
+                            <td className="px-4 py-3 w-8">
+                              <input type="checkbox" className="rounded border-border"
+                                checked={selectedIds.includes(p.id)}
+                                onChange={(e) => setSelectedIds(prev => e.target.checked ? [...prev, p.id] : prev.filter(id => id !== p.id))} />
+                            </td>
+                          )}
                           <td className="px-4 py-3">
                             <Link href={`/projects/${p.id}`} className="block hover:opacity-75 transition-opacity">
                               <div className="font-mono text-xs text-gold font-semibold underline decoration-dotted underline-offset-2">
@@ -1660,24 +2321,26 @@ export default function Projects() {
                               <div className="text-xs text-muted-foreground truncate">{p.invention_title}</div>
                             )}
                           </td>
-                          <td className="px-4 py-3">
-                            <button
-                              title="Toggle circle (A / B)"
-                              onClick={async (e) => {
-                                e.stopPropagation();
-                                const next = p.circle === "A" ? "B" : p.circle === "B" ? null : "A";
-                                setProjects((prev) => prev.map((x) => x.id === p.id ? { ...x, circle: next } : x));
-                                try { await api.updateProject(p.id, { circle: next } as any); } catch {}
-                              }}
-                              className={`text-[11px] font-bold w-7 h-7 rounded-full border-2 flex items-center justify-center transition-colors ${
-                                p.circle === "A" ? "bg-blue-600 text-white border-blue-600 hover:bg-blue-700" :
-                                p.circle === "B" ? "bg-violet-600 text-white border-violet-600 hover:bg-violet-700" :
-                                "border-dashed border-border text-muted-foreground hover:border-blue-400 hover:text-blue-500"
-                              }`}
-                            >
-                              {p.circle ?? "—"}
-                            </button>
-                          </td>
+                          {!isClientUser && (
+                            <td className="px-4 py-3">
+                              <button
+                                title="Toggle circle (A / B)"
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  const next = p.circle === "A" ? "B" : p.circle === "B" ? null : "A";
+                                  setProjects((prev) => prev.map((x) => x.id === p.id ? { ...x, circle: next } : x));
+                                  try { await api.updateProject(p.id, { circle: next } as any); } catch {}
+                                }}
+                                className={`text-[11px] font-bold w-7 h-7 rounded-full border-2 flex items-center justify-center transition-colors ${
+                                  p.circle === "A" ? "bg-blue-600 text-white border-blue-600 hover:bg-blue-700" :
+                                  p.circle === "B" ? "bg-violet-600 text-white border-violet-600 hover:bg-violet-700" :
+                                  "border-dashed border-border text-muted-foreground hover:border-blue-400 hover:text-blue-500"
+                                }`}
+                              >
+                                {p.circle ?? "—"}
+                              </button>
+                            </td>
+                          )}
                           <td className="px-4 py-3">
                             {p.patent_office_code
                               ? <Badge variant="outline" className="text-[10px] font-mono">{p.patent_office_code}</Badge>
@@ -1687,33 +2350,45 @@ export default function Projects() {
                             {fmtDate(p.filing_date)}
                           </td>
                           <td className="px-4 py-3">
-                            <button
-                              title="Click to change status"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                                setStatusMenu({ projectId: p.id, rect });
-                              }}
-                            >
-                              <Badge variant={statusColor(p.status)} className="text-[10px] whitespace-nowrap cursor-pointer hover:opacity-80 transition-opacity">
+                            {isClientUser ? (
+                              <Badge variant={statusColor(p.status)} className="text-[10px] whitespace-nowrap">
                                 {p.status}
                               </Badge>
-                            </button>
+                            ) : (
+                              <button
+                                title="Click to change status"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                                  setStatusMenu({ projectId: p.id, rect });
+                                }}
+                              >
+                                <Badge variant={statusColor(p.status)} className="text-[10px] whitespace-nowrap cursor-pointer hover:opacity-80 transition-opacity">
+                                  {p.status}
+                                </Badge>
+                              </button>
+                            )}
                           </td>
                           <td className="px-4 py-3">
-                            <button
-                              title="Click to change stage"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                                const stages = p.stages?.map((s: any) => s.stage_name) ?? PIPELINE_STAGES;
-                                setStageMenu({ projectId: p.id, stages, rect });
-                              }}
-                            >
-                              <Badge variant="secondary" className="text-[10px] whitespace-nowrap cursor-pointer hover:bg-gold/20 hover:text-gold transition-colors">
+                            {isClientUser ? (
+                              <Badge variant="secondary" className="text-[10px] whitespace-nowrap">
                                 {stage}
                               </Badge>
-                            </button>
+                            ) : (
+                              <button
+                                title="Click to change stage"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                                  const stages = stagesForProject(p);
+                                  setStageMenu({ projectId: p.id, stages, rect });
+                                }}
+                              >
+                                <Badge variant="secondary" className="text-[10px] whitespace-nowrap cursor-pointer hover:bg-gold/20 hover:text-gold transition-colors">
+                                  {stage}
+                                </Badge>
+                              </button>
+                            )}
                           </td>
                           <td className={`px-4 py-3 text-xs font-mono whitespace-nowrap ${isOverdue ? "text-destructive font-semibold" : "text-muted-foreground"}`}>
                             {fmtDate(p.hard_deadline)}
@@ -1724,34 +2399,58 @@ export default function Projects() {
                           <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
                             {patentEngineerName(p)}
                           </td>
-                          <td className="px-4 py-3">
-                            <div className="flex gap-1">
-                              <Button size="sm" variant="outline" className="h-7 w-7 p-0 text-blue-500 border-blue-500/30 hover:bg-blue-500/10" title="Raise Invoice"
-                                onClick={() => {
-                                  const isIndian = p.client?.gst_type !== "Export" && (p.client?.nationality ?? "india").toLowerCase() === "india";
-                                  if (isIndian) router.visit(`/financial?india=invoice&project_id=${p.id}`);
-                                  else alert("International (USD) invoicing for foreign clients is not yet available. Please raise manually in Financial Suite.");
-                                }}>
-                                <FileText className="h-3 w-3" />
-                              </Button>
-                              <Button size="sm" variant="outline" className="h-7 w-7 p-0 text-violet-500 border-violet-500/30 hover:bg-violet-500/10" title="Raise Quotation"
-                                onClick={() => {
-                                  const isIndian = p.client?.gst_type !== "Export" && (p.client?.nationality ?? "india").toLowerCase() === "india";
-                                  if (isIndian) router.visit(`/financial?india=quote&project_id=${p.id}`);
-                                  else alert("International (USD) quotations for foreign clients are not yet available.");
-                                }}>
-                                <Scroll className="h-3 w-3" />
-                              </Button>
-                              <Button size="sm" variant="outline" className="h-7 w-7 p-0" title="Edit" onClick={() => openEdit(p)}>
-                                <Pencil className="h-3 w-3" />
-                              </Button>
-                              <Button size="sm" variant="outline" title="Delete"
-                                className="h-7 w-7 p-0 text-destructive border-destructive/30 hover:bg-destructive/10"
-                                onClick={() => setDelTarget(p)}>
-                                <Trash2 className="h-3 w-3" />
-                              </Button>
-                            </div>
-                          </td>
+                          {!isClientUser && (
+                            <td className="px-4 py-3">
+                              <div className="flex gap-1">
+                                <Button size="sm" variant="outline" className="h-7 w-7 p-0 text-blue-500 border-blue-500/30 hover:bg-blue-500/10" title="Raise Invoice"
+                                  onClick={() => {
+                                    const isIndian = p.client?.gst_type !== "Export" && (p.client?.nationality ?? "india").toLowerCase() === "india";
+                                    if (isIndian) router.visit(`/financial?india=invoice&project_id=${p.id}`);
+                                    else alert("International (USD) invoicing for foreign clients is not yet available. Please raise manually in Financial Suite.");
+                                  }}>
+                                  <FileText className="h-3 w-3" />
+                                </Button>
+                                <Button size="sm" variant="outline" className="h-7 w-7 p-0 text-violet-500 border-violet-500/30 hover:bg-violet-500/10" title="Raise Quotation"
+                                  onClick={() => {
+                                    const isIndian = p.client?.gst_type !== "Export" && (p.client?.nationality ?? "india").toLowerCase() === "india";
+                                    if (isIndian) router.visit(`/financial?india=quote&project_id=${p.id}`);
+                                    else alert("International (USD) quotations for foreign clients are not yet available.");
+                                  }}>
+                                  <Scroll className="h-3 w-3" />
+                                </Button>
+                                <Button size="sm" variant="outline" className="h-7 w-7 p-0" title="Edit" onClick={() => openEdit(p)}>
+                                  <Pencil className="h-3 w-3" />
+                                </Button>
+                                {canElevate && (() => {
+                                  // Derive service code from field or last 3 chars of docket (e.g. "...INPAS" → "PAS")
+                                  const svc = (p.service_code ?? p.docket_number?.slice(-3) ?? "").toUpperCase();
+                                  const options = ELEVATION_PATHS[svc] ?? [];
+                                  // Show button if we know valid next steps, OR if service code is unknown (let user pick — backend validates)
+                                  return options.length > 0 || (svc === "" || !Object.keys(ELEVATION_PATHS).includes(svc));
+                                })() && (
+                                  <Button size="sm" variant="outline"
+                                    className="h-7 w-7 p-0 text-amber-500 border-amber-500/30 hover:bg-amber-500/10"
+                                    title="Elevate Service"
+                                    onClick={() => { setElevateModal({ project: p }); setElevateToService(""); setElevateNote(""); setElevateErr(""); }}>
+                                    <ArrowUpCircle className="h-3 w-3" />
+                                  </Button>
+                                )}
+                                {canLinkPred && featLinkPred && (
+                                  <Button size="sm" variant="outline"
+                                    className="h-7 w-7 p-0 text-teal-500 border-teal-500/30 hover:bg-teal-500/10"
+                                    title="Link Predecessor"
+                                    onClick={() => { setLinkModal({ project: p }); setLinkSearch(""); setLinkPredecessorId(null); setLinkNote(""); setLinkErr(""); }}>
+                                    <Link2 className="h-3 w-3" />
+                                  </Button>
+                                )}
+                                <Button size="sm" variant="outline" title="Delete"
+                                  className="h-7 w-7 p-0 text-destructive border-destructive/30 hover:bg-destructive/10"
+                                  onClick={() => setDelTarget(p)}>
+                                  <Trash2 className="h-3 w-3" />
+                                </Button>
+                              </div>
+                            </td>
+                          )}
                         </tr>
                       );
                     })}
@@ -1914,7 +2613,7 @@ export default function Projects() {
       )}
 
       {/* Floating bulk action bar */}
-      {selectedIds.length > 0 && (
+      {!isClientUser && selectedIds.length > 0 && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-5 py-3 rounded-xl bg-background border border-gold/40 shadow-2xl backdrop-blur">
           <span className="text-sm font-medium text-gold">{selectedIds.length} selected</span>
           <div className="w-px h-5 bg-border" />

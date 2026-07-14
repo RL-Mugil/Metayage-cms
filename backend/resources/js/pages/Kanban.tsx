@@ -1,37 +1,68 @@
-import { Head, router, usePage } from "@inertiajs/react";
+import { Head, usePage } from "@inertiajs/react";
 import { useEffect, useState } from "react";
-import { Loader2, Calendar, AlertTriangle, Layers } from "lucide-react";
+import { Loader2, Calendar, AlertTriangle, Layers, RefreshCw } from "lucide-react";
 import AppLayout from "@/layouts/AppLayout";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api-client";
 import { AnalystRoleFilter, useAnalystRoleFilter } from "@/components/analyst-role-filter";
+import { ProjectDetailPanel } from "@/components/project-detail-panel";
 
-// ── Stage → Column mapping (16 real stages → 4 columns) ─────────────────────
+// ── Stage → Column mapping (active/present-tense stages only) ──────────────
+// Stages not in this map are terminal/past-tense and are excluded from Kanban.
 const STAGE_COLUMN: Record<string, string> = {
-  "Invention Disclosure":      "Intake & Research",
-  "Patent Search":             "Intake & Research",
-  "Search Report":             "Intake & Research",
-  "Provisional or Complete Application": "Drafting & Filing",
-  "Provisional Filing":        "Drafting & Filing",
-  "Patent Drafting":           "Drafting & Filing",
-  "Applicant/Inventor Review": "Drafting & Filing",
-  "Filing with Patent Office": "Drafting & Filing",
-  "First Examination Report":          "Examination",
-  "FER Response Preparation":          "Examination",
-  "FER Response Filing":               "Examination",
-  "Hearing with Examiner":             "Examination",
-  "Hearing Response Preparation":      "Examination",
-  "Hearing Response Filing":           "Examination",
-  "Granted":  "Completed",
-  "Renewal":  "Completed",
+  // Research — work is in progress or awaiting input before it starts
+  "Invention Disclosure":         "Research",
+  "Patent Search":                "Research",
+  "Search Report":                "Research",
+  "Prior Art Search":             "Research",
+  "Search Report Ready":          "Research",
+  "Awaiting IDF from Client":     "Research",
+  // Drafting — active drafting work at the firm
+  "Provisional or Complete Application": "Drafting",
+  "Patent Drafting":              "Drafting",
+  "Applicant/Inventor Review":    "Drafting",
+  "IDF Received":                 "Drafting",
+  "Drafting in Progress":         "Drafting",   // legacy name
+  "Drafting":                     "Drafting",   // new name
+  "Internal Review":              "Drafting",
+  "Claims Ready to Share":        "Drafting",
+  "Claims Approved":              "Drafting",
+  // Client Review — ball is in client's court
+  "Draft Shared with Client":     "Client Review",
+  "Awaiting Client Feedback":     "Client Review",
+  "Client Comments Received":     "Client Review",
+  "Revised Draft Shared":         "Client Review",
+  // Filing — active filing process underway
+  "Awaiting Signed Forms":        "Filing",
+  "Provisional Filing":           "Filing",
+  "Filing with Patent Office":    "Filing",
+  "Filing":                       "Filing",
+  // Examination — responding to patent office
+  "First Examination Report":     "Examination",
+  "FER Received":                 "Examination",
+  "FER Response Preparation":     "Examination",
+  "FER Response in Progress":     "Examination",
+  "FER Response Filing":          "Examination",
+  "Hearing with Examiner":        "Examination",
+  "Hearing Scheduled":            "Examination",
+  "Hearing Response Preparation": "Examination",
+  "Hearing Response in Progress": "Examination",
+  "Hearing Response Filing":      "Examination",
+  // Excluded (past-tense / terminal) — NOT in this map:
+  // "Search Report Shared", "Draft Approved", "Drafted",
+  // "Filed", "Filed — Waiting for FER or Grant",
+  // "FER Response Filed", "Hearing Response Filed",
+  // "Granted", "Renewal"
 };
 
 const COLUMNS = [
-  { key: "Intake & Research", label: "Intake & Research", color: "border-blue-400",  bg: "bg-blue-400/10",  dot: "bg-blue-400"  },
-  { key: "Drafting & Filing", label: "Drafting & Filing", color: "border-amber-400", bg: "bg-amber-400/10", dot: "bg-amber-400" },
-  { key: "Examination",       label: "Examination",       color: "border-purple-400",bg: "bg-purple-400/10",dot: "bg-purple-400"},
-  { key: "Completed",         label: "Completed",         color: "border-green-400", bg: "bg-green-400/10", dot: "bg-green-400" },
+  { key: "Research",      label: "Research",       color: "border-blue-400",    bg: "bg-blue-400/10",    dot: "bg-blue-400"    },
+  { key: "Drafting",      label: "Drafting",       color: "border-amber-400",   bg: "bg-amber-400/10",   dot: "bg-amber-400"   },
+  { key: "Client Review", label: "Client Review",  color: "border-rose-400",    bg: "bg-rose-400/10",    dot: "bg-rose-400"    },
+  { key: "Filing",        label: "Filing",         color: "border-teal-400",    bg: "bg-teal-400/10",    dot: "bg-teal-400"    },
+  { key: "Examination",   label: "Examination",    color: "border-purple-400",  bg: "bg-purple-400/10",  dot: "bg-purple-400"  },
 ];
 
 const URGENCY_COLOR: Record<string, string> = {
@@ -56,44 +87,55 @@ function getActiveStage(project: any): string | null {
   const stages: any[] = project.stages ?? [];
   const inProgress = stages.find((s) => s.status === "In Progress");
   if (inProgress) return inProgress.stage_name;
-  // Fallback: highest completed stage
   const completed = stages.filter((s) => s.status === "Completed").sort((a, b) => b.sequence_order - a.sequence_order);
   return completed[0]?.stage_name ?? null;
 }
 
-function getColumn(stageName: string | null): string {
-  if (!stageName) return "Intake & Research";
-  return STAGE_COLUMN[stageName] ?? "Intake & Research";
+// Returns null for terminal/excluded stages → project is filtered out
+function getColumn(stageName: string | null): string | null {
+  if (!stageName) return null;
+  return STAGE_COLUMN[stageName] ?? null;
 }
 
 export default function Kanban() {
   const { props } = usePage() as any;
   const role = props.auth?.user?.role;
+  const isClientUser = ["client", "client_admin"].includes(role);
   const isAnalyst = ['associate', 'galvanizer', 'partner', 'director'].includes(role);
   const [roleFilter, setRoleFilter] = useAnalystRoleFilter();
 
   const [projects, setProjects] = useState<any[]>([]);
   const [loading, setLoading]   = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [filterType, setFilterType] = useState("all");
+  const [detailProjectId, setDetailProjectId] = useState<number | null>(null);
 
-  useEffect(() => {
+  function load(isRefresh = false) {
+    if (isRefresh) setRefreshing(true);
+    else setLoading(true);
     const rf = isAnalyst ? roleFilter : undefined;
     api.getProjects(undefined, rf)
       .then((data) => setProjects(Array.isArray(data) ? data : []))
       .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [roleFilter]);
+      .finally(() => { setLoading(false); setRefreshing(false); });
+  }
+
+  useEffect(() => { load(); }, [roleFilter]);
 
   const projectTypes = Array.from(new Set(projects.map((p) => p.project_type).filter(Boolean)));
 
+  // Only show projects whose active stage is in the active-work columns
+  const active = projects.filter((p) => getColumn(getActiveStage(p)) !== null);
   const displayed = filterType === "all"
-    ? projects
-    : projects.filter((p) => p.project_type === filterType);
+    ? active
+    : active.filter((p) => p.project_type === filterType);
 
   const grouped = COLUMNS.reduce<Record<string, any[]>>((acc, col) => {
     acc[col.key] = displayed.filter((p) => getColumn(getActiveStage(p)) === col.key);
     return acc;
   }, {});
+
+  const hiddenCount = projects.length - active.length;
 
   if (loading) return (
     <AppLayout>
@@ -110,10 +152,10 @@ export default function Kanban() {
       <PageHeader
         eyebrow="Practice"
         title="Kanban Board"
-        description={`${displayed.length} matters auto-grouped by workflow stage`}
+        description={`${displayed.length} active matters${hiddenCount > 0 ? ` · ${hiddenCount} completed/filed hidden` : ""}`}
         actions={
           <div className="flex items-center gap-2">
-            <AnalystRoleFilter value={roleFilter} onChange={(v) => { setRoleFilter(v); }} />
+            {!isClientUser && <AnalystRoleFilter value={roleFilter} onChange={(v) => { setRoleFilter(v); }} />}
             <select
               value={filterType}
               onChange={(e) => setFilterType(e.target.value)}
@@ -124,6 +166,9 @@ export default function Kanban() {
                 <option key={t} value={t}>{t}</option>
               ))}
             </select>
+            <Button variant="outline" size="sm" onClick={() => load(true)} disabled={refreshing}>
+              <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`} />
+            </Button>
           </div>
         }
       />
@@ -133,7 +178,7 @@ export default function Kanban() {
           {COLUMNS.map((col) => {
             const cards = grouped[col.key] ?? [];
             return (
-              <div key={col.key} className="w-72 flex flex-col gap-3">
+              <div key={col.key} className="w-64 flex flex-col gap-3">
                 {/* Column header */}
                 <div className={`flex items-center justify-between px-3 py-2 rounded-lg border ${col.color} ${col.bg}`}>
                   <div className="flex items-center gap-2">
@@ -147,18 +192,19 @@ export default function Kanban() {
                 <div className="flex flex-col gap-2 min-h-[200px]">
                   {cards.length === 0 && (
                     <div className="rounded-lg border border-dashed border-border p-4 text-center text-xs text-muted-foreground">
-                      No matters here
+                      No active matters
                     </div>
                   )}
                   {cards.map((project) => {
                     const activeStageName = getActiveStage(project);
-                    const overdue = isOverdue(project.hard_deadline) && getColumn(activeStageName) !== "Completed";
+                    const overdue = isOverdue(project.hard_deadline);
                     const clientName = project.client?.company_name ?? project.client?.legal_name ?? "—";
+                    const clickable = !isClientUser;
                     return (
                       <div
                         key={project.id}
-                        className={`rounded-lg border border-border bg-card p-3 shadow-sm hover:shadow-md transition-shadow cursor-pointer ${overdue ? "border-red-400/40" : ""}`}
-                        onClick={() => router.visit(`/projects?open=${project.id}`)}
+                        className={`rounded-lg border border-border bg-card p-3 shadow-sm transition-shadow ${clickable ? "hover:shadow-md cursor-pointer" : ""} ${overdue ? "border-red-400/40" : ""}`}
+                        onClick={clickable ? () => setDetailProjectId(project.id) : undefined}
                       >
                         {/* Docket + type */}
                         <div className="flex items-start justify-between gap-2 mb-1.5">
@@ -210,6 +256,10 @@ export default function Kanban() {
           })}
         </div>
       </div>
+
+      {detailProjectId !== null && (
+        <ProjectDetailPanel projectId={detailProjectId} onClose={() => setDetailProjectId(null)} />
+      )}
     </AppLayout>
   );
 }

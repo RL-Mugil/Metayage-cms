@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Client;
 use App\Models\Project;
+use App\Models\ProjectElevation;
 use App\Models\ProjectStage;
 use App\Models\AuditLog;
 use Illuminate\Support\Facades\DB;
@@ -287,6 +288,11 @@ class ProjectController extends Controller
 
             $validated['project_code'] = $canonicalId;
             $validated['docket_number'] = $canonicalId;
+
+            // Auto-extract service_code from manually-entered docket (format: 4+3+2+3 = 12 chars)
+            if (empty($validated['service_code']) && strlen($canonicalId) >= 12) {
+                $validated['service_code'] = strtoupper(substr($canonicalId, 9, 3));
+            }
         } else {
             if ($manualProjectCode !== '' && $manualDocket !== '' && $manualProjectCode !== $manualDocket) {
                 throw ValidationException::withMessages([
@@ -315,6 +321,11 @@ class ProjectController extends Controller
 
                 $validated['project_code'] = $manualCanonicalId;
                 $validated['docket_number'] = $manualCanonicalId;
+
+                // Auto-extract service_code from manually-typed docket (format: 4+3+2+3 = 12 chars)
+                if (empty($validated['service_code']) && strlen($manualCanonicalId) >= 12) {
+                    $validated['service_code'] = strtoupper(substr($manualCanonicalId, 9, 3));
+                }
             } else {
                 $client = Client::findOrFail($validated['client_id']);
                 $clientCode = $client->client_code ?? '';
@@ -348,73 +359,15 @@ class ProjectController extends Controller
         $project = Project::create($validated);
 
         // Seed pipeline stages based on service code
-        $svc = strtoupper($validated['service_code'] ?? '');
-        $serviceStages = match (true) {
-            $svc === 'PAS' || $svc === 'SRH' || $svc === 'PAT' || $svc === 'FTO' => [
-                "Prior Art Search",
-                "Search Report Ready",
-                "Search Report Shared",
-                "Awaiting IDF from Client",
-            ],
-            $svc === 'PRV' => [
-                "IDF Received",
-                "Drafting in Progress",
-                "Internal Review",
-                "Awaiting Signed Forms",
-                "Filing",
-                "Filed",
-            ],
-            $svc === 'CPT' || $svc === 'NPA' => [
-                "IDF Received",
-                "Claims Ready to Share",
-                "Claims Approved",
-                "Drafting in Progress",
-                "Internal Review",
-                "Draft Shared with Client",
-                "Awaiting Client Feedback",
-                "Client Comments Received",
-                "Revised Draft Shared",
-                "Draft Approved",
-                "Awaiting Signed Forms",
-                "Filing",
-                "Filed",
-            ],
-            $svc === 'FER' || $svc === 'SER' || $svc === 'TER' => [
-                "FER Received",
-                "FER Response in Progress",
-                "FER Response Filed",
-            ],
-            $svc === 'HRG' => [
-                "Hearing Scheduled",
-                "Hearing Response in Progress",
-                "Hearing Response Filed",
-                "Granted",
-            ],
-            default => [
-                "Invention Disclosure",
-                "Patent Search",
-                "Search Report",
-                "Provisional or Complete Application",
-                "Provisional Filing",
-                "Patent Drafting",
-                "Applicant/Inventor Review",
-                "Filing with Patent Office",
-                "First Examination Report",
-                "FER Response Preparation",
-                "FER Response Filing",
-                "Hearing with Examiner",
-                "Hearing Response Preparation",
-                "Hearing Response Filing",
-            ],
-        };
+        $serviceStages = $this->stagesForServiceCode(strtoupper($validated['service_code'] ?? ''));
         foreach ($serviceStages as $index => $stageName) {
             ProjectStage::create([
-                'project_id' => $project->id,
-                'stage_name' => $stageName,
-                'status' => $index === 0 ? 'In Progress' : 'Pending',
+                'project_id'     => $project->id,
+                'stage_name'     => $stageName,
+                'status'         => $index === 0 ? 'In Progress' : 'Pending',
                 'sequence_order' => $index,
-                'duration_days' => 15,
-                'due_date' => Carbon::now()->addDays(($index + 1) * 15),
+                'duration_days'  => 15,
+                'due_date'       => Carbon::now()->addDays(($index + 1) * 15),
             ]);
         }
 
@@ -434,6 +387,11 @@ class ProjectController extends Controller
 
         $deadlineChanged = array_key_exists('hard_deadline', $validated)
             && $validated['hard_deadline'] !== $project->hard_deadline;
+
+        // Auto-extract service_code from docket when editing a manually-entered UIN (4+3+2+3 = 12 chars)
+        if (empty($validated['service_code']) && !empty($validated['docket_number']) && strlen($validated['docket_number']) >= 12) {
+            $validated['service_code'] = strtoupper(substr($validated['docket_number'], 9, 3));
+        }
 
         $project->update($validated);
 
@@ -510,7 +468,13 @@ class ProjectController extends Controller
         ]);
 
         $stageName = $request->stage_name;
-        $targetStage = ProjectStage::where('project_id', $project->id)->where('stage_name', $stageName)->firstOrFail();
+        $targetStage = ProjectStage::where('project_id', $project->id)->where('stage_name', $stageName)->first();
+
+        // Stage not found — existing project has legacy stages; re-seed based on service_code.
+        if (!$targetStage) {
+            $this->reseedStages($project);
+            $targetStage = ProjectStage::where('project_id', $project->id)->where('stage_name', $stageName)->firstOrFail();
+        }
 
         // 1. Mark previous active stages as Completed
         ProjectStage::where('project_id', $project->id)
@@ -565,6 +529,405 @@ class ProjectController extends Controller
         return response()->json([
             'message' => "Project stage updated to {$stageName}",
             'project' => Project::with('stages')->find($project->id)
+        ]);
+    }
+
+    private function stagesForServiceCode(string $svc): array
+    {
+        return match (true) {
+            in_array($svc, ['PAS', 'SRH', 'PAT', 'FTO']) => [
+                // IDF must be received before search can begin
+                "Awaiting IDF from Client", "Prior Art Search", "Search Report Ready", "Search Report Shared",
+            ],
+            $svc === 'PRV' => [
+                "IDF Received", "Drafting", "Internal Review", "Awaiting Signed Forms", "Filing", "Filed",
+            ],
+            in_array($svc, ['CPT', 'NPA']) => [
+                "IDF Received", "Claims Ready to Share", "Claims Approved", "Drafting",
+                "Internal Review", "Draft Shared with Client", "Awaiting Client Feedback",
+                "Client Comments Received", "Revised Draft Shared", "Drafted",
+                "Awaiting Signed Forms", "Filing", "Filed — Waiting for FER or Grant",
+            ],
+            in_array($svc, ['FER', 'SER', 'TER']) => [
+                "FER Received", "FER Response in Progress", "FER Response Filed",
+            ],
+            $svc === 'HRG' => [
+                "Hearing Scheduled", "Hearing Response in Progress", "Hearing Response Filed", "Granted",
+            ],
+            default => [
+                "Invention Disclosure", "Patent Search", "Search Report",
+                "Provisional or Complete Application", "Provisional Filing", "Patent Drafting",
+                "Applicant/Inventor Review", "Filing with Patent Office", "First Examination Report",
+                "FER Response Preparation", "FER Response Filing",
+                "Hearing with Examiner", "Hearing Response Preparation", "Hearing Response Filing",
+            ],
+        };
+    }
+
+    private function reseedStages(Project $project): void
+    {
+        $svc = strtoupper($project->service_code ?? '');
+        $stageNames = $this->stagesForServiceCode($svc);
+
+        // Find the currently active stage name before wiping, to preserve progress.
+        $currentActive = $project->stages()->where('status', 'In Progress')->value('stage_name');
+        $completedNames = $project->stages()->where('status', 'Completed')->pluck('stage_name')->toArray();
+
+        $project->stages()->delete();
+
+        foreach ($stageNames as $index => $stageName) {
+            $status = 'Pending';
+            if ($stageName === $currentActive) {
+                $status = 'In Progress';
+            } elseif (in_array($stageName, $completedNames)) {
+                $status = 'Completed';
+            }
+            ProjectStage::create([
+                'project_id'     => $project->id,
+                'stage_name'     => $stageName,
+                'status'         => $status,
+                'sequence_order' => $index,
+                'duration_days'  => 15,
+                'due_date'       => Carbon::now()->addDays(($index + 1) * 15),
+            ]);
+        }
+    }
+
+    // ── Service order for chain sorting ──────────────────────────────────────
+    private const SERVICE_ORDER = [
+        'PAS' => 1, 'SRH' => 1, 'PAT' => 1, 'FTO' => 1,
+        'PRV' => 2,
+        'CPT' => 3, 'NPA' => 3,
+        'FER' => 4, 'SER' => 4, 'TER' => 4,
+        'HRG' => 5,
+    ];
+
+    // ── Valid elevation paths ──────────────────────────────────────────────────
+    private const ELEVATION_PATHS = [
+        'PAS' => ['PRV', 'CPT'],
+        'SRH' => ['PRV', 'CPT'],
+        'PAT' => ['PRV', 'CPT'],
+        'FTO' => ['PRV', 'CPT'],
+        'PRV' => ['CPT'],
+        'CPT' => ['FER'],
+        'NPA' => ['FER'],
+        'FER' => ['HRG'],
+        'SER' => ['HRG'],
+        'TER' => ['HRG'],
+        'HRG' => [],
+    ];
+
+    public function elevate(Request $request, $id)
+    {
+        if (in_array($request->user()->role, ['client', 'client_admin'], true)) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        $data = $request->validate([
+            'to_service' => 'required|string|max:10',
+            'note'       => 'nullable|string|max:1000',
+        ]);
+
+        return DB::transaction(function () use ($request, $id, $data) {
+            $project = Project::lockForUpdate()->findOrFail($id);
+            $toSvc   = strtoupper($data['to_service']);
+
+            // Derive fromSvc: use stored service_code, else last 3 chars of docket, else empty
+            $storedSvc  = strtoupper($project->service_code ?? '');
+            $docketSvc  = $project->docket_number ? strtoupper(substr($project->docket_number, -3)) : '';
+            $fromSvc    = $storedSvc ?: $docketSvc;
+
+            // Validate transition ONLY when fromSvc is a known service code.
+            // If it is unknown/unset (legacy project), allow any elevation — the user is setting it for the first time.
+            if ($fromSvc && isset(self::ELEVATION_PATHS[$fromSvc])) {
+                $allowed = self::ELEVATION_PATHS[$fromSvc];
+                if (!in_array($toSvc, $allowed, true)) {
+                    throw ValidationException::withMessages([
+                        'to_service' => "Cannot elevate from {$fromSvc} to {$toSvc}. Allowed: " . implode(', ', $allowed ?: ['none']),
+                    ]);
+                }
+            }
+
+            $fromDocket = $project->docket_number;
+
+            // Freeze original_docket on first elevation
+            if (!$project->original_docket) {
+                $project->original_docket = $fromDocket;
+            }
+
+            // Build new docket: strip old service suffix (last 3 chars) and append new service code
+            $newDocket = $fromDocket;
+            if ($fromSvc && strlen($fromSvc) === 3 && str_ends_with(strtoupper($fromDocket ?? ''), $fromSvc)) {
+                $newDocket = substr($fromDocket, 0, -3) . $toSvc;
+            } else {
+                // No recognisable suffix — just append (e.g. docket had no service code)
+                $newDocket = ($fromDocket ?? '') . $toSvc;
+            }
+
+            $project->service_code   = $toSvc;
+            $project->docket_number  = $newDocket;
+            $project->save();
+
+            $this->reseedStages($project);
+
+            ProjectElevation::create([
+                'project_id'           => $project->id,
+                'predecessor_project_id' => null,
+                'from_service_code'    => $fromSvc,
+                'to_service_code'      => $toSvc,
+                'from_docket'          => $fromDocket,
+                'to_docket'            => $newDocket,
+                'elevated_at'          => now(),
+                'elevated_by_id'       => $request->user()->id,
+                'note'                 => $data['note'] ?? null,
+                'is_retroactive_link'  => false,
+            ]);
+
+            AuditLog::create([
+                'user_id'      => $request->user()->id,
+                'action'       => 'elevate',
+                'subject_type' => 'Project',
+                'subject_id'   => $project->id,
+                'metadata'     => [
+                    'from_service' => $fromSvc,
+                    'to_service'   => $toSvc,
+                    'from_docket'  => $fromDocket,
+                    'to_docket'    => $newDocket,
+                ],
+                'ip_address'   => $request->ip(),
+                'user_agent'   => $request->userAgent(),
+            ]);
+
+            Cache::increment('dashboard_v');
+
+            return response()->json([
+                'message' => "Elevated from {$fromSvc} to {$toSvc}",
+                'project' => $project->fresh(['stages', 'client']),
+            ]);
+        });
+    }
+
+    public function linkPredecessor(Request $request, $id)
+    {
+        if (in_array($request->user()->role, ['client', 'client_admin'], true)) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        $data = $request->validate([
+            'predecessor_id' => 'required|integer|exists:projects,id',
+            'note'           => 'nullable|string|max:1000',
+        ]);
+
+        return DB::transaction(function () use ($request, $id, $data) {
+            $project     = Project::findOrFail($id);
+            $predecessor = Project::findOrFail($data['predecessor_id']);
+
+            if ($predecessor->client_id !== $project->client_id) {
+                throw ValidationException::withMessages([
+                    'predecessor_id' => 'Predecessor must belong to the same client.',
+                ]);
+            }
+
+            if ($project->id === $predecessor->id) {
+                throw ValidationException::withMessages([
+                    'predecessor_id' => 'A project cannot be its own predecessor.',
+                ]);
+            }
+
+            // Guard: don't allow double-linking
+            $alreadyLinked = ProjectElevation::where('project_id', $id)
+                ->where('predecessor_project_id', $predecessor->id)
+                ->exists();
+            if ($alreadyLinked) {
+                throw ValidationException::withMessages([
+                    'predecessor_id' => 'These two projects are already linked.',
+                ]);
+            }
+
+            ProjectElevation::create([
+                'project_id'             => $project->id,
+                'predecessor_project_id' => $predecessor->id,
+                'from_service_code'      => strtoupper($predecessor->service_code ?? ''),
+                'to_service_code'        => strtoupper($project->service_code ?? ''),
+                'from_docket'            => $predecessor->docket_number,
+                'to_docket'              => $project->docket_number,
+                'elevated_at'            => $predecessor->created_at,
+                'elevated_by_id'         => $request->user()->id,
+                'note'                   => $data['note'] ?? null,
+                'is_retroactive_link'    => true,
+            ]);
+
+            AuditLog::create([
+                'user_id'      => $request->user()->id,
+                'action'       => 'link_predecessor',
+                'subject_type' => 'Project',
+                'subject_id'   => $project->id,
+                'metadata'     => [
+                    'predecessor_id'     => $predecessor->id,
+                    'predecessor_docket' => $predecessor->docket_number,
+                ],
+                'ip_address'   => $request->ip(),
+                'user_agent'   => $request->userAgent(),
+            ]);
+
+            return response()->json(['message' => 'Predecessor linked successfully.']);
+        });
+    }
+
+    /**
+     * Scan all projects (scoped to requester) and detect unlinked docket chains.
+     * A chain = multiple projects sharing the same docket prefix (docket minus last 3 chars)
+     * belonging to the same client, with different service codes in a valid elevation order,
+     * and NOT yet linked via project_elevations.
+     */
+    public function detectChains(Request $request)
+    {
+        if (in_array($request->user()->role, ['client', 'client_admin'], true)) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        // Collect all already-linked project pairs so we don't re-link them
+        $alreadyLinked = ProjectElevation::whereNotNull('predecessor_project_id')
+            ->select('project_id', 'predecessor_project_id')
+            ->get()
+            ->mapWithKeys(fn ($e) => ["{$e->predecessor_project_id}-{$e->project_id}" => true]);
+
+        $projects = Project::select('id', 'client_id', 'docket_number', 'service_code', 'created_at', 'project_name')
+            ->whereNotNull('service_code')
+            ->whereNotNull('docket_number')
+            ->get();
+
+        // Group by (client_id + docket_prefix) where prefix = docket minus last 3 chars
+        $groups = [];
+        foreach ($projects as $p) {
+            $svc = strtoupper($p->service_code ?? '');
+            $docket = $p->docket_number ?? '';
+            // Only handle 3-char service codes appended to the docket
+            if (strlen($svc) === 3 && str_ends_with(strtoupper($docket), $svc)) {
+                $prefix = substr($docket, 0, -3);
+                $key = "{$p->client_id}::{$prefix}";
+                $groups[$key][] = $p;
+            }
+        }
+
+        $chains = [];
+        foreach ($groups as $key => $members) {
+            if (count($members) < 2) continue;
+
+            // Sort members by service order, then created_at
+            usort($members, function ($a, $b) {
+                $oa = self::SERVICE_ORDER[strtoupper($a->service_code)] ?? 99;
+                $ob = self::SERVICE_ORDER[strtoupper($b->service_code)] ?? 99;
+                if ($oa !== $ob) return $oa - $ob;
+                return strcmp($a->created_at, $b->created_at);
+            });
+
+            // Build sequential pairs and filter out already-linked ones
+            $pairs = [];
+            for ($i = 0; $i < count($members) - 1; $i++) {
+                $pred = $members[$i];
+                $succ = $members[$i + 1];
+                $pairKey = "{$pred->id}-{$succ->id}";
+                if (!isset($alreadyLinked[$pairKey])) {
+                    $pairs[] = [
+                        'predecessor_id'      => $pred->id,
+                        'predecessor_docket'  => $pred->docket_number,
+                        'predecessor_service' => strtoupper($pred->service_code),
+                        'successor_id'        => $succ->id,
+                        'successor_docket'    => $succ->docket_number,
+                        'successor_service'   => strtoupper($succ->service_code),
+                    ];
+                }
+            }
+
+            if (count($pairs) === 0) continue;
+
+            [, $prefix] = explode('::', $key, 2);
+            $chains[] = [
+                'prefix'  => $prefix,
+                'members' => collect($members)->map(fn ($p) => [
+                    'id'           => $p->id,
+                    'docket'       => $p->docket_number,
+                    'service_code' => strtoupper($p->service_code),
+                    'project_name' => $p->project_name,
+                    'created_at'   => $p->created_at,
+                ])->values(),
+                'pairs'   => $pairs,
+            ];
+        }
+
+        return response()->json(['chains' => $chains, 'total' => count($chains)]);
+    }
+
+    /**
+     * Bulk-create retroactive elevation links for confirmed chains.
+     * Request: { pairs: [{ predecessor_id, successor_id, note? }] }
+     */
+    public function bulkLinkChains(Request $request)
+    {
+        if (in_array($request->user()->role, ['client', 'client_admin'], true)) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        $data = $request->validate([
+            'pairs'         => 'required|array|min:1',
+            'pairs.*.predecessor_id' => 'required|integer|exists:projects,id',
+            'pairs.*.successor_id'   => 'required|integer|exists:projects,id',
+            'pairs.*.note'           => 'nullable|string|max:500',
+        ]);
+
+        $created = 0;
+        $skipped = 0;
+
+        DB::transaction(function () use ($data, $request, &$created, &$skipped) {
+            foreach ($data['pairs'] as $pair) {
+                $predId = $pair['predecessor_id'];
+                $succId = $pair['successor_id'];
+
+                // Skip if already linked
+                $exists = ProjectElevation::where('project_id', $succId)
+                    ->where('predecessor_project_id', $predId)
+                    ->exists();
+                if ($exists) { $skipped++; continue; }
+
+                $pred = Project::findOrFail($predId);
+                $succ = Project::findOrFail($succId);
+
+                if ($pred->client_id !== $succ->client_id) { $skipped++; continue; }
+
+                ProjectElevation::create([
+                    'project_id'             => $succId,
+                    'predecessor_project_id' => $predId,
+                    'from_service_code'      => strtoupper($pred->service_code ?? ''),
+                    'to_service_code'        => strtoupper($succ->service_code ?? ''),
+                    'from_docket'            => $pred->docket_number,
+                    'to_docket'              => $succ->docket_number,
+                    'elevated_at'            => $pred->created_at,
+                    'elevated_by_id'         => $request->user()->id,
+                    'note'                   => $pair['note'] ?? 'Retroactively linked from existing records',
+                    'is_retroactive_link'    => true,
+                ]);
+                $created++;
+            }
+
+            if ($created > 0) {
+                AuditLog::create([
+                    'user_id'      => $request->user()->id,
+                    'action'       => 'bulk_link_chains',
+                    'subject_type' => 'Project',
+                    'subject_id'   => 0,
+                    'metadata'     => ['created' => $created, 'skipped' => $skipped],
+                    'ip_address'   => $request->ip(),
+                    'user_agent'   => $request->userAgent(),
+                ]);
+                Cache::increment('dashboard_v');
+            }
+        });
+
+        return response()->json([
+            'message' => "Linked {$created} pair(s)." . ($skipped ? " {$skipped} already linked or invalid." : ""),
+            'created' => $created,
+            'skipped' => $skipped,
         ]);
     }
 
@@ -639,11 +1002,43 @@ class ProjectController extends Controller
             ->get(['id', 'title', 'status', 'priority', 'due_date', 'assignee_id',
                    'estimated_hours', 'actual_hours', 'billable', 'created_at', 'updated_at']);
 
+        // Elevation history for this project
+        $elevations = ProjectElevation::where('project_id', $project->id)
+            ->with('elevatedBy:id,name')
+            ->orderBy('elevated_at')
+            ->get();
+
+        // Collect predecessor chain project IDs (for cross-chain invoices)
+        $predecessorIds = $elevations->whereNotNull('predecessor_project_id')
+            ->pluck('predecessor_project_id')
+            ->unique()
+            ->values();
+
         // Invoices for this project
         $invoices = \App\Models\Invoice::where('project_id', $project->id)
             ->orderBy('created_at')
             ->get(['id', 'invoice_code', 'status', 'total_amount', 'balance_due',
                    'subtotal', 'tax_amount', 'currency', 'created_at', 'due_date']);
+
+        // Chain invoices: invoices from predecessor projects, labeled with original docket
+        $chainInvoices = collect();
+        if ($predecessorIds->isNotEmpty()) {
+            $predecessorProjects = Project::withTrashed()
+                ->whereIn('id', $predecessorIds)
+                ->get(['id', 'docket_number', 'service_code']);
+
+            $chainInvoices = \App\Models\Invoice::whereIn('project_id', $predecessorIds)
+                ->orderBy('created_at')
+                ->get(['id', 'invoice_code', 'project_id', 'status', 'total_amount', 'balance_due',
+                       'subtotal', 'tax_amount', 'currency', 'created_at', 'due_date'])
+                ->map(function ($inv) use ($predecessorProjects) {
+                    $proj = $predecessorProjects->firstWhere('id', $inv->project_id);
+                    $arr = $inv->toArray();
+                    $arr['source_docket']       = $proj?->docket_number;
+                    $arr['source_service_code'] = $proj?->service_code;
+                    return $arr;
+                });
+        }
 
         // Ledger entries for this project's invoices
         $invoiceIds = $invoices->pluck('id');
@@ -709,7 +1104,9 @@ class ProjectController extends Controller
             'total_stage_days'     => $totalStageDays,
             'tasks'                => $enrichedTasks,
             'invoices'             => $invoices,
+            'chain_invoices'       => $chainInvoices,
             'ledger'               => $ledger,
+            'elevations'           => $elevations,
             'invoice_summary'      => [
                 'total_invoiced' => $totalInvoiced,
                 'total_received' => $totalReceived,

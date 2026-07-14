@@ -62,19 +62,23 @@ Route::middleware(['auth:sanctum', 'throttle:120,1'])->group(function () {
 
     // CRM / Clients
     Route::get('/clients/stats', [ClientController::class, 'stats']);
-    Route::post('/clients/import', [ClientController::class, 'import'])->middleware('throttle:5,1');
+    Route::post('/clients/import', [ClientController::class, 'import'])->middleware('throttle:1000,1');
     Route::get('/clients', [ClientController::class, 'index']);
     Route::post('/clients', [ClientController::class, 'store']);
     Route::get('/clients/{id}', [ClientController::class, 'show']);
     Route::put('/clients/{id}', [ClientController::class, 'update']);
     Route::delete('/clients/{id}', [ClientController::class, 'destroy']);
+    Route::get('/clients/{id}/detail', [ClientController::class, 'detail']);
     Route::post('/clients/{id}/contacts', [ClientController::class, 'addContact']);
 
     // Cases / Projects
     Route::get('/projects/stats', [ProjectController::class, 'stats']);
     Route::get('/projects/lifecycle-stats', [ProjectController::class, 'lifecycleStats']);
     Route::get('/projects/import-template', [\App\Http\Controllers\ProjectImportController::class, 'template']);
-    Route::post('/projects/import', [\App\Http\Controllers\ProjectImportController::class, 'import'])->middleware('throttle:10,1');
+    Route::post('/projects/import/sheets', [\App\Http\Controllers\ProjectImportController::class, 'inspectSheets'])->middleware('throttle:60,1');
+    Route::post('/projects/import', [\App\Http\Controllers\ProjectImportController::class, 'import'])->middleware('throttle:60,1');
+    Route::get('/projects/detect-chains', [ProjectController::class, 'detectChains']);
+    Route::post('/projects/bulk-link-chains', [ProjectController::class, 'bulkLinkChains']);
     Route::get('/projects', [ProjectController::class, 'index']);
     Route::post('/projects', [ProjectController::class, 'store']);
     Route::get('/projects/{id}', [ProjectController::class, 'show']);
@@ -82,6 +86,10 @@ Route::middleware(['auth:sanctum', 'throttle:120,1'])->group(function () {
     Route::delete('/projects/{id}', [ProjectController::class, 'destroy']);
     Route::post('/projects/{id}/stage', [ProjectController::class, 'updateStage']);
     Route::get('/projects/{id}/detail', [ProjectController::class, 'detail']);
+    Route::post('/projects/{id}/elevate', [ProjectController::class, 'elevate']);
+    Route::post('/projects/{id}/link-predecessor', [ProjectController::class, 'linkPredecessor']);
+    Route::post('/projects/docket-import/preview', [\App\Http\Controllers\ProjectDocketImportController::class, 'preview'])->middleware('throttle:10,1');
+    Route::post('/projects/docket-import/import', [\App\Http\Controllers\ProjectDocketImportController::class, 'import'])->middleware('throttle:5,1');
 
     // Tasks & Time tracking
     Route::get('/tasks', [TaskController::class, 'index']);
@@ -192,7 +200,9 @@ Route::middleware(['auth:sanctum', 'throttle:120,1'])->group(function () {
     Route::put('/settings/profile',       [\App\Http\Controllers\SettingsController::class, 'updateProfile']);
     Route::put('/settings/password',      [\App\Http\Controllers\SettingsController::class, 'updatePassword']);
     Route::put('/settings/notifications', [\App\Http\Controllers\SettingsController::class, 'updateNotifications']);
-    Route::put('/settings/system',        [\App\Http\Controllers\SettingsController::class, 'updateSystem']);
+    Route::put('/settings/system',         [\App\Http\Controllers\SettingsController::class, 'updateSystem']);
+    Route::put('/settings/feature-flags', [\App\Http\Controllers\SettingsController::class, 'updateFeatureFlags']);
+    Route::put('/settings/dropdown',      [\App\Http\Controllers\SettingsController::class, 'updateDropdown']);
     Route::post('/settings/avatar',       [\App\Http\Controllers\SettingsController::class, 'uploadAvatar']);
     Route::delete('/settings/avatar',     [\App\Http\Controllers\SettingsController::class, 'removeAvatar']);
 
@@ -266,12 +276,15 @@ Route::middleware(['auth:sanctum', 'throttle:120,1'])->group(function () {
     Route::post('/portal/clients/{id}/users/{userId}/reset-password', [\App\Http\Controllers\PortalController::class, 'resetUserPassword']);
     Route::get('/portal/my-team', [\App\Http\Controllers\PortalController::class, 'myTeam']);
 
-    // Custom project codes (patent office / service)
-    Route::get('/project-codes', [\App\Http\Controllers\ProjectCodeController::class, 'index']);
-    Route::post('/project-codes', [\App\Http\Controllers\ProjectCodeController::class, 'store']);
-
     // Audit Log (super_admin / partner only — enforced in controller)
     Route::get('/audit-logs', [AuditLogController::class, 'index']);
+
+    // Recycle Bin
+    Route::get('/recycle-bin', [\App\Http\Controllers\RecycleBinController::class, 'index']);
+    Route::post('/recycle-bin/restore', [\App\Http\Controllers\RecycleBinController::class, 'restore']);
+    Route::delete('/recycle-bin/hard-delete', [\App\Http\Controllers\RecycleBinController::class, 'hardDelete']);
+    Route::post('/recycle-bin/bulk-restore', [\App\Http\Controllers\RecycleBinController::class, 'bulkRestore']);
+    Route::delete('/recycle-bin/bulk-hard-delete', [\App\Http\Controllers\RecycleBinController::class, 'bulkHardDelete']);
 
     // Patent Invoices & Quotations — Indian clients (INR)
     Route::get('/patent-invoices/in',                [PatentInvoiceController::class, 'index']);

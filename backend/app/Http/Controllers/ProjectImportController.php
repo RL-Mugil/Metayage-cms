@@ -61,15 +61,35 @@ class ProjectImportController extends Controller
     private static function offices(): array
     {
         static $codes;
-        $codes ??= require config_path('project_import_codes.php');
-        return $codes['offices'] ?? [];
+        if ($codes !== null) return $codes;
+        // Prefer DB-managed list (Settings → System → Country Codes)
+        $json = DB::table('system_settings')->where('key', 'dropdown_country_codes')->value('value');
+        $rows = $json ? json_decode($json, true) : null;
+        if (!empty($rows)) {
+            $codes = array_column($rows, 'label', 'code');
+            return $codes;
+        }
+        // Fall back to static config
+        $cfg   = require config_path('project_import_codes.php');
+        $codes = $cfg['offices'] ?? [];
+        return $codes;
     }
 
     private static function services(): array
     {
         static $codes;
-        $codes ??= require config_path('project_import_codes.php');
-        return $codes['services'] ?? [];
+        if ($codes !== null) return $codes;
+        // Prefer DB-managed list (Settings → System → Service Codes)
+        $json = DB::table('system_settings')->where('key', 'dropdown_service_codes')->value('value');
+        $rows = $json ? json_decode($json, true) : null;
+        if (!empty($rows)) {
+            $codes = array_column($rows, 'label', 'code');
+            return $codes;
+        }
+        // Fall back to static config
+        $cfg   = require config_path('project_import_codes.php');
+        $codes = $cfg['services'] ?? [];
+        return $codes;
     }
 
     /** Downloadable .xlsx template with dropdown validation on enum columns. */
@@ -168,6 +188,37 @@ class ProjectImportController extends Controller
         ])->deleteFileAfterSend(true);
     }
 
+    /** Return list of sheets in the uploaded file so the user can pick which one to import. */
+    public function inspectSheets(Request $request)
+    {
+        if ($deny = $this->denyUnauthorized($request)) return $deny;
+
+        $request->validate(['file' => 'required|file|mimes:xlsx,xls,csv|max:10240']);
+
+        $file = $request->file('file');
+        $ext  = strtolower($file->getClientOriginalExtension());
+
+        if (in_array($ext, ['xlsx', 'xls'])) {
+            $spreadsheet = \PhpOffice\PhpSpreadsheet\IOFactory::load($file->getRealPath());
+            $skip = ['lists', 'reference'];
+            $sheets = [];
+            foreach ($spreadsheet->getAllSheets() as $sheet) {
+                $name = $sheet->getTitle();
+                if (in_array(strtolower($name), $skip, true)) continue;
+                $rows = max(0, $sheet->getHighestDataRow() - 1); // subtract header row
+                $sheets[] = [
+                    'name'         => $name,
+                    'rows'         => $rows,
+                    'is_data_sheet'=> $rows > 0,
+                ];
+            }
+            return response()->json(['sheets' => $sheets]);
+        }
+
+        // CSV — single "sheet"
+        return response()->json(['sheets' => [['name' => 'Sheet1', 'rows' => -1, 'is_data_sheet' => true]]]);
+    }
+
     /** Import cases for ONE client from the filled template. */
     public function import(Request $request)
     {
@@ -177,10 +228,11 @@ class ProjectImportController extends Controller
             'client_id'       => 'required|integer|exists:clients,id',
             'file'            => 'required|file|mimes:xlsx,xls,csv|max:10240',
             'skip_duplicates' => 'nullable|string',
+            'sheet_name'      => 'nullable|string|max:100',
         ]);
 
         $client   = Client::findOrFail($request->client_id);
-        $rows     = $this->parseUploadedFile($request->file('file'));
+        $rows     = $this->parseUploadedFile($request->file('file'), $request->input('sheet_name'));
         $offices  = self::offices();
         $services = self::services();
 
@@ -290,26 +342,40 @@ class ProjectImportController extends Controller
         ]);
     }
 
+    /**
+     * Duplicate key: first 9 chars of UIN (client[4] + invention[3] + country[2]).
+     * This groups all service-code variants of the same matter at the same office.
+     * Falls back to the full UIN when shorter than 9 chars.
+     */
+    private static function dupKey(string $uin): string
+    {
+        return strlen($uin) >= 9 ? substr($uin, 0, 9) : $uin;
+    }
+
     /** Returns duplicate rows: [{line, uin, reason}] for frontend confirmation. */
     private function detectProjectDuplicates(array $rows): array
     {
         $duplicates = [];
         $seenInFile = [];
         foreach ($rows as $i => $row) {
-            $line = $i + 2;
-            $uin  = strtoupper(trim((string) ($row['project_name'] ?? '')));
+            $line   = $i + 2;
+            $uin    = strtoupper(trim((string) ($row['project_name'] ?? '')));
             if ($uin === '') continue;
-            if (isset($seenInFile[$uin])) {
-                $duplicates[] = ['line' => $line, 'uin' => $uin, 'reason' => "same as row {$seenInFile[$uin]} in this file"];
+            $key = self::dupKey($uin);
+            if (isset($seenInFile[$key])) {
+                $duplicates[] = ['line' => $line, 'uin' => $uin, 'reason' => "same matter as row {$seenInFile[$key]} in this file"];
                 continue;
             }
-            $seenInFile[$uin] = $line;
+            $seenInFile[$key] = $line;
             $exists = \App\Models\Project::withTrashed()
-                ->where(function ($q) use ($uin) {
-                    $q->where('project_code', $uin)->orWhere('docket_number', $uin);
+                ->where(function ($q) use ($uin, $key) {
+                    $q->where('project_code', $uin)
+                      ->orWhere('docket_number', $uin)
+                      ->orWhere('docket_number', 'like', $key . '%')
+                      ->orWhere('project_code',  'like', $key . '%');
                 })->exists();
             if ($exists) {
-                $duplicates[] = ['line' => $line, 'uin' => $uin, 'reason' => 'already exists in system'];
+                $duplicates[] = ['line' => $line, 'uin' => $uin, 'reason' => 'already exists in system (matched on first 9 characters)'];
             }
         }
         return $duplicates;
@@ -323,11 +389,15 @@ class ProjectImportController extends Controller
         foreach ($rows as $i => $row) {
             $uin = strtoupper(trim((string) ($row['project_name'] ?? '')));
             if ($uin === '') continue;
-            if (isset($seenInFile[$uin])) { $indexes[$i] = true; continue; }
-            $seenInFile[$uin] = $i;
+            $key = self::dupKey($uin);
+            if (isset($seenInFile[$key])) { $indexes[$i] = true; continue; }
+            $seenInFile[$key] = $i;
             $exists = \App\Models\Project::withTrashed()
-                ->where(function ($q) use ($uin) {
-                    $q->where('project_code', $uin)->orWhere('docket_number', $uin);
+                ->where(function ($q) use ($uin, $key) {
+                    $q->where('project_code', $uin)
+                      ->orWhere('docket_number', $uin)
+                      ->orWhere('docket_number', 'like', $key . '%')
+                      ->orWhere('project_code',  'like', $key . '%');
                 })->exists();
             if ($exists) $indexes[$i] = true;
         }
@@ -360,11 +430,11 @@ class ProjectImportController extends Controller
         }
     }
 
-    private function parseUploadedFile(\Illuminate\Http\UploadedFile $file): array
+    private function parseUploadedFile(\Illuminate\Http\UploadedFile $file, ?string $sheetName = null): array
     {
         $ext = strtolower($file->getClientOriginalExtension());
         if (in_array($ext, ['xlsx', 'xls'])) {
-            return $this->parseXlsx($file->getRealPath());
+            return $this->parseXlsx($file->getRealPath(), $sheetName);
         }
         return $this->parseCsv($file->getRealPath());
     }
@@ -376,10 +446,27 @@ class ProjectImportController extends Controller
         return str_replace([' ', '-'], '_', trim($h));
     }
 
-    private function parseXlsx(string $path): array
+    private function parseXlsx(string $path, ?string $sheetName = null): array
     {
         $spreadsheet = \PhpOffice\PhpSpreadsheet\IOFactory::load($path);
-        $sheet = $spreadsheet->getSheetByName('Cases') ?? $spreadsheet->getSheet(0);
+
+        // If caller specified a sheet by name, use it directly.
+        if ($sheetName && $spreadsheet->getSheetByName($sheetName)) {
+            $sheet = $spreadsheet->getSheetByName($sheetName);
+        } else {
+            // Auto-pick: prefer "Cases", then the non-system sheet with the most data rows.
+            $skip = ['lists', 'reference'];
+            $best = $spreadsheet->getSheetByName('Cases');
+            if (!$best || $best->getHighestDataRow() <= 1) {
+                $bestCount = 0;
+                foreach ($spreadsheet->getAllSheets() as $s) {
+                    if (in_array(strtolower($s->getTitle()), $skip, true)) continue;
+                    $count = $s->getHighestDataRow();
+                    if ($count > $bestCount) { $bestCount = $count; $best = $s; }
+                }
+            }
+            $sheet = $best ?? $spreadsheet->getSheet(0);
+        }
         $raw = $sheet->toArray(null, true, true, false);
         if (empty($raw)) return [];
 

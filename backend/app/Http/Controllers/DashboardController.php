@@ -103,6 +103,17 @@ class DashboardController extends Controller
             ];
         });
 
+        // Distinct matters = active projects that are NOT a successor in any elevation chain.
+        // i.e. projects where their ID does not appear as predecessor_project_id in project_elevations.
+        // These are "head of chain" projects — distinct IP matters, not service continuations.
+        $successorProjectIds = \DB::table('project_elevations')
+            ->whereNotNull('predecessor_project_id')
+            ->pluck('project_id')
+            ->unique();
+        $distinctMattersCount = (clone $activeMattersQuery)
+            ->whereNotIn('id', $successorProjectIds)
+            ->count();
+
         // Financial aggregates — only for roles with financial visibility per RBAC matrix.
         // associate, paralegal, hr have Financial = ❌; zeroing out prevents firm-wide data leaks.
         $canSeeFinancials = in_array($user->role, ['super_admin', 'partner', 'manager', 'finance', 'galvanizer', 'client', 'client_admin']);
@@ -194,6 +205,7 @@ class DashboardController extends Controller
         return response()->json([
             'metrics' => [
                 'active_matters'        => $activeMattersCount,
+                'distinct_matters'      => $distinctMattersCount,
                 'inactive_matters'      => $inactiveMattersCount,
                 'granted_matters'       => $grantedMattersCount,
                 'clients'               => $clientsCount,

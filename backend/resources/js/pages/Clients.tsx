@@ -1,4 +1,4 @@
-import { Head } from "@inertiajs/react";
+import { Head, usePage } from "@inertiajs/react";
 import { useEffect, useState, useMemo, useCallback } from "react";
 import {
   Plus, Search, LayoutGrid, List, Pencil, Trash2, X, ChevronDown, ChevronUp,
@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { api, downloadCSV } from "@/lib/api-client";
+import { ClientDetailPanel } from "@/components/client-detail-panel";
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -158,7 +159,7 @@ const KPI_DEFS: KpiDef[] = [
 
 type SortField = "company_name" | "client_code" | "status" | "gst_type" | "date_onboarded";
 
-function KpiModal({ kpi, onClose }: { kpi: KpiDef; onClose: () => void }) {
+function KpiModal({ kpi, onClose, onSelectClient }: { kpi: KpiDef; onClose: () => void; onSelectClient?: (id: number) => void }) {
   const [result, setResult]   = useState<any>({ data: [], total: 0, per_page: 25, current_page: 1, last_page: 1 });
   const [search, setSearch]   = useState("");
   const [loading, setLoading] = useState(true);
@@ -253,7 +254,14 @@ function KpiModal({ kpi, onClose }: { kpi: KpiDef; onClose: () => void }) {
                   const name = c.legal_name ?? c.company_name ?? "—";
                   return (
                     <tr key={c.id} className="border-t border-border hover:bg-muted/20">
-                      <td className="px-3 py-2.5 font-mono text-xs font-semibold text-gold">{c.client_code ?? "—"}</td>
+                      <td className="px-3 py-2.5">
+                        <button
+                          onClick={() => onSelectClient?.(c.id)}
+                          className="font-mono text-xs font-semibold text-gold hover:underline"
+                        >
+                          {c.client_code ?? "—"}
+                        </button>
+                      </td>
                       <td className="px-3 py-2.5">
                         <div className="font-medium text-sm">{name}</div>
                         {c.pan_number && <div className="text-[10px] text-muted-foreground font-mono">PAN: {c.pan_number}</div>}
@@ -558,6 +566,9 @@ function ImportModal({ onClose, onDone }: { onClose: () => void; onDone: () => v
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 export default function Clients() {
+  const { props: pageProps } = usePage() as any;
+  const featExistingClient = (pageProps.systemSettings?.feature_existing_client) ?? true;
+
   const [paginatedResult, setPaginatedResult] = useState<any>({ data: [], total: 0, per_page: 25, current_page: 1, last_page: 1, has_more: false });
   const [stats, setStats]       = useState<Record<string, number>>({ total: 0, active: 0, b2b: 0, b2c: 0, export: 0 });
   const [users, setUsers]       = useState<any[]>([]);
@@ -576,6 +587,7 @@ export default function Clients() {
   const [delTarget, setDelTarget] = useState<any>(null);
   const [deleting, setDeleting] = useState(false);
   const [refQ, setRefQ]         = useState("");
+  const [detailClientId, setDetailClientId] = useState<number | null>(null);
 
   const fetchClients = (p: number = 1) => {
     const params = new URLSearchParams();
@@ -930,11 +942,11 @@ export default function Clients() {
               {/* ── 0. Client Type Toggle ─────────────────────────────────── */}
               {!editC && (
                 <Section title="Record Type">
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className={`grid gap-3 ${featExistingClient ? "grid-cols-2" : "grid-cols-1"}`}>
                     {([
-                      { key: "new", label: "New Client", hint: "Use the current auto-generation rules." },
-                      { key: "existing", label: "Existing / Legacy Client", hint: "Enter the existing client code manually." },
-                    ] as const).map((option) => (
+                      { key: "new",      label: "New Client",             hint: "Use the current auto-generation rules.", always: true },
+                      { key: "existing", label: "Existing / Legacy Client", hint: "Enter the existing client code manually.", always: false },
+                    ] as const).filter((o) => o.always || featExistingClient).map((option) => (
                       <button
                         key={option.key}
                         type="button"
@@ -1232,7 +1244,7 @@ export default function Clients() {
       )}
 
       {/* ── KPI Drill-down Modal ─────────────────────────────────────────────── */}
-      {kpiModal && <KpiModal kpi={kpiModal} onClose={() => setKpiModal(null)} />}
+      {kpiModal && <KpiModal kpi={kpiModal} onClose={() => setKpiModal(null)} onSelectClient={(id) => { setKpiModal(null); setDetailClientId(id); }} />}
 
       {/* ── Delete Confirm ────────────────────────────────────────────────────── */}
       {delTarget && (
@@ -1257,6 +1269,10 @@ export default function Clients() {
             </div>
           </div>
         </div>
+      )}
+
+      {detailClientId !== null && (
+        <ClientDetailPanel clientId={detailClientId} onClose={() => setDetailClientId(null)} />
       )}
     </AppLayout>
   );

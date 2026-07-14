@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Inertia\Middleware;
 
@@ -39,6 +40,27 @@ class HandleInertiaRequests extends Middleware
                 'success' => fn () => $request->session()->get('success'),
                 'error'   => fn () => $request->session()->get('error'),
             ],
+            'systemSettings' => fn () => $this->loadSystemSettings(),
         ];
+    }
+
+    private function loadSystemSettings(): array
+    {
+        return Cache::remember('system_settings_shared', 300, function () {
+            $rows = DB::table('system_settings')->pluck('value', 'key');
+
+            $decode = fn ($key, $default) => isset($rows[$key])
+                ? (json_decode($rows[$key], true) ?? $rows[$key])
+                : $default;
+
+            return [
+                'feature_link_predecessor'    => ($rows['feature_link_predecessor']    ?? 'true') === 'true',
+                'feature_legacy_case'         => ($rows['feature_legacy_case']         ?? 'true') === 'true',
+                'feature_existing_client'     => ($rows['feature_existing_client']     ?? 'true') === 'true',
+                'feature_lock_code_dropdowns' => ($rows['feature_lock_code_dropdowns'] ?? 'true') === 'true',
+                'dropdown_service_codes'      => $decode('dropdown_service_codes',  []),
+                'dropdown_country_codes'      => $decode('dropdown_country_codes',  []),
+            ];
+        });
     }
 }

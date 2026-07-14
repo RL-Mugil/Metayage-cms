@@ -12,10 +12,16 @@ use Illuminate\Http\Request;
  */
 class RestrictClientPages
 {
-    /** Page paths a portal user may open. */
+    /** Page paths a portal user may open (exact match). */
     private const ALLOWED = [
         '/',
         '/patent-portfolio',
+        '/patent-lifecycle',
+        '/projects',
+        '/tasks',
+        '/kanban',
+        '/calendar',
+        '/team',
         '/documents',
         '/discussions',
         '/approvals',
@@ -26,6 +32,14 @@ class RestrictClientPages
         '/logout',
     ];
 
+    /** Prefixes: any path starting with these is allowed (e.g. /projects/42). */
+    private const ALLOWED_PREFIXES = [
+        '/projects/',
+        '/tasks/',
+        '/documents/',
+        '/discussions/',
+    ];
+
     public function handle(Request $request, Closure $next): mixed
     {
         $user = $request->user();
@@ -34,6 +48,15 @@ class RestrictClientPages
 
             $allowed = in_array($path, self::ALLOWED, true)
                 || ($path === '/portal-users' && $user->role === 'client_admin');
+
+            if (! $allowed) {
+                foreach (self::ALLOWED_PREFIXES as $prefix) {
+                    if (str_starts_with($path, $prefix)) {
+                        $allowed = true;
+                        break;
+                    }
+                }
+            }
 
             if (! $allowed) {
                 return redirect('/');
