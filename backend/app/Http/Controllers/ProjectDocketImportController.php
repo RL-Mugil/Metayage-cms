@@ -115,12 +115,15 @@ class ProjectDocketImportController extends Controller
         }
         $parsed = array_map(fn ($r) => $this->parseRow($r), $rows);
 
-        // Bulk client lookup (read-only, no locking)
+        // Build fuzzy-match index: all existing clients keyed by normalised name
+        $allClients   = Client::select('id', 'client_code', 'company_name', 'legal_name')->get();
+        $clientIndex  = $this->buildClientIndex($allClients);
+
+        // Bulk client resolution (read-only preview)
         $allNames = array_unique(array_filter(array_column($parsed, 'client_name')));
         $clientMap = [];
         foreach ($allNames as $name) {
-            $c = Client::whereRaw('LOWER(TRIM(company_name)) = ?', [strtolower(trim($name))])->first();
-            $clientMap[strtolower(trim($name))] = $c;
+            $clientMap[strtolower(trim($name))] = $this->resolveClient($name, $clientIndex);
         }
 
         $total     = count($parsed);
@@ -135,11 +138,12 @@ class ProjectDocketImportController extends Controller
         foreach ($parsed as $p) {
             if ($p['skip']) { $skipped++; continue; }
 
-            $cname = strtolower(trim($p['client_name']));
-            $client = $clientMap[$cname] ?? null;
+            $cname  = strtolower(trim($p['client_name']));
+            $match  = $clientMap[$cname] ?? null;   // ['client'=>Client, 'matched_as'=>string, 'score'=>int]
+            $client = $match['client'] ?? null;
 
             if ($client) {
-                $knownClients[$cname] = true;
+                $knownClients[$cname] = ['name' => $p['client_name'], 'matched_as' => $match['matched_as'], 'score' => $match['score']];
                 $docket = $client->client_code . $p['seq'] . $p['office_code'] . $p['service_code'];
             } else {
                 $unknownClients[$cname] = $p['client_name'];
@@ -152,7 +156,10 @@ class ProjectDocketImportController extends Controller
             if ($p['patent_granted'] ?? false) $granted++;
 
             if (count($sampleRows) < 10) {
-                $sampleRows[] = array_merge($p, ['tentative_docket' => $docket]);
+                $sampleRows[] = array_merge($p, [
+                    'tentative_docket' => $docket,
+                    'client_match'     => $match ? ['matched_as' => $match['matched_as'], 'score' => $match['score']] : null,
+                ]);
             }
         }
 
@@ -171,6 +178,7 @@ class ProjectDocketImportController extends Controller
             'unknown_clients'  => array_values($unknownClients),
             'docket_conflicts' => $conflicts,
             'sample'           => $sampleRows,
+            'fuzzy_matches'    => array_values($knownClients),
         ]);
     }
 
@@ -186,23 +194,29 @@ class ProjectDocketImportController extends Controller
         }
 
         $request->validate([
-            'file'               => 'required|file|mimes:xlsx,xls',
-            'skip_conflicts'     => 'boolean',
-            'skip_transferred'   => 'boolean',
-            'default_partner_id' => 'nullable|integer|exists:users,id',
-            'default_manager_id' => 'nullable|integer|exists:users,id',
+            'file'                  => 'required|file|mimes:xlsx,xls',
+            'skip_conflicts'        => 'boolean',
+            'skip_transferred'      => 'boolean',
+            'skip_unknown_clients'  => 'boolean',
+            'default_partner_id'    => 'nullable|integer|exists:users,id',
+            'default_manager_id'    => 'nullable|integer|exists:users,id',
         ]);
 
-        $skipConflicts    = (bool) $request->input('skip_conflicts', true);
-        $skipTransferred  = (bool) $request->input('skip_transferred', true);
-        $defaultPartnerId = $request->input('default_partner_id', $user->id);
-        $defaultManagerId = $request->input('default_manager_id', $user->id);
+        $skipConflicts       = (bool) $request->input('skip_conflicts', true);
+        $skipTransferred     = (bool) $request->input('skip_transferred', true);
+        $skipUnknownClients  = (bool) $request->input('skip_unknown_clients', false);
+        $defaultPartnerId    = $request->input('default_partner_id', $user->id);
+        $defaultManagerId    = $request->input('default_manager_id', $user->id);
 
         $rows = $this->readExcel($request->file('file'));
         if (count($rows) > 3000) {
             return response()->json(['message' => 'File contains ' . count($rows) . ' rows — maximum allowed is 3,000 per upload. Split into smaller files.'], 422);
         }
         $parsed = array_map(fn ($r) => $this->parseRow($r), $rows);
+
+        // Build fuzzy index once for the whole batch
+        $allClients  = Client::select('id', 'client_code', 'company_name', 'legal_name')->get();
+        $clientIndex = $this->buildClientIndex($allClients);
 
         $imported = 0;
         $skipped  = 0;
@@ -218,14 +232,22 @@ class ProjectDocketImportController extends Controller
             try {
                 DB::transaction(function () use (
                     $p, $user, $defaultPartnerId, $defaultManagerId,
-                    $skipConflicts, $rowNum, &$imported, &$skipped, &$errors
+                    $skipConflicts, $skipUnknownClients, $clientIndex,
+                    $rowNum, &$imported, &$skipped, &$errors
                 ) {
-                    // Resolve client (create if not found)
-                    $client = Client::whereRaw('LOWER(TRIM(company_name)) = ?', [strtolower(trim($p['client_name']))])
-                                    ->lockForUpdate()
-                                    ->first();
+                    // Fuzzy-resolve client, then lock the matched row
+                    $match  = $this->resolveClient($p['client_name'], $clientIndex);
+                    $client = null;
+
+                    if ($match) {
+                        $client = Client::where('id', $match['client']->id)->lockForUpdate()->first();
+                    }
 
                     if (! $client) {
+                        if ($skipUnknownClients) {
+                            $skipped++;
+                            return;
+                        }
                         $client = $this->createMinimalClient($p, $user);
                     }
 
@@ -281,6 +303,143 @@ class ProjectDocketImportController extends Controller
         Cache::increment('dashboard_v');
 
         return response()->json(['imported' => $imported, 'skipped' => $skipped, 'errors' => $errors]);
+    }
+
+    // ── Client fuzzy matching ──────────────────────────────────────────────
+
+    /**
+     * Common company-type suffixes we normalise away before comparing.
+     * Order matters: longer tokens first so "Private Limited" matches before "Limited".
+     */
+    private const SUFFIX_MAP = [
+        'private limited'     => '',
+        'pvt. ltd.'           => '',
+        'pvt ltd'             => '',
+        'pvt. ltd'            => '',
+        'p. ltd.'             => '',
+        'p ltd'               => '',
+        'p. ltd'              => '',
+        '(p) ltd'             => '',
+        '(p) limited'         => '',
+        'pty ltd'             => '',
+        'pty. ltd.'           => '',
+        'pty limited'         => '',
+        'pte. ltd.'           => '',
+        'pte ltd'             => '',
+        'incorporated'        => '',
+        'inc.'                => '',
+        'inc'                 => '',
+        'limited'             => '',
+        'ltd.'                => '',
+        'ltd'                 => '',
+        'llc'                 => '',
+        'llp'                 => '',
+        'opc pvt. ltd.'       => '',
+        'opc pvt ltd'         => '',
+        'gmbh'                => '',
+        'sdn bhd'             => '',
+        'co., ltd.'           => '',
+        'co. ltd'             => '',
+        'solutions'           => '',
+        'technologies'        => '',
+        'technology'          => '',
+        'innovations'         => '',
+        'innovation'          => '',
+        'enterprises'         => '',
+        'systems'             => '',
+        'services'            => '',
+        'labs'                => '',
+        'lab'                 => '',
+        'private'             => '',
+        'public'              => '',
+        'foundation'          => '',
+        'university'          => '',
+    ];
+
+    /**
+     * Normalise a company name for matching:
+     * lowercase → strip punctuation → collapse suffix words → trim whitespace.
+     */
+    private function normaliseName(string $name): string
+    {
+        $s = strtolower(trim($name));
+        // Remove punctuation except spaces
+        $s = preg_replace('/[^a-z0-9 ]/', ' ', $s);
+        // Apply suffix removals (longest first is guaranteed by SUFFIX_MAP order)
+        foreach (self::SUFFIX_MAP as $suffix => $_) {
+            $s = preg_replace('/\b' . preg_quote($suffix, '/') . '\b/', ' ', $s);
+        }
+        // Collapse multiple spaces
+        return preg_replace('/\s+/', ' ', trim($s));
+    }
+
+    /**
+     * Build an index of all existing clients keyed by normalised name.
+     * Each entry: ['client' => Client, 'norm' => string]
+     */
+    private function buildClientIndex($clients): array
+    {
+        $index = [];
+        foreach ($clients as $c) {
+            $names = array_filter(array_unique([$c->company_name, $c->legal_name ?? '']));
+            foreach ($names as $name) {
+                $norm = $this->normaliseName($name);
+                if ($norm !== '') {
+                    $index[] = ['client' => $c, 'norm' => $norm, 'original' => $name];
+                }
+            }
+        }
+        return $index;
+    }
+
+    /**
+     * Resolve a DocketTrak client name to an existing Client.
+     *
+     * Resolution order:
+     *  1. Exact match (fastest)
+     *  2. Normalised-suffix match
+     *  3. Fuzzy similar_text() match ≥ 82% similarity
+     *
+     * Returns ['client' => Client, 'matched_as' => string, 'score' => int] or null.
+     */
+    private function resolveClient(string $rawName, array $index): ?array
+    {
+        $rawLower = strtolower(trim($rawName));
+
+        // Pass 1: exact DB lookup (covers cases where name is already identical)
+        $exact = Client::whereRaw('LOWER(TRIM(company_name)) = ?', [$rawLower])
+                       ->orWhereRaw('LOWER(TRIM(legal_name)) = ?', [$rawLower])
+                       ->first();
+        if ($exact) {
+            return ['client' => $exact, 'matched_as' => $rawName, 'score' => 100];
+        }
+
+        // Pass 2 & 3: normalised + fuzzy on in-memory index
+        $normInput = $this->normaliseName($rawName);
+        if ($normInput === '') return null;
+
+        $bestScore  = 0;
+        $bestEntry  = null;
+
+        foreach ($index as $entry) {
+            // Normalised exact
+            if ($entry['norm'] === $normInput) {
+                return ['client' => $entry['client'], 'matched_as' => $entry['original'], 'score' => 99];
+            }
+            // Fuzzy
+            similar_text($normInput, $entry['norm'], $pct);
+            $score = (int) round($pct);
+            if ($score > $bestScore) {
+                $bestScore = $score;
+                $bestEntry = $entry;
+            }
+        }
+
+        if ($bestScore >= 82 && $bestEntry !== null) {
+            return ['client' => $bestEntry['client'], 'matched_as' => $bestEntry['original'], 'score' => $bestScore];
+        }
+
+        return null;
     }
 
     // ── Row parsing ────────────────────────────────────────────────────────
