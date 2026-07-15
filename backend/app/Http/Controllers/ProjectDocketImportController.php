@@ -109,7 +109,10 @@ class ProjectDocketImportController extends Controller
         }
 
         $request->validate(['file' => 'required|file|mimes:xlsx,xls']);
-        $rows   = $this->readExcel($request->file('file'));
+        $rows = $this->readExcel($request->file('file'));
+        if (count($rows) > 3000) {
+            return response()->json(['message' => 'File contains ' . count($rows) . ' rows — maximum allowed is 3,000 per upload. Split into smaller files.'], 422);
+        }
         $parsed = array_map(fn ($r) => $this->parseRow($r), $rows);
 
         // Bulk client lookup (read-only, no locking)
@@ -195,7 +198,10 @@ class ProjectDocketImportController extends Controller
         $defaultPartnerId = $request->input('default_partner_id', $user->id);
         $defaultManagerId = $request->input('default_manager_id', $user->id);
 
-        $rows   = $this->readExcel($request->file('file'));
+        $rows = $this->readExcel($request->file('file'));
+        if (count($rows) > 3000) {
+            return response()->json(['message' => 'File contains ' . count($rows) . ' rows — maximum allowed is 3,000 per upload. Split into smaller files.'], 422);
+        }
         $parsed = array_map(fn ($r) => $this->parseRow($r), $rows);
 
         $imported = 0;

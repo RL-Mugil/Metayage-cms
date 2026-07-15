@@ -88,8 +88,8 @@ Route::middleware(['auth:sanctum', 'throttle:120,1'])->group(function () {
     Route::get('/projects/{id}/detail', [ProjectController::class, 'detail']);
     Route::post('/projects/{id}/elevate', [ProjectController::class, 'elevate']);
     Route::post('/projects/{id}/link-predecessor', [ProjectController::class, 'linkPredecessor']);
-    Route::post('/projects/docket-import/preview', [\App\Http\Controllers\ProjectDocketImportController::class, 'preview'])->middleware('throttle:10,1');
-    Route::post('/projects/docket-import/import', [\App\Http\Controllers\ProjectDocketImportController::class, 'import'])->middleware('throttle:5,1');
+    Route::post('/projects/docket-import/preview', [\App\Http\Controllers\ProjectDocketImportController::class, 'preview'])->middleware('throttle:60,1');
+    Route::post('/projects/docket-import/import', [\App\Http\Controllers\ProjectDocketImportController::class, 'import'])->middleware('throttle:30,1');
 
     // Tasks & Time tracking
     Route::get('/tasks', [TaskController::class, 'index']);
