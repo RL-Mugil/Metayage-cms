@@ -799,76 +799,110 @@ class ProjectDocketImportController extends Controller
     // ── Excel reader ───────────────────────────────────────────────────────
 
     /**
-     * Read xlsx via raw ZIP/XML parsing (no PhpSpreadsheet dependency required).
-     * Handles sparse rows where Excel omits cells for empty trailing columns.
+     * Read xlsx via DOMDocument + DOMXPath (namespace-safe).
+     *
+     * SimpleXML's registerXPathNamespace() is NOT inherited by child nodes,
+     * causing "Undefined namespace prefix" on every child xpath() call.
+     * DOMXPath registers once on the document and works across all queries.
+     *
+     * Handles sparse rows: Excel omits empty trailing cells, so we use the
+     * cell address attribute (r="A1", "B3"…) to place values by column index.
      */
     private function readExcel(\Illuminate\Http\UploadedFile $file): array
     {
         $path = $file->getRealPath();
         $zip  = new \ZipArchive();
         if ($zip->open($path) !== true) {
-            abort(422, 'Cannot read the uploaded Excel file.');
+            abort(422, 'Cannot open the uploaded Excel file — ensure it is a valid .xlsx.');
         }
 
         $ssXml = $zip->getFromName('xl/sharedStrings.xml') ?: '';
         $wsXml = $zip->getFromName('xl/worksheets/sheet1.xml') ?: '';
         $zip->close();
 
-        // Shared strings
+        if ($wsXml === '') {
+            abort(422, 'Excel file has no sheet1 — please export as .xlsx from DocketTrak.');
+        }
+
+        $ns = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main';
+
+        // ── Shared strings ─────────────────────────────────────────────────
         $strings = [];
         if ($ssXml !== '') {
-            $tree = simplexml_load_string($ssXml);
-            $ns   = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main';
-            $tree->registerXPathNamespace('s', $ns);
-            foreach ($tree->xpath('//s:si') as $si) {
-                $si->registerXPathNamespace('s', $ns);
-                $parts = $si->xpath('.//s:t');
-                $strings[] = implode('', array_map(fn ($t) => (string) $t, $parts));
+            $ssDom = new \DOMDocument();
+            $ssDom->loadXML($ssXml, LIBXML_COMPACT | LIBXML_NONET);
+            $ssXp  = new \DOMXPath($ssDom);
+            $ssXp->registerNamespace('s', $ns);
+            foreach ($ssXp->query('//s:si') as $si) {
+                $parts = $ssXp->query('.//s:t', $si);
+                $text  = '';
+                foreach ($parts as $t) {
+                    $text .= $t->textContent;
+                }
+                $strings[] = $text;
             }
         }
 
-        $cellVal = function ($c) use ($strings): string {
-            $t = (string) ($c['t'] ?? '');
-            $v = isset($c->v) ? (string) $c->v : '';
-            return $t === 's' ? ($strings[(int) $v] ?? '') : $v;
+        // ── Worksheet ──────────────────────────────────────────────────────
+        $wsDom = new \DOMDocument();
+        $wsDom->loadXML($wsXml, LIBXML_COMPACT | LIBXML_NONET);
+        $wsXp  = new \DOMXPath($wsDom);
+        $wsXp->registerNamespace('s', $ns);
+
+        /** Resolve a cell's display value (shared-string lookup or raw). */
+        $cellVal = function (\DOMElement $c) use ($strings, $wsXp, $ns): string {
+            $t     = $c->getAttribute('t');
+            $vList = $wsXp->query('s:v', $c);
+            $v     = $vList->length > 0 ? $vList->item(0)->textContent : '';
+            if ($t === 's') {
+                return $strings[(int) $v] ?? '';
+            }
+            // Inline string
+            if ($t === 'inlineStr') {
+                $is = $wsXp->query('.//s:t', $c);
+                $out = '';
+                foreach ($is as $t) { $out .= $t->textContent; }
+                return $out;
+            }
+            return $v;
         };
 
-        // Cell address → column index (A=0, B=1, … Z=25, AA=26 …)
-        $colIndex = function (string $addr): int {
-            preg_match('/^([A-Z]+)/', $addr, $m);
-            $letters = $m[1];
+        /** "B3" → 1, "AA1" → 26 (0-indexed column). */
+        $colIndex = static function (string $addr): int {
+            preg_match('/^([A-Z]+)/', strtoupper($addr), $m);
             $idx = 0;
-            foreach (str_split($letters) as $ch) {
-                $idx = $idx * 26 + (ord($ch) - ord('A') + 1);
+            foreach (str_split($m[1]) as $ch) {
+                $idx = $idx * 26 + (ord($ch) - 64);
             }
             return $idx - 1;
         };
 
-        $ws   = simplexml_load_string($wsXml);
-        $ws->registerXPathNamespace('s', 'http://schemas.openxmlformats.org/spreadsheetml/2006/main');
-        $wsRows = $ws->xpath('//s:row');
+        $wsRows = $wsXp->query('//s:row');
+        if ($wsRows->length === 0) return [];
 
-        if (empty($wsRows)) return [];
+        // ── Headers from row 1 ──────────────────────────────────────────────
+        $firstRow    = $wsRows->item(0);
+        $headerCells = $wsXp->query('s:c', $firstRow);
 
-        // Determine max columns from header row using cell addresses
-        $headerCells = $wsRows[0]->xpath('s:c');
         $maxCol = 0;
         foreach ($headerCells as $c) {
-            $maxCol = max($maxCol, $colIndex((string) $c['r']));
+            $maxCol = max($maxCol, $colIndex($c->getAttribute('r')));
         }
         $headerCount = $maxCol + 1;
 
-        // Build headers array indexed by column position
         $headers = array_fill(0, $headerCount, '');
         foreach ($headerCells as $c) {
-            $headers[$colIndex((string) $c['r'])] = $cellVal($c);
+            $headers[$colIndex($c->getAttribute('r'))] = $cellVal($c);
         }
 
+        // ── Data rows ───────────────────────────────────────────────────────
         $rows = [];
-        foreach (array_slice($wsRows, 1) as $wsRow) {
-            $vals = array_fill(0, $headerCount, '');
-            foreach ($wsRow->xpath('s:c') as $c) {
-                $ci = $colIndex((string) $c['r']);
+        for ($i = 1; $i < $wsRows->length; $i++) {
+            $wsRow = $wsRows->item($i);
+            $cells = $wsXp->query('s:c', $wsRow);
+            $vals  = array_fill(0, $headerCount, '');
+            foreach ($cells as $c) {
+                $ci = $colIndex($c->getAttribute('r'));
                 if ($ci < $headerCount) {
                     $vals[$ci] = $cellVal($c);
                 }
