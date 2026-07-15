@@ -108,12 +108,20 @@ class ProjectDocketImportController extends Controller
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
-        $request->validate(['file' => 'required|file|mimes:xlsx,xls']);
+        $request->validate([
+            'file'         => 'required|file|mimes:xlsx,xls',
+            'mapping_file' => 'nullable|file|mimes:xlsx,xls',
+        ]);
         $rows = $this->readExcel($request->file('file'));
         if (count($rows) > 3000) {
             return response()->json(['message' => 'File contains ' . count($rows) . ' rows — maximum allowed is 3,000 per upload. Split into smaller files.'], 422);
         }
         $parsed = array_map(fn ($r) => $this->parseRow($r), $rows);
+
+        // Load explicit name→client_code mapping from the mapping file (if supplied)
+        $explicitMap = $request->hasFile('mapping_file')
+            ? $this->loadMappingFile($request->file('mapping_file'))
+            : [];
 
         // Build fuzzy-match index: all existing clients keyed by normalised name
         $allClients   = Client::select('id', 'client_code', 'company_name', 'legal_name')->get();
@@ -123,7 +131,7 @@ class ProjectDocketImportController extends Controller
         $allNames = array_unique(array_filter(array_column($parsed, 'client_name')));
         $clientMap = [];
         foreach ($allNames as $name) {
-            $clientMap[strtolower(trim($name))] = $this->resolveClient($name, $clientIndex);
+            $clientMap[strtolower(trim($name))] = $this->resolveClient($name, $clientIndex, $explicitMap);
         }
 
         $total     = count($parsed);
@@ -195,6 +203,7 @@ class ProjectDocketImportController extends Controller
 
         $request->validate([
             'file'                  => 'required|file|mimes:xlsx,xls',
+            'mapping_file'          => 'nullable|file|mimes:xlsx,xls',
             'skip_conflicts'        => 'boolean',
             'skip_transferred'      => 'boolean',
             'skip_unknown_clients'  => 'boolean',
@@ -213,6 +222,11 @@ class ProjectDocketImportController extends Controller
             return response()->json(['message' => 'File contains ' . count($rows) . ' rows — maximum allowed is 3,000 per upload. Split into smaller files.'], 422);
         }
         $parsed = array_map(fn ($r) => $this->parseRow($r), $rows);
+
+        // Load explicit mapping if provided
+        $explicitMap = $request->hasFile('mapping_file')
+            ? $this->loadMappingFile($request->file('mapping_file'))
+            : [];
 
         // Build fuzzy index once for the whole batch
         $allClients  = Client::select('id', 'client_code', 'company_name', 'legal_name')->get();
@@ -235,8 +249,8 @@ class ProjectDocketImportController extends Controller
                     $skipConflicts, $skipUnknownClients, $clientIndex,
                     $rowNum, &$imported, &$skipped, &$errors
                 ) {
-                    // Fuzzy-resolve client, then lock the matched row
-                    $match  = $this->resolveClient($p['client_name'], $clientIndex);
+                    // Fuzzy-resolve client (explicit map takes priority), then lock the matched row
+                    $match  = $this->resolveClient($p['client_name'], $clientIndex, $explicitMap);
                     $client = null;
 
                     if ($match) {
@@ -393,20 +407,58 @@ class ProjectDocketImportController extends Controller
     }
 
     /**
+     * Parse a ClientMapping.xlsx (the one we generate/user edits) into an
+     * explicit name→client_code lookup.
+     *
+     * Expects columns: A=DocketTrak Name, B=Client Code (user-edited)
+     * Returns ['normalised_docket_trak_name' => 'CLIENT_CODE', ...]
+     */
+    private function loadMappingFile(\Illuminate\Http\UploadedFile $file): array
+    {
+        $rows = $this->readExcelRaw($file);
+        $map  = [];
+        foreach ($rows as $row) {
+            // Column headers from our generated file: "DocketTrak Name..." and "Client Code..."
+            // We accept any column whose header starts with "DocketTrak" and "Client Code"
+            $name = '';
+            $code = '';
+            foreach ($row as $header => $value) {
+                $hl = strtolower(trim($header));
+                if (str_starts_with($hl, 'dockettrak')) $name = trim($value);
+                if (str_starts_with($hl, 'client code')) $code = trim($value);
+            }
+            if ($name !== '' && $code !== '') {
+                $map[strtolower(trim($name))] = strtoupper($code);
+            }
+        }
+        return $map;
+    }
+
+    /**
      * Resolve a DocketTrak client name to an existing Client.
      *
      * Resolution order:
-     *  1. Exact match (fastest)
-     *  2. Normalised-suffix match
-     *  3. Fuzzy similar_text() match ≥ 82% similarity
+     *  0. Explicit mapping file (highest priority — user-confirmed)
+     *  1. Exact DB match on company_name or legal_name
+     *  2. Normalised-suffix exact match
+     *  3. Fuzzy similar_text() ≥ 82% similarity
      *
      * Returns ['client' => Client, 'matched_as' => string, 'score' => int] or null.
      */
-    private function resolveClient(string $rawName, array $index): ?array
+    private function resolveClient(string $rawName, array $index, array $explicitMap = []): ?array
     {
         $rawLower = strtolower(trim($rawName));
 
-        // Pass 1: exact DB lookup (covers cases where name is already identical)
+        // Pass 0: explicit mapping file takes priority
+        if (isset($explicitMap[$rawLower])) {
+            $code   = $explicitMap[$rawLower];
+            $client = Client::where('client_code', $code)->first();
+            if ($client) {
+                return ['client' => $client, 'matched_as' => $client->company_name . ' (mapped)', 'score' => 100];
+            }
+        }
+
+        // Pass 1: exact DB lookup
         $exact = Client::whereRaw('LOWER(TRIM(company_name)) = ?', [$rawLower])
                        ->orWhereRaw('LOWER(TRIM(legal_name)) = ?', [$rawLower])
                        ->first();
@@ -418,15 +470,13 @@ class ProjectDocketImportController extends Controller
         $normInput = $this->normaliseName($rawName);
         if ($normInput === '') return null;
 
-        $bestScore  = 0;
-        $bestEntry  = null;
+        $bestScore = 0;
+        $bestEntry = null;
 
         foreach ($index as $entry) {
-            // Normalised exact
             if ($entry['norm'] === $normInput) {
                 return ['client' => $entry['client'], 'matched_as' => $entry['original'], 'score' => 99];
             }
-            // Fuzzy
             similar_text($normInput, $entry['norm'], $pct);
             $score = (int) round($pct);
             if ($score > $bestScore) {
@@ -959,6 +1009,15 @@ class ProjectDocketImportController extends Controller
         if ($p['extra_notes']) $parts[] = 'Parse notes: ' . $p['extra_notes'];
         $parts[] = 'Imported from DocketTrak (ref: ' . $p['raw_ref'] . ')';
         return implode("\n", $parts);
+    }
+
+    /**
+     * readExcelRaw — same as readExcel but for any xlsx (no DocketTrak-specific assumptions).
+     * Used for reading the mapping file.
+     */
+    private function readExcelRaw(\Illuminate\Http\UploadedFile $file): array
+    {
+        return $this->readExcel($file);
     }
 
     // ── Excel reader ───────────────────────────────────────────────────────
