@@ -19,9 +19,9 @@ class Project extends Model
         'idf_received_date', 'advance_payment_date', 'partial_payment_date', 'full_payment_date',
         'status', 'urgency', 'tags',
         // IP matter fields
-        'docket_number', 'application_number', 'patent_office_code', 'service_code',
+        'docket_number', 'docket_trak_ref', 'application_number', 'patent_office_code', 'service_code',
         'case_type', 'filing_date', 'patent_granted', 'secondary_manager_id', 'patent_engineer_id', 'notes', 'circle',
-        'google_task_ids',
+        'google_task_ids', 'patent_application_id',
     ];
 
     protected $casts = [
@@ -48,6 +48,11 @@ class Project extends Model
     public function parentProject(): BelongsTo
     {
         return $this->belongsTo(Project::class, 'parent_project_id');
+    }
+
+    public function patentApplication(): BelongsTo
+    {
+        return $this->belongsTo(PatentApplication::class, 'patent_application_id');
     }
 
     public function partner(): BelongsTo

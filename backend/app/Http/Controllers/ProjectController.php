@@ -62,14 +62,20 @@ class ProjectController extends Controller
                 SUM(CASE WHEN status = 'Open' THEN 1 ELSE 0 END) as open,
                 SUM(CASE WHEN status = 'In Progress' THEN 1 ELSE 0 END) as in_progress,
                 SUM(CASE WHEN status = 'On Hold' THEN 1 ELSE 0 END) as on_hold,
+                SUM(CASE WHEN status = 'Completed' THEN 1 ELSE 0 END) as completed,
+                SUM(CASE WHEN status = 'Closed' THEN 1 ELSE 0 END) as closed,
+                SUM(CASE WHEN patent_granted = true OR status = 'Granted' THEN 1 ELSE 0 END) as granted,
                 SUM(CASE WHEN hard_deadline IS NOT NULL AND hard_deadline < ? AND status NOT IN ('Closed', 'Completed') THEN 1 ELSE 0 END) as overdue
             ", [$today])->first();
             return [
-                'total' => (int) ($row?->total ?? 0),
-                'open' => (int) ($row?->open ?? 0),
+                'total'       => (int) ($row?->total ?? 0),
+                'open'        => (int) ($row?->open ?? 0),
                 'in_progress' => (int) ($row?->in_progress ?? 0),
-                'on_hold' => (int) ($row?->on_hold ?? 0),
-                'overdue' => (int) ($row?->overdue ?? 0),
+                'on_hold'     => (int) ($row?->on_hold ?? 0),
+                'completed'   => (int) ($row?->completed ?? 0),
+                'closed'      => (int) ($row?->closed ?? 0),
+                'granted'     => (int) ($row?->granted ?? 0),
+                'overdue'     => (int) ($row?->overdue ?? 0),
             ];
         });
 
@@ -79,7 +85,17 @@ class ProjectController extends Controller
     public function index(Request $request)
     {
         $user = $request->user();
-        $query = Project::with('client', 'partner', 'manager', 'patentEngineer', 'stages');
+        // Load only the minimal relations needed for the list view.
+        // - client: needed for display and GST-type invoice routing.
+        // - stages: limited to only the In Progress stage (not all 7 per project).
+        //   This cuts response size by ~7× vs eager-loading the full stage list.
+        // - partner/manager/patentEngineer are intentionally omitted — the frontend
+        //   falls back to the separately-loaded users array via userName().
+        $query = Project::with([
+            'client:id,client_code,company_name,legal_name,nationality,gst_type',
+            'stages' => fn ($q) => $q->where('status', 'In Progress')
+                                     ->select('project_id', 'stage_name', 'status', 'sequence_order'),
+        ]);
 
         // RBAC access filter
         if ($user->isClientRole()) {
@@ -125,6 +141,10 @@ class ProjectController extends Controller
                 ->whereNotIn('status', ['Closed', 'Completed']);
         }
 
+        if ($request->filled('patent_granted')) {
+            $query->where('patent_granted', (bool) $request->patent_granted);
+        }
+
         if ($request->filled('patent_engineer_id')) {
             $query->where('patent_engineer_id', (int) $request->patent_engineer_id);
         }
@@ -142,6 +162,11 @@ class ProjectController extends Controller
         if ($request->filled('lifecycle_stage')) {
             $stage = $request->lifecycle_stage;
             $query->whereHas('stages', fn ($q) => $q->where('stage_name', $stage)->where('status', 'In Progress'));
+        }
+
+        if ($request->filled('service_code')) {
+            $codes = array_map('strtoupper', array_map('trim', explode(',', $request->service_code)));
+            count($codes) > 1 ? $query->whereIn('service_code', $codes) : $query->where('service_code', $codes[0]);
         }
 
         $sortBy = in_array($request->sort_by, ['project_name', 'docket_number', 'status', 'hard_deadline', 'filing_date'])
@@ -187,6 +212,37 @@ class ProjectController extends Controller
         $counts = $q->selectRaw('ps.stage_name, COUNT(*) as count')
             ->groupBy('ps.stage_name')
             ->pluck('count', 'stage_name');
+
+        return response()->json($counts);
+    }
+
+    /** Count of active projects per service code (for lifecycle diagram node badges). */
+    public function lifecycleServiceStats(Request $request)
+    {
+        $user = $request->user();
+
+        $q = Project::query()->whereNull('deleted_at')->whereNotNull('service_code');
+
+        if ($user->isClientRole()) {
+            $client = $request->attributes->get('portal_client') ?? Client::forUser($user);
+            if (! $client) return response()->json([]);
+            $q->where('client_id', $client->id);
+        } elseif ($user->isGalvanizer()) {
+            $rf = $request->input('role_filter');
+            $q->where($this->galvanizerWhereClause($user, $rf));
+        } elseif (in_array($user->role, ['partner', 'director'], true)) {
+            $rf = $request->input('role_filter');
+            if ($rf && $rf !== 'all') {
+                $q->where($this->analystWhereClause($user, $rf));
+            }
+        } elseif ($user->role === 'associate') {
+            $q->where($this->analystWhereClause($user, $request->input('role_filter')));
+        }
+
+        $counts = $q->selectRaw('UPPER(service_code) as svc, COUNT(*) as cnt')
+            ->whereNotIn('status', ['Closed', 'Abandoned', 'Refused'])
+            ->groupBy('svc')
+            ->pluck('cnt', 'svc');
 
         return response()->json($counts);
     }
@@ -358,8 +414,33 @@ class ProjectController extends Controller
 
         $project = Project::create($validated);
 
+        // Anchor Indian patent matters to a patent_application (the legal entity).
+        // Chained matters share their predecessor's application via parent_project_id.
+        $svc = strtoupper($validated['service_code'] ?? '');
+        $indiaPatentSvcs = [
+            'PRV', 'CPT', 'CPD', 'CVP', 'CPE', 'PCT', 'NAP', 'NPE', 'NAF', 'NPA',
+            'DVA', 'PAD', '9EP', '98A', '18F', '18A', 'FER', 'SER', 'TER',
+            'HRG', 'GRT', 'RNF', 'OPP', 'PGO', '27F', 'ROA', 'ERH', '24F',
+            'RPO', 'ABN', 'WDR',
+        ];
+        if (in_array($svc, $indiaPatentSvcs, true) && (empty($project->patent_office_code) || $project->patent_office_code === 'IN')) {
+            $parentAppId = $project->parent_project_id
+                ? Project::where('id', $project->parent_project_id)->value('patent_application_id')
+                : null;
+            $appId = $parentAppId ?: \App\Models\PatentApplication::create([
+                'client_id'          => $project->client_id,
+                'application_number' => $project->application_number,
+                'title'              => $project->invention_title ?: $project->project_name,
+                'priority_date'      => $project->priority_date,
+                'filing_date'        => $project->filing_date,
+                'legal_status'       => 'Pending',
+                'jurisdiction'       => 'IN',
+            ])->id;
+            $project->update(['patent_application_id' => $appId]);
+        }
+
         // Seed pipeline stages based on service code
-        $serviceStages = $this->stagesForServiceCode(strtoupper($validated['service_code'] ?? ''));
+        $serviceStages = $this->stagesForServiceCode($svc);
         foreach ($serviceStages as $index => $stageName) {
             ProjectStage::create([
                 'project_id'     => $project->id,
@@ -394,6 +475,37 @@ class ProjectController extends Controller
         }
 
         $project->update($validated);
+
+        // When status changes to a terminal state, clear the active pipeline stage.
+        // Granted/Completed → mark all stages Completed (case is fully done).
+        // Refused/Abandoned/Closed → clear the "In Progress" stage to Pending so
+        // the workflow history is preserved and can be resumed if status is reopened.
+        $terminalStatuses = ['Granted', 'Refused', 'Abandoned', 'Closed', 'Completed'];
+        if (array_key_exists('status', $validated) && in_array($validated['status'], $terminalStatuses, true)) {
+            $now = Carbon::now();
+            if (in_array($validated['status'], ['Granted', 'Completed'], true)) {
+                // Full completion — mark every stage done
+                $project->stages()->where('status', '!=', 'Completed')->update([
+                    'status'        => 'Completed',
+                    'actual_end_at' => $now,
+                ]);
+                $project->stages()->whereNull('actual_start_at')->update(['actual_start_at' => $now]);
+            } else {
+                // Soft terminal (Refused/Abandoned/Closed) — just clear the active stage
+                $project->stages()->where('status', 'In Progress')->update([
+                    'status'        => 'Pending',
+                    'actual_start_at' => null,
+                    'actual_end_at'   => null,
+                ]);
+            }
+            if ($validated['status'] === 'Granted') {
+                $project->update(['patent_granted' => true]);
+            }
+
+            // Sync the application's legal status + auto-record docket events
+            // (granted → renewal schedule + Rule 80(3) deadline; refused → review/appeal windows)
+            $this->syncApplicationLegalStatus($project, $validated['status'], $user->id);
+        }
 
         // When filing_date is set, auto-advance the "Filing" stage to "Filed"
         if (array_key_exists('filing_date', $validated) && !empty($validated['filing_date'])) {
@@ -460,6 +572,15 @@ class ProjectController extends Controller
                 'message' => "Project status updated to {$request->status}",
                 'project' => $project->fresh(),
             ]);
+        }
+
+        // Block stage changes when the case is in a terminal status (Closed/Completed allow workflow editing)
+        $terminalStatuses = ['Granted', 'Refused', 'Abandoned'];
+        if (in_array($project->status, $terminalStatuses, true)) {
+            return response()->json([
+                'message' => "Case is {$project->status} — no workflow stage is applicable. Change the project status first to resume the pipeline.",
+                'terminal_status' => $project->status,
+            ], 422);
         }
 
         $request->validate([
@@ -532,36 +653,345 @@ class ProjectController extends Controller
         ]);
     }
 
+    // Public proxy so other controllers can call stagesForServiceCode without coupling
+    public function stagesForCode(string $svc): array
+    {
+        return $this->stagesForServiceCode($svc);
+    }
+
     private function stagesForServiceCode(string $svc): array
     {
         return match (true) {
             in_array($svc, ['PAS', 'SRH', 'PAT', 'FTO']) => [
-                // IDF must be received before search can begin
-                "Awaiting IDF from Client", "Prior Art Search", "Search Report Ready", "Search Report Shared",
+                "Matter Created",
+                "Inventor / Technology Disclosure Requested",
+                "Disclosure Received",
+                "Search Parameters Defined",
+                "Prior Art Search In Progress",
+                "Search Report Drafted",
+                "Search Report Reviewed Internally",
+                "Search Report Shared with Client",
             ],
             $svc === 'PRV' => [
-                "IDF Received", "Drafting", "Internal Review", "Awaiting Signed Forms", "Filing", "Filed",
+                "Matter Created",
+                "Inventor Disclosure Requested",
+                "Inventor Disclosure Received",
+                "Prior Art Search (Optional)",
+                "Draft Started",
+                "Draft Completed",
+                "Internal Review",
+                "Corrections Incorporated",
+                "Partner Review",
+                "Client Review",
+                "Client Approved",
+                "Forms Prepared (Form 1, 2, 3)",
+                "Government Fees Calculated",
+                "Filed with IPO",
+                "Application Number Received",
+                "Completed — CPT Deadline Set (12 months)",
             ],
-            in_array($svc, ['CPT', 'NPA']) => [
-                "IDF Received", "Claims Ready to Share", "Claims Approved", "Drafting",
-                "Internal Review", "Draft Shared with Client", "Awaiting Client Feedback",
-                "Client Comments Received", "Revised Draft Shared", "Drafted",
-                "Awaiting Signed Forms", "Filing", "Filed — Waiting for FER or Grant",
+            in_array($svc, ['CPT', 'CPE']) => [
+                "Matter Created",
+                "Inventor Disclosure Reviewed",
+                "Claims Drafted",
+                "Claims Shared with Client",
+                "Claims Approved by Client",
+                "Specification Drafting Started",
+                "Draft Completed",
+                "Internal Review",
+                "Corrections Incorporated",
+                "Partner Review",
+                "Draft Shared with Client",
+                "Client Feedback Received",
+                "Revised Draft Completed",
+                "Forms Prepared (Form 1, 2, 3)",
+                "Government Fees Paid",
+                "Filed with IPO",
+                "Completed — Awaiting Publication",
+            ],
+            $svc === 'CPD' => [
+                "Matter Created",
+                "Inventor Disclosure Requested",
+                "Inventor Disclosure Received",
+                "Claims Drafted",
+                "Claims Shared with Client",
+                "Claims Approved by Client",
+                "Specification Drafting Started",
+                "Draft Completed",
+                "Internal Review",
+                "Corrections Incorporated",
+                "Partner Review",
+                "Draft Shared with Client",
+                "Client Feedback Received",
+                "Revised Draft Completed",
+                "Forms Prepared (Form 1, 2, 3)",
+                "Government Fees Paid",
+                "Filed with IPO — Awaiting Publication",
+            ],
+            $svc === 'CVP' => [
+                "Matter Created",
+                "Priority Application Documents Received",
+                "Priority Date Verified",
+                "12-Month Deadline Confirmed",
+                "Claims Drafted (adapted for Indian law)",
+                "Specification Drafted",
+                "Internal Review",
+                "Partner Review",
+                "Client Approval",
+                "Forms Prepared (Form 1, 2, 3, 4 — Priority)",
+                "Filed with IPO (within 12 months of priority)",
+                "Completed — Awaiting Publication",
+            ],
+            $svc === 'PCT' => [
+                "Matter Created",
+                "Priority Date Verified",
+                "International Application Drafted",
+                "Receiving Office Selected (RO/IN or others)",
+                "International Fees Calculated",
+                "Application Filed at Receiving Office",
+                "Filing Receipt / IB Reference Received",
+                "International Search Report (ISR) Received",
+                "Written Opinion Received",
+                "Chapter II Examination (Optional)",
+                "Client Review of ISR / Written Opinion",
+                "National Phase Entry Deadline Set (India: 31 months from priority)",
+                "International Publication Confirmed (18 months)",
+                "Completed — National Phase Entry Pending",
+            ],
+            in_array($svc, ['NAP', 'NPE', 'NAF', 'NPA']) => [
+                "Matter Created",
+                "PCT Application Documents Received",
+                "31-Month National Phase Deadline Verified",
+                "National Phase Entry Decision Confirmed",
+                "Translation Prepared (if required)",
+                "National Phase Entry Application Drafted",
+                "Claims Adapted for Indian Law",
+                "Internal Review",
+                "Partner Review",
+                "Forms Prepared (Form 1, 2, 3 — National Phase)",
+                "Government Fees Paid",
+                "Filed with IPO (within 31 months)",
+                "Application Number Received",
+                "Completed — Awaiting Publication",
+            ],
+            $svc === 'DVA' => [
+                "Matter Created",
+                "Parent Application Identified",
+                "Claims to Divide Identified",
+                "Controller Objection / Invitation Noted",
+                "Divisional Claims Drafted",
+                "Specification Prepared",
+                "Internal Review",
+                "Partner Review",
+                "Client Approval",
+                "Forms Prepared (Form 1, 2)",
+                "Government Fees Paid",
+                "Filed with IPO — Linked to Parent",
+                "Completed — Awaiting Publication",
+            ],
+            $svc === 'PAD' => [
+                "Matter Created",
+                "Parent Patent Identified",
+                "Improvement / Addition Defined",
+                "Addition Claims Drafted",
+                "Claims Reviewed Internally",
+                "Partner Review",
+                "Client Approval",
+                "Forms Prepared (Form 1, 2 — Addition)",
+                "Government Fees Paid",
+                "Filed with IPO",
+                "Application Number Received",
+                "Completed — Awaiting Publication",
+            ],
+            in_array($svc, ['9EP', '98A']) => [
+                "Application Filed and Priority Date Recorded",
+                "Publication Date Calculated (18 months from earliest priority — S.11A)",
+                "Early Publication Requested (Form 9 — optional)",
+                "Published in Official Journal",
+                "Publication Number Confirmed",
+                "Completed — Ready for Examination Request",
+            ],
+            $svc === '18F' => [
+                "Application Published (18F Trigger)",
+                "RFE Deadline Docketed (31 months from earliest priority; 48 months if filed before 15.03.2024)",
+                "Examination Request Decision Made",
+                "Form 18 Prepared",
+                "Government Fee Calculated",
+                "RFE Filed with IPO",
+                "Completed — Awaiting First Examination Report",
+            ],
+            $svc === '18A' => [
+                "Application Published (18A Trigger)",
+                "RFE Deadline Docketed (31 months from earliest priority; 48 months if filed before 15.03.2024)",
+                "Grounds for Acceleration Verified (Rule 24C eligibility)",
+                "Examination Request Decision Made",
+                "Form 18A Prepared",
+                "Government Fee Calculated",
+                "RFE Filed with IPO",
+                "Completed — Awaiting First Examination Report (Expedited)",
             ],
             in_array($svc, ['FER', 'SER', 'TER']) => [
-                "FER Received", "FER Response in Progress", "FER Response Filed",
+                "Examination Report Received",
+                "Response Deadline Docketed (6 months from FER; +3 months via Form 4 — Rule 24B)",
+                "Objections Analyzed",
+                "Response Strategy Formulated",
+                "Claims Amended / Arguments Drafted",
+                "Internal Review",
+                "Partner Review",
+                "Client Communicated",
+                "Response Filed (Form 3 / 13)",
+                "Completed — Awaiting Controller Decision",
             ],
             $svc === 'HRG' => [
-                "Hearing Scheduled", "Hearing Response in Progress", "Hearing Response Filed", "Granted",
+                "Hearing Notice Received",
+                "Hearing Date Set (max 2 adjournments of 30 days each — Rule 129A)",
+                "Arguments Prepared",
+                "Prior Art / Documents Compiled",
+                "Internal Review",
+                "Partner Review",
+                "Hearing Attended",
+                "Written Submissions Filed (within 15 days of hearing — Rule 28(7))",
+                "Awaiting Hearing Order",
+            ],
+            $svc === 'GRT' => [
+                "Grant Order Received",
+                "Patent Certificate Issued",
+                "Patent Number Recorded",
+                "Accumulated Renewal Fees Docketed (due 3 months from grant recordal — Rule 80(3))",
+                "Renewal Schedule Set (Years 3–20)",
+                "Form 27 Schedule Set (once every 3 financial years)",
+                "Completed — Patent Active",
+            ],
+            $svc === 'RNF' => [
+                "Renewal Year Identified",
+                "Renewal Fee Due Date Confirmed",
+                "Renewal Decision Made by Client",
+                "Renewal Fee Paid",
+                "Completed — Next Renewal Set",
+            ],
+            $svc === 'RPO' => [
+                "Patent Lapse Identified (renewal fee missed — S.53)",
+                "Restoration Window Verified (18 months from lapse — S.60)",
+                "Restoration Petition Prepared (Form 15)",
+                "Evidence of Unintentional Lapse Compiled",
+                "Restoration Petition Filed",
+                "Controller Decision Received",
+                "Completed — Patent Restored or Ceased",
+            ],
+            $svc === 'ABN' => [
+                "Abandonment Trigger Identified (missed response deadline — S.21(1))",
+                "Rule 138 Extension Window Evaluated (up to 6 months)",
+                "Client Advised of Options",
+                "Extension Petition Filed / Matter Closed",
+                "Completed — Restored to Prosecution or Abandoned",
+            ],
+            $svc === 'PGO' => [
+                "Pre-Grant Opposition Received / Filed (S.25(1))",
+                "Representation Analyzed",
+                "Reply Statement Drafted (within 2 months of notice — Rule 55(4))",
+                "Evidence Prepared",
+                "Reply Filed with IPO",
+                "Hearing Scheduled (if requested)",
+                "Hearing Attended",
+                "Controller Order Received",
+                "Completed — Application Proceeds or Refused",
+            ],
+            $svc === 'WDR' => [
+                "Withdrawal Decision by Client",
+                "Pre-Publication Check (withdraw before publication to preserve secrecy — S.11B(4))",
+                "Withdrawal Request Prepared",
+                "Withdrawal Request Filed",
+                "Withdrawal Recorded by IPO",
+                "Completed — Application Withdrawn",
+            ],
+            $svc === 'OPP' => [
+                "Post-Grant Opposition Filed / Received (S.25(2) — within 12 months of grant publication)",
+                "Opposition Petition Analyzed",
+                "Reply Statement Drafted",
+                "Evidence Affidavit Prepared",
+                "Evidence of Opponent Received",
+                "Evidence Reply Prepared",
+                "Hearing Scheduled",
+                "Hearing Arguments Prepared",
+                "Hearing Attended",
+                "Order Received",
+                "Completed — Patent Maintained or Revoked",
+            ],
+            $svc === '27F' => [
+                "Form 27 Due Date Identified (once every 3 financial years)",
+                "Working Statement Prepared",
+                "Client Approval",
+                "Form 27 Filed",
+            ],
+            $svc === 'ROA' => [
+                "Refusal Order Received",
+                "Review Petition Evaluated (S.77(1)(f) — within 1 month)",
+                "Appeal Decision Made (High Court — S.117A)",
+                "Completed — Review/Appeal Filed or Matter Closed",
+            ],
+            $svc === 'ERH' => [
+                "Appeal Decision Made",
+                "Appeal Filed at High Court (S.117A)",
+                "Grounds of Appeal Prepared",
+                "Counter-Statement by Respondent Received",
+                "Reply Filed",
+                "Oral Arguments Scheduled",
+                "Hearing Attended",
+                "Judgment / Order Received",
+                "Completed — Decision",
+            ],
+            $svc === '24F' => [
+                "Revocation Petition Received",
+                "Reply Statement Prepared",
+                "Evidence Filed",
+                "Counter-Evidence Received",
+                "Hearing Scheduled",
+                "Hearing Attended",
+                "Order Received",
+                "Completed — Patent Maintained or Revoked",
             ],
             default => [
-                "Invention Disclosure", "Patent Search", "Search Report",
-                "Provisional or Complete Application", "Provisional Filing", "Patent Drafting",
-                "Applicant/Inventor Review", "Filing with Patent Office", "First Examination Report",
-                "FER Response Preparation", "FER Response Filing",
-                "Hearing with Examiner", "Hearing Response Preparation", "Hearing Response Filing",
+                "Matter Created",
+                "Documentation Received",
+                "Work In Progress",
+                "Internal Review",
+                "Partner Review",
+                "Client Approval",
+                "Filing / Submission",
+                "Completed",
             ],
         };
+    }
+
+    /**
+     * Work status (matter) → legal status (application) sync.
+     * Granted/Refused also auto-record docket events so statutory
+     * deadlines (Rule 80(3) renewals, S.77(1)(f)/S.117A windows) are generated.
+     */
+    private function syncApplicationLegalStatus(Project $project, string $workStatus, int $userId): void
+    {
+        if (!$project->patent_application_id) {
+            return;
+        }
+        $app = \App\Models\PatentApplication::find($project->patent_application_id);
+        if (!$app) {
+            return;
+        }
+
+        try {
+            match ($workStatus) {
+                'Granted' => \App\Support\DocketRules::recordEvent(
+                    'granted', Carbon::now(), $project->id, $app->id, 'Auto: project status set to Granted', $userId
+                ),
+                'Refused' => \App\Support\DocketRules::recordEvent(
+                    'refused', Carbon::now(), $project->id, $app->id, 'Auto: project status set to Refused', $userId
+                ),
+                'Abandoned' => $app->update(['legal_status' => 'Abandoned']),
+                default     => null,
+            };
+        } catch (\Throwable $e) {
+            report($e); // legal-status sync must never break the status update itself
+        }
     }
 
     private function reseedStages(Project $project): void
@@ -597,24 +1027,54 @@ class ProjectController extends Controller
     private const SERVICE_ORDER = [
         'PAS' => 1, 'SRH' => 1, 'PAT' => 1, 'FTO' => 1,
         'PRV' => 2,
-        'CPT' => 3, 'NPA' => 3,
-        'FER' => 4, 'SER' => 4, 'TER' => 4,
-        'HRG' => 5,
+        'CPT' => 3, 'CPD' => 3, 'CVP' => 3, 'CPE' => 3,
+        'PCT' => 3, 'NAP' => 3, 'NPE' => 3, 'NAF' => 3, 'NPA' => 3,
+        'DVA' => 3, 'PAD' => 3,
+        '9EP' => 4, '98A' => 4, '18F' => 4, '18A' => 4,
+        'FER' => 5, 'SER' => 5, 'TER' => 5,
+        'HRG' => 6, 'PGO' => 6,
+        'GRT' => 7,
+        'RNF' => 8, 'OPP' => 8, '27F' => 8, 'ROA' => 8,
+        'ERH' => 9, '24F' => 9, 'RPO' => 9, 'ABN' => 9, 'WDR' => 9,
     ];
 
-    // ── Valid elevation paths ──────────────────────────────────────────────────
+    // ── Valid elevation paths (Indian prosecution only) ────────────────────────
     private const ELEVATION_PATHS = [
-        'PAS' => ['PRV', 'CPT'],
-        'SRH' => ['PRV', 'CPT'],
-        'PAT' => ['PRV', 'CPT'],
-        'FTO' => ['PRV', 'CPT'],
-        'PRV' => ['CPT'],
-        'CPT' => ['FER'],
-        'NPA' => ['FER'],
-        'FER' => ['HRG'],
-        'SER' => ['HRG'],
-        'TER' => ['HRG'],
-        'HRG' => [],
+        'PAS'  => ['PRV', 'CPD', 'CVP', 'PCT', 'DVA', 'PAD'],
+        'SRH'  => ['PRV', 'CPD', 'CVP', 'PCT'],
+        'PAT'  => ['PRV', 'CPD', 'CVP', 'PCT'],
+        'FTO'  => ['PRV', 'CPD'],
+        'PRV'  => ['CPT', 'WDR'],
+        'CPT'  => ['9EP', '18F', 'WDR'],
+        'CPD'  => ['9EP', '18F', 'WDR'],
+        'CVP'  => ['CPE', '9EP', '18F', 'WDR'],
+        'CPE'  => ['9EP', '18F', 'WDR'],
+        'PCT'  => ['NAP', 'NPE', 'NAF'],
+        'NAP'  => ['9EP', '18F', 'WDR'],
+        'NPE'  => ['9EP', '18F', 'WDR'],
+        'NAF'  => ['9EP', '18F', 'WDR'],
+        'NPA'  => ['9EP', '18F', 'WDR'],
+        'DVA'  => ['9EP', '18F', 'WDR'],
+        'PAD'  => ['9EP', '18F', 'WDR'],
+        '9EP'  => ['18F', '18A', 'PGO', 'WDR'],
+        '98A'  => ['18F', '18A', 'PGO', 'WDR'],
+        '18F'  => ['FER', 'PGO', 'WDR'],
+        '18A'  => ['FER', 'PGO', 'WDR'],
+        'FER'  => ['SER', 'HRG', 'GRT', 'ABN', 'PGO', 'WDR'],
+        'SER'  => ['TER', 'HRG', 'GRT', 'ABN', 'PGO'],
+        'TER'  => ['HRG', 'GRT', 'ABN', 'PGO'],
+        'HRG'  => ['GRT', 'ROA', 'ABN'],
+        'PGO'  => ['GRT', 'ROA'],
+        'GRT'  => ['RNF', 'OPP', '27F', 'PAD', '24F'],
+        'RNF'  => ['RNF', 'RPO'],
+        'OPP'  => [],
+        'ROA'  => ['ERH'],
+        'ERH'  => [],
+        '27F'  => [],
+        'RPO'  => ['RNF'],
+        'ABN'  => [],
+        'WDR'  => [],
+        '24F'  => [],
     ];
 
     public function elevate(Request $request, $id)
@@ -637,16 +1097,7 @@ class ProjectController extends Controller
             $docketSvc  = $project->docket_number ? strtoupper(substr($project->docket_number, -3)) : '';
             $fromSvc    = $storedSvc ?: $docketSvc;
 
-            // Validate transition ONLY when fromSvc is a known service code.
-            // If it is unknown/unset (legacy project), allow any elevation — the user is setting it for the first time.
-            if ($fromSvc && isset(self::ELEVATION_PATHS[$fromSvc])) {
-                $allowed = self::ELEVATION_PATHS[$fromSvc];
-                if (!in_array($toSvc, $allowed, true)) {
-                    throw ValidationException::withMessages([
-                        'to_service' => "Cannot elevate from {$fromSvc} to {$toSvc}. Allowed: " . implode(', ', $allowed ?: ['none']),
-                    ]);
-                }
-            }
+            // No path restriction — user selects any service code freely.
 
             $fromDocket = $project->docket_number;
 
@@ -667,6 +1118,10 @@ class ProjectController extends Controller
             $project->service_code   = $toSvc;
             $project->docket_number  = $newDocket;
             $project->save();
+
+            // Keep linked tracker row in sync with new docket and UIN
+            \App\Models\TrackerRow::where('project_id', $project->id)
+                ->update(['docket_number' => $newDocket, 'uin' => $newDocket]);
 
             $this->reseedStages($project);
 

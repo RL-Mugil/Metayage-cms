@@ -186,7 +186,16 @@ export default function PatentPortfolio() {
   };
 
   useEffect(() => { load(selectedClientId, roleFilter); }, [roleFilter]);
-  useEffect(() => { load(null); }, []);
+  useEffect(() => {
+    load(null);
+    const onVisible = () => { if (document.visibilityState === "visible") load(selectedClientId, roleFilter); };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
+    };
+  }, []);
 
   function selectClient(c: any) {
     setSelectedClientId(c?.id ?? null);
@@ -234,10 +243,15 @@ export default function PatentPortfolio() {
   const filtered = useMemo(() => {
     let rows = actionRows;
     if (activeOffice)  rows = rows.filter((r: any) => r.patent_office_code === activeOffice);
-    if (activeStatus)  rows = rows.filter((r: any) => r.status === activeStatus || r.tracker_status === activeStatus);
+    if (activeStatus)  rows = rows.filter((r: any) => r.status === activeStatus);
     if (actionSearch)  {
       const q = actionSearch.toLowerCase();
-      rows = rows.filter((r: any) => (r.docket_number ?? "").toLowerCase().includes(q) || (r.status ?? "").toLowerCase().includes(q));
+      rows = rows.filter((r: any) =>
+        (r.docket_number ?? "").toLowerCase().includes(q) ||
+        (r.status ?? "").toLowerCase().includes(q) ||
+        (r.current_stage ?? "").toLowerCase().includes(q) ||
+        (r.pending_action ?? "").toLowerCase().includes(q)
+      );
     }
     rows = [...rows].sort((a: any, b: any) => {
       let av = a[sortCol] ?? ""; let bv = b[sortCol] ?? "";
@@ -500,6 +514,7 @@ export default function PatentPortfolio() {
                             <SortTh col="docket_number" active={sortCol === "docket_number"} dir={sortDir} onClick={() => toggleSort("docket_number")}>Docket No.</SortTh>
                             <SortTh col="filing_date" active={sortCol === "filing_date"} dir={sortDir} onClick={() => toggleSort("filing_date")}>Filing Date</SortTh>
                             <SortTh col="status" active={sortCol === "status"} dir={sortDir} onClick={() => toggleSort("status")}>Status</SortTh>
+                            <th className="px-3 py-2.5 text-left">Current Stage</th>
                             <th className="px-3 py-2.5 text-left">Pending Action</th>
                           </tr>
                         </thead>
@@ -522,11 +537,16 @@ export default function PatentPortfolio() {
                                   className={`rounded px-1.5 py-0.5 text-[10px] font-medium transition-colors ${
                                     activeStatus === row.status
                                       ? "bg-gold/20 text-gold border border-gold/40"
+                                      : row.status === "In Progress" ? "bg-blue-500/15 text-blue-400"
+                                      : row.status === "On Hold" ? "bg-amber-500/15 text-amber-400"
                                       : "bg-muted text-muted-foreground hover:bg-muted/80"
                                   }`}
                                 >
                                   {row.status}
                                 </button>
+                              </td>
+                              <td className="px-3 py-2.5 text-xs text-muted-foreground max-w-[180px] truncate" title={row.current_stage ?? ""}>
+                                {row.current_stage ?? "—"}
                               </td>
                               <td className="px-3 py-2.5 text-muted-foreground">{row.pending_action}</td>
                             </tr>

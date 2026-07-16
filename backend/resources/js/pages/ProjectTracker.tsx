@@ -13,173 +13,147 @@ import { downloadCSV } from "@/lib/api-client";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-// All statuses — superset used when no service code is known
-const ALL_STATUSES = [
-  // Pre-work
-  "Not Started",
-  "Allocated",
-  // IDF & Discovery
-  "IDF Received",
-  "Discovery Call Scheduled",
-  "Discovery Call Done",
-  // PAS (Prior Art Search)
-  "Prior Art Search",
-  "Search Report Ready",
-  "Search Report Shared",
-  "Awaiting IDF from Client",
-  // Drafting
-  "Patent Drafting",
-  "Drafting in Progress",
-  "Claims Ready to Share",
-  "Claims Approved",
-  "Internal Review",
-  // Client Review
-  "Draft Shared with Client",
-  "Awaiting Client Feedback",
-  "Client Comments Received",
-  "Draft Being Updated",
-  "Revised Draft Shared",
-  "Draft Approved",
-  // Filing
-  "Provisional or Complete Filing Prep",
-  "Complete or Provisional Filed",
-  "Awaiting Signed Forms",
-  "Ready to File",
-  "Filing",
-  "Awaiting Payment",
-  "Filed",
-  // Post-Filing
-  "FER Received",
-  "FER Response in Progress",
-  "FER Response Filed",
-  "Hearing Scheduled",
-  "Hearing Response in Progress",
-  "Hearing Response Filed",
-  // Terminal
-  "Granted",
-  "Renewal Due",
-  "Completed",
-  "Abandoned",
-  "On Hold",
-];
-
-// Statuses visible per service code (derived from docket_number.slice(9))
-const STATUSES_BY_SERVICE: Record<string, string[]> = {
-  PAS: ["Not Started", "Allocated", "Prior Art Search", "Search Report Ready", "Search Report Shared", "Awaiting IDF from Client", "On Hold", "Abandoned"],
-  SRH: ["Not Started", "Allocated", "Prior Art Search", "Search Report Ready", "Search Report Shared", "Awaiting IDF from Client", "On Hold", "Abandoned"],
-  PAT: ["Not Started", "Allocated", "Prior Art Search", "Search Report Ready", "Search Report Shared", "Awaiting IDF from Client", "On Hold", "Abandoned"],
-  FTO: ["Not Started", "Allocated", "Prior Art Search", "Search Report Ready", "Search Report Shared", "Awaiting IDF from Client", "On Hold", "Abandoned"],
-  PRV: ["Not Started", "Allocated", "IDF Received", "Drafting in Progress", "Internal Review", "Awaiting Signed Forms", "Filing", "Filed", "On Hold", "Abandoned"],
-  CPT: ["Not Started", "Allocated", "IDF Received", "Claims Ready to Share", "Claims Approved", "Drafting in Progress", "Internal Review", "Draft Shared with Client", "Awaiting Client Feedback", "Client Comments Received", "Draft Being Updated", "Revised Draft Shared", "Draft Approved", "Awaiting Signed Forms", "Filing", "Filed", "On Hold", "Abandoned"],
-  NPA: ["Not Started", "Allocated", "IDF Received", "Claims Ready to Share", "Claims Approved", "Drafting in Progress", "Internal Review", "Draft Shared with Client", "Awaiting Client Feedback", "Client Comments Received", "Draft Being Updated", "Revised Draft Shared", "Draft Approved", "Awaiting Signed Forms", "Filing", "Filed", "On Hold", "Abandoned"],
-  FER: ["Not Started", "Allocated", "FER Received", "FER Response in Progress", "FER Response Filed", "On Hold", "Abandoned"],
-  SER: ["Not Started", "Allocated", "FER Received", "FER Response in Progress", "FER Response Filed", "On Hold", "Abandoned"],
-  TER: ["Not Started", "Allocated", "FER Received", "FER Response in Progress", "FER Response Filed", "On Hold", "Abandoned"],
-  HRG: ["Not Started", "Allocated", "Hearing Scheduled", "Hearing Response in Progress", "Hearing Response Filed", "Granted", "On Hold", "Abandoned"],
+// Stage arrays per service code — exact mirror of backend stagesForServiceCode()
+const STAGES_BY_SERVICE: Record<string, readonly string[]> = {
+  PAS: ["Matter Created","Inventor / Technology Disclosure Requested","Disclosure Received","Search Parameters Defined","Prior Art Search In Progress","Search Report Drafted","Search Report Reviewed Internally","Search Report Shared with Client"],
+  SRH: ["Matter Created","Inventor / Technology Disclosure Requested","Disclosure Received","Search Parameters Defined","Prior Art Search In Progress","Search Report Drafted","Search Report Reviewed Internally","Search Report Shared with Client"],
+  PAT: ["Matter Created","Inventor / Technology Disclosure Requested","Disclosure Received","Search Parameters Defined","Prior Art Search In Progress","Search Report Drafted","Search Report Reviewed Internally","Search Report Shared with Client"],
+  FTO: ["Matter Created","Inventor / Technology Disclosure Requested","Disclosure Received","Search Parameters Defined","Prior Art Search In Progress","Search Report Drafted","Search Report Reviewed Internally","Search Report Shared with Client"],
+  PRV: ["Matter Created","Inventor Disclosure Requested","Inventor Disclosure Received","Prior Art Search (Optional)","Draft Started","Draft Completed","Internal Review","Corrections Incorporated","Partner Review","Client Review","Client Approved","Forms Prepared (Form 1, 2, 3)","Government Fees Calculated","Filed with IPO","Application Number Received","Completed — CPT Deadline Set (12 months)"],
+  CPT: ["Matter Created","Inventor Disclosure Reviewed","Claims Drafted","Claims Shared with Client","Claims Approved by Client","Specification Drafting Started","Draft Completed","Internal Review","Corrections Incorporated","Partner Review","Draft Shared with Client","Client Feedback Received","Revised Draft Completed","Forms Prepared (Form 1, 2, 3)","Government Fees Paid","Filed with IPO","Completed — Awaiting Publication"],
+  CPE: ["Matter Created","Inventor Disclosure Reviewed","Claims Drafted","Claims Shared with Client","Claims Approved by Client","Specification Drafting Started","Draft Completed","Internal Review","Corrections Incorporated","Partner Review","Draft Shared with Client","Client Feedback Received","Revised Draft Completed","Forms Prepared (Form 1, 2, 3)","Government Fees Paid","Filed with IPO","Completed — Awaiting Publication"],
+  CPD: ["Matter Created","Inventor Disclosure Requested","Inventor Disclosure Received","Claims Drafted","Claims Shared with Client","Claims Approved by Client","Specification Drafting Started","Draft Completed","Internal Review","Corrections Incorporated","Partner Review","Draft Shared with Client","Client Feedback Received","Revised Draft Completed","Forms Prepared (Form 1, 2, 3)","Government Fees Paid","Filed with IPO — Awaiting Publication"],
+  CVP: ["Matter Created","Priority Application Documents Received","Priority Date Verified","12-Month Deadline Confirmed","Claims Drafted (adapted for Indian law)","Specification Drafted","Internal Review","Partner Review","Client Approval","Forms Prepared (Form 1, 2, 3, 4 — Priority)","Filed with IPO (within 12 months of priority)","Completed — Awaiting Publication"],
+  PCT: ["Matter Created","Priority Date Verified","International Application Drafted","Receiving Office Selected (RO/IN or others)","International Fees Calculated","Application Filed at Receiving Office","Filing Receipt / IB Reference Received","International Search Report (ISR) Received","Written Opinion Received","Chapter II Examination (Optional)","Client Review of ISR / Written Opinion","National Phase Entry Deadline Set (India: 31 months from priority)","International Publication Confirmed (18 months)","Completed — National Phase Entry Pending"],
+  NAP: ["Matter Created","PCT Application Documents Received","31-Month National Phase Deadline Verified","National Phase Entry Decision Confirmed","Translation Prepared (if required)","National Phase Entry Application Drafted","Claims Adapted for Indian Law","Internal Review","Partner Review","Forms Prepared (Form 1, 2, 3 — National Phase)","Government Fees Paid","Filed with IPO (within 31 months)","Application Number Received","Completed — Awaiting Publication"],
+  NPE: ["Matter Created","PCT Application Documents Received","31-Month National Phase Deadline Verified","National Phase Entry Decision Confirmed","Translation Prepared (if required)","National Phase Entry Application Drafted","Claims Adapted for Indian Law","Internal Review","Partner Review","Forms Prepared (Form 1, 2, 3 — National Phase)","Government Fees Paid","Filed with IPO (within 31 months)","Application Number Received","Completed — Awaiting Publication"],
+  NAF: ["Matter Created","PCT Application Documents Received","31-Month National Phase Deadline Verified","National Phase Entry Decision Confirmed","Translation Prepared (if required)","National Phase Entry Application Drafted","Claims Adapted for Indian Law","Internal Review","Partner Review","Forms Prepared (Form 1, 2, 3 — National Phase)","Government Fees Paid","Filed with IPO (within 31 months)","Application Number Received","Completed — Awaiting Publication"],
+  NPA: ["Matter Created","PCT Application Documents Received","31-Month National Phase Deadline Verified","National Phase Entry Decision Confirmed","Translation Prepared (if required)","National Phase Entry Application Drafted","Claims Adapted for Indian Law","Internal Review","Partner Review","Forms Prepared (Form 1, 2, 3 — National Phase)","Government Fees Paid","Filed with IPO (within 31 months)","Application Number Received","Completed — Awaiting Publication"],
+  DVA: ["Matter Created","Parent Application Identified","Claims to Divide Identified","Controller Objection / Invitation Noted","Divisional Claims Drafted","Specification Prepared","Internal Review","Partner Review","Client Approval","Forms Prepared (Form 1, 2)","Government Fees Paid","Filed with IPO — Linked to Parent","Completed — Awaiting Publication"],
+  PAD: ["Matter Created","Parent Patent Identified","Improvement / Addition Defined","Addition Claims Drafted","Claims Reviewed Internally","Partner Review","Client Approval","Forms Prepared (Form 1, 2 — Addition)","Government Fees Paid","Filed with IPO","Application Number Received","Completed — Awaiting Publication"],
+  "9EP": ["Application Filed and Priority Date Recorded","Publication Date Calculated (18 months from earliest priority — S.11A)","Early Publication Requested (Form 9 — optional)","Published in Official Journal","Publication Number Confirmed","Completed — Ready for Examination Request"],
+  "98A": ["Application Filed and Priority Date Recorded","Publication Date Calculated (18 months from earliest priority — S.11A)","Early Publication Requested (Form 9 — optional)","Published in Official Journal","Publication Number Confirmed","Completed — Ready for Examination Request"],
+  "18F": ["Application Published (18F Trigger)","RFE Deadline Docketed (31 months from earliest priority; 48 months if filed before 15.03.2024)","Examination Request Decision Made","Form 18 Prepared","Government Fee Calculated","RFE Filed with IPO","Completed — Awaiting First Examination Report"],
+  "18A": ["Application Published (18A Trigger)","RFE Deadline Docketed (31 months from earliest priority; 48 months if filed before 15.03.2024)","Grounds for Acceleration Verified (Rule 24C eligibility)","Examination Request Decision Made","Form 18A Prepared","Government Fee Calculated","RFE Filed with IPO","Completed — Awaiting First Examination Report (Expedited)"],
+  FER: ["Examination Report Received","Response Deadline Docketed (6 months from FER; +3 months via Form 4 — Rule 24B)","Objections Analyzed","Response Strategy Formulated","Claims Amended / Arguments Drafted","Internal Review","Partner Review","Client Communicated","Response Filed (Form 3 / 13)","Completed — Awaiting Controller Decision"],
+  SER: ["Examination Report Received","Response Deadline Docketed (6 months from FER; +3 months via Form 4 — Rule 24B)","Objections Analyzed","Response Strategy Formulated","Claims Amended / Arguments Drafted","Internal Review","Partner Review","Client Communicated","Response Filed (Form 3 / 13)","Completed — Awaiting Controller Decision"],
+  TER: ["Examination Report Received","Response Deadline Docketed (6 months from FER; +3 months via Form 4 — Rule 24B)","Objections Analyzed","Response Strategy Formulated","Claims Amended / Arguments Drafted","Internal Review","Partner Review","Client Communicated","Response Filed (Form 3 / 13)","Completed — Awaiting Controller Decision"],
+  HRG: ["Hearing Notice Received","Hearing Date Set (max 2 adjournments of 30 days each — Rule 129A)","Arguments Prepared","Prior Art / Documents Compiled","Internal Review","Partner Review","Hearing Attended","Written Submissions Filed (within 15 days of hearing — Rule 28(7))","Awaiting Hearing Order"],
+  GRT: ["Grant Order Received","Patent Certificate Issued","Patent Number Recorded","Accumulated Renewal Fees Docketed (due 3 months from grant recordal — Rule 80(3))","Renewal Schedule Set (Years 3–20)","Form 27 Schedule Set (once every 3 financial years)","Completed — Patent Active"],
+  RNF: ["Renewal Year Identified","Renewal Fee Due Date Confirmed","Renewal Decision Made by Client","Renewal Fee Paid","Completed — Next Renewal Set"],
+  RPO: ["Patent Lapse Identified (renewal fee missed — S.53)","Restoration Window Verified (18 months from lapse — S.60)","Restoration Petition Prepared (Form 15)","Evidence of Unintentional Lapse Compiled","Restoration Petition Filed","Controller Decision Received","Completed — Patent Restored or Ceased"],
+  ABN: ["Abandonment Trigger Identified (missed response deadline — S.21(1))","Rule 138 Extension Window Evaluated (up to 6 months)","Client Advised of Options","Extension Petition Filed / Matter Closed","Completed — Restored to Prosecution or Abandoned"],
+  PGO: ["Pre-Grant Opposition Received / Filed (S.25(1))","Representation Analyzed","Reply Statement Drafted (within 2 months of notice — Rule 55(4))","Evidence Prepared","Reply Filed with IPO","Hearing Scheduled (if requested)","Hearing Attended","Controller Order Received","Completed — Application Proceeds or Refused"],
+  WDR: ["Withdrawal Decision by Client","Pre-Publication Check (withdraw before publication to preserve secrecy — S.11B(4))","Withdrawal Request Prepared","Withdrawal Request Filed","Withdrawal Recorded by IPO","Completed — Application Withdrawn"],
+  OPP: ["Post-Grant Opposition Filed / Received (S.25(2) — within 12 months of grant publication)","Opposition Petition Analyzed","Reply Statement Drafted","Evidence Affidavit Prepared","Evidence of Opponent Received","Evidence Reply Prepared","Hearing Scheduled","Hearing Arguments Prepared","Hearing Attended","Order Received","Completed — Patent Maintained or Revoked"],
+  "27F": ["Form 27 Due Date Identified (once every 3 financial years)","Working Statement Prepared","Client Approval","Form 27 Filed"],
+  ROA: ["Refusal Order Received","Review Petition Evaluated (S.77(1)(f) — within 1 month)","Appeal Decision Made (High Court — S.117A)","Completed — Review/Appeal Filed or Matter Closed"],
+  ERH: ["Appeal Decision Made","Appeal Filed at High Court (S.117A)","Grounds of Appeal Prepared","Counter-Statement by Respondent Received","Reply Filed","Oral Arguments Scheduled","Hearing Attended","Judgment / Order Received","Completed — Decision"],
+  "24F": ["Revocation Petition Received","Reply Statement Prepared","Evidence Filed","Counter-Evidence Received","Hearing Scheduled","Hearing Attended","Order Received","Completed — Patent Maintained or Revoked"],
 };
 
-function getStatusesForServiceCode(docketNumber: string | null | undefined): string[] {
-  if (!docketNumber || docketNumber.length < 10) return ALL_STATUSES;
-  const svc = docketNumber.slice(9).toUpperCase();
-  return STATUSES_BY_SERVICE[svc] ?? ALL_STATUSES;
+// Resolve service code: authoritative project.service_code first; docket-number
+// position parsing is only a legacy fallback for rows with no linked project.
+function resolveServiceCode(serviceCode?: string | null, docketNumber?: string | null): string | null {
+  if (serviceCode) return serviceCode.toUpperCase();
+  if (docketNumber && docketNumber.length >= 10) return docketNumber.slice(9).toUpperCase();
+  return null;
 }
 
-// Keep STATUSES as alias for backwards compatibility in COLS config
+// Return stage options for the dropdown: service-code stages + cross-cutting
+function getStatusesForServiceCode(docketNumber: string | null | undefined, serviceCode?: string | null): string[] {
+  const svc = resolveServiceCode(serviceCode, docketNumber);
+  const stages = svc ? STAGES_BY_SERVICE[svc] : undefined;
+  if (!stages) return ALL_STATUSES;
+  return [...stages, "On Hold", "Abandoned"];
+}
+
+// All statuses — superset: union of all stage names + cross-cutting
+const ALL_STATUSES: string[] = [
+  ...Array.from(new Set(Object.values(STAGES_BY_SERVICE).flat())),
+  "On Hold",
+  "Abandoned",
+];
+
+// Keep STATUSES as alias for COLS config fallback
 const STATUSES = ALL_STATUSES;
 
 const RECORD_TYPES = ["Patent", "FTO", "Design", "TM"];
 const PAYMENT_STATUSES = ["Pending", "Partial", "Paid"];
 
-// Locked: % completion per status (mirrors backend STATUS_COMPLETION)
-const STATUS_COMPLETION: Record<string, number | null> = {
-  "Not Started": 0,
-  "Allocated": 5,
-  "IDF Received": 8,
-  "Discovery Call Scheduled": 12,
-  "Discovery Call Done": 15,
-  "Prior Art Search": 20,
-  "Search Report Ready": 25,
-  "Search Report Shared": 28,
-  "Awaiting IDF from Client": 30,
-  "Patent Drafting": 35,
-  "Drafting in Progress": 35,
-  "Claims Ready to Share": 45,
-  "Claims Approved": 48,
-  "Internal Review": 55,
-  "Draft Shared with Client": 60,
-  "Awaiting Client Feedback": 65,
-  "Client Comments Received": 68,
-  "Draft Being Updated": 70,
-  "Revised Draft Shared": 72,
-  "Draft Approved": 75,
-  "Provisional or Complete Filing Prep": 78,
-  "Complete or Provisional Filed": 80,
-  "Awaiting Signed Forms": 82,
-  "Ready to File": 85,
-  "Filing": 88,
-  "Awaiting Payment": 90,
-  "Filed": 92,
-  "FER Received": 93,
-  "FER Response in Progress": 94,
-  "FER Response Filed": 95,
-  "Hearing Scheduled": 96,
-  "Hearing Response in Progress": 97,
-  "Hearing Response Filed": 98,
-  "Granted": 100,
-  "Renewal Due": 95,
-  "Completed": 100,
-  "Abandoned": null,
-  "On Hold": null,
-};
+// % completion derived from stage position in service-code array.
+// INTERNAL metric only — prosecution outcomes are never "94% done";
+// client-facing surfaces must show the phase label instead (see getPhaseForStatus).
+function getCompletionForStatus(status: string, docketNumber?: string | null, serviceCode?: string | null): number | null {
+  if (!status || status === "On Hold" || status === "Abandoned") return null;
+  // Try service-specific lookup first (most accurate)
+  const svc = resolveServiceCode(serviceCode, docketNumber);
+  if (svc) {
+    const stages = STAGES_BY_SERVICE[svc];
+    if (stages) {
+      const idx = stages.indexOf(status);
+      if (idx !== -1) return Math.round(((idx + 1) / stages.length) * 100);
+    }
+  }
+  // Search all service arrays
+  for (const stages of Object.values(STAGES_BY_SERVICE)) {
+    const idx = stages.indexOf(status);
+    if (idx !== -1) return Math.round(((idx + 1) / stages.length) * 100);
+  }
+  if (status === "Granted" || status.startsWith("Completed")) return 100;
+  if (status === "Renewal Due") return 95;
+  return null;
+}
 
-const STATUS_DOT: Record<string, string> = {
-  // Pre-work
-  "Not Started": "bg-gray-400",
-  "Allocated": "bg-slate-500",
-  // IDF & Discovery
-  "IDF Received": "bg-sky-400",
-  "Discovery Call Scheduled": "bg-sky-500",
-  "Discovery Call Done": "bg-cyan-500",
-  // Search
-  "Prior Art Search": "bg-blue-400",
-  "Search Report Ready": "bg-blue-500",
-  "Search Report Shared": "bg-blue-600",
-  // Drafting
-  "Awaiting IDF from Client": "bg-orange-400",
-  "Patent Drafting": "bg-indigo-400",
-  "Drafting in Progress": "bg-indigo-500",
-  "Claims Ready to Share": "bg-indigo-600",
-  "Claims Approved": "bg-violet-500",
-  "Internal Review": "bg-purple-500",
-  // Client Review
-  "Draft Shared with Client": "bg-teal-400",
-  "Awaiting Client Feedback": "bg-teal-500",
-  "Client Comments Received": "bg-orange-500",
-  "Draft Being Updated": "bg-amber-500",
-  "Revised Draft Shared": "bg-teal-600",
-  "Draft Approved": "bg-emerald-500",
-  // Filing
-  "Provisional or Complete Filing Prep": "bg-violet-400",
-  "Complete or Provisional Filed": "bg-violet-500",
-  "Awaiting Signed Forms": "bg-amber-400",
-  "Ready to File": "bg-blue-600",
-  "Filing": "bg-blue-500",
-  "Awaiting Payment": "bg-amber-600",
-  "Filed": "bg-green-500",
-  // Post-Filing
-  "FER Received": "bg-rose-400",
-  "FER Response in Progress": "bg-rose-500",
-  "FER Response Filed": "bg-rose-600",
-  "Hearing Scheduled": "bg-fuchsia-400",
-  "Hearing Response in Progress": "bg-fuchsia-500",
-  "Hearing Response Filed": "bg-fuchsia-600",
-  // Terminal
-  "Granted": "bg-green-600",
-  "Renewal Due": "bg-amber-500",
-  "Completed": "bg-green-500",
-  "Abandoned": "bg-red-600",
-  "On Hold": "bg-red-500",
-};
+// Prosecution phase — the honest client-facing label (no false precision)
+function getPhaseForStatus(status: string): string {
+  if (!status) return "—";
+  const s = status.toLowerCase();
+  if (s === "on hold") return "On Hold";
+  if (s === "abandoned" || s.includes("abandonment")) return "Abandoned";
+  if (s.includes("withdrawal")) return "Withdrawal";
+  if (s.includes("lapse") || s.includes("restoration")) return "Restoration";
+  if (s.includes("patent active") || s.includes("grant order") || s.includes("certificate") || s.includes("patent number")) return "Granted";
+  if (s.includes("renewal")) return "Renewals";
+  if (s.includes("opposition")) return "Opposition";
+  if (s.includes("appeal") || s.includes("judgment") || s.includes("refusal") || s.includes("review petition")) return "Refusal / Appeal";
+  if (s.includes("hearing") || s.includes("written submissions")) return "Hearing";
+  if (s.includes("examination report") || s.includes("objections") || s.includes("response") || s.includes("claims amended") || s.includes("controller decision")) return "Under Examination";
+  if (s.includes("rfe") || s.includes("form 18") || s.includes("examination request")) return "Examination Requested";
+  if (s.includes("publish") || s.includes("publication")) return "Published";
+  if (s.includes("filed with ipo") || s.includes("application number") || s.includes("filed at receiving") || s.includes("national phase")) return "Filed";
+  if (s.includes("form 27") || s.includes("working statement")) return "Post-Grant Compliance";
+  return "Drafting / Pre-Filing";
+}
+
+// Dot color from stage name content
+function getDotColor(status: string): string {
+  if (!status) return "bg-gray-400";
+  const s = status.toLowerCase();
+  if (s === "on hold") return "bg-yellow-500";
+  if (s === "abandoned" || s.includes("abandonment trigger") || s.includes("refusal order") || s.includes("revocation petition received")) return "bg-red-600";
+  if (s.includes("patent active") || s.includes("grant order") || s.includes("certificate issued") || s.includes("patent number recorded")) return "bg-green-600";
+  if (s.startsWith("completed") || s.includes("form 27 filed") || s.includes("renewal fee paid") || s.includes("judgment / order") || s.includes("matter closed") || s.includes("decision")) return "bg-green-500";
+  if (s.includes("renewal") || s.includes("annual renewal")) return "bg-amber-500";
+  if (s.includes("hearing attended") || s.includes("awaiting hearing order") || s.includes("oral arguments") || s.includes("counter-statement filed")) return "bg-fuchsia-600";
+  if (s.includes("hearing") || s.includes("arguments prepared") || s.includes("prior art / documents compiled")) return "bg-fuchsia-400";
+  if (s.includes("examination report") || s.includes("objections analyzed") || s.includes("response strategy") || s.includes("claims amended") || s.includes("response filed") || s.includes("controller decision")) return "bg-rose-500";
+  if (s.includes("rfe filed") || s.includes("filed with ipo") || s.includes("application filed at") || s.includes("government fees paid") || s.includes("forms prepared") || s.includes("government fee calculated")) return "bg-blue-600";
+  if (s.includes("rfe deadline") || s.includes("application published") || s.includes("examination request decision") || s.includes("form 18") || s.includes("grounds for acceleration") || s.includes("form 27 due")) return "bg-blue-500";
+  if (s.includes("published in official") || s.includes("publication number") || s.includes("18-month publication") || s.includes("application filed and date") || s.includes("international publication") || s.includes("filing receipt")) return "bg-cyan-500";
+  if (s.includes("client approved") || s.includes("client approval") || s.includes("client review") || s.includes("client feedback received") || s.includes("shared with client") || s.includes("client communicated") || s.includes("isr / written opinion")) return "bg-teal-500";
+  if (s.includes("revised draft") || s.includes("client feedback")) return "bg-teal-400";
+  if (s.includes("corrections incorporated") || s.includes("internal review")) return "bg-purple-500";
+  if (s.includes("partner review")) return "bg-violet-500";
+  if (s.includes("claims drafted") || s.includes("claims shared") || s.includes("claims approved by client") || s.includes("claims adapted") || s.includes("divisional claims") || s.includes("addition claims") || s.includes("claims reviewed") || s.includes("claims to divide") || s.includes("claims amended")) return "bg-indigo-500";
+  if (s.includes("draft completed") || s.includes("draft started") || s.includes("specification") || s.includes("international application drafted") || s.includes("national phase entry application")) return "bg-indigo-400";
+  if (s.includes("isr received") || s.includes("written opinion received") || s.includes("chapter ii") || s.includes("search report")) return "bg-blue-500";
+  if (s.includes("prior art search") || s.includes("search parameters")) return "bg-blue-400";
+  if (s.includes("inventor disclosure") || s.includes("disclosure received") || s.includes("disclosure requested") || s.includes("technology disclosure")) return "bg-sky-500";
+  if (s.includes("matter created") || s.includes("pct application documents") || s.includes("priority date") || s.includes("12-month deadline") || s.includes("31-month national") || s.includes("national phase entry decision") || s.includes("translation prepared")) return "bg-sky-400";
+  if (s.includes("parent") || s.includes("controller objection") || s.includes("improvement / addition") || s.includes("opposition") || s.includes("reply") || s.includes("evidence") || s.includes("appeal")) return "bg-orange-400";
+  return "bg-slate-400";
+}
 
 // Column config — docket_number handled separately (DocketCell)
 const COLS = [
@@ -201,6 +175,7 @@ interface TrackerRow {
   id: number;
   circle_id: number;
   project_id: number | null;
+  service_code: string | null;
   docket_number: string | null;
   client_name: string | null;
   record_type: string | null;
@@ -347,7 +322,7 @@ export default function ProjectTracker() {
 
     // For status: also update % completion locally (locked)
     if (col === "status") {
-      const pct = STATUS_COMPLETION[value];
+      const pct = getCompletionForStatus(value, row.docket_number, row.service_code);
       if (pct !== null && pct !== undefined) updates.percentage_of_completion = pct;
     }
 
@@ -622,7 +597,7 @@ export default function ProjectTracker() {
     let content: React.ReactNode;
 
     if (col === "status") {
-      const dot = STATUS_DOT[strVal] ?? "bg-gray-400";
+      const dot = getDotColor(strVal);
       content = strVal ? (
         <div className="flex items-center gap-1.5 min-w-0">
           <span className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${dot}`} />
@@ -667,7 +642,7 @@ export default function ProjectTracker() {
             const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
             // For status column, filter options by the row's service code
             const effectiveOpts = col === "status"
-              ? getStatusesForServiceCode(row.docket_number)
+              ? getStatusesForServiceCode(row.docket_number, row.service_code)
               : opts;
             setSelectPickerMenu({ rowId: row.id, col, opts: effectiveOpts, rect });
           } else {
@@ -838,9 +813,9 @@ export default function ProjectTracker() {
                         opts={"opts" in c ? (c as any).opts : undefined} />
                     ))}
 
-                    {/* % Comp — locked, auto from status */}
+                    {/* % Comp — locked, auto from status. Phase label = the honest metric; % is internal ornament */}
                     <td className="border-r border-b border-[#d3d3d3] bg-[#f3f8f5] px-2 py-1.5"
-                      style={{ width: 82 }} title="Auto-computed from status">
+                      style={{ width: 82 }} title={`Phase: ${getPhaseForStatus(row.status ?? "")} — % is stage position, not outcome probability`}>
                       <div className="flex items-center gap-1.5 pr-1">
                         <div className="flex-1 bg-gray-200 rounded-full h-1.5 overflow-hidden">
                           <div className={`h-full rounded-full transition-all ${pct === 100 ? "bg-green-500" : "bg-[#1a4731]"}`}
@@ -848,6 +823,7 @@ export default function ProjectTracker() {
                         </div>
                         <span className="text-[10px] font-medium text-[#1a4731] w-7 text-right flex-shrink-0">{pct}%</span>
                       </div>
+                      <div className="text-[9px] text-muted-foreground truncate leading-tight mt-0.5">{getPhaseForStatus(row.status ?? "")}</div>
                     </td>
 
                     {/* Ageing */}
@@ -1017,7 +993,7 @@ export default function ProjectTracker() {
                     }}
                   >
                     {selectPickerMenu.col === "status" && (
-                      <span className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${STATUS_DOT[s] ?? "bg-gray-400"}`} />
+                      <span className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${getDotColor(s)}`} />
                     )}
                     {selectPickerMenu.col === "payment_status" ? (
                       <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${paymentCls[s] ?? ""}`}>{s}</span>

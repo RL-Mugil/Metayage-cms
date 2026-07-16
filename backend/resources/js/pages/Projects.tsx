@@ -96,53 +96,41 @@ const PATENT_OFFICES = [
 // ── Service Codes ─────────────────────────────────────────────────────────────
 
 const SERVICE_CODES = [
-  { code: "PAS",   label: "PAS – Prior Art Search" },
-  { code: "PRV",   label: "PRV – Provisional Application Filing" },
-  { code: "CPT",   label: "CPT – Complete Application Filing" },
-  { code: "NPA",   label: "NPA – Non-Provisional Application Filing" },
-  { code: "DFT",   label: "DFT – Patent Drafting" },
-  { code: "FIL",   label: "FIL – Patent Filing (General)" },
-  { code: "PCT",   label: "PCT – PCT International Filing" },
-  { code: "NPE",   label: "NPE – National Phase Entry" },
-  { code: "DIV",   label: "DIV – Divisional Application" },
-  { code: "CIP",   label: "CIP – Continuation-in-Part" },
-  { code: "CON",   label: "CON – Continuation Application" },
-  { code: "CNV",   label: "CNV – Application Conversion" },
-  { code: "EXR",   label: "EXR – Request for Examination" },
-  { code: "FER",   label: "FER – First Examination Report Response" },
-  { code: "SER",   label: "SER – Second Examination Report Response" },
-  { code: "TER",   label: "TER – Third / Subsequent Exam Report Response" },
-  { code: "AMD",   label: "AMD – Amendments to Specification / Claims" },
-  { code: "CAR",   label: "CAR – Counter-Arguments / Written Submissions" },
-  { code: "OBJ",   label: "OBJ – Response to Objections" },
-  { code: "HRG",   label: "HRG – Hearing Representation" },
-  { code: "PBL",   label: "PBL – Publication Request" },
-  { code: "PGO",   label: "PGO – Pre-Grant Opposition Filing" },
-  { code: "PGR",   label: "PGR – Pre-Grant Opposition Response" },
-  { code: "GRT",   label: "GRT – Grant / Acceptance" },
-  { code: "POG",   label: "POG – Post-Grant Opposition Filing" },
-  { code: "POR",   label: "POR – Post-Grant Opposition Response" },
-  { code: "APL",   label: "APL – Appeal Filing" },
-  { code: "APR",   label: "APR – Appeal Response / Arguments" },
-  { code: "REI",   label: "REI – Reinstatement of Lapsed Patent" },
-  { code: "WTH",   label: "WTH – Withdrawal / Abandonment" },
-  { code: "REN",   label: "REN – Patent Renewal / Maintenance Fee" },
-  { code: "ANN",   label: "ANN – Annual Fee / Annuity Management" },
-  { code: "LAP",   label: "LAP – Revival of Lapsed Application" },
-  { code: "SRH",   label: "SRH – Prior Art Search" },
-  { code: "PAT",   label: "PAT – Patentability Opinion" },
-  { code: "FTO",   label: "FTO – Freedom to Operate Study" },
-  { code: "VAL",   label: "VAL – Validity / Invalidity Opinion" },
-  { code: "INF",   label: "INF – Infringement Analysis" },
-  { code: "LND",   label: "LND – Patent Landscape Study" },
-  { code: "AUD",   label: "AUD – IP Portfolio Audit" },
-  { code: "INV",   label: "INV – Invention Disclosure Review" },
-  { code: "LIC",   label: "LIC – Licensing Agreement Drafting" },
-  { code: "ASG",   label: "ASG – Assignment / Transfer Registration" },
-  { code: "CDL",   label: "CDL – Compulsory Licence / Revocation" },
-  { code: "TRN",   label: "TRN – Technology Transfer Agreement" },
-  { code: "IPR",   label: "IPR – Inter Partes Review (USPTO)" },
-  { code: "RCE",   label: "RCE – Request for Continued Examination" },
+  // ── Indian Patent Prosecution ──────────────────────────────────────────────
+  { code: "PAS",  label: "PAS – Prior Art Search" },
+  { code: "SRH",  label: "SRH – Search Report (Standalone)" },
+  { code: "FTO",  label: "FTO – Freedom to Operate Study" },
+  { code: "PRV",  label: "PRV – Provisional Application (India)" },
+  { code: "CPD",  label: "CPD – Complete Specification – Direct Filing" },
+  { code: "CPT",  label: "CPT – Complete Specification – from Provisional" },
+  { code: "CVP",  label: "CVP – Convention Priority Application" },
+  { code: "CPE",  label: "CPE – Convention Complete Specification" },
+  { code: "PCT",  label: "PCT – PCT International Application" },
+  { code: "NAP",  label: "NAP – PCT National Phase Entry (India)" },
+  { code: "NPE",  label: "NPE – PCT National Phase Entry (variant)" },
+  { code: "NAF",  label: "NAF – PCT National Phase Entry (variant)" },
+  { code: "DVA",  label: "DVA – Divisional Application" },
+  { code: "PAD",  label: "PAD – Patent of Addition" },
+  { code: "9EP",  label: "9EP – Publication (18-month, Section 11A)" },
+  { code: "98A",  label: "98A – Publication (alternate form)" },
+  { code: "18F",  label: "18F – Request for Examination (Form 18)" },
+  { code: "18A",  label: "18A – Accelerated Examination (Form 18A)" },
+  { code: "FER",  label: "FER – First Examination Report Response" },
+  { code: "SER",  label: "SER – Second Examination Report Response" },
+  { code: "TER",  label: "TER – Third / Subsequent Exam Report Response" },
+  { code: "HRG",  label: "HRG – Hearing Representation" },
+  { code: "GRT",  label: "GRT – Grant / Patent Certificate" },
+  { code: "RNF",  label: "RNF – Annual Renewal Fee" },
+  { code: "PGO",  label: "PGO – Pre-Grant Opposition (S.25(1))" },
+  { code: "OPP",  label: "OPP – Post-Grant Opposition (S.25(2))" },
+  { code: "27F",  label: "27F – Form 27 Statement of Working (every 3 FY)" },
+  { code: "ROA",  label: "ROA – Refused (Review / Appeal)" },
+  { code: "ERH",  label: "ERH – Appeal to High Court (S.117A)" },
+  { code: "24F",  label: "24F – Revocation Petition (Form 24)" },
+  { code: "RPO",  label: "RPO – Lapse & Restoration (S.60, Form 15)" },
+  { code: "ABN",  label: "ABN – Deemed Abandoned (S.21(1))" },
+  { code: "WDR",  label: "WDR – Withdrawal (S.11B(4))" },
+  // ── Trademark ─────────────────────────────────────────────────────────────
   { code: "TMS",   label: "TMS – Trademark Search" },
   { code: "TMD",   label: "TMD – Trademark Drafting / Advice" },
   { code: "TMF",   label: "TMF – Trademark Filing" },
@@ -158,32 +146,48 @@ const SERVICE_CODES = [
   { code: "TMWT",  label: "TMWT – Trademark Watch Service" },
   { code: "TMINF", label: "TMINF – TM Infringement Notice / Action" },
   { code: "TMMD",  label: "TMMD – Madrid Protocol / International TM Filing" },
-  { code: "DSF",   label: "DSF – Design Registration Filing" },
-  { code: "DSE",   label: "DSE – Design Examination Response" },
-  { code: "DSR",   label: "DSR – Design Registration Certificate" },
-  { code: "DSN",   label: "DSN – Design Renewal" },
-  { code: "DSA",   label: "DSA – Design Assignment" },
-  { code: "CRF",   label: "CRF – Copyright Registration Filing" },
-  { code: "CRL",   label: "CRL – Copyright Licence Drafting" },
-  { code: "CRA",   label: "CRA – Copyright Assignment" },
-  { code: "GIF",   label: "GIF – GI Tag Application Filing" },
-  { code: "GIE",   label: "GIE – GI Examination Response" },
-  { code: "GIR",   label: "GIR – GI Registration" },
-  { code: "PVF",   label: "PVF – Plant Variety Protection Filing" },
-  { code: "PVR",   label: "PVR – Plant Variety Certificate" },
-  { code: "POA",   label: "POA – Power of Attorney" },
-  { code: "NOT",   label: "NOT – Notarization" },
-  { code: "LEG",   label: "LEG – Legalization / Apostille" },
-  { code: "TRL",   label: "TRL – Translation Services" },
-  { code: "CSL",   label: "CSL – Legal Consultation / Advisory" },
-  { code: "STR",   label: "STR – IP Strategy / Portfolio Review" },
-  { code: "RPT",   label: "RPT – Status Report / Reporting" },
-  { code: "MED",   label: "MED – Mediation Assistance" },
-  { code: "ARB",   label: "ARB – Arbitration Support" },
-  { code: "LTG",   label: "LTG – IP Litigation Support" },
-  { code: "CRT",   label: "CRT – Court Filing / Representation" },
-  { code: "DUE",   label: "DUE – Due Diligence" },
-  { code: "VAR",   label: "VAR – Various / Miscellaneous" },
+  // ── Design ────────────────────────────────────────────────────────────────
+  { code: "DSF",  label: "DSF – Design Registration Filing" },
+  { code: "DSE",  label: "DSE – Design Examination Response" },
+  { code: "DSR",  label: "DSR – Design Registration Certificate" },
+  { code: "DSN",  label: "DSN – Design Renewal" },
+  { code: "DSA",  label: "DSA – Design Assignment" },
+  // ── Copyright ─────────────────────────────────────────────────────────────
+  { code: "CRF",  label: "CRF – Copyright Registration Filing" },
+  { code: "CRL",  label: "CRL – Copyright Licence Drafting" },
+  { code: "CRA",  label: "CRA – Copyright Assignment" },
+  // ── Geographical Indication / Plant Variety ────────────────────────────────
+  { code: "GIF",  label: "GIF – GI Tag Application Filing" },
+  { code: "GIE",  label: "GIE – GI Examination Response" },
+  { code: "GIR",  label: "GIR – GI Registration" },
+  { code: "PVF",  label: "PVF – Plant Variety Protection Filing" },
+  { code: "PVR",  label: "PVR – Plant Variety Certificate" },
+  // ── Advisory / Transactional ──────────────────────────────────────────────
+  { code: "PAT",  label: "PAT – Patentability Opinion" },
+  { code: "VAL",  label: "VAL – Validity / Invalidity Opinion" },
+  { code: "INF",  label: "INF – Infringement Analysis" },
+  { code: "LND",  label: "LND – Patent Landscape Study" },
+  { code: "AUD",  label: "AUD – IP Portfolio Audit" },
+  { code: "INV",  label: "INV – Invention Disclosure Review" },
+  { code: "LIC",  label: "LIC – Licensing Agreement Drafting" },
+  { code: "ASG",  label: "ASG – Assignment / Transfer Registration" },
+  { code: "CDL",  label: "CDL – Compulsory Licence / Revocation" },
+  { code: "TRN",  label: "TRN – Technology Transfer Agreement" },
+  { code: "DUE",  label: "DUE – Due Diligence" },
+  { code: "STR",  label: "STR – IP Strategy / Portfolio Review" },
+  // ── Formalities / Admin ────────────────────────────────────────────────────
+  { code: "POA",  label: "POA – Power of Attorney" },
+  { code: "NOT",  label: "NOT – Notarization" },
+  { code: "LEG",  label: "LEG – Legalization / Apostille" },
+  { code: "TRL",  label: "TRL – Translation Services" },
+  { code: "RPT",  label: "RPT – Status Report / Reporting" },
+  // ── Litigation / Dispute ──────────────────────────────────────────────────
+  { code: "MED",  label: "MED – Mediation Assistance" },
+  { code: "ARB",  label: "ARB – Arbitration Support" },
+  { code: "LTG",  label: "LTG – IP Litigation Support" },
+  { code: "CRT",  label: "CRT – Court Filing / Representation" },
+  { code: "CSL",  label: "CSL – Legal Consultation / Advisory" },
+  { code: "VAR",  label: "VAR – Various / Miscellaneous" },
 ];
 
 const CASE_TYPES = [
@@ -195,46 +199,311 @@ const CASE_TYPES = [
 ];
 
 const URGENCIES = ["Low", "Normal", "High", "Critical"];
-const STATUSES  = ["Open", "In Progress", "On Hold", "Closed", "Completed"];
+const STATUSES  = ["Open", "In Progress", "On Hold", "Closed", "Completed", "Granted", "Refused", "Abandoned"];
 
 const ELEVATION_PATHS: Record<string, string[]> = {
-  PAS: ["PRV", "CPT"], SRH: ["PRV", "CPT"], PAT: ["PRV", "CPT"], FTO: ["PRV", "CPT"],
-  PRV: ["CPT"],
-  CPT: ["FER"], NPA: ["FER"],
-  FER: ["HRG"], SER: ["HRG"], TER: ["HRG"],
-  HRG: [],
+  PAS:  ["PRV", "CPD", "CVP", "PCT", "DVA", "PAD"],
+  SRH:  ["PRV", "CPD", "CVP", "PCT"],
+  PAT:  ["PRV", "CPD", "CVP", "PCT"],
+  FTO:  ["PRV", "CPD"],
+  PRV:  ["CPT", "WDR"],
+  CPT:  ["9EP", "18F", "WDR"],
+  CPD:  ["9EP", "18F", "WDR"],
+  CVP:  ["CPE", "9EP", "18F", "WDR"],
+  CPE:  ["9EP", "18F", "WDR"],
+  PCT:  ["NAP", "NPE", "NAF"],
+  NAP:  ["9EP", "18F", "WDR"],
+  NPE:  ["9EP", "18F", "WDR"],
+  NAF:  ["9EP", "18F", "WDR"],
+  NPA:  ["9EP", "18F", "WDR"],
+  DVA:  ["9EP", "18F", "WDR"],
+  PAD:  ["9EP", "18F", "WDR"],
+  "9EP": ["18F", "18A", "PGO", "WDR"],
+  "98A": ["18F", "18A", "PGO", "WDR"],
+  "18F": ["FER", "PGO", "WDR"],
+  "18A": ["FER", "PGO", "WDR"],
+  FER:  ["SER", "HRG", "GRT", "ABN", "PGO", "WDR"],
+  SER:  ["TER", "HRG", "GRT", "ABN", "PGO"],
+  TER:  ["HRG", "GRT", "ABN", "PGO"],
+  HRG:  ["GRT", "ROA", "ABN"],
+  PGO:  ["GRT", "ROA"],
+  GRT:  ["RNF", "OPP", "27F", "PAD", "24F"],
+  RNF:  ["RNF", "RPO"],
+  OPP:  [],
+  ROA:  ["ERH"],
+  ERH:  [],
+  "27F": [],
+  RPO:  ["RNF"],
+  ABN:  [],
+  WDR:  [],
+  "24F": [],
 };
 
 const SERVICE_LABELS: Record<string, string> = {
-  PAS: "PAS — Prior Art Search", SRH: "SRH — Search Report", PAT: "PAT — Patent",
-  FTO: "FTO — Freedom to Operate", PRV: "PRV — Provisional",
-  CPT: "CPT — Complete Specification", NPA: "NPA — National Phase",
-  FER: "FER — First Examination", SER: "SER — Second Examination", TER: "TER — Third Examination",
+  PAS: "PAS — Prior Art Search",
+  SRH: "SRH — Search Report",
+  PAT: "PAT — Patentability Opinion",
+  FTO: "FTO — Freedom to Operate",
+  PRV: "PRV — Provisional Application",
+  CPD: "CPD — Complete Spec (Direct)",
+  CPT: "CPT — Complete Spec (from PRV)",
+  CVP: "CVP — Convention Priority",
+  CPE: "CPE — Convention Complete Spec",
+  PCT: "PCT — International Application",
+  NAP: "NAP — PCT National Phase",
+  NPE: "NPE — PCT National Phase",
+  NAF: "NAF — PCT National Phase",
+  NPA: "NPA — PCT National Phase",
+  DVA: "DVA — Divisional Application",
+  PAD: "PAD — Patent of Addition",
+  "9EP": "9EP — Publication (18-month)",
+  "98A": "98A — Publication",
+  "18F": "18F — Request for Examination",
+  "18A": "18A — Accelerated Examination",
+  FER: "FER — First Examination Report",
+  SER: "SER — Second Examination Report",
+  TER: "TER — Third Examination Report",
   HRG: "HRG — Hearing",
+  GRT: "GRT — Grant",
+  RNF: "RNF — Annual Renewal",
+  PGO: "PGO — Pre-Grant Opposition",
+  OPP: "OPP — Post-Grant Opposition",
+  "27F": "27F — Form 27 (Working)",
+  ROA: "ROA — Refused (Review / Appeal)",
+  ERH: "ERH — Appeal (High Court)",
+  "24F": "24F — Revocation Petition",
+  RPO: "RPO — Lapse & Restoration",
+  ABN: "ABN — Deemed Abandoned",
+  WDR: "WDR — Withdrawal",
 };
-// All possible stage names across all service codes (for pipeline filter)
+
 const STAGES_BY_SERVICE: Record<string, string[]> = {
-  PAS: ["Awaiting IDF from Client", "Prior Art Search", "Search Report Ready", "Search Report Shared"],
-  SRH: ["Awaiting IDF from Client", "Prior Art Search", "Search Report Ready", "Search Report Shared"],
-  PAT: ["Awaiting IDF from Client", "Prior Art Search", "Search Report Ready", "Search Report Shared"],
-  FTO: ["Awaiting IDF from Client", "Prior Art Search", "Search Report Ready", "Search Report Shared"],
-  PRV: ["IDF Received", "Drafting", "Internal Review", "Awaiting Signed Forms", "Filing", "Filed"],
+  PAS: [
+    "Matter Created", "Inventor / Technology Disclosure Requested", "Disclosure Received",
+    "Search Parameters Defined", "Prior Art Search In Progress", "Search Report Drafted",
+    "Search Report Reviewed Internally", "Search Report Shared with Client",
+  ],
+  SRH: [
+    "Matter Created", "Inventor / Technology Disclosure Requested", "Disclosure Received",
+    "Search Parameters Defined", "Prior Art Search In Progress", "Search Report Drafted",
+    "Search Report Reviewed Internally", "Search Report Shared with Client",
+  ],
+  PAT: [
+    "Matter Created", "Inventor / Technology Disclosure Requested", "Disclosure Received",
+    "Search Parameters Defined", "Prior Art Search In Progress", "Search Report Drafted",
+    "Search Report Reviewed Internally", "Search Report Shared with Client",
+  ],
+  FTO: [
+    "Matter Created", "Inventor / Technology Disclosure Requested", "Disclosure Received",
+    "Search Parameters Defined", "Prior Art Search In Progress", "Search Report Drafted",
+    "Search Report Reviewed Internally", "Search Report Shared with Client",
+  ],
+  PRV: [
+    "Matter Created", "Inventor Disclosure Requested", "Inventor Disclosure Received",
+    "Prior Art Search (Optional)", "Draft Started", "Draft Completed", "Internal Review",
+    "Corrections Incorporated", "Partner Review", "Client Review", "Client Approved",
+    "Forms Prepared (Form 1, 2, 3)", "Government Fees Calculated", "Filed with IPO",
+    "Application Number Received", "Completed — CPT Deadline Set (12 months)",
+  ],
   CPT: [
-    "IDF Received", "Claims Ready to Share", "Claims Approved", "Drafting",
-    "Internal Review", "Draft Shared with Client", "Awaiting Client Feedback",
-    "Client Comments Received", "Revised Draft Shared", "Drafted",
-    "Awaiting Signed Forms", "Filing", "Filed — Waiting for FER or Grant",
+    "Matter Created", "Inventor Disclosure Reviewed", "Claims Drafted", "Claims Shared with Client",
+    "Claims Approved by Client", "Specification Drafting Started", "Draft Completed",
+    "Internal Review", "Corrections Incorporated", "Partner Review", "Draft Shared with Client",
+    "Client Feedback Received", "Revised Draft Completed", "Forms Prepared (Form 1, 2, 3)",
+    "Government Fees Paid", "Filed with IPO", "Completed — Awaiting Publication",
+  ],
+  CPD: [
+    "Matter Created", "Inventor Disclosure Requested", "Inventor Disclosure Received",
+    "Claims Drafted", "Claims Shared with Client", "Claims Approved by Client",
+    "Specification Drafting Started", "Draft Completed", "Internal Review",
+    "Corrections Incorporated", "Partner Review", "Draft Shared with Client",
+    "Client Feedback Received", "Revised Draft Completed", "Forms Prepared (Form 1, 2, 3)",
+    "Government Fees Paid", "Filed with IPO — Awaiting Publication",
+  ],
+  CVP: [
+    "Matter Created", "Priority Application Documents Received", "Priority Date Verified",
+    "12-Month Deadline Confirmed", "Claims Drafted (adapted for Indian law)", "Specification Drafted",
+    "Internal Review", "Partner Review", "Client Approval",
+    "Forms Prepared (Form 1, 2, 3, 4 — Priority)",
+    "Filed with IPO (within 12 months of priority)", "Completed — Awaiting Publication",
+  ],
+  CPE: [
+    "Matter Created", "Inventor Disclosure Reviewed", "Claims Drafted", "Claims Shared with Client",
+    "Claims Approved by Client", "Specification Drafting Started", "Draft Completed",
+    "Internal Review", "Corrections Incorporated", "Partner Review", "Draft Shared with Client",
+    "Client Feedback Received", "Revised Draft Completed", "Forms Prepared (Form 1, 2, 3)",
+    "Government Fees Paid", "Filed with IPO", "Completed — Awaiting Publication",
+  ],
+  PCT: [
+    "Matter Created", "Priority Date Verified", "International Application Drafted",
+    "Receiving Office Selected (RO/IN or others)", "International Fees Calculated",
+    "Application Filed at Receiving Office", "Filing Receipt / IB Reference Received",
+    "International Search Report (ISR) Received", "Written Opinion Received",
+    "Chapter II Examination (Optional)", "Client Review of ISR / Written Opinion",
+    "National Phase Entry Deadline Set (India: 31 months from priority)",
+    "International Publication Confirmed (18 months)", "Completed — National Phase Entry Pending",
+  ],
+  NAP: [
+    "Matter Created", "PCT Application Documents Received",
+    "31-Month National Phase Deadline Verified", "National Phase Entry Decision Confirmed",
+    "Translation Prepared (if required)", "National Phase Entry Application Drafted",
+    "Claims Adapted for Indian Law", "Internal Review", "Partner Review",
+    "Forms Prepared (Form 1, 2, 3 — National Phase)", "Government Fees Paid",
+    "Filed with IPO (within 31 months)", "Application Number Received",
+    "Completed — Awaiting Publication",
+  ],
+  NPE: [
+    "Matter Created", "PCT Application Documents Received",
+    "31-Month National Phase Deadline Verified", "National Phase Entry Decision Confirmed",
+    "Translation Prepared (if required)", "National Phase Entry Application Drafted",
+    "Claims Adapted for Indian Law", "Internal Review", "Partner Review",
+    "Forms Prepared (Form 1, 2, 3 — National Phase)", "Government Fees Paid",
+    "Filed with IPO (within 31 months)", "Application Number Received",
+    "Completed — Awaiting Publication",
+  ],
+  NAF: [
+    "Matter Created", "PCT Application Documents Received",
+    "31-Month National Phase Deadline Verified", "National Phase Entry Decision Confirmed",
+    "Translation Prepared (if required)", "National Phase Entry Application Drafted",
+    "Claims Adapted for Indian Law", "Internal Review", "Partner Review",
+    "Forms Prepared (Form 1, 2, 3 — National Phase)", "Government Fees Paid",
+    "Filed with IPO (within 31 months)", "Application Number Received",
+    "Completed — Awaiting Publication",
   ],
   NPA: [
-    "IDF Received", "Claims Ready to Share", "Claims Approved", "Drafting",
-    "Internal Review", "Draft Shared with Client", "Awaiting Client Feedback",
-    "Client Comments Received", "Revised Draft Shared", "Drafted",
-    "Awaiting Signed Forms", "Filing", "Filed — Waiting for FER or Grant",
+    "Matter Created", "PCT Application Documents Received",
+    "31-Month National Phase Deadline Verified", "National Phase Entry Decision Confirmed",
+    "Translation Prepared (if required)", "National Phase Entry Application Drafted",
+    "Claims Adapted for Indian Law", "Internal Review", "Partner Review",
+    "Forms Prepared (Form 1, 2, 3 — National Phase)", "Government Fees Paid",
+    "Filed with IPO (within 31 months)", "Application Number Received",
+    "Completed — Awaiting Publication",
   ],
-  FER: ["FER Received", "FER Response in Progress", "FER Response Filed"],
-  SER: ["FER Received", "FER Response in Progress", "FER Response Filed"],
-  TER: ["FER Received", "FER Response in Progress", "FER Response Filed"],
-  HRG: ["Hearing Scheduled", "Hearing Response in Progress", "Hearing Response Filed", "Granted"],
+  DVA: [
+    "Matter Created", "Parent Application Identified", "Claims to Divide Identified",
+    "Controller Objection / Invitation Noted", "Divisional Claims Drafted", "Specification Prepared",
+    "Internal Review", "Partner Review", "Client Approval", "Forms Prepared (Form 1, 2)",
+    "Government Fees Paid", "Filed with IPO — Linked to Parent", "Completed — Awaiting Publication",
+  ],
+  PAD: [
+    "Matter Created", "Parent Patent Identified", "Improvement / Addition Defined",
+    "Addition Claims Drafted", "Claims Reviewed Internally", "Partner Review", "Client Approval",
+    "Forms Prepared (Form 1, 2 — Addition)", "Government Fees Paid", "Filed with IPO",
+    "Application Number Received", "Completed — Awaiting Publication",
+  ],
+  "9EP": [
+    "Application Filed and Priority Date Recorded",
+    "Publication Date Calculated (18 months from earliest priority — S.11A)",
+    "Early Publication Requested (Form 9 — optional)",
+    "Published in Official Journal", "Publication Number Confirmed",
+    "Completed — Ready for Examination Request",
+  ],
+  "98A": [
+    "Application Filed and Priority Date Recorded",
+    "Publication Date Calculated (18 months from earliest priority — S.11A)",
+    "Early Publication Requested (Form 9 — optional)",
+    "Published in Official Journal", "Publication Number Confirmed",
+    "Completed — Ready for Examination Request",
+  ],
+  "18F": [
+    "Application Published (18F Trigger)",
+    "RFE Deadline Docketed (31 months from earliest priority; 48 months if filed before 15.03.2024)",
+    "Examination Request Decision Made", "Form 18 Prepared", "Government Fee Calculated",
+    "RFE Filed with IPO", "Completed — Awaiting First Examination Report",
+  ],
+  "18A": [
+    "Application Published (18A Trigger)",
+    "RFE Deadline Docketed (31 months from earliest priority; 48 months if filed before 15.03.2024)",
+    "Grounds for Acceleration Verified (Rule 24C eligibility)", "Examination Request Decision Made",
+    "Form 18A Prepared", "Government Fee Calculated", "RFE Filed with IPO",
+    "Completed — Awaiting First Examination Report (Expedited)",
+  ],
+  FER: [
+    "Examination Report Received",
+    "Response Deadline Docketed (6 months from FER; +3 months via Form 4 — Rule 24B)",
+    "Objections Analyzed", "Response Strategy Formulated",
+    "Claims Amended / Arguments Drafted", "Internal Review", "Partner Review",
+    "Client Communicated", "Response Filed (Form 3 / 13)", "Completed — Awaiting Controller Decision",
+  ],
+  SER: [
+    "Examination Report Received",
+    "Response Deadline Docketed (6 months from FER; +3 months via Form 4 — Rule 24B)",
+    "Objections Analyzed", "Response Strategy Formulated",
+    "Claims Amended / Arguments Drafted", "Internal Review", "Partner Review",
+    "Client Communicated", "Response Filed (Form 3 / 13)", "Completed — Awaiting Controller Decision",
+  ],
+  TER: [
+    "Examination Report Received",
+    "Response Deadline Docketed (6 months from FER; +3 months via Form 4 — Rule 24B)",
+    "Objections Analyzed", "Response Strategy Formulated",
+    "Claims Amended / Arguments Drafted", "Internal Review", "Partner Review",
+    "Client Communicated", "Response Filed (Form 3 / 13)", "Completed — Awaiting Controller Decision",
+  ],
+  HRG: [
+    "Hearing Notice Received", "Hearing Date Set (max 2 adjournments of 30 days each — Rule 129A)",
+    "Arguments Prepared", "Prior Art / Documents Compiled", "Internal Review", "Partner Review",
+    "Hearing Attended", "Written Submissions Filed (within 15 days of hearing — Rule 28(7))",
+    "Awaiting Hearing Order",
+  ],
+  GRT: [
+    "Grant Order Received", "Patent Certificate Issued", "Patent Number Recorded",
+    "Accumulated Renewal Fees Docketed (due 3 months from grant recordal — Rule 80(3))",
+    "Renewal Schedule Set (Years 3–20)", "Form 27 Schedule Set (once every 3 financial years)",
+    "Completed — Patent Active",
+  ],
+  RNF: [
+    "Renewal Year Identified", "Renewal Fee Due Date Confirmed", "Renewal Decision Made by Client",
+    "Renewal Fee Paid", "Completed — Next Renewal Set",
+  ],
+  RPO: [
+    "Patent Lapse Identified (renewal fee missed — S.53)",
+    "Restoration Window Verified (18 months from lapse — S.60)",
+    "Restoration Petition Prepared (Form 15)", "Evidence of Unintentional Lapse Compiled",
+    "Restoration Petition Filed", "Controller Decision Received",
+    "Completed — Patent Restored or Ceased",
+  ],
+  ABN: [
+    "Abandonment Trigger Identified (missed response deadline — S.21(1))",
+    "Rule 138 Extension Window Evaluated (up to 6 months)", "Client Advised of Options",
+    "Extension Petition Filed / Matter Closed", "Completed — Restored to Prosecution or Abandoned",
+  ],
+  PGO: [
+    "Pre-Grant Opposition Received / Filed (S.25(1))", "Representation Analyzed",
+    "Reply Statement Drafted (within 2 months of notice — Rule 55(4))", "Evidence Prepared",
+    "Reply Filed with IPO", "Hearing Scheduled (if requested)", "Hearing Attended",
+    "Controller Order Received", "Completed — Application Proceeds or Refused",
+  ],
+  WDR: [
+    "Withdrawal Decision by Client",
+    "Pre-Publication Check (withdraw before publication to preserve secrecy — S.11B(4))",
+    "Withdrawal Request Prepared", "Withdrawal Request Filed", "Withdrawal Recorded by IPO",
+    "Completed — Application Withdrawn",
+  ],
+  OPP: [
+    "Post-Grant Opposition Filed / Received (S.25(2) — within 12 months of grant publication)",
+    "Opposition Petition Analyzed", "Reply Statement Drafted",
+    "Evidence Affidavit Prepared", "Evidence of Opponent Received", "Evidence Reply Prepared",
+    "Hearing Scheduled", "Hearing Arguments Prepared", "Hearing Attended",
+    "Order Received", "Completed — Patent Maintained or Revoked",
+  ],
+  "27F": [
+    "Form 27 Due Date Identified (once every 3 financial years)", "Working Statement Prepared",
+    "Client Approval", "Form 27 Filed",
+  ],
+  ROA: [
+    "Refusal Order Received", "Review Petition Evaluated (S.77(1)(f) — within 1 month)",
+    "Appeal Decision Made (High Court — S.117A)", "Completed — Review/Appeal Filed or Matter Closed",
+  ],
+  ERH: [
+    "Appeal Decision Made", "Appeal Filed at High Court (S.117A)", "Grounds of Appeal Prepared",
+    "Counter-Statement by Respondent Received", "Reply Filed", "Oral Arguments Scheduled",
+    "Hearing Attended", "Judgment / Order Received", "Completed — Decision",
+  ],
+  "24F": [
+    "Revocation Petition Received", "Reply Statement Prepared", "Evidence Filed",
+    "Counter-Evidence Received", "Hearing Scheduled", "Hearing Attended",
+    "Order Received", "Completed — Patent Maintained or Revoked",
+  ],
 };
 
 const PIPELINE_STAGES_LEGACY = [
@@ -521,10 +790,14 @@ interface KpiDef {
 }
 
 const KPI_DEFS: KpiDef[] = [
-  { label: "Total Cases",  key: "total",       color: "text-gold",          filterParams: {} },
-  { label: "Open",         key: "open",        color: "text-blue-500",      filterParams: { status: "Open" } },
-  { label: "On Hold",      key: "on_hold",     color: "text-yellow-500",    filterParams: { status: "On Hold" } },
-  { label: "Overdue",      key: "overdue",     color: "text-destructive",   filterParams: { overdue: "1" } },
+  { label: "Total Cases",  key: "total",       color: "text-gold",           filterParams: {} },
+  { label: "Open",         key: "open",        color: "text-blue-500",       filterParams: { status: "Open" } },
+  { label: "In Progress",  key: "in_progress", color: "text-primary",        filterParams: { status: "In Progress" } },
+  { label: "On Hold",      key: "on_hold",     color: "text-yellow-500",     filterParams: { status: "On Hold" } },
+  { label: "Overdue",      key: "overdue",     color: "text-destructive",    filterParams: { overdue: "1" } },
+  { label: "Granted",      key: "granted",     color: "text-green-500",      filterParams: { patent_granted: "1" } },
+  { label: "Completed",    key: "completed",   color: "text-emerald-600",    filterParams: { status: "Completed" } },
+  { label: "Closed",       key: "closed",      color: "text-muted-foreground", filterParams: { status: "Closed" } },
 ];
 
 function ProjectKpiModal({ kpi, onClose, onOpenDetail }: { kpi: KpiDef; onClose: () => void; onOpenDetail?: (id: number) => void }) {
@@ -705,6 +978,8 @@ export default function Projects() {
   const [docketResult, setDocketResult] = useState<{ imported: number; skipped: number; errors: string[] } | null>(null);
   const [docketError, setDocketError] = useState("");
   const [docketSkipTransferred, setDocketSkipTransferred] = useState(true);
+  const [docketSkipUnknown, setDocketSkipUnknown] = useState(false);
+  const [docketMappingFile, setDocketMappingFile] = useState<File | null>(null);
 
   // Bulk import modal
   const [showImport, setShowImport] = useState(false);
@@ -798,7 +1073,7 @@ export default function Projects() {
     // Only apply role_filter for Patent Analysts; all other roles get unrestricted data.
     const rf_param = isAnalyst && rf !== 'all' ? rf : undefined;
     api.getProjectStats(rf_param).then(setStats).catch(() => {});
-    const params = new URLSearchParams({ per_page: '500' });
+    const params = new URLSearchParams({ per_page: '5000' });
     if (rf_param) params.set('role_filter', rf_param);
     // Client users get 403 on /api/users and /api/clients — skip those calls entirely.
     const extraCalls = isClientUser
@@ -869,7 +1144,8 @@ export default function Projects() {
         !p.docket_number?.toLowerCase().includes(q) &&
         !p.project_code?.toLowerCase().includes(q) &&
         !(p.client?.legal_name ?? p.client?.company_name ?? "").toLowerCase().includes(q) &&
-        !p.application_number?.toLowerCase().includes(q)) return false;
+        !p.application_number?.toLowerCase().includes(q) &&
+        !((p as any).docket_trak_ref ?? "").toLowerCase().includes(q)) return false;
       if (filterStatus !== "All" && p.status !== filterStatus) return false;
       return true;
     });
@@ -1441,6 +1717,24 @@ export default function Projects() {
                   </label>
                 </div>
 
+                <div className="flex items-center gap-2 p-3 rounded-lg border border-border">
+                  <input
+                    type="checkbox" id="skipUnknown" checked={docketSkipUnknown}
+                    onChange={(e) => setDocketSkipUnknown(e.target.checked)}
+                    className="h-4 w-4 accent-gold"
+                  />
+                  <label htmlFor="skipUnknown" className="text-sm cursor-pointer">
+                    Skip cases where client is not found in system
+                  </label>
+                </div>
+
+                {docketMappingFile && (
+                  <div className="flex items-center gap-2 p-3 rounded-lg border border-green-500/40 bg-green-500/5 text-xs text-green-400">
+                    <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                    Mapping file: <span className="font-medium text-green-300 ml-1">{docketMappingFile.name}</span>
+                  </div>
+                )}
+
                 {docketError && <p className="text-xs text-red-500">{docketError}</p>}
 
                 <div className="flex gap-2">
@@ -1450,7 +1744,12 @@ export default function Projects() {
                       if (!docketFile) return;
                       setDocketImporting(true); setDocketError("");
                       try {
-                        const res = await api.docketImport(docketFile, { skip_conflicts: true, skip_transferred: docketSkipTransferred });
+                        const res = await api.docketImport(docketFile, {
+                          skip_conflicts: true,
+                          skip_transferred: docketSkipTransferred,
+                          skip_unknown_clients: docketSkipUnknown,
+                          mapping_file: docketMappingFile,
+                        });
                         setDocketResult(res);
                       } catch (e: any) {
                         setDocketError(e?.message || "Import failed.");
@@ -1463,22 +1762,48 @@ export default function Projects() {
               </div>
             ) : (
               <div className="space-y-4">
-                <div className="border-2 border-dashed border-border rounded-lg p-8 text-center hover:border-gold/50 transition-colors">
-                  <FileSpreadsheet className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
-                  <p className="text-sm font-medium mb-1">Select DocketTrak Excel export</p>
-                  <p className="text-xs text-muted-foreground mb-3">Supports .xlsx files exported from DocketTrak</p>
-                  <input
-                    type="file" accept=".xlsx,.xls" className="hidden" id="docket-file-input"
-                    onChange={(e) => setDocketFile(e.target.files?.[0] ?? null)}
-                  />
-                  <label htmlFor="docket-file-input">
-                    <Button variant="outline" size="sm" asChild>
-                      <span className="cursor-pointer"><Upload className="h-3.5 w-3.5 mr-1.5" />Choose file</span>
-                    </Button>
-                  </label>
-                  {docketFile && (
-                    <p className="mt-2 text-xs text-emerald-400 font-mono">{docketFile.name}</p>
-                  )}
+                {/* ── DocketTrak file ── */}
+                <div>
+                  <p className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wide">Step 1 — DocketTrak export</p>
+                  <div className="border-2 border-dashed border-border rounded-lg p-6 text-center hover:border-gold/50 transition-colors">
+                    <FileSpreadsheet className="h-9 w-9 mx-auto text-muted-foreground mb-2" />
+                    <p className="text-sm font-medium mb-1">Select DocketTrak Excel export</p>
+                    <p className="text-xs text-muted-foreground mb-3">The .xlsx exported from DocketTrak (up to 3,000 rows)</p>
+                    <input
+                      type="file" accept=".xlsx,.xls" className="hidden" id="docket-file-input"
+                      onChange={(e) => setDocketFile(e.target.files?.[0] ?? null)}
+                    />
+                    <label htmlFor="docket-file-input">
+                      <Button variant="outline" size="sm" asChild>
+                        <span className="cursor-pointer"><Upload className="h-3.5 w-3.5 mr-1.5" />Choose file</span>
+                      </Button>
+                    </label>
+                    {docketFile && (
+                      <p className="mt-2 text-xs text-emerald-400 font-mono">{docketFile.name}</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* ── Mapping file ── */}
+                <div>
+                  <p className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wide">Step 2 — Client mapping file <span className="normal-case font-normal">(optional)</span></p>
+                  <div className={`border-2 border-dashed rounded-lg p-4 text-center transition-colors ${docketMappingFile ? 'border-emerald-500/40 bg-emerald-500/5' : 'border-border hover:border-blue-400/50'}`}>
+                    <p className="text-xs text-muted-foreground mb-2">
+                      Upload the <span className="font-mono text-foreground">ClientMapping.xlsx</span> with column B filled in to resolve unmatched clients
+                    </p>
+                    <input
+                      type="file" accept=".xlsx,.xls" className="hidden" id="docket-mapping-input"
+                      onChange={(e) => setDocketMappingFile(e.target.files?.[0] ?? null)}
+                    />
+                    <label htmlFor="docket-mapping-input">
+                      <Button variant="outline" size="sm" asChild>
+                        <span className="cursor-pointer"><Upload className="h-3.5 w-3.5 mr-1.5" />{docketMappingFile ? 'Change mapping file' : 'Choose mapping file'}</span>
+                      </Button>
+                    </label>
+                    {docketMappingFile && (
+                      <p className="mt-1.5 text-xs text-emerald-400 font-mono">{docketMappingFile.name}</p>
+                    )}
+                  </div>
                 </div>
 
                 {docketError && <p className="text-xs text-red-500">{docketError}</p>}
@@ -1490,7 +1815,7 @@ export default function Projects() {
                       if (!docketFile) return;
                       setDocketPreviewing(true); setDocketError("");
                       try {
-                        const res = await api.docketImportPreview(docketFile);
+                        const res = await api.docketImportPreview(docketFile, docketMappingFile);
                         setDocketImportPreview(res);
                       } catch (e: any) {
                         setDocketError(e?.message || "Preview failed.");
@@ -1498,7 +1823,7 @@ export default function Projects() {
                     }}>
                     {docketPreviewing ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Analysing…</> : "Analyse File"}
                   </Button>
-                  <Button variant="outline" onClick={() => setShowDocketImport(false)}>Cancel</Button>
+                  <Button variant="outline" onClick={() => { setShowDocketImport(false); setDocketMappingFile(null); }}>Cancel</Button>
                 </div>
               </div>
             )}
@@ -1634,7 +1959,12 @@ export default function Projects() {
                   {editProj && (
                     <div>
                       <Lbl>Status</Lbl>
-                      <select value={form.status} onChange={(e) => sf("status", e.target.value)} className={ic}>
+                      <select value={form.status} onChange={(e) => {
+                        const s = e.target.value;
+                        sf("status", s);
+                        if (s === "Granted") sf("patent_granted", true);
+                        else if (form.patent_granted) sf("patent_granted", false);
+                      }} className={ic}>
                         {STATUSES.map((s) => <option key={s}>{s}</option>)}
                       </select>
                     </div>
@@ -1695,7 +2025,12 @@ export default function Projects() {
                   <div className="flex items-end pb-1">
                     <label className="flex items-center gap-2 cursor-pointer select-none">
                       <input type="checkbox" checked={form.patent_granted}
-                        onChange={(e) => sf("patent_granted", e.target.checked)}
+                        onChange={(e) => {
+                          const checked = e.target.checked;
+                          sf("patent_granted", checked);
+                          if (checked && form.status !== "Granted") sf("status", "Granted");
+                          else if (!checked && form.status === "Granted") sf("status", "Open");
+                        }}
                         className="h-4 w-4 rounded border-border accent-green-600" />
                       <span className="text-xs font-medium text-foreground">Patent Granted</span>
                     </label>
@@ -1908,8 +2243,13 @@ export default function Projects() {
                       e.preventDefault();
                       const pid = statusMenu.projectId;
                       setStatusMenu(null);
-                      try { await api.updateProject(pid, { status: s } as any); } catch {}
-                      setProjects((prev) => prev.map((p) => p.id === pid ? { ...p, status: s } : p));
+                      const updates: any = { status: s };
+                      if (s === "Granted") updates.patent_granted = true;
+                      else updates.patent_granted = false;
+                      try { await api.updateProject(pid, updates); } catch {}
+                      setProjects((prev) => prev.map((p) => p.id === pid
+                        ? { ...p, status: s, patent_granted: s === "Granted" }
+                        : p));
                     }}
                   >
                     {s}
@@ -1951,16 +2291,9 @@ export default function Projects() {
 
       {/* ── Elevate Service Modal ─────────────────────────────────────────── */}
       {elevateModal && (() => {
-        // Derive from field first, then last 3 chars of docket as fallback
         const svc = (elevateModal.project.service_code
           ?? elevateModal.project.docket_number?.slice(-3)
           ?? "").toUpperCase();
-        const knownOptions = ELEVATION_PATHS[svc] ?? [];
-        // If service code is unknown/unrecognised, show all valid service codes as options
-        const options = knownOptions.length > 0
-          ? knownOptions
-          : Object.keys(ELEVATION_PATHS);
-        const isUnknownSvc = knownOptions.length === 0;
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
             <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-sm p-6 m-4">
@@ -1969,28 +2302,25 @@ export default function Projects() {
                   <ArrowUpCircle className="h-5 w-5 text-amber-500" />
                 </div>
                 <div>
-                  <h3 className="font-semibold">Elevate Service</h3>
+                  <h3 className="font-semibold">Change Service</h3>
                   <p className="text-sm text-muted-foreground mt-0.5">
                     <span className="font-mono text-xs">{elevateModal.project.docket_number}</span>
                     {svc ? <> — currently <strong>{svc}</strong></> : " — no service code set"}
                   </p>
-                  {isUnknownSvc && (
-                    <p className="text-[10px] text-amber-500 mt-0.5">Service code not recognised — all options shown.</p>
-                  )}
                 </div>
               </div>
               {elevateErr && <p className="text-sm text-destructive mb-3">{elevateErr}</p>}
               <div className="space-y-3">
                 <div>
-                  <label className="text-xs font-medium text-muted-foreground mb-1 block">Elevate to</label>
+                  <label className="text-xs font-medium text-muted-foreground mb-1 block">Move to service</label>
                   <select
                     value={elevateToService}
                     onChange={(e) => setElevateToService(e.target.value)}
                     className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold"
                   >
                     <option value="">Select service…</option>
-                    {options.map((opt) => (
-                      <option key={opt} value={opt}>{SERVICE_LABELS[opt] ?? opt}</option>
+                    {SERVICE_CODES.map((s) => (
+                      <option key={s.code} value={s.code}>{s.label}</option>
                     ))}
                   </select>
                 </div>
@@ -2000,7 +2330,7 @@ export default function Projects() {
                     value={elevateNote}
                     onChange={(e) => setElevateNote(e.target.value)}
                     rows={2}
-                    placeholder="Reason for elevation…"
+                    placeholder="Reason for change…"
                     className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-gold"
                   />
                 </div>
@@ -2013,7 +2343,7 @@ export default function Projects() {
                   disabled={elevateSaving || !elevateToService}
                 >
                   {elevateSaving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                  Elevate
+                  Confirm
                 </Button>
               </div>
             </div>
@@ -2313,6 +2643,9 @@ export default function Projects() {
                               {p.docket_number && p.project_code && p.project_code !== p.docket_number && (
                                 <div className="text-[10px] text-muted-foreground font-mono">{p.project_code}</div>
                               )}
+                              {(p as any).docket_trak_ref && (p as any).docket_trak_ref !== p.docket_number && (
+                                <div className="text-[10px] text-muted-foreground/50 font-mono">DT: {(p as any).docket_trak_ref}</div>
+                              )}
                             </Link>
                           </td>
                           <td className="px-4 py-3 max-w-[200px]">
@@ -2370,25 +2703,31 @@ export default function Projects() {
                             )}
                           </td>
                           <td className="px-4 py-3">
-                            {isClientUser ? (
-                              <Badge variant="secondary" className="text-[10px] whitespace-nowrap">
-                                {stage}
-                              </Badge>
-                            ) : (
-                              <button
-                                title="Click to change stage"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                                  const stages = stagesForProject(p);
-                                  setStageMenu({ projectId: p.id, stages, rect });
-                                }}
-                              >
-                                <Badge variant="secondary" className="text-[10px] whitespace-nowrap cursor-pointer hover:bg-gold/20 hover:text-gold transition-colors">
-                                  {stage}
-                                </Badge>
-                              </button>
-                            )}
+                            {(() => {
+                              const isLocked = ['Granted', 'Refused', 'Abandoned'].includes(p.status);
+                              if (isClientUser || isLocked) {
+                                return (
+                                  <span className={`text-xs ${isLocked ? 'text-muted-foreground/40 select-none' : ''}`}>
+                                    {isLocked ? '—' : <Badge variant="secondary" className="text-[10px] whitespace-nowrap">{stage}</Badge>}
+                                  </span>
+                                );
+                              }
+                              return (
+                                <button
+                                  title="Click to change stage"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                                    const stages = stagesForProject(p);
+                                    setStageMenu({ projectId: p.id, stages, rect });
+                                  }}
+                                >
+                                  <Badge variant="secondary" className="text-[10px] whitespace-nowrap cursor-pointer hover:bg-gold/20 hover:text-gold transition-colors">
+                                    {stage}
+                                  </Badge>
+                                </button>
+                              );
+                            })()}
                           </td>
                           <td className={`px-4 py-3 text-xs font-mono whitespace-nowrap ${isOverdue ? "text-destructive font-semibold" : "text-muted-foreground"}`}>
                             {fmtDate(p.hard_deadline)}
@@ -2421,16 +2760,10 @@ export default function Projects() {
                                 <Button size="sm" variant="outline" className="h-7 w-7 p-0" title="Edit" onClick={() => openEdit(p)}>
                                   <Pencil className="h-3 w-3" />
                                 </Button>
-                                {canElevate && (() => {
-                                  // Derive service code from field or last 3 chars of docket (e.g. "...INPAS" → "PAS")
-                                  const svc = (p.service_code ?? p.docket_number?.slice(-3) ?? "").toUpperCase();
-                                  const options = ELEVATION_PATHS[svc] ?? [];
-                                  // Show button if we know valid next steps, OR if service code is unknown (let user pick — backend validates)
-                                  return options.length > 0 || (svc === "" || !Object.keys(ELEVATION_PATHS).includes(svc));
-                                })() && (
+                                {canElevate && (
                                   <Button size="sm" variant="outline"
                                     className="h-7 w-7 p-0 text-amber-500 border-amber-500/30 hover:bg-amber-500/10"
-                                    title="Elevate Service"
+                                    title="Change Service"
                                     onClick={() => { setElevateModal({ project: p }); setElevateToService(""); setElevateNote(""); setElevateErr(""); }}>
                                     <ArrowUpCircle className="h-3 w-3" />
                                   </Button>

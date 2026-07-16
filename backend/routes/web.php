@@ -27,7 +27,7 @@ Route::middleware('guest')->group(function () {
 Route::post('/logout', [AuthController::class, 'logout'])->middleware('auth')->name('logout');
 
 // Protected app pages
-Route::middleware('auth')->group(function () {
+Route::middleware(['auth', 'firm.context'])->group(function () {
     Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
     Route::get('/clients', [ClientController::class, 'inertiaIndex'])->name('clients.index');
     Route::get('/clients/{id}', [ClientController::class, 'inertiaShow'])->name('clients.show');
@@ -77,11 +77,11 @@ Route::middleware('auth')->group(function () {
 
 // Google Calendar OAuth callback — auth middleware included, session already present
 Route::get('/integrations/google/callback', [GoogleCalendarController::class, 'callback'])
-    ->middleware('auth')
+    ->middleware(['auth', 'firm.context'])
     ->name('gcal.callback');
 
 // Horizon dashboard (admin only)
-Route::middleware(['auth'])->group(function () {
+Route::middleware(['auth', 'firm.context'])->group(function () {
     Route::get('/horizon', function () {
         return redirect('/horizon/dashboard');
     });

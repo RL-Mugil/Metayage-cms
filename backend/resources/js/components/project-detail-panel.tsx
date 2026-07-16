@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { X, Loader2, ArrowRight, Clock } from "lucide-react";
+import { X, Loader2, ArrowRight, Clock, Lock } from "lucide-react";
 import { api } from "@/lib/api-client";
+import { DocketDeadlines } from "@/components/docket-deadlines";
 
 function fmtDate(d: string | null | undefined): string {
   if (!d) return "—";
@@ -16,24 +17,48 @@ interface Props {
   onClose: () => void;
 }
 
-type Tab = "stages" | "tasks" | "invoices" | "ledger" | "history";
+type Tab = "stages" | "deadlines" | "tasks" | "invoices" | "ledger" | "history";
 
 export function ProjectDetailPanel({ projectId, onClose }: Props) {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<Tab>("stages");
+  const [advancingStage, setAdvancingStage] = useState<string | null>(null);
+  const [lockedMsg, setLockedMsg] = useState<string | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
+  const TERMINAL_STATUSES = ['Granted', 'Refused', 'Abandoned'];
+
+  const fetchDetail = (cancelled: { v: boolean }) => {
     setLoading(true);
     setData(null);
     api.request(`/projects/${projectId}/detail`).then((res: any) => {
-      if (!cancelled) { setData(res); setLoading(false); }
+      if (!cancelled.v) { setData(res); setLoading(false); }
     }).catch(() => {
-      if (!cancelled) setLoading(false);
+      if (!cancelled.v) setLoading(false);
     });
-    return () => { cancelled = true; };
+  };
+
+  useEffect(() => {
+    const ref = { v: false };
+    fetchDetail(ref);
+    return () => { ref.v = true; };
   }, [projectId]);
+
+  async function advanceToStage(stageName: string) {
+    const projectStatus = data?.project?.status;
+    if (TERMINAL_STATUSES.includes(projectStatus)) {
+      setLockedMsg(`Case is ${projectStatus} — no workflow stage is applicable. Change the project status first to resume the pipeline.`);
+      return;
+    }
+    setLockedMsg(null);
+    setAdvancingStage(stageName);
+    try {
+      await api.updateProjectStage(projectId, stageName);
+      const ref = { v: false };
+      fetchDetail(ref);
+    } catch { /* ignore */ }
+    finally { setAdvancingStage(null); }
+  }
 
   return createPortal(
     <>
@@ -45,6 +70,13 @@ export function ProjectDetailPanel({ projectId, onClose }: Props) {
           <div>
             <p className="text-xs text-muted-foreground font-mono">
               {data?.project?.docket_number ?? "Loading…"}
+              {(() => {
+                const notes: string = data?.project?.notes ?? "";
+                const m = notes.match(/ref:\s*([^\n\)]+)/i);
+                const ref = m?.[1]?.trim();
+                if (!ref || ref === data?.project?.docket_number) return null;
+                return <span className="ml-2 text-[10px] text-muted-foreground/50">(DocketTrak: {ref})</span>;
+              })()}
             </p>
             <h2 className="text-base font-semibold truncate max-w-[500px]">
               {data?.project?.project_name ?? ""}
@@ -54,6 +86,11 @@ export function ProjectDetailPanel({ projectId, onClose }: Props) {
                 {data.project.client?.company_name ?? data.project.client?.legal_name ?? ""}
                 {data.project.patent_office_code ? ` · ${data.project.patent_office_code}` : ""}
                 {data.project.service_code ? ` · ${data.project.service_code}` : ""}
+                {data.project.status === "Completed" && data.project.patent_granted
+                  ? <span className="ml-1 text-[10px] text-green-500 font-medium">· Granted</span>
+                  : data.project.status === "Closed"
+                  ? <span className="ml-1 text-[10px] text-destructive font-medium">· Closed</span>
+                  : null}
               </p>
             )}
           </div>
@@ -64,14 +101,14 @@ export function ProjectDetailPanel({ projectId, onClose }: Props) {
 
         {/* Tabs */}
         <div className="flex border-b border-border flex-shrink-0 px-6">
-          {(["stages", "tasks", "invoices", "ledger", "history"] as Tab[]).map((t) => (
+          {(["stages", "deadlines", "tasks", "invoices", "ledger", "history"] as Tab[]).map((t) => (
             <button key={t} onClick={() => setTab(t)}
               className={`px-4 py-2.5 text-xs font-medium capitalize border-b-2 transition-colors ${
                 tab === t
                   ? "border-primary text-primary"
                   : "border-transparent text-muted-foreground hover:text-foreground"
               }`}>
-              {t === "stages" ? "Pipeline" : t === "invoices" ? "Invoices" : t === "ledger" ? "Ledger" : t === "history" ? "History" : "Tasks"}
+              {t === "stages" ? "Pipeline" : t === "deadlines" ? "Deadlines" : t === "invoices" ? "Invoices" : t === "ledger" ? "Ledger" : t === "history" ? "History" : "Tasks"}
             </button>
           ))}
         </div>
@@ -91,6 +128,33 @@ export function ProjectDetailPanel({ projectId, onClose }: Props) {
               {/* Pipeline — horizontal flowchart */}
               {tab === "stages" && (
                 <div className="p-6">
+                  {/* Terminal status banner */}
+                  {(() => {
+                    const projectStatus = data?.project?.status;
+                    const isTerminal = TERMINAL_STATUSES.includes(projectStatus);
+                    if (!isTerminal) return null;
+                    return (
+                      <div className="mb-5 flex items-start gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3">
+                        <Lock className="h-4 w-4 text-amber-500 flex-shrink-0 mt-0.5" />
+                        <div className="text-xs text-amber-700 dark:text-amber-400 leading-relaxed">
+                          <span className="font-semibold">Case is {projectStatus}.</span> No workflow stage is applicable.
+                          Change the project status to resume the pipeline.
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* Inline locked message (when a circle is clicked) */}
+                  {lockedMsg && (
+                    <div className="mb-4 flex items-start gap-3 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3">
+                      <Lock className="h-4 w-4 text-destructive flex-shrink-0 mt-0.5" />
+                      <p className="text-xs text-destructive leading-relaxed flex-1">{lockedMsg}</p>
+                      <button onClick={() => setLockedMsg(null)} className="text-destructive/60 hover:text-destructive">
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  )}
+
                   {/* Progress bar */}
                   {(() => {
                     const stages = data.stages as any[];
@@ -127,20 +191,33 @@ export function ProjectDetailPanel({ projectId, onClose }: Props) {
                         const isActive = s.status === "In Progress";
                         const stages   = data.stages as any[];
                         const nextDone = stages[i + 1]?.status === "Completed";
+                        const isTerminal = TERMINAL_STATUSES.includes(data.project?.status);
 
                         return (
                           <div key={s.id} className="flex items-start">
                             {/* Stage node */}
                             <div className="flex flex-col items-center w-[88px] text-center">
-                              {/* Circle */}
-                              <div className={`w-9 h-9 rounded-full flex items-center justify-center border-2 flex-shrink-0 transition-all ${
-                                isDone
-                                  ? "border-green-500 bg-green-500 shadow shadow-green-500/30"
-                                  : isActive
-                                  ? "border-blue-500 bg-blue-500 shadow shadow-blue-500/30"
-                                  : "border-border bg-muted/40"
-                              }`}>
-                                {isDone ? (
+                              {/* Circle — clickable to advance to this stage (locked when terminal) */}
+                              <button
+                                title={isTerminal ? `Case is ${data.project?.status} — pipeline locked` : `Set "${s.stage_name}" as active stage`}
+                                disabled={advancingStage !== null}
+                                onClick={() => advanceToStage(s.stage_name)}
+                                className={`w-9 h-9 rounded-full flex items-center justify-center border-2 flex-shrink-0 transition-all ${
+                                  isTerminal
+                                    ? "border-muted-foreground/30 bg-muted/20 cursor-not-allowed opacity-60"
+                                    : advancingStage === s.stage_name
+                                    ? "border-gold bg-gold/20 animate-pulse cursor-wait"
+                                    : isDone
+                                    ? "border-green-500 bg-green-500 shadow shadow-green-500/30 hover:bg-green-400 hover:scale-110 hover:shadow-lg cursor-pointer"
+                                    : isActive
+                                    ? "border-blue-500 bg-blue-500 shadow shadow-blue-500/30 hover:bg-blue-400 hover:scale-110 hover:shadow-lg cursor-pointer"
+                                    : "border-border bg-muted/40 hover:border-blue-400 hover:bg-blue-500/10 hover:scale-110 hover:shadow-lg cursor-pointer"
+                                }`}>
+                                {isTerminal ? (
+                                  <Lock className="w-3 h-3 text-muted-foreground/50" />
+                                ) : advancingStage === s.stage_name ? (
+                                  <Loader2 className="w-3.5 h-3.5 text-gold animate-spin" />
+                                ) : isDone ? (
                                   <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                                   </svg>
@@ -149,7 +226,7 @@ export function ProjectDetailPanel({ projectId, onClose }: Props) {
                                 ) : (
                                   <div className="w-2 h-2 rounded-full bg-muted-foreground/25" />
                                 )}
-                              </div>
+                              </button>
                               {/* Step number */}
                               <span className="text-[9px] text-muted-foreground/50 font-mono mt-0.5">{i + 1}</span>
                               {/* Stage name */}
@@ -202,12 +279,22 @@ export function ProjectDetailPanel({ projectId, onClose }: Props) {
                         <span className="text-[10px] text-muted-foreground">{l.label}</span>
                       </div>
                     ))}
+                    {!TERMINAL_STATUSES.includes(data.project?.status) && (
+                      <span className="text-[10px] text-muted-foreground/50 italic">Click a stage circle to advance</span>
+                    )}
                     {(data.total_stage_days ?? 0) > 0 && (
                       <span className="ml-auto text-[10px] text-muted-foreground">
                         Total: <span className="font-semibold text-foreground">{data.total_stage_days}</span> working days
                       </span>
                     )}
                   </div>
+                </div>
+              )}
+
+              {/* Deadlines — statutory docketing engine (shared component) */}
+              {tab === "deadlines" && (
+                <div className="p-6">
+                  <DocketDeadlines projectId={projectId} />
                 </div>
               )}
 
@@ -400,8 +487,8 @@ export function ProjectDetailPanel({ projectId, onClose }: Props) {
                   {(!data.elevations || data.elevations.length === 0) ? (
                     <div className="flex flex-col items-center justify-center py-16 text-center">
                       <Clock className="h-10 w-10 text-muted-foreground opacity-30 mb-3" />
-                      <p className="text-sm text-muted-foreground">No elevation history — this case has not been elevated yet.</p>
-                      <p className="text-xs text-muted-foreground mt-1">Use "Elevate Service" or "Link Predecessor" on the case to build a chain.</p>
+                      <p className="text-sm text-muted-foreground">No service history — the service code on this case has not been changed yet.</p>
+                      <p className="text-xs text-muted-foreground mt-1">Use "Change Service" or "Link Predecessor" on the case to build a chain.</p>
                     </div>
                   ) : (
                     <div>
@@ -427,7 +514,7 @@ export function ProjectDetailPanel({ projectId, onClose }: Props) {
                             nodes.push({
                               docket: ev.to_docket,
                               serviceCode: ev.to_service_code,
-                              label: ev.is_retroactive_link ? "Linked" : "Elevated",
+                              label: ev.is_retroactive_link ? "Linked" : "Changed",
                               elevatedAt: ev.elevated_at,
                               elevatedBy: ev.elevated_by?.name,
                               note: ev.note,
@@ -540,7 +627,7 @@ export function ProjectDetailPanel({ projectId, onClose }: Props) {
                             {/* Total summary */}
                             {totalDays !== null && (
                               <div className="mt-4 rounded-lg border border-border bg-muted/30 px-4 py-3 text-xs text-muted-foreground">
-                                Total time across {elevations.length} elevation{elevations.length !== 1 ? "s" : ""}:{" "}
+                                Total time across {elevations.length} service change{elevations.length !== 1 ? "s" : ""}:{" "}
                                 <span className="font-semibold text-foreground">{totalDays} calendar days</span>
                                 {data.project?.original_docket && (
                                   <span className="ml-4">Original docket: <span className="font-mono text-gold">{data.project.original_docket}</span></span>
@@ -575,7 +662,7 @@ export function ProjectDetailPanel({ projectId, onClose }: Props) {
                                             ? "bg-teal-500/10 text-teal-500"
                                             : "bg-amber-500/10 text-amber-500"
                                         }`}>
-                                          {ev.is_retroactive_link ? "Link" : "Elevate"}
+                                          {ev.is_retroactive_link ? "Link" : "Changed"}
                                         </span>
                                       </td>
                                       <td className="py-2.5 text-muted-foreground italic">{ev.note ?? "—"}</td>

@@ -211,6 +211,8 @@ class ProjectDocketImportController extends Controller
             'default_manager_id'    => 'nullable|integer|exists:users,id',
         ]);
 
+        set_time_limit(600); // large files can take several minutes
+
         $skipConflicts       = (bool) $request->input('skip_conflicts', true);
         $skipTransferred     = (bool) $request->input('skip_transferred', true);
         $skipUnknownClients  = (bool) $request->input('skip_unknown_clients', false);
@@ -232,29 +234,46 @@ class ProjectDocketImportController extends Controller
         $allClients  = Client::select('id', 'client_code', 'company_name', 'legal_name')->get();
         $clientIndex = $this->buildClientIndex($allClients);
 
+        // Pre-resolve all unique client names OUTSIDE transactions (fuzzy matching is expensive)
+        $allNames   = array_unique(array_filter(array_column($parsed, 'client_name')));
+        $clientCache = [];
+        foreach ($allNames as $name) {
+            $clientCache[strtolower(trim($name))] = $this->resolveClient($name, $clientIndex, $explicitMap);
+        }
+
         $imported = 0;
         $skipped  = 0;
         $errors   = [];
+        // Tracks clients created during this import so the same name isn't re-created
+        $createdClients = []; // ['lower_name' => Client]
 
         foreach ($parsed as $idx => $p) {
-            $rowNum = $idx + 2;
+            $rowNum  = $idx + 2;
+            $nameLow = strtolower(trim($p['client_name']));
 
             if ($p['skip']) { $skipped++; continue; }
 
             if ($skipTransferred && ($p['transferred'] ?? false)) { $skipped++; continue; }
 
+            $preResolved = $clientCache[$nameLow] ?? null;
+
             try {
                 DB::transaction(function () use (
-                    $p, $user, $defaultPartnerId, $defaultManagerId,
-                    $skipConflicts, $skipUnknownClients, $clientIndex,
-                    $rowNum, &$imported, &$skipped, &$errors
+                    $p, $nameLow, $user, $defaultPartnerId, $defaultManagerId,
+                    $skipConflicts, $skipUnknownClients, $preResolved,
+                    $rowNum, &$imported, &$skipped, &$errors, &$createdClients
                 ) {
-                    // Fuzzy-resolve client (explicit map takes priority), then lock the matched row
-                    $match  = $this->resolveClient($p['client_name'], $clientIndex, $explicitMap);
+                    // Lock the pre-resolved client row; fuzzy matching already done above
                     $client = null;
+                    if ($preResolved) {
+                        $client = Client::where('id', $preResolved['client']->id)->lockForUpdate()->first();
+                    }
 
-                    if ($match) {
-                        $client = Client::where('id', $match['client']->id)->lockForUpdate()->first();
+                    if (! $client) {
+                        // Check if we already created this client earlier in this import run
+                        if (isset($createdClients[$nameLow])) {
+                            $client = Client::where('id', $createdClients[$nameLow]->id)->lockForUpdate()->first();
+                        }
                     }
 
                     if (! $client) {
@@ -263,6 +282,7 @@ class ProjectDocketImportController extends Controller
                             return;
                         }
                         $client = $this->createMinimalClient($p, $user);
+                        $createdClients[$nameLow] = $client;
                     }
 
                     // Build the canonical 12-char docket
@@ -531,6 +551,8 @@ class ProjectDocketImportController extends Controller
         $projectStatus = 'In Progress';
         if ($isAbandoned || $isTransferred) {
             $projectStatus = 'Closed';
+        } elseif ($isGranted) {
+            $projectStatus = 'Completed';
         }
 
         $circle = null;
@@ -915,47 +937,9 @@ class ProjectDocketImportController extends Controller
 
     private function defaultStagesForService(string $svc): array
     {
-        return match (true) {
-            in_array($svc, ['PAS', 'SRH', 'PAT', 'FTO']) => [
-                'Awaiting IDF from Client', 'Prior Art Search', 'Search Report Ready', 'Search Report Shared',
-            ],
-            $svc === 'PRV' => [
-                'IDF Received', 'Drafting', 'Internal Review', 'Awaiting Signed Forms', 'Filing', 'Filed',
-            ],
-            in_array($svc, ['CPT', 'NPA', 'NPEP']) => [
-                'IDF Received', 'Claims Ready to Share', 'Claims Approved', 'Drafting',
-                'Internal Review', 'Draft Shared with Client', 'Awaiting Client Feedback',
-                'Client Comments Received', 'Revised Draft Shared', 'Drafted',
-                'Awaiting Signed Forms', 'Filing', 'Filed — Waiting for FER or Grant',
-            ],
-            in_array($svc, ['FER', 'SER', 'TER']) => [
-                'FER Received', 'FER Response in Progress', 'FER Response Filed',
-            ],
-            $svc === 'HRG' => [
-                'Hearing Scheduled', 'Hearing Response in Progress', 'Hearing Response Filed', 'Granted',
-            ],
-            $svc === 'DSN' => [
-                'Design Brief Received', 'Drawings in Progress', 'Filing', 'Filed', 'Examination',
-            ],
-            $svc === 'PCT' => [
-                'PCT Application Filed', 'International Search Report', 'National Phase Entry Planning',
-            ],
-            $svc === 'INC' => [
-                'Recordal Request Received', 'Documentation', 'Filing', 'Filed',
-            ],
-            $svc === 'DIV' => [
-                'Divisional Filed', 'Examination', 'Response', 'Granted',
-            ],
-            $svc === 'POA' => [
-                'POA Drafted', 'POA Signed', 'POA Filed',
-            ],
-            $svc === 'CVP' => [
-                'Convention Application Filed', 'Examination', 'Response', 'Granted',
-            ],
-            default => [
-                'Intake', 'Drafting', 'Filing', 'Filed — Awaiting Examination', 'Examination',
-            ],
-        };
+        // Single source of truth — delegate to ProjectController::stagesForCode()
+        // so import-created matters always match the canonical stage arrays.
+        return app(ProjectController::class)->stagesForCode($svc);
     }
 
     // ── Client creation ────────────────────────────────────────────────────
@@ -967,14 +951,36 @@ class ProjectDocketImportController extends Controller
         $nationality = $isIndian ? 'India' : 'Unknown';
         $gstType     = $isIndian ? 'B2C' : 'Export';
 
-        $year = date('Y');
-        $last = Client::where('client_code', 'like', "C{$year}%")
-                      ->orderBy('client_code', 'desc')
-                      ->lockForUpdate()
-                      ->value('client_code');
-        $seq    = $last ? ((int) substr($last, -(strlen($last) - 5))) + 1 : 1;
         $suffix = $isIndian ? 'M' : 'Y';
-        $code   = 'C' . sprintf('%03d', $seq) . $suffix;
+
+        // Use the same pattern as ClientController::generateClientCode()
+        // Codes are [Letter][2-digits][M|Y], e.g. C00M, C01M, C99M, D00M …
+        $all  = Client::whereNotNull('client_code')->lockForUpdate()->get(['client_code']);
+        $last = $all->filter(fn($c) => preg_match('/^[C-Z][0-9]{2}[MY]?$/', $c->client_code))
+                    ->sort(fn($a, $b) => strcmp($b->client_code, $a->client_code))
+                    ->first()?->client_code;
+
+        $base = $last ? substr($last, 0, 3) : 'C00';
+        $letter = $base[0];
+        $num    = (int) substr($base, 1, 2);
+        if ($num < 99) {
+            $base = $letter . str_pad($num + 1, 2, '0', STR_PAD_LEFT);
+        } else {
+            $base = chr(ord($letter) + 1) . '00';
+        }
+
+        $code = $base . $suffix;
+        // Guard against any remaining collision
+        while (Client::withTrashed()->where('client_code', $code)->exists()) {
+            $letter = $base[0];
+            $num    = (int) substr($base, 1, 2);
+            if ($num < 99) {
+                $base = $letter . str_pad($num + 1, 2, '0', STR_PAD_LEFT);
+            } else {
+                $base = chr(ord($letter) + 1) . '00';
+            }
+            $code = $base . $suffix;
+        }
 
         $client = Client::create([
             'client_code'  => $code,

@@ -141,6 +141,23 @@ export const api = {
     return this.request(`/projects/${id}/stage`, { method: 'POST', body: JSON.stringify({ stage_name: stageName }) })
   },
 
+  // ── Docketing engine ──
+  async getProjectDocket(projectId: number | string): Promise<any> {
+    return this.request(`/projects/${projectId}/docket`)
+  },
+  async recordDocketEvent(projectId: number | string, data: { event_type: string; event_date: string; notes?: string }): Promise<any> {
+    return this.request(`/projects/${projectId}/docket/events`, { method: 'POST', body: JSON.stringify(data) })
+  },
+  async updateDocketDeadline(deadlineId: number | string, status: string, notes?: string): Promise<any> {
+    return this.request(`/docket/deadlines/${deadlineId}`, { method: 'PATCH', body: JSON.stringify({ status, notes }) })
+  },
+  async updateRenewal(renewalId: number | string, status: string): Promise<any> {
+    return this.request(`/docket/renewals/${renewalId}`, { method: 'PATCH', body: JSON.stringify({ status }) })
+  },
+  async getUpcomingDeadlines(days = 90): Promise<any[]> {
+    return this.request(`/docket/upcoming?days=${days}`)
+  },
+
   // ── Tasks ──
   async getTasks(status?: string): Promise<Task[]> {
     const res = await this.request<PaginatedResponse<Task> | Task[]>(`/tasks${status ? `?status=${encodeURIComponent(status)}` : ''}`)
@@ -633,6 +650,10 @@ export const api = {
     const q = roleFilter && roleFilter !== 'all' ? `?role_filter=${roleFilter}` : ''
     return this.request(`/projects/lifecycle-stats${q}`)
   },
+  async getLifecycleServiceStats(roleFilter?: string): Promise<Record<string, number>> {
+    const q = roleFilter && roleFilter !== 'all' ? `?role_filter=${roleFilter}` : ''
+    return this.request(`/projects/lifecycle-service-stats${q}`)
+  },
   async inspectImportSheets(file: File): Promise<{ sheets: { name: string; rows: number; is_data_sheet: boolean }[] }> {
     const formData = new FormData()
     formData.append('file', file)
@@ -767,12 +788,14 @@ export const api = {
     return this.request('/projects/bulk-link-chains', { method: 'POST', body: JSON.stringify({ pairs }) })
   },
 
-  async docketImportPreview(file: File): Promise<{
+  async docketImportPreview(file: File, mappingFile?: File | null): Promise<{
     total: number; importable: number; skipped: number; abandoned: number; granted: number;
     known_clients: number; unknown_clients: string[]; docket_conflicts: string[]; sample: any[];
+    fuzzy_matches: any[];
   }> {
     const form = new FormData()
     form.append('file', file)
+    if (mappingFile) form.append('mapping_file', mappingFile)
     const headers: Record<string, string> = { Accept: 'application/json', 'X-XSRF-TOKEN': getCsrfToken() }
     const res = await fetch('/api/projects/docket-import/preview', { method: 'POST', body: form, headers, credentials: 'same-origin' })
     if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error((e as any).message || `Error ${res.status}`) }
@@ -781,12 +804,16 @@ export const api = {
 
   async docketImport(file: File, opts: {
     skip_conflicts?: boolean; skip_transferred?: boolean;
+    skip_unknown_clients?: boolean;
     default_partner_id?: number; default_manager_id?: number;
+    mapping_file?: File | null;
   }): Promise<{ imported: number; skipped: number; errors: string[] }> {
     const form = new FormData()
     form.append('file', file)
+    if (opts.mapping_file) form.append('mapping_file', opts.mapping_file)
     if (opts.skip_conflicts !== undefined) form.append('skip_conflicts', opts.skip_conflicts ? '1' : '0')
     if (opts.skip_transferred !== undefined) form.append('skip_transferred', opts.skip_transferred ? '1' : '0')
+    if (opts.skip_unknown_clients !== undefined) form.append('skip_unknown_clients', opts.skip_unknown_clients ? '1' : '0')
     if (opts.default_partner_id) form.append('default_partner_id', String(opts.default_partner_id))
     if (opts.default_manager_id) form.append('default_manager_id', String(opts.default_manager_id))
     const headers: Record<string, string> = { Accept: 'application/json', 'X-XSRF-TOKEN': getCsrfToken() }

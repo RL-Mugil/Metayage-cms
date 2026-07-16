@@ -66,6 +66,24 @@ export function ClientDetailPanel({ clientId, onClose }: Props) {
           </button>
         </div>
 
+        {/* KPI strip */}
+        {data && (
+          <div className="flex gap-3 px-6 py-3 border-b border-border bg-muted/20 flex-shrink-0">
+            {[
+              { label: "Cases", value: data.projects.length },
+              { label: "Active", value: (data.projects as any[]).filter((p: any) => p.status === "In Progress").length },
+              { label: "Granted", value: (data.projects as any[]).filter((p: any) => p.status === "Granted" || p.status === "Completed").length },
+              { label: "Invoiced", value: `₹${Number(data.invoice_summary.total_invoiced).toLocaleString("en-IN", { maximumFractionDigits: 0 })}` },
+              { label: "Balance", value: `₹${Number(data.invoice_summary.total_pending).toLocaleString("en-IN", { maximumFractionDigits: 0 })}` },
+            ].map((kpi) => (
+              <div key={kpi.label} className="flex-1 text-center">
+                <p className="text-[10px] text-muted-foreground">{kpi.label}</p>
+                <p className="text-sm font-semibold font-mono">{kpi.value}</p>
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* Tabs */}
         <div className="flex border-b border-border flex-shrink-0 px-6">
           {(["cases", "invoices", "ledger"] as Tab[]).map((t) => (

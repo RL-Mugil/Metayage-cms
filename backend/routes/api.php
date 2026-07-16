@@ -34,7 +34,7 @@ Route::post('/webhooks/{slug}', [\App\Http\Controllers\WebhookController::class,
 Route::prefix('mobile')->middleware('throttle:20,1')->group(function () {
     Route::post('/auth/login', [MobileAuthController::class, 'login']);
 
-    Route::middleware('auth:sanctum')->group(function () {
+    Route::middleware(['auth:sanctum', 'firm.context'])->group(function () {
         Route::post('/auth/logout', [MobileAuthController::class, 'logout']);
         Route::get('/me', [MobileAuthController::class, 'me']);
         Route::post('/push-tokens', [MobileDeviceController::class, 'register']);
@@ -42,7 +42,7 @@ Route::prefix('mobile')->middleware('throttle:20,1')->group(function () {
     });
 });
 
-Route::middleware(['auth:sanctum', 'throttle:120,1'])->group(function () {
+Route::middleware(['auth:sanctum', 'firm.context', 'throttle:120,1'])->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/me', [AuthController::class, 'me']);
     Route::get('/users', [AuthController::class, 'users']);
@@ -74,6 +74,7 @@ Route::middleware(['auth:sanctum', 'throttle:120,1'])->group(function () {
     // Cases / Projects
     Route::get('/projects/stats', [ProjectController::class, 'stats']);
     Route::get('/projects/lifecycle-stats', [ProjectController::class, 'lifecycleStats']);
+    Route::get('/projects/lifecycle-service-stats', [ProjectController::class, 'lifecycleServiceStats']);
     Route::get('/projects/import-template', [\App\Http\Controllers\ProjectImportController::class, 'template']);
     Route::post('/projects/import/sheets', [\App\Http\Controllers\ProjectImportController::class, 'inspectSheets'])->middleware('throttle:60,1');
     Route::post('/projects/import', [\App\Http\Controllers\ProjectImportController::class, 'import'])->middleware('throttle:60,1');
@@ -90,6 +91,13 @@ Route::middleware(['auth:sanctum', 'throttle:120,1'])->group(function () {
     Route::post('/projects/{id}/link-predecessor', [ProjectController::class, 'linkPredecessor']);
     Route::post('/projects/docket-import/preview', [\App\Http\Controllers\ProjectDocketImportController::class, 'preview'])->middleware('throttle:60,1');
     Route::post('/projects/docket-import/import', [\App\Http\Controllers\ProjectDocketImportController::class, 'import'])->middleware('throttle:30,1');
+
+    // Docketing engine — events, statutory deadlines, renewals
+    Route::get('/docket/upcoming', [\App\Http\Controllers\DocketController::class, 'upcoming']);
+    Route::get('/projects/{id}/docket', [\App\Http\Controllers\DocketController::class, 'show']);
+    Route::post('/projects/{id}/docket/events', [\App\Http\Controllers\DocketController::class, 'storeEvent']);
+    Route::patch('/docket/deadlines/{id}', [\App\Http\Controllers\DocketController::class, 'updateDeadline']);
+    Route::patch('/docket/renewals/{id}', [\App\Http\Controllers\DocketController::class, 'updateRenewal']);
 
     // Tasks & Time tracking
     Route::get('/tasks', [TaskController::class, 'index']);

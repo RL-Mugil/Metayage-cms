@@ -808,7 +808,12 @@ export default function Clients() {
                       const gm = GST_META[c.gst_type ?? ""] ?? null;
                       return (
                         <tr key={c.id} className="border-t border-border hover:bg-muted/20">
-                          <td className="px-4 py-3 font-mono text-xs font-semibold text-gold">{c.client_code ?? "—"}</td>
+                          <td className="px-4 py-3">
+                            <button
+                              onClick={() => setDetailClientId(c.id)}
+                              className="font-mono text-xs font-semibold text-gold hover:underline"
+                            >{c.client_code ?? "—"}</button>
+                          </td>
                           <td className="px-4 py-3">
                             <div className="font-medium">{dname(c)}</div>
                             {c.pan_number && <div className="text-xs text-muted-foreground font-mono">PAN: {c.pan_number}</div>}
@@ -890,7 +895,10 @@ export default function Clients() {
                   <CardContent className="p-4">
                     <div className="flex items-start justify-between mb-2">
                       <div>
-                        <span className="font-mono text-xs text-gold font-semibold">{c.client_code ?? "—"}</span>
+                        <button
+                          onClick={() => setDetailClientId(c.id)}
+                          className="font-mono text-xs text-gold font-semibold hover:underline"
+                        >{c.client_code ?? "—"}</button>
                         <div className="font-semibold text-sm mt-0.5 leading-tight">{dname(c)}</div>
                         <div className="text-xs text-muted-foreground">{c.entity_subtype ?? (c.client_type==="individual"?"Individual":"Organization")}</div>
                       </div>

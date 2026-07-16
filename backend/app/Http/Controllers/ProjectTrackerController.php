@@ -31,136 +31,183 @@ class ProjectTrackerController extends Controller implements HasMiddleware
         ];
     }
 
-    // Status → percentage_of_completion mapping (locked, auto-computed on save)
+    // Status → percentage_of_completion mapping (auto-computed on save)
+    // Stage names now match project pipeline stages 1:1; percentages follow stage position.
     const STATUS_COMPLETION = [
-        'Not Started'                        => 0,
-        'Allocated'                          => 5,
-        'IDF Received'                       => 8,
-        'Discovery Call Scheduled'           => 12,
-        'Discovery Call Done'                => 15,
-        'Prior Art Search'                   => 20,
-        'Search Report Ready'                => 25,
-        'Search Report Shared'               => 28,
-        'Awaiting IDF from Client'           => 30,
-        'Patent Drafting'                    => 35,
-        'Drafting in Progress'               => 35,
-        'Claims Ready to Share'              => 45,
-        'Claims Approved'                    => 48,
-        'Internal Review'                    => 55,
-        'Draft Shared with Client'           => 60,
-        'Awaiting Client Feedback'           => 65,
-        'Client Comments Received'           => 68,
-        'Draft Being Updated'                => 70,
-        'Revised Draft Shared'               => 72,
-        'Draft Approved'                     => 75,
-        'Provisional or Complete Filing Prep' => 78,
-        'Complete or Provisional Filed'       => 80,
-        'Awaiting Signed Forms'              => 82,
-        'Ready to File'                      => 85,
-        'Filing'                             => 88,
-        'Awaiting Payment'                   => 90,
-        'Filed'                              => 92,
-        'FER Received'                       => 93,
-        'FER Response in Progress'           => 94,
-        'FER Response Filed'                 => 95,
-        'Hearing Scheduled'                  => 96,
-        'Hearing Response in Progress'       => 97,
-        'Hearing Response Filed'             => 98,
-        'Granted'                            => 100,
-        'Renewal Due'                        => 95,
-        'Completed'                          => 100,
-        'Abandoned'                          => null,
-        'On Hold'                            => null,
-    ];
-
-    // Status → lifecycle stage mapping (tracker status change → auto-advance project stage)
-    // New service-code stages map 1:1 to tracker statuses; legacy stages preserved.
-    const STATUS_STAGE = [
-        // Legacy general stages
-        'Not Started'                         => 'Invention Disclosure',
-        'Allocated'                           => 'Invention Disclosure',
-        'Discovery Call Scheduled'            => 'Invention Disclosure',
-        'Discovery Call Done'                 => 'Invention Disclosure',
-        'Patent Drafting'                     => 'Patent Drafting',
-        'Provisional or Complete Filing Prep' => 'Provisional or Complete Application',
-        'Complete or Provisional Filed'       => 'Provisional Filing',
-        'Ready to File'                       => 'Filing with Patent Office',
-        'Awaiting Payment'                    => 'Filing with Patent Office',
-        'Renewal Due'                         => 'Renewal',
-        'Completed'                           => 'Granted',
-        // Service-code-specific stages (1:1 name match)
-        'Prior Art Search'             => 'Prior Art Search',
-        'Search Report Ready'          => 'Search Report Ready',
-        'Search Report Shared'         => 'Search Report Shared',
-        'Awaiting IDF from Client'     => 'Awaiting IDF from Client',
-        'IDF Received'                 => 'IDF Received',
-        'Drafting in Progress'         => 'Drafting in Progress',
-        'Claims Ready to Share'        => 'Claims Ready to Share',
-        'Claims Approved'              => 'Claims Approved',
-        'Internal Review'              => 'Internal Review',
-        'Draft Shared with Client'     => 'Draft Shared with Client',
-        'Awaiting Client Feedback'     => 'Awaiting Client Feedback',
-        'Client Comments Received'     => 'Client Comments Received',
-        'Draft Being Updated'          => 'Internal Review',
-        'Revised Draft Shared'         => 'Revised Draft Shared',
-        'Draft Approved'               => 'Draft Approved',
-        'Awaiting Signed Forms'        => 'Awaiting Signed Forms',
-        'Filing'                       => 'Filing',
-        'Filed'                        => 'Filed',
-        'FER Received'                 => 'FER Received',
-        'FER Response in Progress'     => 'FER Response in Progress',
-        'FER Response Filed'           => 'FER Response Filed',
-        'Hearing Scheduled'            => 'Hearing Scheduled',
-        'Hearing Response in Progress' => 'Hearing Response in Progress',
-        'Hearing Response Filed'       => 'Hearing Response Filed',
-        'Granted'                      => 'Granted',
-        'Abandoned'                    => null,
-        'On Hold'                      => null,
-    ];
-
-    // Pipeline stage → tracker status mapping (project stage advance → auto-update tracker row)
-    // New service-code stages are 1:1; legacy stages preserved for backwards compatibility.
-    const STAGE_STATUS = [
-        // Legacy general stages
-        'Invention Disclosure'                => 'IDF Received',
-        'Patent Search'                       => 'Prior Art Search',
-        'Search Report'                       => 'Search Report Shared',
-        'Provisional or Complete Application' => 'Provisional or Complete Filing Prep',
-        'Provisional Filing'                  => 'Complete or Provisional Filed',
-        'Patent Drafting'                     => 'Drafting in Progress',
-        'Applicant/Inventor Review'           => 'Draft Shared with Client',
-        'Filing with Patent Office'           => 'Ready to File',
-        'First Examination Report'            => 'FER Received',
-        'FER Response Preparation'            => 'FER Response in Progress',
-        'FER Response Filing'                 => 'FER Response Filed',
-        'Hearing with Examiner'               => 'Hearing Scheduled',
-        'Hearing Response Preparation'        => 'Hearing Response in Progress',
-        'Hearing Response Filing'             => 'Hearing Response Filed',
-        // Service-code-specific stages (1:1 name match)
-        'Prior Art Search'             => 'Prior Art Search',
-        'Search Report Ready'          => 'Search Report Ready',
-        'Search Report Shared'         => 'Search Report Shared',
-        'Awaiting IDF from Client'     => 'Awaiting IDF from Client',
-        'IDF Received'                 => 'IDF Received',
-        'Drafting in Progress'         => 'Drafting in Progress',
-        'Claims Ready to Share'        => 'Claims Ready to Share',
-        'Claims Approved'              => 'Claims Approved',
-        'Internal Review'              => 'Internal Review',
-        'Draft Shared with Client'     => 'Draft Shared with Client',
-        'Awaiting Client Feedback'     => 'Awaiting Client Feedback',
-        'Client Comments Received'     => 'Client Comments Received',
-        'Revised Draft Shared'         => 'Revised Draft Shared',
-        'Draft Approved'               => 'Draft Approved',
-        'Awaiting Signed Forms'        => 'Awaiting Signed Forms',
-        'Filing'                       => 'Filing',
-        'Filed'                        => 'Filed',
-        'FER Received'                 => 'FER Received',
-        'FER Response in Progress'     => 'FER Response in Progress',
-        'FER Response Filed'           => 'FER Response Filed',
-        'Hearing Scheduled'            => 'Hearing Scheduled',
-        'Hearing Response in Progress' => 'Hearing Response in Progress',
-        'Hearing Response Filed'       => 'Hearing Response Filed',
-        // Granted/Renewal/Abandoned are always manual entry — no auto-fill
+        // PAS / SRH / PAT / FTO
+        'Matter Created'                                         => 10,
+        'Inventor / Technology Disclosure Requested'            => 20,
+        'Disclosure Received'                                   => 30,
+        'Search Parameters Defined'                             => 45,
+        'Prior Art Search In Progress'                          => 60,
+        'Search Report Drafted'                                 => 72,
+        'Search Report Reviewed Internally'                     => 85,
+        'Search Report Shared with Client'                      => 100,
+        // PRV
+        'Inventor Disclosure Requested'                         => 8,
+        'Inventor Disclosure Received'                          => 15,
+        'Prior Art Search (Optional)'                           => 20,
+        'Draft Started'                                         => 30,
+        'Draft Completed'                                       => 40,
+        'Internal Review'                                       => 50,
+        'Corrections Incorporated'                              => 55,
+        'Partner Review'                                        => 60,
+        'Client Review'                                         => 65,
+        'Client Approved'                                       => 70,
+        'Forms Prepared (Form 1, 2, 3)'                         => 78,
+        'Government Fees Calculated'                            => 83,
+        'Filed with IPO'                                        => 90,
+        'Application Number Received'                           => 96,
+        'Completed — CPT Deadline Set (12 months)'              => 100,
+        // CPT / CPE
+        'Inventor Disclosure Reviewed'                          => 10,
+        'Claims Drafted'                                        => 18,
+        'Claims Shared with Client'                             => 25,
+        'Claims Approved by Client'                             => 30,
+        'Specification Drafting Started'                        => 35,
+        'Draft Shared with Client'                              => 60,
+        'Client Feedback Received'                              => 65,
+        'Revised Draft Completed'                               => 72,
+        'Government Fees Paid'                                  => 88,
+        'Completed — Awaiting Publication'                      => 100,
+        // CPD
+        'Filed with IPO — Awaiting Publication'                 => 100,
+        // CVP
+        'Priority Application Documents Received'               => 15,
+        'Priority Date Verified'                                => 25,
+        '12-Month Deadline Confirmed'                           => 30,
+        'Claims Drafted (adapted for Indian law)'               => 40,
+        'Specification Drafted'                                 => 50,
+        'Client Approval'                                       => 65,
+        'Forms Prepared (Form 1, 2, 3, 4 — Priority)'           => 75,
+        'Filed with IPO (within 12 months of priority)'         => 92,
+        // PCT
+        'International Application Drafted'                     => 20,
+        'Receiving Office Selected (RO/IN or others)'           => 28,
+        'International Fees Calculated'                         => 35,
+        'Application Filed at Receiving Office'                 => 50,
+        'Filing Receipt / IB Reference Received'                => 57,
+        'International Search Report (ISR) Received'            => 64,
+        'Written Opinion Received'                              => 71,
+        'Chapter II Examination (Optional)'                     => 78,
+        'Client Review of ISR / Written Opinion'                => 84,
+        'National Phase Entry Deadline Set (30 months)'         => 92,
+        'International Publication Confirmed (18 months)'       => 96,
+        'Completed — National Phase Entry Pending'              => 100,
+        // NAP / NPE / NAF / NPA
+        'PCT Application Documents Received'                    => 10,
+        '31-Month National Phase Deadline Verified'             => 20,
+        'National Phase Entry Decision Confirmed'               => 28,
+        'Translation Prepared (if required)'                    => 35,
+        'National Phase Entry Application Drafted'              => 43,
+        'Claims Adapted for Indian Law'                         => 50,
+        'Forms Prepared (Form 1, 2, 3 — National Phase)'        => 72,
+        'Filed with IPO (within 31 months)'                     => 86,
+        // DVA
+        'Parent Application Identified'                         => 12,
+        'Claims to Divide Identified'                           => 22,
+        'Controller Objection / Invitation Noted'               => 30,
+        'Divisional Claims Drafted'                             => 40,
+        'Specification Prepared'                                => 50,
+        'Forms Prepared (Form 1, 2)'                            => 70,
+        'Filed with IPO — Linked to Parent'                     => 90,
+        // PAD
+        'Parent Patent Identified'                              => 12,
+        'Improvement / Addition Defined'                        => 22,
+        'Addition Claims Drafted'                               => 33,
+        'Claims Reviewed Internally'                            => 42,
+        'Forms Prepared (Form 1, 2 — Addition)'                 => 67,
+        // 9EP / 98A
+        'Application Filed and Date Recorded'                   => 20,
+        '18-Month Publication Date Calculated'                  => 40,
+        'Published in Official Journal'                         => 60,
+        'Publication Number Confirmed'                          => 80,
+        'Completed — Ready for Examination Request'             => 100,
+        // 18F
+        'Application Published (18F Trigger)'                   => 15,
+        'RFE Deadline Calculated (48 months from filing)'       => 30,
+        'Examination Request Decision Made'                     => 43,
+        'Form 18 Prepared'                                      => 57,
+        'Government Fee Calculated'                             => 71,
+        'RFE Filed with IPO'                                    => 86,
+        'Completed — Awaiting First Examination Report'         => 100,
+        // 18A
+        'Application Published (18A Trigger)'                   => 13,
+        'Grounds for Acceleration Prepared'                     => 38,
+        'Form 18A Prepared'                                     => 63,
+        'Completed — Awaiting First Examination Report (Expedited)' => 100,
+        // FER / SER / TER
+        'Examination Report Received'                           => 11,
+        'Objections Analyzed'                                   => 22,
+        'Response Strategy Formulated'                          => 33,
+        'Claims Amended / Arguments Drafted'                    => 44,
+        'Client Communicated'                                   => 67,
+        'Response Filed (Form 3 / 13)'                          => 89,
+        'Completed — Awaiting Controller Decision'              => 100,
+        // HRG
+        'Hearing Notice Received'                               => 11,
+        'Hearing Date Set'                                      => 22,
+        'Arguments Prepared'                                    => 33,
+        'Prior Art / Documents Compiled'                        => 44,
+        'Written Arguments / Counter-Statement Filed'           => 67,
+        'Hearing Attended'                                      => 78,
+        'Awaiting Hearing Order'                                => 95,
+        // GRT
+        'Grant Order Received'                                  => 17,
+        'Patent Certificate Issued'                             => 33,
+        'Patent Number Recorded'                                => 50,
+        'Annual Renewal Date Set (Year 1 from filing)'          => 67,
+        'Form 27 Filing Schedule Set'                           => 83,
+        'Completed — Patent Active'                             => 100,
+        // RNF
+        'Renewal Year Identified'                               => 20,
+        'Renewal Fee Due Date Confirmed'                        => 40,
+        'Renewal Decision Made by Client'                       => 60,
+        'Renewal Fee Paid'                                      => 80,
+        'Completed — Next Renewal Set'                          => 100,
+        // RPO
+        'Abandonment Trigger Identified (missed deadline)'      => 25,
+        'Restoration Petition Evaluated'                        => 50,
+        'Decision: Restore or Close'                            => 75,
+        'Completed — Matter Closed'                             => 100,
+        // OPP
+        'Opposition Filed / Received'                           => 9,
+        'Opposition Petition Analyzed'                          => 18,
+        'Reply Statement Drafted'                               => 27,
+        'Evidence Affidavit Prepared'                           => 36,
+        'Evidence of Opponent Received'                         => 45,
+        'Evidence Reply Prepared'                               => 55,
+        'Hearing Scheduled'                                     => 64,
+        'Hearing Arguments Prepared'                            => 73,
+        'Order Received'                                        => 91,
+        'Completed — Patent Maintained or Revoked'              => 100,
+        // 27F
+        'Form 27 Due Date Identified'                           => 25,
+        'Working Statement Prepared'                            => 50,
+        'Form 27 Filed'                                         => 100,
+        // ROA
+        'Refusal Order Received'                                => 33,
+        'Appeal Decision Made'                                  => 67,
+        'Completed — Appeal Filed or Matter Closed'             => 100,
+        // ERH
+        'Notice of Appeal Filed'                                => 11,
+        'Grounds of Appeal Prepared'                            => 22,
+        'Counter-Arguments by Examiner Received'                => 33,
+        'Reply Filed'                                           => 44,
+        'Oral Arguments Scheduled'                              => 56,
+        'Judgment / Order Received'                             => 89,
+        'Completed — Decision'                                  => 100,
+        // 24F
+        'Revocation Petition Received'                          => 13,
+        'Reply Statement Prepared'                              => 25,
+        'Evidence Filed'                                        => 38,
+        'Counter-Evidence Received'                             => 50,
+        // Cross-cutting
+        'On Hold'                                               => null,
+        'Abandoned'                                             => null,
+        'Granted'                                               => 100,
+        'Renewal Due'                                           => 95,
+        'Completed'                                             => 100,
     ];
 
     public function inertiaIndex()
@@ -184,7 +231,7 @@ class ProjectTrackerController extends Controller implements HasMiddleware
         if (! $this->canAccessTrackerCircle($request, $circle)) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
-        $rows = TrackerRow::with(['pcmUser:id,name', 'scmUser:id,name', 'prUser:id,name'])
+        $rows = TrackerRow::with(['pcmUser:id,name', 'scmUser:id,name', 'prUser:id,name', 'project:id,service_code'])
             ->where('circle_id', $circle->id)
             ->orderBy('sort_order')
             ->orderBy('created_at')
@@ -194,6 +241,9 @@ class ProjectTrackerController extends Controller implements HasMiddleware
             'pcm' => $r->pcmUser?->name,
             'scm' => $r->scmUser?->name,
             'pr'  => $r->prUser?->name,
+            // Authoritative service code from the linked project — the frontend
+            // must not re-derive it from docket-number string positions.
+            'service_code' => $r->project?->service_code,
         ])));
     }
 
@@ -311,17 +361,20 @@ class ProjectTrackerController extends Controller implements HasMiddleware
         if (isset($data['status'])) {
             $projectId = $row->project_id;
             if ($projectId) {
-                $stage = self::STATUS_STAGE[$data['status']] ?? null;
-                if ($stage) {
-                    $this->syncProjectStage($projectId, $stage);
+                // Stage name IS the tracker status now (1:1 mapping)
+                $newStatus = $data['status'];
+                if (! in_array($newStatus, ['On Hold', 'Abandoned'])) {
+                    $this->syncProjectStage($projectId, $newStatus);
                 }
 
                 // Map tracker row status to project.status
-                if (in_array($data['status'], ['Completed', 'Granted'])) {
-                    $projStatus = 'Completed';
-                } elseif ($data['status'] === 'On Hold') {
+                if ($newStatus === 'Abandoned' || str_contains($newStatus, 'Matter Closed') || str_contains($newStatus, 'Restore or Close')) {
+                    $projStatus = 'Abandoned';
+                } elseif (in_array($newStatus, ['Granted', 'Completed — Patent Active']) || str_starts_with($newStatus, 'Completed')) {
+                    $projStatus = str_contains($newStatus, 'Patent Active') ? 'Granted' : 'Completed';
+                } elseif ($newStatus === 'On Hold') {
                     $projStatus = 'On Hold';
-                } elseif (in_array($data['status'], ['Not Started', 'Allocated'])) {
+                } elseif ($newStatus === 'Matter Created') {
                     $projStatus = 'Open';
                 } else {
                     $projStatus = 'In Progress';
@@ -639,7 +692,11 @@ class ProjectTrackerController extends Controller implements HasMiddleware
         // Auto-seed pipeline stages if project has none yet
         $hasStages = ProjectStage::where('project_id', $projectId)->exists();
         if (!$hasStages) {
-            $defaultStages = ["Intake", "Drafting", "Filing", "Examination", "Object received", "Granted", "Renewal"];
+            $project = Project::find($projectId);
+            $svc = strtoupper($project?->service_code ?? '');
+            $defaultStages = $svc
+                ? (new \App\Http\Controllers\ProjectController)->stagesForCode($svc)
+                : ['Matter Created', 'Work In Progress', 'Internal Review', 'Partner Review', 'Client Approval', 'Filing / Submission', 'Completed'];
             foreach ($defaultStages as $index => $name) {
                 ProjectStage::create([
                     'project_id'     => $projectId,
@@ -675,18 +732,16 @@ class ProjectTrackerController extends Controller implements HasMiddleware
     /**
      * Called by ProjectController when a pipeline stage is manually advanced.
      * Writes the matching tracker status onto the linked tracker row (if any),
-     * preserving manual overrides — only updates when STAGE_STATUS has a mapping.
+     * preserving manual overrides — stage name IS the tracker status (1:1 mapping).
      */
     public static function syncTrackerRowStatus(int $projectId, string $stageName): void
     {
-        $newStatus = self::STAGE_STATUS[$stageName] ?? null;
-        if (! $newStatus) return;
-
+        // Stage name IS the tracker status now (1:1 mapping)
         $row = TrackerRow::where('project_id', $projectId)->first();
         if (! $row) return;
 
-        $pct = self::STATUS_COMPLETION[$newStatus] ?? null;
-        $update = ['status' => $newStatus];
+        $pct = self::STATUS_COMPLETION[$stageName] ?? null;
+        $update = ['status' => $stageName];
         if ($pct !== null) {
             $update['percentage_of_completion'] = $pct;
         }
