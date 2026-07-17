@@ -2,10 +2,13 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToFirm;
 use Illuminate\Database\Eloquent\Model;
 
 class DocketEvent extends Model
 {
+    use BelongsToFirm;
+
     protected $fillable = [
         'project_id', 'patent_application_id', 'event_type', 'event_date', 'notes', 'created_by',
     ];

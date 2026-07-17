@@ -114,6 +114,16 @@ class DashboardController extends Controller
             ->whereNotIn('id', $successorProjectIds)
             ->count();
 
+        $visibleProjectIds = (clone $activeMattersQuery)->pluck('id');
+        $deadlineBase = \App\Models\DocketDeadline::query()
+            ->whereIn('project_id', $visibleProjectIds)->where('status', 'Open');
+        $deadlineRisk = [
+            'overdue' => (clone $deadlineBase)->whereDate('due_date', '<', now()->startOfDay())->count(),
+            'next_7_days' => (clone $deadlineBase)->whereBetween('due_date', [now()->startOfDay(), now()->addDays(7)->endOfDay()])->count(),
+            'unreviewed' => (clone $deadlineBase)->where('review_status', 'Unreviewed')->count(),
+            'critical' => (clone $deadlineBase)->where('risk_level', 'Critical')->count(),
+        ];
+
         // Financial aggregates — only for roles with financial visibility per RBAC matrix.
         // associate, paralegal, hr have Financial = ❌; zeroing out prevents firm-wide data leaks.
         $canSeeFinancials = in_array($user->role, ['super_admin', 'partner', 'manager', 'finance', 'galvanizer', 'client', 'client_admin']);
@@ -222,6 +232,7 @@ class DashboardController extends Controller
                 'wip_delta_trend'       => 'neutral',
                 'revenue_delta'         => $fmtPctDelta((float)$receivedThisMonth, (float)$receivedLastMonth),
                 'revenue_delta_trend'   => $receivedThisMonth >= $receivedLastMonth ? 'up' : 'down',
+                'deadline_risk'         => $deadlineRisk,
             ],
             'charts' => [
                 'stage_distribution' => $stagesDist,

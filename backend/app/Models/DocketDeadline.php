@@ -9,6 +9,9 @@ class DocketDeadline extends Model
     protected $fillable = [
         'docket_event_id', 'project_id', 'patent_application_id',
         'title', 'legal_basis', 'due_date', 'extended_due_date',
+        'source_type', 'rule_code', 'rule_version', 'calculation_trace',
+        'deadline_rule_definition_id', 'risk_level',
+        'review_status', 'reviewed_by', 'reviewed_at',
         'status', 'completed_at', 'notes',
     ];
 
@@ -16,6 +19,8 @@ class DocketDeadline extends Model
         'due_date'          => 'date',
         'extended_due_date' => 'date',
         'completed_at'      => 'datetime',
+        'calculation_trace' => 'array',
+        'reviewed_at'       => 'datetime',
     ];
 
     public function event()
@@ -31,5 +36,15 @@ class DocketDeadline extends Model
     public function application()
     {
         return $this->belongsTo(PatentApplication::class, 'patent_application_id');
+    }
+
+    public function reviewer()
+    {
+        return $this->belongsTo(User::class, 'reviewed_by');
+    }
+
+    public function ruleDefinition()
+    {
+        return $this->belongsTo(DeadlineRuleDefinition::class, 'deadline_rule_definition_id');
     }
 }

@@ -4,6 +4,7 @@ import type {
   Notification, ReportResponse, AIResponse, DashboardMetrics,
   PaginatedResponse, SearchResult, Quotation, AuditLog, PatentInvoiceIn,
 } from '@/types'
+import type { MatterWorkspace, MatterWorkspaceResponse } from '@/types/matter-workspace'
 
 function getCsrfToken(): string {
   if (typeof document === 'undefined') return ''
@@ -56,6 +57,10 @@ export const api = {
   async getProjectStats(roleFilter?: string): Promise<{ total: number; open: number; in_progress: number; on_hold: number; overdue: number }> {
     const q = roleFilter && roleFilter !== 'all' ? `?role_filter=${roleFilter}` : ''
     return this.request(`/projects/stats${q}`)
+  },
+  async getMatterWorkspace(projectId: number | string): Promise<MatterWorkspace> {
+    const response = await this.request<MatterWorkspaceResponse>(`/projects/${projectId}/workspace`)
+    return response.data
   },
   async getClients(params?: string | URLSearchParams): Promise<PaginatedResponse<Client>> {
     let query = '';
@@ -140,6 +145,17 @@ export const api = {
   async updateProjectStage(id: number | string, stageName: string): Promise<Project> {
     return this.request(`/projects/${id}/stage`, { method: 'POST', body: JSON.stringify({ stage_name: stageName }) })
   },
+  async createFamilyEngagement(familyId: number | string, data: {
+    source_project_id: number
+    patent_office_code: string
+    service_code: string
+    application_number?: string
+    complete_source?: boolean
+    filing_date?: string
+    note?: string
+  }): Promise<{ message: string; project: Project }> {
+    return this.request(`/invention-families/${familyId}/engagements`, { method: 'POST', body: JSON.stringify(data) })
+  },
 
   // ── Docketing engine ──
   async getProjectDocket(projectId: number | string): Promise<any> {
@@ -150,6 +166,15 @@ export const api = {
   },
   async updateDocketDeadline(deadlineId: number | string, status: string, notes?: string): Promise<any> {
     return this.request(`/docket/deadlines/${deadlineId}`, { method: 'PATCH', body: JSON.stringify({ status, notes }) })
+  },
+  async reviewDocketDeadline(deadlineId: number | string, review_status: 'Approved' | 'Rejected', notes?: string): Promise<any> {
+    return this.request(`/docket/deadlines/${deadlineId}/review`, { method: 'PATCH', body: JSON.stringify({ review_status, notes }) })
+  },
+  async getDeadlineRules(): Promise<any[]> {
+    return this.request('/docket/rules')
+  },
+  async updateDeadlineRule(ruleId: number | string, status: 'Approved' | 'Retired'): Promise<any> {
+    return this.request(`/docket/rules/${ruleId}`, { method: 'PATCH', body: JSON.stringify({ status }) })
   },
   async updateRenewal(renewalId: number | string, status: string): Promise<any> {
     return this.request(`/docket/renewals/${renewalId}`, { method: 'PATCH', body: JSON.stringify({ status }) })
@@ -406,7 +431,7 @@ export const api = {
     if (!response.ok) {
       const err = await response.json().catch(() => ({}))
       throw new Error((err as { message?: string }).message || 'Upload failed')
-    }
+  }
     return response.json()
   },
   async deleteDocument(path: string): Promise<{ message: string }> {

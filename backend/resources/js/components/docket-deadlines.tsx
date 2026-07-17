@@ -21,11 +21,15 @@ export function DocketDeadlines({ projectId }: { projectId: number | string }) {
   const [evtType, setEvtType] = useState("");
   const [evtDate, setEvtDate] = useState("");
   const [evtSaving, setEvtSaving] = useState(false);
+  const [rules, setRules] = useState<any[]>([]);
 
   const load = () => {
     setLoading(true);
     api.getProjectDocket(projectId)
-      .then(setDocket)
+      .then(async (data) => {
+        setDocket(data);
+        setRules(data.capabilities?.can_approve_rules ? await api.getDeadlineRules() : []);
+      })
       .catch(() => setDocket(null))
       .finally(() => setLoading(false));
   };
@@ -51,6 +55,14 @@ export function DocketDeadlines({ projectId }: { projectId: number | string }) {
     try { await api.updateRenewal(id, status); load(); } catch { /* ignore */ }
   }
 
+  async function reviewDeadline(id: number, status: 'Approved' | 'Rejected') {
+    try { await api.reviewDocketDeadline(id, status); load(); } catch { /* ignore */ }
+  }
+
+  async function setRuleStatus(id: number, status: 'Approved' | 'Retired') {
+    try { await api.updateDeadlineRule(id, status); load(); } catch { /* ignore */ }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-40">
@@ -67,8 +79,16 @@ export function DocketDeadlines({ projectId }: { projectId: number | string }) {
     );
   }
 
+  const canManage = docket.capabilities?.can_manage === true;
+  const canReview = docket.capabilities?.can_review_deadlines === true;
+
   return (
     <div className="space-y-6">
+      <div className="rounded-md border border-border bg-muted/20 p-3 text-xs">
+        <div className="flex flex-wrap items-center justify-between gap-2"><span className="font-semibold">Deadline rule engine</span><span className="font-mono">{docket.rule_engine?.jurisdiction || "—"}</span></div>
+        <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-muted-foreground"><span>{docket.rule_engine?.approved_rules || 0} approved rules</span><span>{docket.rule_engine?.draft_rules || 0} awaiting approval</span><span>Reviewer: {docket.rule_engine?.reviewer?.name || "Unassigned"}</span></div>
+        {(docket.rule_engine?.approved_rules || 0) === 0 && <p className="mt-2 font-medium text-amber-700">Events are recorded, but no statutory deadline is generated until a rule is approved.</p>}
+      </div>
       {/* Application legal status card */}
       {docket.application && (
         <div className="rounded-lg border border-border bg-muted/30 p-4">
@@ -102,7 +122,7 @@ export function DocketDeadlines({ projectId }: { projectId: number | string }) {
       )}
 
       {/* Record event */}
-      <div className="flex items-end gap-2">
+      {canManage && <div className="flex items-end gap-2">
         <div className="flex-1">
           <label className="text-[10px] text-muted-foreground block mb-1">Record docket event (deadlines auto-generate)</label>
           <select value={evtType} onChange={(e) => setEvtType(e.target.value)}
@@ -122,7 +142,7 @@ export function DocketDeadlines({ projectId }: { projectId: number | string }) {
           className="rounded-md bg-primary text-primary-foreground px-3 py-1.5 text-xs font-medium disabled:opacity-50">
           {evtSaving ? "Saving…" : "Record"}
         </button>
-      </div>
+      </div>}
 
       {/* Deadlines table */}
       <div>
@@ -139,6 +159,7 @@ export function DocketDeadlines({ projectId }: { projectId: number | string }) {
                 <th className="pb-2 font-medium">Legal Basis</th>
                 <th className="pb-2 font-medium">Due</th>
                 <th className="pb-2 font-medium">Outer Limit</th>
+                <th className="pb-2 font-medium">Risk / Review</th>
                 <th className="pb-2 font-medium">Status</th>
                 <th className="pb-2 font-medium text-right">Action</th>
               </tr>
@@ -152,6 +173,7 @@ export function DocketDeadlines({ projectId }: { projectId: number | string }) {
                     <td className="py-2.5 pr-3 text-muted-foreground text-[10px] max-w-[160px]">{d.legal_basis ?? "—"}</td>
                     <td className={`py-2.5 pr-3 font-mono whitespace-nowrap ${overdue ? "text-destructive font-bold" : ""}`}>{fmtDate(d.due_date)}</td>
                     <td className="py-2.5 pr-3 font-mono text-muted-foreground whitespace-nowrap">{fmtDate(d.extended_due_date)}</td>
+                    <td className="py-2.5 pr-3"><div className="font-semibold text-red-700">{d.risk_level || "High"}</div><div className="text-[10px] text-muted-foreground">{d.review_status || "Unreviewed"}</div></td>
                     <td className="py-2.5 pr-3">
                       <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
                         d.status === "Completed" ? "bg-green-100 text-green-700" :
@@ -161,7 +183,10 @@ export function DocketDeadlines({ projectId }: { projectId: number | string }) {
                       }`}>{overdue && d.status === "Open" ? "OVERDUE" : d.status}</span>
                     </td>
                     <td className="py-2.5 text-right whitespace-nowrap">
-                      {d.status === "Open" ? (
+                      {canReview && d.review_status === "Unreviewed" ? <><button onClick={() => reviewDeadline(d.id, "Approved")} className="mr-2 text-[10px] text-green-600 hover:underline">Approve</button><button onClick={() => reviewDeadline(d.id, "Rejected")} className="mr-2 text-[10px] text-red-600 hover:underline">Reject</button></> : null}
+                      {!canManage ? (
+                        <span className="text-[10px] text-muted-foreground">View only</span>
+                      ) : d.status === "Open" ? (
                         <>
                           <button onClick={() => setDeadlineStatus(d.id, "Completed")}
                             className="text-[10px] text-green-600 hover:underline mr-2">Done</button>
@@ -181,6 +206,8 @@ export function DocketDeadlines({ projectId }: { projectId: number | string }) {
         )}
       </div>
 
+      {docket.capabilities?.can_approve_rules && rules.length > 0 && <div><h4 className="mb-3 text-xs font-semibold uppercase text-muted-foreground">Rule registry</h4><div className="overflow-x-auto rounded-md border border-border"><table className="w-full min-w-[760px] text-xs"><thead><tr className="border-b text-left text-muted-foreground"><th className="p-2">Rule</th><th className="p-2">Event</th><th className="p-2">Legal basis</th><th className="p-2">Version</th><th className="p-2">Status</th><th className="p-2 text-right">Action</th></tr></thead><tbody>{rules.map((rule) => <tr key={rule.id} className="border-b border-border/50"><td className="p-2 font-mono text-[10px]">{rule.rule_code}</td><td className="p-2">{rule.event_type}</td><td className="p-2">{rule.legal_basis}</td><td className="p-2 font-mono">{rule.version}</td><td className="p-2">{rule.status}</td><td className="p-2 text-right">{rule.status === "Draft" ? <button onClick={() => setRuleStatus(rule.id, "Approved")} className="text-green-600 hover:underline">Approve</button> : rule.status === "Approved" ? <button onClick={() => setRuleStatus(rule.id, "Retired")} className="text-red-600 hover:underline">Retire</button> : null}</td></tr>)}</tbody></table></div></div>}
+
       {/* Renewal schedule */}
       {(docket.renewals ?? []).length > 0 && (
         <div>
@@ -193,7 +220,8 @@ export function DocketDeadlines({ projectId }: { projectId: number | string }) {
               return (
                 <button key={r.id}
                   title={`Year ${r.renewal_year} — due ${fmtDate(r.due_date)} (${r.status}). Click to mark ${r.status === "Paid" ? "Unpaid" : "Paid"}.`}
-                  onClick={() => setRenewalStatus(r.id, r.status === "Paid" ? "Unpaid" : "Paid")}
+                  onClick={() => canManage && setRenewalStatus(r.id, r.status === "Paid" ? "Unpaid" : "Paid")}
+                  disabled={!canManage}
                   className={`rounded-md border px-1.5 py-1.5 text-center transition-colors ${
                     r.status === "Paid" ? "border-green-500/40 bg-green-500/10 text-green-600" :
                     r.status === "Waived" ? "border-border bg-muted/40 text-muted-foreground" :

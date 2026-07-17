@@ -20,6 +20,7 @@ tar --exclude='backend/vendor' \
 echo "=== Uploading to server ==="
 scp -i $KEY /tmp/mypl-cms-rebuild.tar.gz $SERVER:/tmp/mypl-cms-rebuild.tar.gz
 scp -i $KEY nginx-mypl-cms.conf $SERVER:/tmp/nginx-mypl-cms-new.conf
+scp -i $KEY nginx-security-headers.conf $SERVER:/tmp/nginx-security-headers-new.conf
 
 echo "=== Deploying on server ==="
 ssh -i $KEY $SERVER << 'ENDSSH'
@@ -31,6 +32,7 @@ tar -xzf /tmp/mypl-cms-rebuild.tar.gz --overwrite
 
 echo "--- Updating Nginx config ---"
 cp /tmp/nginx-mypl-cms-new.conf /etc/nginx/sites-available/mypl-cms
+cp /tmp/nginx-security-headers-new.conf /etc/nginx/snippets/security-headers.conf
 nginx -t && systemctl reload nginx
 
 echo "--- Installing PHP dependencies (locked versions) ---"
@@ -43,6 +45,28 @@ composer install --no-interaction --prefer-dist --optimize-autoloader --no-dev \
 
 echo "--- Installing Node.js dependencies ---"
 npm install --legacy-peer-deps
+
+echo "--- Configuring the public Reverb endpoint ---"
+set_env() {
+    local key="$1"
+    local value="$2"
+
+    if grep -q "^${key}=" .env; then
+        sed -i "s|^${key}=.*|${key}=${value}|" .env
+    else
+        printf '\n%s=%s\n' "$key" "$value" >> .env
+    fi
+}
+
+set_env REVERB_SERVER_HOST 127.0.0.1
+set_env REVERB_SERVER_PORT 8080
+set_env REVERB_HOST myipstrategy.com
+set_env REVERB_PORT 443
+set_env REVERB_SCHEME https
+set_env REVERB_ALLOWED_ORIGINS myipstrategy.com,www.myipstrategy.com
+set_env VITE_REVERB_HOST myipstrategy.com
+set_env VITE_REVERB_PORT 443
+set_env VITE_REVERB_SCHEME https
 
 echo "--- Building frontend assets ---"
 npm run build

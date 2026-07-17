@@ -26,6 +26,7 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
         $middleware->alias([
             'role' => \Spatie\Permission\Middleware\RoleMiddleware::class,
+            'firm.context' => \App\Http\Middleware\ResolveFirmContext::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

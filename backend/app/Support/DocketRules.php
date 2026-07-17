@@ -18,6 +18,8 @@ use Carbon\Carbon;
  */
 class DocketRules
 {
+    public const RULESET_VERSION = 'IN-PAT-2024.1';
+
     public const EVENT_TYPES = [
         'provisional_filed' => 'Provisional Application Filed',
         'application_filed' => 'Complete Application Filed',
@@ -25,6 +27,8 @@ class DocketRules
         'published'         => 'Application Published (S.11A)',
         'rfe_filed'         => 'Request for Examination Filed',
         'fer_received'      => 'First/Subsequent Examination Report Received',
+        'ser_received'      => 'Subsequent Examination Report Received',
+        'ter_received'      => 'Further Examination Report Received',
         'hearing_notice'    => 'Hearing Notice Received',
         'hearing_held'      => 'Hearing Attended',
         'granted'           => 'Patent Granted',
@@ -176,24 +180,14 @@ class DocketRules
             'created_by'            => $userId,
         ]);
 
-        foreach (self::deadlinesFor($eventType, $eventDate, $app) as $d) {
-            DocketDeadline::create([
-                'docket_event_id'       => $event->id,
-                'project_id'            => $projectId,
-                'patent_application_id' => $applicationId,
-                'title'                 => $d['title'],
-                'legal_basis'           => $d['legal_basis'],
-                'due_date'              => $d['due_date'],
-                'extended_due_date'     => $d['extended_due_date'],
-                'status'                => 'Open',
-            ]);
-        }
+        $project = $projectId ? \App\Models\Project::find($projectId) : null;
+        app(\App\Services\DeadlineRuleEngine::class)->generate($event, $project, $app);
 
         // Event side-effects on the application's legal status
         if ($app) {
             $newStatus = match ($eventType) {
                 'published'      => 'Published',
-                'fer_received'   => 'Under Examination',
+                'fer_received', 'ser_received', 'ter_received' => 'Under Examination',
                 'granted'        => 'Granted',
                 'refused'        => 'Refused',
                 'renewal_missed' => 'Lapsed',

@@ -1197,6 +1197,9 @@ export default function Projects() {
     if (!editProj && form.record_mode === "existing" && !form.project_code.trim() && !form.docket_number.trim()) {
       setSaveErr("Existing case ID is required for legacy cases."); return;
     }
+    if (!/^[A-Z0-9]{2}$/i.test(form.patent_office_code) || !/^[A-Z0-9]{3}$/i.test(form.service_code)) {
+      setSaveErr("A 2-character patent office code and 3-character service code are required."); return;
+    }
     setSaving(true); setSaveErr("");
     try {
       const canonicalCaseId = (form.project_code || form.docket_number).trim().toUpperCase();
@@ -1893,6 +1896,12 @@ export default function Projects() {
                           const value = e.target.value.toUpperCase();
                           sf("project_code", value);
                           sf("docket_number", value);
+                          const client = clients.find((item) => String(item.id) === form.client_id);
+                          const clientCode = client?.client_code?.toUpperCase() ?? "";
+                          if (clientCode && value.startsWith(clientCode) && value.length === clientCode.length + 8) {
+                            sf("patent_office_code", value.slice(clientCode.length + 3, clientCode.length + 5));
+                            sf("service_code", value.slice(-3));
+                          }
                         }}
                         className={ic}
                         placeholder="e.g. A97M001INFER"
@@ -1976,7 +1985,7 @@ export default function Projects() {
               <Section title="IP Details">
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <Lbl>Patent Office (Country)</Lbl>
+                    <Lbl req>Patent Office (Country)</Lbl>
                     <CodeCombobox
                       value={form.patent_office_code}
                       baseOptions={officeOptions}
@@ -1987,7 +1996,7 @@ export default function Projects() {
                     />
                   </div>
                   <div>
-                    <Lbl>Service Code</Lbl>
+                    <Lbl req>Service Code</Lbl>
                     <CodeCombobox
                       value={form.service_code}
                       baseOptions={serviceOptions}

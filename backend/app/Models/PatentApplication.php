@@ -2,17 +2,20 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToFirm;
 use Illuminate\Database\Eloquent\Model;
 
 class PatentApplication extends Model
 {
+    use BelongsToFirm;
+
     public const LEGAL_STATUSES = [
         'Pending', 'Published', 'Under Examination', 'Granted',
         'Lapsed', 'Refused', 'Abandoned', 'Withdrawn',
     ];
 
     protected $fillable = [
-        'client_id', 'application_number', 'title',
+        'client_id', 'invention_family_id', 'application_number', 'title',
         'priority_date', 'filing_date', 'publication_date', 'rfe_filed_date',
         'grant_number', 'grant_date', 'legal_status', 'jurisdiction',
     ];
@@ -28,6 +31,11 @@ class PatentApplication extends Model
     public function client()
     {
         return $this->belongsTo(Client::class);
+    }
+
+    public function inventionFamily()
+    {
+        return $this->belongsTo(InventionFamily::class);
     }
 
     public function projects()
