@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Events\CaseChatEvent;
+use App\Events\ChatUnreadBroadcast;
 use App\Models\DiscussionMessage;
 use App\Models\DiscussionMessageRead;
 use App\Models\DiscussionThread;
@@ -21,6 +22,8 @@ use Illuminate\Support\Facades\Storage;
  */
 class ProjectChatController extends Controller
 {
+    private const PAGE_SIZE = 50;
+
     private function authorizeCase(Request $request, Project $project): void
     {
         if (! CaseChatAccess::canAccess($request->user(), $project)) {
@@ -67,10 +70,14 @@ class ProjectChatController extends Controller
 
         $thread = $this->threadFor($project);
 
-        $messages = $thread->messages()
+        // Load the most recent page; older messages load on demand (see history()).
+        $latest = $thread->messages()
             ->with('author:id,name,role,avatar_url')
-            ->orderBy('id')
+            ->orderByDesc('id')
+            ->limit(self::PAGE_SIZE + 1)
             ->get();
+        $hasMore = $latest->count() > self::PAGE_SIZE;
+        $messages = $latest->take(self::PAGE_SIZE)->sortBy('id')->values();
 
         $participants = CaseChatAccess::participants($project)
             ->map(fn (User $u) => [
@@ -92,7 +99,29 @@ class ProjectChatController extends Controller
             'can_moderate' => in_array($request->user()->role, ['super_admin', 'partner'], true),
             'participants' => $participants,
             'messages'     => $messages->map(fn ($m) => $this->present($m))->values(),
+            'has_more'     => $hasMore,
             'reads'        => $reads,
+        ]);
+    }
+
+    /** Older messages before a cursor id, for scroll-up pagination. */
+    public function history(Request $request, int $projectId)
+    {
+        $project = Project::with('client:id,portal_user_id')->findOrFail($projectId);
+        $this->authorizeCase($request, $project);
+        $thread = $this->threadFor($project);
+
+        $before = (int) $request->query('before', 0);
+        $query = $thread->messages()->with('author:id,name,role,avatar_url')->orderByDesc('id');
+        if ($before > 0) {
+            $query->where('id', '<', $before);
+        }
+        $page = $query->limit(self::PAGE_SIZE + 1)->get();
+        $hasMore = $page->count() > self::PAGE_SIZE;
+
+        return response()->json([
+            'messages' => $page->take(self::PAGE_SIZE)->sortBy('id')->values()->map(fn ($m) => $this->present($m)),
+            'has_more' => $hasMore,
         ]);
     }
 
@@ -146,6 +175,13 @@ class ProjectChatController extends Controller
 
         $payload = $this->present($message);
         broadcast(new CaseChatEvent($project->id, 'message.sent', $payload))->toOthers();
+
+        // Nudge the global unread badge for every other participant.
+        foreach (array_diff($participantIds, [$user->id]) as $recipientId) {
+            broadcast(new ChatUnreadBroadcast((int) $recipientId, [
+                'project_id' => $project->id, 'kind' => 'case_chat', 'from' => $user->name,
+            ]));
+        }
 
         // @mention notifications (never break the request if they fail).
         if ($mentions) {

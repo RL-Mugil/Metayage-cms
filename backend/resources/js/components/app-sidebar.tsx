@@ -1,5 +1,7 @@
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useState } from "react";
 import { Link, usePage, router } from "@inertiajs/react";
+import echo from "@/lib/echo";
+import { api } from "@/lib/api-client";
 import {
   LayoutDashboard, Users, Briefcase, GitBranch, ListChecks,
   BellRing, UserCircle2, FolderLock, MessagesSquare, CheckCircle2,
@@ -141,6 +143,22 @@ export function AppSidebar() {
   const isActive = (p: string) =>
     p === "/" ? url === "/" : url === p || url.startsWith(p + "/");
 
+  // Unread chat badge on the Discussions nav item — live via the user channel.
+  const [chatUnread, setChatUnread] = useState(0);
+  const onDiscussions = url === "/discussions" || url.startsWith("/discussions");
+  useEffect(() => {
+    if (!user?.id) return;
+    if (onDiscussions) { setChatUnread(0); return; }
+    let active = true;
+    api.getChatUnreadCount().then((r) => { if (active) setChatUnread(r.count ?? 0); }).catch(() => {});
+    let channel: ReturnType<typeof echo.channel> | null = null;
+    try {
+      channel = echo.channel(`user.${user.id}`);
+      channel.listen(".chat.unread", () => setChatUnread((c) => c + 1));
+    } catch { /* Reverb unavailable — count still loads via the fetch above */ }
+    return () => { active = false; try { channel?.stopListening(".chat.unread"); } catch { /* noop */ } };
+  }, [user?.id, onDiscussions]);
+
   const initials = user
     ? user.name.split(" ").map((n: string) => n[0]).join("").substring(0, 2).toUpperCase()
     : "US";
@@ -199,6 +217,11 @@ export function AppSidebar() {
                         <Link href={it.to}>
                           <it.icon className="h-4 w-4" />
                           <span>{it.title}</span>
+                          {it.to === "/discussions" && chatUnread > 0 && (
+                            <span className="ml-auto rounded-full bg-gold px-1.5 py-0.5 text-[10px] font-semibold leading-none text-black group-data-[collapsible=icon]:hidden">
+                              {chatUnread > 99 ? "99+" : chatUnread}
+                            </span>
+                          )}
                         </Link>
                       </SidebarMenuButton>
                     </SidebarMenuItem>
