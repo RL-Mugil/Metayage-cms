@@ -642,9 +642,11 @@ class ClientControllerTest extends TestCase
     {
         Sanctum::actingAs($this->user('partner'));
 
-        $csvBody = "legal_name,client_type,nationality\n"
-                 . "Sheet Corp Alpha,organization,India\n"
-                 . "Sheet Corp Beta,individual,USA\n";
+        // The importer's template: the first column is the client code (used to
+        // detect the header row) and the legal name column header is "legal name".
+        $csvBody = "client_code,legal name,residentof\n"
+                 . "ABCM001,Sheet Corp Alpha,IN\n"
+                 . "DEFY001,Sheet Corp Beta,US\n";
 
         Http::fake([
             'docs.google.com/*' => Http::response($csvBody, 200),

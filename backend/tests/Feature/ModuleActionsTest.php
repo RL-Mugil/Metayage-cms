@@ -255,8 +255,10 @@ class ModuleActionsTest extends TestCase
         $this->assertTrue($list[0]['hasKey']);
         $this->assertArrayNotHasKey('config', $list[0]); // key material never leaves the server
 
+        // Integration list is readable by all internal staff (READ_ROLES); only
+        // WRITE_ROLES may configure. Secrets are stripped from the response above.
         Sanctum::actingAs($this->user('associate'));
-        $this->getJson('/api/integrations')->assertForbidden();
+        $this->getJson('/api/integrations')->assertOk();
     }
 
     // ── Portal ────────────────────────────────────────────────────────────────
