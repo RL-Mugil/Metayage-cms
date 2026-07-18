@@ -27,17 +27,29 @@ export interface ChatState {
   can_moderate: boolean;
   participants: ChatParticipant[];
   messages: ChatMessage[];
+  has_more?: boolean;
   reads: Record<string, number>;
 }
 
 /** The data plumbing a room needs — bound to project / DM / group endpoints. */
 export interface ChatEndpoints {
   load: () => Promise<ChatState>;
+  loadHistory?: (before: number) => Promise<{ messages: ChatMessage[]; has_more: boolean }>;
   send: (payload: { content?: string; mentions?: number[]; attachments?: File[] }) => Promise<ChatMessage>;
   edit: (messageId: number, content: string) => Promise<ChatMessage>;
   remove: (messageId: number) => Promise<void>;
   markRead: (lastReadMessageId: number) => Promise<void>;
   downloadAttachment: (path: string, name: string) => Promise<void>;
+}
+
+/** Client-side attachment guardrails (mirror the server validation). */
+const MAX_ATTACH_BYTES = 50 * 1024 * 1024; // 50 MB
+const ALLOWED_EXT = ["pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "csv", "png", "jpg", "jpeg", "gif", "zip"];
+function rejectReason(f: File): string | null {
+  const ext = f.name.split(".").pop()?.toLowerCase() ?? "";
+  if (!ALLOWED_EXT.includes(ext)) return `“${f.name}”: unsupported type (.${ext})`;
+  if (f.size > MAX_ATTACH_BYTES) return `“${f.name}”: over 50 MB`;
+  return null;
 }
 
 interface ChatRoomProps {
@@ -118,6 +130,9 @@ export function ChatRoom({ endpoints, roomKey, title = "Discussion", placeholder
   const [mentionOpen, setMentionOpen] = useState(false);
   const [mentionQuery, setMentionQuery] = useState("");
   const [showRoster, setShowRoster] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [attachError, setAttachError] = useState<string | null>(null);
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -145,6 +160,33 @@ export function ChatRoom({ endpoints, roomKey, title = "Discussion", placeholder
     if (el) el.scrollTo({ top: el.scrollHeight, behavior: smooth ? "smooth" : "auto" });
   }, []);
 
+  /* ── Load older messages on scroll-up, preserving position ── */
+  const loadOlder = useCallback(async () => {
+    const el = scrollRef.current;
+    const oldest = messages.length ? messages[0].id : 0;
+    if (!hasMore || loadingOlder || !epRef.current.loadHistory || !oldest) return;
+    setLoadingOlder(true);
+    const prevHeight = el?.scrollHeight ?? 0;
+    try {
+      const res = await epRef.current.loadHistory(oldest);
+      setState((s) => (s ? {
+        ...s,
+        messages: [...res.messages.filter((r) => !s.messages.some((m) => m.id === r.id)), ...s.messages],
+      } : s));
+      setHasMore(res.has_more);
+      requestAnimationFrame(() => {
+        const el2 = scrollRef.current;
+        if (el2) el2.scrollTop = el2.scrollHeight - prevHeight;
+      });
+    } catch { /* noop */ }
+    finally { setLoadingOlder(false); }
+  }, [hasMore, loadingOlder, messages]);
+
+  const onScroll = () => {
+    const el = scrollRef.current;
+    if (el && el.scrollTop < 60) loadOlder();
+  };
+
   /* ── Load ── */
   useEffect(() => {
     let active = true;
@@ -153,6 +195,7 @@ export function ChatRoom({ endpoints, roomKey, title = "Discussion", placeholder
       .then((data) => {
         if (!active) return;
         setState(data);
+        setHasMore(!!data.has_more);
         setTimeout(() => scrollToBottom(false), 50);
         const lastId = data.messages.length ? data.messages[data.messages.length - 1].id : 0;
         if (lastId) epRef.current.markRead(lastId).catch(() => {});
@@ -244,7 +287,7 @@ export function ChatRoom({ endpoints, roomKey, title = "Discussion", placeholder
     setSending(true);
     const mentions = resolveMentions(content);
     const attached = files;
-    setDraft(""); setFiles([]); setMentionOpen(false);
+    setDraft(""); setFiles([]); setMentionOpen(false); setAttachError(null);
     try {
       const msg = await epRef.current.send({ content, mentions, attachments: attached });
       setState((s) => (s && !s.messages.some((m) => m.id === msg.id) ? { ...s, messages: [...s.messages, msg] } : s));
@@ -317,7 +360,15 @@ export function ChatRoom({ endpoints, roomKey, title = "Discussion", placeholder
       )}
 
       {/* Messages */}
-      <div ref={scrollRef} className="flex-1 space-y-1 overflow-y-auto px-4 py-3">
+      <div ref={scrollRef} onScroll={onScroll} role="log" aria-label="Messages" aria-live="polite"
+        className="flex-1 space-y-1 overflow-y-auto px-4 py-3">
+        {hasMore && (
+          <div className="flex justify-center py-2">
+            {loadingOlder
+              ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+              : <button onClick={loadOlder} className="text-[11px] text-muted-foreground hover:text-foreground">Load earlier messages</button>}
+          </div>
+        )}
         {messages.length === 0 && <p className="py-10 text-center text-sm text-muted-foreground">{emptyText}</p>}
         {messages.map((m, i) => {
           const prev = messages[i - 1];
@@ -417,26 +468,35 @@ export function ChatRoom({ endpoints, roomKey, title = "Discussion", placeholder
             ))}
           </div>
         )}
+        {attachError && (
+          <p role="alert" className="mb-2 text-xs text-destructive">{attachError}</p>
+        )}
         {files.length > 0 && (
           <div className="mb-2 flex flex-wrap gap-2">
             {files.map((f, i) => (
               <span key={i} className="flex items-center gap-1.5 rounded-md border border-border bg-muted/30 px-2 py-1 text-xs">
                 <FileText className="h-3.5 w-3.5 text-muted-foreground" /><span className="max-w-[140px] truncate">{f.name}</span>
-                <button onClick={() => setFiles((fs) => fs.filter((_, j) => j !== i))}><X className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" /></button>
+                <button aria-label={`Remove ${f.name}`} onClick={() => setFiles((fs) => fs.filter((_, j) => j !== i))}><X className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" /></button>
               </span>
             ))}
           </div>
         )}
         <div className="flex items-end gap-2">
-          <button onClick={() => fileInputRef.current?.click()} title="Attach files"
+          <button aria-label="Attach files" onClick={() => fileInputRef.current?.click()} title="Attach files"
             className="mb-0.5 rounded-md p-2 text-muted-foreground hover:bg-muted hover:text-foreground"><Paperclip className="h-4 w-4" /></button>
-          <input ref={fileInputRef} type="file" multiple hidden
-            onChange={(e) => { setFiles((fs) => [...fs, ...Array.from(e.target.files ?? [])]); e.target.value = ""; }} />
+          <input ref={fileInputRef} type="file" multiple hidden aria-hidden="true"
+            onChange={(e) => {
+              const picked = Array.from(e.target.files ?? []);
+              const rejected = picked.map(rejectReason).find(Boolean) ?? null;
+              setAttachError(rejected);
+              setFiles((fs) => [...fs, ...picked.filter((f) => !rejectReason(f))]);
+              e.target.value = "";
+            }} />
           <textarea value={draft} onChange={(e) => onDraftChange(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !mentionOpen) { e.preventDefault(); send(); } }}
-            rows={1} placeholder={placeholder}
+            rows={1} placeholder={placeholder} aria-label="Message"
             className="max-h-32 min-h-[38px] flex-1 resize-none rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
-          <button onClick={send} disabled={sending || (!draft.trim() && files.length === 0)}
+          <button aria-label="Send message" onClick={send} disabled={sending || (!draft.trim() && files.length === 0)}
             className="mb-0.5 rounded-md bg-gold p-2 text-white disabled:opacity-40">
             {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
           </button>

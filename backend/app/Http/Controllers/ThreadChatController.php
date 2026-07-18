@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Events\ChatUnreadBroadcast;
 use App\Events\ThreadChatEvent;
 use App\Models\DiscussionMessage;
 use App\Models\DiscussionMessageRead;
@@ -21,6 +22,8 @@ use Illuminate\Support\Str;
  */
 class ThreadChatController extends Controller
 {
+    private const PAGE_SIZE = 50;
+
     private function threadOrFail(int $threadId): DiscussionThread
     {
         return DiscussionThread::findOrFail($threadId);
@@ -52,7 +55,11 @@ class ThreadChatController extends Controller
 
     private function state(Request $request, DiscussionThread $thread): array
     {
-        $messages = $thread->messages()->with('author:id,name,role,avatar_url')->orderBy('id')->get();
+        $latest = $thread->messages()->with('author:id,name,role,avatar_url')
+            ->orderByDesc('id')->limit(self::PAGE_SIZE + 1)->get();
+        $hasMore = $latest->count() > self::PAGE_SIZE;
+        $messages = $latest->take(self::PAGE_SIZE)->sortBy('id')->values();
+
         $participants = ThreadChatAccess::participants($thread)
             ->map(fn (User $u) => ['id' => $u->id, 'name' => $u->name, 'role' => $u->role, 'avatar_url' => $u->avatar_url])
             ->values();
@@ -66,8 +73,60 @@ class ThreadChatController extends Controller
             'can_moderate' => in_array($request->user()->role, ['super_admin', 'partner'], true),
             'participants' => $participants,
             'messages'     => $messages->map(fn ($m) => $this->present($m))->values(),
+            'has_more'     => $hasMore,
             'reads'        => $reads,
         ];
+    }
+
+    /** Older messages before a cursor id, for scroll-up pagination. */
+    public function history(Request $request, int $threadId)
+    {
+        $thread = $this->threadOrFail($threadId);
+        $this->guardThread($request, $thread);
+
+        $before = (int) $request->query('before', 0);
+        $query = $thread->messages()->with('author:id,name,role,avatar_url')->orderByDesc('id');
+        if ($before > 0) {
+            $query->where('id', '<', $before);
+        }
+        $page = $query->limit(self::PAGE_SIZE + 1)->get();
+
+        return response()->json([
+            'messages' => $page->take(self::PAGE_SIZE)->sortBy('id')->values()->map(fn ($m) => $this->present($m)),
+            'has_more' => $page->count() > self::PAGE_SIZE,
+        ]);
+    }
+
+    /** Total unread across the user's DMs and the case chats they're assigned to. */
+    public function unreadCount(Request $request)
+    {
+        $me = $request->user();
+
+        // DM + group threads the user participates in.
+        $threadIds = DiscussionThread::whereHas('participants', fn ($q) => $q->where('users.id', $me->id))
+            ->pluck('id');
+
+        // Case chats for projects the user is assigned to (bounded, not every project).
+        if (! $me->isClientRole()) {
+            $projectIds = \App\Models\Project::query()
+                ->where('assigned_partner_id', $me->id)
+                ->orWhere('assigned_manager_id', $me->id)
+                ->orWhere('secondary_manager_id', $me->id)
+                ->orWhere('patent_engineer_id', $me->id)
+                ->pluck('id');
+            $caseThreadIds = DiscussionThread::where('kind', 'case_chat')
+                ->whereIn('project_id', $projectIds)->pluck('id');
+            $threadIds = $threadIds->merge($caseThreadIds)->unique();
+        }
+
+        $count = 0;
+        foreach ($threadIds as $tid) {
+            $lastRead = (int) DiscussionMessageRead::where('thread_id', $tid)->where('user_id', $me->id)->value('last_read_message_id');
+            $count += DiscussionMessage::where('thread_id', $tid)
+                ->where('id', '>', $lastRead)->where('author_id', '!=', $me->id)->count();
+        }
+
+        return response()->json(['count' => $count]);
     }
 
     /* ── DM list + open ── */
@@ -196,6 +255,13 @@ class ThreadChatController extends Controller
 
         $payload = $this->present($message);
         broadcast(new ThreadChatEvent($thread->id, 'message.sent', $payload))->toOthers();
+
+        // Nudge the global unread badge for every other participant.
+        foreach (array_diff($participantIds, [$user->id]) as $recipientId) {
+            broadcast(new ChatUnreadBroadcast((int) $recipientId, [
+                'thread_id' => $thread->id, 'kind' => $thread->kind, 'from' => $user->name,
+            ]));
+        }
 
         // Notify: explicit mentions, plus the DM counterpart on every message.
         $notify = $mentions;

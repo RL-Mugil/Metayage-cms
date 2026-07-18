@@ -9,6 +9,7 @@ import { api } from "@/lib/api-client";
 export function ProjectChat({ projectId }: { projectId: number | string }) {
   const endpoints: ChatEndpoints = useMemo(() => ({
     load: () => api.getProjectChat(projectId),
+    loadHistory: (before) => api.getProjectChatHistory(projectId, before),
     send: (payload) => api.sendProjectChat(projectId, payload),
     edit: (id, content) => api.editProjectChatMessage(projectId, id, content),
     remove: (id) => api.deleteProjectChatMessage(projectId, id).then(() => undefined),

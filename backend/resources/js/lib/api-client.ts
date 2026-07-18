@@ -492,6 +492,9 @@ export const api = {
   async getThreadChat(threadId: number | string): Promise<any> {
     return this.request(`/threads/${threadId}/chat`)
   },
+  async getThreadChatHistory(threadId: number | string, before: number): Promise<any> {
+    return this.request(`/threads/${threadId}/chat/history?before=${before}`)
+  },
   async sendThreadChat(
     threadId: number | string,
     payload: { content?: string; mentions?: number[]; attachments?: File[] },
@@ -538,6 +541,12 @@ export const api = {
   // ── Per-case chat (Google-Chat-style room) ──
   async getProjectChat(projectId: number | string): Promise<any> {
     return this.request(`/projects/${projectId}/chat`)
+  },
+  async getProjectChatHistory(projectId: number | string, before: number): Promise<any> {
+    return this.request(`/projects/${projectId}/chat/history?before=${before}`)
+  },
+  async getChatUnreadCount(): Promise<{ count: number }> {
+    return this.request('/chat/unread-count')
   },
   async sendProjectChat(
     projectId: number | string,

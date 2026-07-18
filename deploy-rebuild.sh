@@ -68,6 +68,17 @@ set_env VITE_REVERB_HOST myipstrategy.com
 set_env VITE_REVERB_PORT 443
 set_env VITE_REVERB_SCHEME https
 
+# Never ship the placeholder Reverb secret. If the secret is missing or still the
+# .env.example default, rotate it to a strong random value. The secret is
+# server-side only (used to sign broadcast auth); clients use the app KEY, so
+# rotating it is transparent and needs no client rebuild.
+CURRENT_SECRET="$(grep -E '^REVERB_APP_SECRET=' .env | head -1 | cut -d= -f2-)"
+if [ -z "$CURRENT_SECRET" ] || [ "$CURRENT_SECRET" = "change-me-in-production" ]; then
+    NEW_SECRET="$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+    set_env REVERB_APP_SECRET "$NEW_SECRET"
+    echo "⚠️  REVERB_APP_SECRET was missing/placeholder — rotated to a strong random value."
+fi
+
 echo "--- Building frontend assets ---"
 npm run build
 

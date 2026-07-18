@@ -1,6 +1,6 @@
 import { Head, usePage } from "@inertiajs/react";
 import { useEffect, useMemo, useState } from "react";
-import { MessageSquare, Plus, Send, Loader2, Pencil, Trash2, Check, X, Users, MessagesSquare, ChevronDown, Search } from "lucide-react";
+import { MessageSquare, Plus, Send, Loader2, Pencil, Trash2, Check, X, Users, MessagesSquare, ChevronDown, Search, ArrowLeft } from "lucide-react";
 import AppLayout from "@/layouts/AppLayout";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
@@ -58,6 +58,7 @@ function ClientCombobox({ clients, value, onChange }: { clients: any[]; value: s
   return (
     <div className="relative">
       <button type="button" onClick={() => setOpen((v) => !v)}
+        aria-haspopup="listbox" aria-expanded={open} aria-label="Select client to share with"
         className="flex min-w-[240px] items-center justify-between gap-2 rounded-md border border-border bg-background px-3 py-2 text-sm text-muted-foreground focus:outline-none focus:ring-1 focus:ring-gold">
         <span className="truncate">{value ? `Share with: ${label}` : "Internal only"}</span>
         <ChevronDown className="h-4 w-4 flex-shrink-0" />
@@ -65,17 +66,19 @@ function ClientCombobox({ clients, value, onChange }: { clients: any[]; value: s
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute z-50 mt-1 w-72 rounded-md border border-border bg-popover shadow-lg">
+          <div className="absolute z-50 mt-1 w-72 rounded-md border border-border bg-popover shadow-lg" role="listbox" aria-label="Clients">
             <div className="flex items-center gap-2 border-b border-border px-2.5 py-2">
               <Search className="h-3.5 w-3.5 text-muted-foreground" />
               <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name or client code…"
+                aria-label="Search clients by name or code"
+                onKeyDown={(e) => { if (e.key === "Escape") setOpen(false); }}
                 className="w-full bg-transparent text-sm focus:outline-none" />
             </div>
             <div className="max-h-64 overflow-y-auto py-1">
-              <button type="button" onClick={() => { onChange(""); setOpen(false); setQ(""); }}
+              <button type="button" role="option" aria-selected={!value} onClick={() => { onChange(""); setOpen(false); setQ(""); }}
                 className="block w-full px-3 py-1.5 text-left text-sm hover:bg-muted">Internal only</button>
               {filtered.map((c) => (
-                <button key={c.id} type="button" onClick={() => { onChange(String(c.id)); setOpen(false); setQ(""); }}
+                <button key={c.id} type="button" role="option" aria-selected={String(c.id) === value} onClick={() => { onChange(String(c.id)); setOpen(false); setQ(""); }}
                   className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-muted">
                   <span className="font-mono text-[10px] text-gold">{c.client_code}</span>
                   <span className="truncate">{c.company_name ?? c.legal_name}</span>
@@ -153,6 +156,7 @@ export default function Discussions() {
     const id = selectedThreadId;
     return {
       load: () => api.getThreadChat(id),
+      loadHistory: (before) => api.getThreadChatHistory(id, before),
       send: (p) => api.sendThreadChat(id, p),
       edit: (mid, c) => api.editThreadChatMessage(id, mid, c),
       remove: (mid) => api.deleteThreadChatMessage(id, mid).then(() => undefined),
@@ -243,7 +247,7 @@ export default function Discussions() {
         <div className="flex h-[calc(100vh-220px)] gap-0 rounded-lg border border-border overflow-hidden bg-card">
 
           {/* ── Left panel ── */}
-          <div className="w-72 flex-shrink-0 flex flex-col border-r border-border">
+          <div className={`${selectedThreadId ? "hidden md:flex" : "flex"} w-full md:w-72 flex-shrink-0 flex-col border-r border-border`}>
             {/* Mode switch */}
             {!isClientUser && (
               <div className="flex gap-1 p-2 border-b border-border">
@@ -327,7 +331,7 @@ export default function Discussions() {
           </div>
 
           {/* ── Main panel ── */}
-          <div className="flex-1 flex flex-col overflow-hidden">
+          <div className={`${selectedThreadId ? "flex" : "hidden md:flex"} flex-1 flex-col overflow-hidden`}>
             {showNewForm && mode === "threads" && (
               <div className="border-b border-border bg-muted/20 p-4 space-y-3">
                 <div className="text-sm font-medium">Start a new discussion</div>
@@ -364,7 +368,11 @@ export default function Discussions() {
             {selectedThreadId && endpoints ? (
               <div className="flex flex-1 flex-col overflow-hidden">
                 {/* Header */}
-                <div className="border-b border-border px-6 py-3 bg-card/50">
+                <div className="border-b border-border px-4 py-3 bg-card/50 sm:px-6">
+                  <button onClick={() => setSelectedThreadId(null)} aria-label="Back to list"
+                    className="mb-2 flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground md:hidden">
+                    <ArrowLeft className="h-3.5 w-3.5" /> Back
+                  </button>
                   {mode === "threads" && selectedThread ? (
                     editingThreadId === selectedThread.id ? (
                       <div className="flex items-center gap-3 flex-wrap">
@@ -421,17 +429,19 @@ export default function Discussions() {
 
       {/* New DM contact picker */}
       {showContacts && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setShowContacts(false)}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true" aria-label="New direct message" onClick={() => setShowContacts(false)}>
           <div className="w-full max-w-sm rounded-lg border border-border bg-background p-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-sm font-semibold">New message</h3>
-              <button onClick={() => setShowContacts(false)} className="text-muted-foreground hover:text-foreground"><X className="h-5 w-5" /></button>
+              <button aria-label="Close" onClick={() => setShowContacts(false)} className="text-muted-foreground hover:text-foreground"><X className="h-5 w-5" /></button>
             </div>
             <input autoFocus placeholder="Search people…" value={contactQuery} onChange={(e) => setContactQuery(e.target.value)}
+              aria-label="Search people"
+              onKeyDown={(e) => { if (e.key === "Escape") setShowContacts(false); }}
               className="mb-2 w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
-            <div className="max-h-72 overflow-y-auto">
+            <div className="max-h-72 overflow-y-auto" role="listbox" aria-label="People">
               {filteredContacts.map((c) => (
-                <button key={c.id} onClick={() => openDm(c.id)} className="flex w-full items-center gap-2.5 rounded-md px-2 py-2 text-left text-sm hover:bg-muted">
+                <button key={c.id} role="option" onClick={() => openDm(c.id)} className="flex w-full items-center gap-2.5 rounded-md px-2 py-2 text-left text-sm hover:bg-muted">
                   <ChatAvatar name={c.name} url={c.avatar_url} id={c.id} size={26} />
                   <span>{c.name}</span>{c.role && <span className="text-xs text-muted-foreground">· {c.role}</span>}
                 </button>
