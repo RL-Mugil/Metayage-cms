@@ -57,7 +57,7 @@ export default function HRMSLeave() {
       .then((data) => {
         setRequests(data.requests || []);
         setBalances(data.balances || null);
-        setEntitlements(data.entitlements || {});
+        setEntitlements((data as { entitlements?: Record<string, number> }).entitlements || {});
       })
       .catch(() => setError("Failed to load leave data."))
       .finally(() => setLoading(false));

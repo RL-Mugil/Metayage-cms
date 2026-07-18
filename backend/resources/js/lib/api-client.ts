@@ -479,6 +479,62 @@ export const api = {
     return this.request(`/discussions/${threadId}`, { method: 'DELETE' })
   },
 
+  // ── Direct messages + thread chat ──
+  async getDirectMessages(): Promise<{ data: any[] }> {
+    return this.request('/dm')
+  },
+  async getDmContacts(): Promise<{ data: any[] }> {
+    return this.request('/dm/contacts')
+  },
+  async openDirectMessage(userId: number): Promise<any> {
+    return this.request(`/dm/open/${userId}`, { method: 'POST' })
+  },
+  async getThreadChat(threadId: number | string): Promise<any> {
+    return this.request(`/threads/${threadId}/chat`)
+  },
+  async sendThreadChat(
+    threadId: number | string,
+    payload: { content?: string; mentions?: number[]; attachments?: File[] },
+  ): Promise<any> {
+    const form = new FormData()
+    if (payload.content) form.append('content', payload.content)
+    ;(payload.mentions ?? []).forEach((id) => form.append('mentions[]', String(id)))
+    ;(payload.attachments ?? []).forEach((f) => form.append('attachments[]', f))
+    const response = await fetch(`/api/threads/${threadId}/chat`, {
+      method: 'POST',
+      headers: { 'X-XSRF-TOKEN': getCsrfToken(), Accept: 'application/json' },
+      credentials: 'same-origin',
+      body: form,
+    })
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}))
+      throw new Error((err as { message?: string }).message || 'Could not send message')
+    }
+    return response.json()
+  },
+  async editThreadChatMessage(threadId: number | string, messageId: number, content: string): Promise<any> {
+    return this.request(`/threads/${threadId}/chat/messages/${messageId}`, { method: 'PUT', body: JSON.stringify({ content }) })
+  },
+  async deleteThreadChatMessage(threadId: number | string, messageId: number): Promise<any> {
+    return this.request(`/threads/${threadId}/chat/messages/${messageId}`, { method: 'DELETE' })
+  },
+  async markThreadChatRead(threadId: number | string, lastReadMessageId: number): Promise<any> {
+    return this.request(`/threads/${threadId}/chat/read`, { method: 'POST', body: JSON.stringify({ last_read_message_id: lastReadMessageId }) })
+  },
+  async downloadThreadAttachment(threadId: number | string, path: string, name: string): Promise<void> {
+    const response = await fetch(`/api/threads/${threadId}/chat/attachment?path=${encodeURIComponent(path)}`, {
+      headers: { Accept: 'application/octet-stream' }, credentials: 'same-origin',
+    })
+    if (!response.ok) throw new Error('Download failed')
+    const blob = await response.blob()
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = name
+    link.click()
+    URL.revokeObjectURL(url)
+  },
+
   // ── Per-case chat (Google-Chat-style room) ──
   async getProjectChat(projectId: number | string): Promise<any> {
     return this.request(`/projects/${projectId}/chat`)

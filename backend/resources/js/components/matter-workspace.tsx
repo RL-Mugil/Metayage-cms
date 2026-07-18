@@ -69,6 +69,9 @@ export function MatterWorkspace({ data, projectId, tab, onTabChange }: MatterWor
   })
   const completedStages = data.stages.filter((stage) => stage.status === "Completed").length
   const progress = data.stages.length ? Math.round((completedStages / data.stages.length) * 100) : 0
+  // Unread case-chat badge; cleared locally once the user opens the Discussion tab.
+  const [chatSeen, setChatSeen] = useState(false)
+  const chatUnread = chatSeen ? 0 : (data.chat_unread ?? 0)
 
   return (
     <div className="min-h-full bg-background">
@@ -104,9 +107,10 @@ export function MatterWorkspace({ data, projectId, tab, onTabChange }: MatterWor
         <div className="overflow-x-auto px-4 sm:px-6 lg:px-8">
           <nav className="flex min-w-max gap-1" aria-label="Matter workspace sections">
             {visibleTabs.map(({ id, label, icon: Icon }) => (
-              <button key={id} onClick={() => onTabChange(id)} className={`flex h-11 items-center gap-2 border-b-2 px-3 text-xs font-medium transition-colors ${tab === id ? "border-gold text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
+              <button key={id} onClick={() => { if (id === "discussion") setChatSeen(true); onTabChange(id) }} className={`flex h-11 items-center gap-2 border-b-2 px-3 text-xs font-medium transition-colors ${tab === id ? "border-gold text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
                 <Icon className="h-3.5 w-3.5" />{label}
                 {id === "deadlines" && summary.overdue > 0 && <span className="rounded bg-destructive px-1.5 py-0.5 text-[10px] text-destructive-foreground">{summary.overdue}</span>}
+                {id === "discussion" && chatUnread > 0 && <span className="rounded-full bg-gold px-1.5 py-0.5 text-[10px] font-semibold text-black">{chatUnread}</span>}
               </button>
             ))}
           </nav>

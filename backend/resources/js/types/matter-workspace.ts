@@ -207,6 +207,7 @@ export interface MatterWorkspace {
     summary: { total_invoiced: number; total_received: number; total_pending: number }
   } | null
   audit: WorkspaceAudit[]
+  chat_unread?: number
   timeline: WorkspaceTimelineItem[]
   capabilities: {
     can_update: boolean

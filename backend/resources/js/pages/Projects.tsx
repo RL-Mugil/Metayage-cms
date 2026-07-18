@@ -691,9 +691,8 @@ function CodeCombobox({ value, baseOptions, codeType, onSelect, placeholder, loc
       {addErr && <p className="text-xs text-destructive">{addErr}</p>}
       <div className="flex gap-2">
         <button type="button" onMouseDown={(e) => { e.preventDefault(); handleAdd(); }}
-          disabled={saving}
           className="flex-1 h-7 rounded bg-gold/90 hover:bg-gold text-xs font-medium text-black disabled:opacity-50">
-          {saving ? "Saving…" : "Save"}
+          Save
         </button>
         <button type="button" onMouseDown={(e) => { e.preventDefault(); setAdding(false); setAddErr(""); setNewCode(""); setNewDesc(""); }}
           className="flex-1 h-7 rounded border border-border text-xs hover:bg-muted/40">

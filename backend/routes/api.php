@@ -209,6 +209,17 @@ Route::middleware(['auth:sanctum', 'firm.context', 'throttle:120,1'])->group(fun
     Route::put('/discussions/{id}', [\App\Http\Controllers\DiscussionController::class, 'update']);
     Route::delete('/discussions/{id}', [\App\Http\Controllers\DiscussionController::class, 'destroy']);
 
+    // Direct messages + real-time thread chat (global Discussions)
+    Route::get('/dm',                       [\App\Http\Controllers\ThreadChatController::class, 'dmIndex']);
+    Route::get('/dm/contacts',              [\App\Http\Controllers\ThreadChatController::class, 'contacts']);
+    Route::post('/dm/open/{userId}',        [\App\Http\Controllers\ThreadChatController::class, 'openDm']);
+    Route::get('/threads/{threadId}/chat',  [\App\Http\Controllers\ThreadChatController::class, 'show']);
+    Route::post('/threads/{threadId}/chat', [\App\Http\Controllers\ThreadChatController::class, 'send']);
+    Route::put('/threads/{threadId}/chat/messages/{messageId}',    [\App\Http\Controllers\ThreadChatController::class, 'update']);
+    Route::delete('/threads/{threadId}/chat/messages/{messageId}', [\App\Http\Controllers\ThreadChatController::class, 'destroy']);
+    Route::post('/threads/{threadId}/chat/read',       [\App\Http\Controllers\ThreadChatController::class, 'markRead']);
+    Route::get('/threads/{threadId}/chat/attachment',  [\App\Http\Controllers\ThreadChatController::class, 'downloadAttachment']);
+
     // Per-case real-time chat (Google-Chat-style room, restricted to case people)
     Route::get('/projects/{projectId}/chat',                      [\App\Http\Controllers\ProjectChatController::class, 'show']);
     Route::post('/projects/{projectId}/chat',                     [\App\Http\Controllers\ProjectChatController::class, 'send']);

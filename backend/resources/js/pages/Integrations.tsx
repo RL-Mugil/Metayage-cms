@@ -1,5 +1,5 @@
 import { Head, usePage } from "@inertiajs/react";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type JSX } from "react";
 import { Plug, Zap, RefreshCw, X, Settings, CheckCircle, Loader2, Activity, ChevronDown, ChevronUp, Copy, Eye, Link2Off } from "lucide-react";
 import AppLayout from "@/layouts/AppLayout";
 import { PageHeader } from "@/components/page-header";

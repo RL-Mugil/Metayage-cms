@@ -4,6 +4,9 @@ namespace App\Services;
 
 use App\Models\AuditLog;
 use App\Models\ClientLedger;
+use App\Models\DiscussionMessage;
+use App\Models\DiscussionMessageRead;
+use App\Models\DiscussionThread;
 use App\Models\DocketDeadline;
 use App\Models\DocketEvent;
 use App\Models\Document;
@@ -106,6 +109,7 @@ class MatterWorkspaceService
             'elevations' => $elevations,
             'financials' => $financials,
             'audit' => $audit,
+            'chat_unread' => $this->chatUnread($project, $user),
             'timeline' => $this->timeline($project, $events, $documents, $audit),
             'capabilities' => [
                 'can_update' => $user->can('update', $project),
@@ -114,6 +118,24 @@ class MatterWorkspaceService
                 'can_view_audit' => $canViewAudit,
             ],
         ];
+    }
+
+    /** Unread case-chat messages for this user (excludes their own). */
+    private function chatUnread(Project $project, User $user): int
+    {
+        $thread = DiscussionThread::where('project_id', $project->id)
+            ->where('kind', 'case_chat')->first();
+        if (! $thread) {
+            return 0;
+        }
+
+        $lastRead = (int) DiscussionMessageRead::where('thread_id', $thread->id)
+            ->where('user_id', $user->id)->value('last_read_message_id');
+
+        return DiscussionMessage::where('thread_id', $thread->id)
+            ->where('id', '>', $lastRead)
+            ->where('author_id', '!=', $user->id)
+            ->count();
     }
 
     private function familyEngagements(Project $project, User $user): Collection
