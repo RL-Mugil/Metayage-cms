@@ -71,6 +71,12 @@ class MatterWorkspaceTest extends TestCase
         $project = $this->project();
         Sanctum::actingAs($partner);
 
+        // Rule definitions are seeded as Draft; only an Approved rule generates a
+        // legal deadline (see test_draft_rule_does_not_generate_a_legal_deadline).
+        DeadlineRuleDefinition::where('event_type', 'fer_received')->update([
+            'status' => 'Approved', 'approved_by' => $partner->id, 'approved_at' => now(),
+        ]);
+
         DocketRules::recordEvent(
             'fer_received',
             Carbon::parse('2026-07-01'),

@@ -28,6 +28,16 @@ jobs:
         ports:
           - 5432:5432
 
+      redis:
+        image: redis:7
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
     steps:
       - uses: actions/checkout@v4
 
@@ -54,6 +64,12 @@ jobs:
           DB_DATABASE: mypl_cms_test
           DB_USERNAME: postgres
           DB_PASSWORD: postgres
+          # Invoice-sequence generation talks to Redis directly (FinancialController).
+          REDIS_HOST: 127.0.0.1
+          REDIS_PORT: 6379
+          REDIS_CLIENT: phpredis
+          # AI tests Http::fake the Groq API but the controller requires a key to be present.
+          GROQ_API_KEY: ci-test-key
 
   frontend:
     name: Frontend (typecheck + build)
