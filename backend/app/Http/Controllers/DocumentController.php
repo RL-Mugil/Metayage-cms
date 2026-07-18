@@ -274,6 +274,59 @@ class DocumentController extends Controller
         return Storage::disk('local')->download($path, basename($path));
     }
 
+    /**
+     * Stream a document inline (Content-Disposition: inline) so the browser
+     * renders it in a new tab rather than forcing a download. Same access
+     * checks as download().
+     */
+    public function view(Request $request)
+    {
+        $user = $request->user();
+        if ($user->isClientRole()) {
+            $client = $this->clientFor($request);
+            if (! $client) return response()->json(['message' => 'Forbidden'], 403);
+        } elseif ($deny = $this->denyNonInternal($request)) {
+            return $deny;
+        }
+
+        $request->validate(['path' => 'required|string']);
+        $path = $request->input('path');
+        if (str_contains($path, '..') || ! str_starts_with($path, 'documents/')) {
+            return response()->json(['message' => 'Invalid path'], 422);
+        }
+
+        $doc = Document::where('storage_path', $path)->first();
+
+        if ($user->isClientRole()) {
+            if (! $doc || (int) $doc->client_id !== (int) $client->id) {
+                return response()->json(['message' => 'Forbidden'], 403);
+            }
+        }
+        if ($user->role === 'associate' && $doc && $doc->project_id) {
+            $project = \App\Models\Project::find($doc->project_id);
+            $canAccess = $project && (
+                $project->patent_engineer_id  === $user->id ||
+                $project->assigned_manager_id === $user->id ||
+                $project->secondary_manager_id === $user->id ||
+                $project->tasks()->where('assignee_id', $user->id)->exists()
+            );
+            if (! $canAccess) {
+                return response()->json(['message' => 'Forbidden'], 403);
+            }
+        }
+        if ($user->isGalvanizer() && $doc && ! $this->galvanizerCanAccessDocument($user, $doc)) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        if (! Storage::disk('local')->exists($path)) {
+            return response()->json(['message' => 'File not found'], 404);
+        }
+
+        return Storage::disk('local')->response($path, $doc?->file_name ?? basename($path), [
+            'Content-Disposition' => 'inline; filename="' . ($doc?->file_name ?? basename($path)) . '"',
+        ]);
+    }
+
     public function destroy(Request $request)
     {
         $user = $request->user();

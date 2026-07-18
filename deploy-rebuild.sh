@@ -157,10 +157,29 @@ stdout_logfile=/var/log/supervisor/mypl-scheduler.log
 stopwaitsecs=60
 SCHEDEOF
 
+echo "--- Setting up Reverb WebSocket server via Supervisor ---"
+# Long-lived WebSocket daemon on 127.0.0.1:8080. Nginx proxies /app and /apps
+# to it (see nginx-mypl-cms.conf). Powers real-time case chat (typing, read
+# receipts, instant delivery) and live notification toasts. Without this
+# process the app still works over HTTP but nothing pushes in real time.
+cat > /etc/supervisor/conf.d/mypl-reverb.conf << 'REVERBEOF'
+[program:mypl-reverb]
+process_name=%(program_name)s
+command=php /var/www/mypl-cms/backend/artisan reverb:start --host=127.0.0.1 --port=8080
+autostart=true
+autorestart=true
+user=www-data
+redirect_stderr=true
+stdout_logfile=/var/log/supervisor/mypl-reverb.log
+stopwaitsecs=10
+REVERBEOF
+
 supervisorctl reread || true
 supervisorctl update || true
 supervisorctl start mypl-horizon || supervisorctl restart mypl-horizon || true
 supervisorctl start mypl-scheduler || supervisorctl restart mypl-scheduler || true
+# Restart Reverb so it picks up the freshly-built app/config on every deploy.
+supervisorctl restart mypl-reverb || supervisorctl start mypl-reverb || true
 
 echo ""
 echo "=== Rebuild deployment complete! ==="

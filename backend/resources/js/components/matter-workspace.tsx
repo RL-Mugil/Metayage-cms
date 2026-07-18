@@ -1,21 +1,24 @@
-import { Link } from "@inertiajs/react"
-import { useState } from "react"
+import { Link, router } from "@inertiajs/react"
+import { useEffect, useRef, useState } from "react"
 import {
   Activity, ArrowLeft, BriefcaseBusiness, CalendarClock, CheckCircle2,
-  CircleDollarSign, Clock3, FileText, GitBranch, History, ListChecks,
+  CircleDollarSign, Clock3, Eye, FileText, GitBranch, History, ListChecks,
+  MessageSquare, Plus, Trash2, Download, Upload, Loader2, Pencil, FileSignature,
   Scale, ShieldCheck, Users,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { DocketDeadlines } from "@/components/docket-deadlines"
+import { ProjectChat } from "@/components/project-chat"
 import { api } from "@/lib/api-client"
 import type {
   MatterWorkspace as WorkspaceData,
   WorkspaceDeadline,
+  WorkspaceDocument,
   WorkspaceTimelineItem,
 } from "@/types/matter-workspace"
 
-type WorkspaceTab = "overview" | "lifecycle" | "deadlines" | "family" | "documents" | "tasks" | "costs" | "audit"
+type WorkspaceTab = "overview" | "lifecycle" | "deadlines" | "family" | "documents" | "discussion" | "tasks" | "costs" | "audit"
 
 interface MatterWorkspaceProps {
   data: WorkspaceData
@@ -30,6 +33,7 @@ const TAB_DEFS: Array<{ id: WorkspaceTab; label: string; icon: typeof Activity }
   { id: "deadlines", label: "Deadlines", icon: CalendarClock },
   { id: "family", label: "Family", icon: Users },
   { id: "documents", label: "Documents", icon: FileText },
+  { id: "discussion", label: "Discussion", icon: MessageSquare },
   { id: "tasks", label: "Tasks", icon: ListChecks },
   { id: "costs", label: "Costs", icon: CircleDollarSign },
   { id: "audit", label: "Audit", icon: ShieldCheck },
@@ -204,7 +208,11 @@ export function MatterWorkspace({ data, projectId, tab, onTabChange }: MatterWor
         )}
 
         {tab === "documents" && (
-          <section><div className="mb-4"><h2 className="text-base font-semibold">Matter documents</h2><p className="mt-1 text-sm text-muted-foreground">Documents explicitly linked to this matter.</p></div>{data.documents.length === 0 ? <EmptyState icon={FileText} title="No linked documents" body="Upload or link documents from the document workspace." /> : <div className="divide-y divide-border rounded-md border border-border">{data.documents.map((document) => <div key={document.id} className="grid gap-2 p-3 sm:grid-cols-[minmax(0,1fr)_120px_100px_130px] sm:items-center"><div className="min-w-0"><p className="truncate text-sm font-medium">{document.file_name}</p><p className="mt-1 text-xs text-muted-foreground">{document.uploader?.name || "Unknown uploader"} - version {document.current_version}</p></div><span className="text-xs text-muted-foreground">{document.category}</span><Badge variant="outline" className="w-fit">{document.status}</Badge><span className="text-xs text-muted-foreground">{formatDate(document.updated_at)}</span></div>)}</div>}</section>
+          <DocumentsWorkspace initial={data.documents} projectId={projectId} canDelete={data.capabilities.can_update} />
+        )}
+
+        {tab === "discussion" && (
+          <ProjectChat projectId={projectId} />
         )}
 
         {tab === "tasks" && (
@@ -212,7 +220,10 @@ export function MatterWorkspace({ data, projectId, tab, onTabChange }: MatterWor
         )}
 
         {tab === "costs" && data.financials && (
-          <section className="space-y-5"><div className="grid gap-px overflow-hidden rounded-md border border-border bg-border sm:grid-cols-3">{[["Total invoiced", data.financials.summary.total_invoiced], ["Received", data.financials.summary.total_received], ["Pending", data.financials.summary.total_pending]].map(([label, value]) => <div key={label} className="bg-background p-4"><p className="text-xs text-muted-foreground">{label}</p><p className="mt-2 text-xl font-semibold">{formatMoney(value)}</p></div>)}</div>{data.financials.invoices.length === 0 ? <EmptyState icon={CircleDollarSign} title="No matter invoices" body="Invoices and predecessor-chain costs will appear here." /> : <div className="overflow-x-auto rounded-md border border-border"><table className="w-full min-w-[700px] text-sm"><thead className="bg-muted/40 text-left text-xs text-muted-foreground"><tr><th className="p-3">Invoice</th><th className="p-3">Issued</th><th className="p-3">Due</th><th className="p-3">Status</th><th className="p-3 text-right">Total</th><th className="p-3 text-right">Balance</th></tr></thead><tbody>{data.financials.invoices.map((invoice) => <tr key={invoice.id} className="border-t border-border"><td className="p-3 font-mono font-semibold text-gold">{invoice.invoice_code}</td><td className="p-3">{formatDate(invoice.created_at)}</td><td className="p-3">{formatDate(invoice.due_date)}</td><td className="p-3"><Badge variant="outline">{invoice.status}</Badge></td><td className="p-3 text-right font-mono">{formatMoney(invoice.total_amount, invoice.currency)}</td><td className="p-3 text-right font-mono">{formatMoney(invoice.balance_due, invoice.currency)}</td></tr>)}</tbody></table></div>}</section>
+          <section className="space-y-6">
+            <div className="grid gap-px overflow-hidden rounded-md border border-border bg-border sm:grid-cols-3">{[["Total invoiced", data.financials.summary.total_invoiced], ["Received", data.financials.summary.total_received], ["Pending", data.financials.summary.total_pending]].map(([label, value]) => <div key={label} className="bg-background p-4"><p className="text-xs text-muted-foreground">{label}</p><p className="mt-2 text-xl font-semibold">{formatMoney(value)}</p></div>)}</div>
+            <PatentInvoicesWorkspace project={project} canManage={data.capabilities.can_view_financials} />
+          </section>
         )}
 
         {tab === "audit" && (
@@ -275,6 +286,155 @@ function FamilyWorkspace({ data, projectId }: { data: WorkspaceData; projectId: 
 
 function EmptyState({ icon: Icon, title, body }: { icon: typeof BriefcaseBusiness; title: string; body: string }) {
   return <div className="flex min-h-56 flex-col items-center justify-center rounded-md border border-dashed border-border px-6 text-center"><Icon className="h-8 w-8 text-muted-foreground" /><h3 className="mt-3 text-sm font-semibold">{title}</h3><p className="mt-1 max-w-md text-sm text-muted-foreground">{body}</p></div>
+}
+
+/* ─────────────── Documents (upload / download / delete) ─────────────── */
+
+const DOC_FOLDERS = ["General", "Patents", "Trademarks", "Contracts", "Correspondence", "Invoices"]
+
+function DocumentsWorkspace({ initial, projectId, canDelete }: { initial: WorkspaceDocument[]; projectId: number; canDelete: boolean }) {
+  const [docs, setDocs] = useState<WorkspaceDocument[]>(initial)
+  const [folder, setFolder] = useState("Patents")
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const fileRef = useRef<HTMLInputElement | null>(null)
+
+  async function upload(files: FileList | null) {
+    if (!files || files.length === 0) return
+    setBusy(true); setError(null)
+    try {
+      for (const file of Array.from(files)) {
+        await api.uploadDocument(file, folder, null, projectId)
+      }
+      const list = await api.getMatterWorkspace(projectId)
+      setDocs(list.documents)
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Upload failed")
+    } finally { setBusy(false); if (fileRef.current) fileRef.current.value = "" }
+  }
+
+  async function remove(doc: WorkspaceDocument) {
+    if (!doc.storage_path || !confirm(`Delete "${doc.file_name}"?`)) return
+    setDocs((d) => d.filter((x) => x.id !== doc.id))
+    try { await api.deleteDocument(doc.storage_path) } catch { /* refetch on failure */ setDocs(initial) }
+  }
+
+  return (
+    <section className="space-y-4">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div><h2 className="text-base font-semibold">Matter documents</h2><p className="mt-1 text-sm text-muted-foreground">Files linked to this matter. Clients and staff can upload.</p></div>
+        <div className="flex items-end gap-2">
+          <label className="text-xs text-muted-foreground">Folder
+            <select value={folder} onChange={(e) => setFolder(e.target.value)} className="mt-1 block h-9 rounded-md border border-border bg-background px-2 text-sm">
+              {DOC_FOLDERS.map((f) => <option key={f} value={f}>{f}</option>)}
+            </select>
+          </label>
+          <input ref={fileRef} type="file" multiple hidden onChange={(e) => upload(e.target.files)} />
+          <Button size="sm" disabled={busy} onClick={() => fileRef.current?.click()}>
+            {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}Upload
+          </Button>
+        </div>
+      </div>
+      {error && <p className="text-sm text-destructive">{error}</p>}
+      {docs.length === 0 ? (
+        <EmptyState icon={FileText} title="No linked documents" body="Upload a document above to attach it to this matter." />
+      ) : (
+        <div className="divide-y divide-border rounded-md border border-border">
+          {docs.map((document) => (
+            <div key={document.id} className="grid gap-2 p-3 sm:grid-cols-[minmax(0,1fr)_110px_90px_120px_auto] sm:items-center">
+              <div className="min-w-0"><p className="truncate text-sm font-medium">{document.file_name}</p><p className="mt-1 text-xs text-muted-foreground">{document.uploader?.name || "Unknown"} · v{document.current_version}</p></div>
+              <span className="text-xs text-muted-foreground">{document.category}</span>
+              <Badge variant="outline" className="w-fit">{document.status}</Badge>
+              <span className="text-xs text-muted-foreground">{formatDate(document.updated_at)}</span>
+              <div className="flex items-center justify-end gap-1">
+                {document.storage_path && <button title="View in new tab" onClick={() => window.open(`/api/documents/view?path=${encodeURIComponent(document.storage_path!)}`, "_blank", "noopener")} className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"><Eye className="h-4 w-4" /></button>}
+                {document.storage_path && <button title="Download" onClick={() => api.downloadDocument(document.storage_path!, document.file_name)} className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"><Download className="h-4 w-4" /></button>}
+                {canDelete && document.storage_path && <button title="Delete" onClick={() => remove(document)} className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-destructive"><Trash2 className="h-4 w-4" /></button>}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  )
+}
+
+/* ─────────────── Patent invoices (INR) — full CRUD ─────────────── */
+
+interface PatentInvoiceRow {
+  id: number; type: string; status: string; invoice_uin?: string | null; docket_number?: string | null;
+  invoice_date?: string | null; invoice_amount?: number | string | null; currency?: string | null;
+  patent_office_fees?: number | string | null; service_fees?: number | string | null; other_expenses?: number | string | null;
+  invention_title?: string | null; state_of_supply?: string | null;
+}
+
+function PatentInvoicesWorkspace({ project, canManage }: { project: WorkspaceData["project"]; canManage: boolean }) {
+  const [rows, setRows] = useState<PatentInvoiceRow[]>([])
+  const [loading, setLoading] = useState(true)
+
+  const load = () => {
+    setLoading(true)
+    const params = new URLSearchParams({ project_id: String(project.id), per_page: "100" })
+    api.getPatentInvoicesIn(params)
+      .then((res) => setRows((res.data as unknown as PatentInvoiceRow[]) ?? []))
+      .catch(() => setRows([]))
+      .finally(() => setLoading(false))
+  }
+  useEffect(load, [project.id])
+
+  // Raising / editing use the full Financial Suite invoice system (identical
+  // large form), deep-linked and prefilled with this matter.
+  const raise = (kind: "invoice" | "quote") => router.visit(`/financial?india=${kind}&project_id=${project.id}`)
+  const editFull = (id: number) => router.visit(`/financial?india_edit=${id}`)
+
+  async function convert(id: number) { try { await api.convertPatentQuoteToInvoice(id); load() } catch { /* noop */ } }
+  async function cancel(id: number) { if (!confirm("Cancel this record?")) return; try { await api.deletePatentInvoiceIn(id); load() } catch { /* noop */ } }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-base font-semibold">Patent invoices &amp; quotations (INR)</h2>
+        {canManage && (
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" onClick={() => raise("quote")}><FileSignature className="mr-2 h-4 w-4" />Raise Quotation</Button>
+            <Button size="sm" onClick={() => raise("invoice")}><Plus className="mr-2 h-4 w-4" />Raise Invoice</Button>
+          </div>
+        )}
+      </div>
+
+      {loading ? (
+        <div className="flex h-24 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+      ) : rows.length === 0 ? (
+        <EmptyState icon={CircleDollarSign} title="No invoices yet" body="Raise an invoice or quotation — it opens the full Financial Suite form, prefilled for this matter." />
+      ) : (
+        <div className="overflow-x-auto rounded-md border border-border">
+          <table className="w-full min-w-[720px] text-sm">
+            <thead className="bg-muted/40 text-left text-xs text-muted-foreground"><tr>
+              <th className="p-3">UIN</th><th className="p-3">Type</th><th className="p-3">Date</th><th className="p-3">Status</th><th className="p-3 text-right">Amount</th><th className="p-3 text-right">Actions</th>
+            </tr></thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.id} className="border-t border-border">
+                  <td className="p-3 font-mono font-semibold text-gold">{r.invoice_uin || "—"}</td>
+                  <td className="p-3 capitalize">{r.type}</td>
+                  <td className="p-3">{formatDate(r.invoice_date)}</td>
+                  <td className="p-3"><Badge variant="outline">{r.status}</Badge></td>
+                  <td className="p-3 text-right font-mono">{formatMoney(r.invoice_amount ?? 0, r.currency || "INR")}</td>
+                  <td className="p-3">
+                    <div className="flex items-center justify-end gap-1">
+                      {canManage && <button title="Open in full editor" onClick={() => editFull(r.id)} className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"><Pencil className="h-4 w-4" /></button>}
+                      {canManage && r.type === "quote" && r.status !== "Cancelled" && <button title="Convert to invoice" onClick={() => convert(r.id)} className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-emerald-600"><CheckCircle2 className="h-4 w-4" /></button>}
+                      {canManage && r.status !== "Cancelled" && <button title="Cancel" onClick={() => cancel(r.id)} className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-destructive"><Trash2 className="h-4 w-4" /></button>}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
 }
 
 export type { WorkspaceTab }

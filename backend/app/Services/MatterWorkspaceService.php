@@ -64,7 +64,7 @@ class MatterWorkspaceService
             ->when($isClient, fn ($query) => $query->where('client_id', $project->client_id))
             ->orderByDesc('updated_at')
             ->get(['id', 'project_id', 'client_id', 'file_name', 'file_type', 'file_size',
-                'category', 'current_version', 'uploaded_by_id', 'status', 'updated_at']);
+                'category', 'storage_path', 'current_version', 'uploaded_by_id', 'status', 'updated_at']);
 
         $elevations = ProjectElevation::query()
             ->where('project_id', $project->id)

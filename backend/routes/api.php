@@ -81,21 +81,16 @@ Route::middleware(['auth:sanctum', 'firm.context', 'throttle:120,1'])->group(fun
     Route::get('/projects/import-template', [\App\Http\Controllers\ProjectImportController::class, 'template']);
     Route::post('/projects/import/sheets', [\App\Http\Controllers\ProjectImportController::class, 'inspectSheets'])->middleware('throttle:60,1');
     Route::post('/projects/import', [\App\Http\Controllers\ProjectImportController::class, 'import'])->middleware('throttle:60,1');
-    Route::get('/projects/detect-chains', [ProjectController::class, 'detectChains']);
-    Route::post('/projects/bulk-link-chains', [ProjectController::class, 'bulkLinkChains']);
     Route::get('/projects', [ProjectController::class, 'index']);
     Route::post('/projects', [ProjectController::class, 'store']);
     Route::get('/projects/{id}', [ProjectController::class, 'show']);
     Route::get('/projects/{id}/workspace', [ProjectController::class, 'workspace']);
     Route::get('/invention-families/{family}', [InventionFamilyController::class, 'show']);
-    Route::post('/invention-families/{family}/engagements', [InventionFamilyController::class, 'storeBranch'])
-        ->middleware('throttle:30,1');
+    Route::post('/invention-families/{family}/engagements', [InventionFamilyController::class, 'storeBranch']);
     Route::put('/projects/{id}', [ProjectController::class, 'update']);
     Route::delete('/projects/{id}', [ProjectController::class, 'destroy']);
     Route::post('/projects/{id}/stage', [ProjectController::class, 'updateStage']);
     Route::get('/projects/{id}/detail', [ProjectController::class, 'detail']);
-    Route::post('/projects/{id}/elevate', [ProjectController::class, 'elevate']);
-    Route::post('/projects/{id}/link-predecessor', [ProjectController::class, 'linkPredecessor']);
     Route::post('/projects/docket-import/preview', [\App\Http\Controllers\ProjectDocketImportController::class, 'preview'])->middleware('throttle:60,1');
     Route::post('/projects/docket-import/import', [\App\Http\Controllers\ProjectDocketImportController::class, 'import'])->middleware('throttle:30,1');
 
@@ -200,6 +195,7 @@ Route::middleware(['auth:sanctum', 'firm.context', 'throttle:120,1'])->group(fun
     Route::post('/documents', [DocumentController::class, 'store']);
     Route::delete('/documents', [DocumentController::class, 'destroy']);
     Route::get('/documents/download', [DocumentController::class, 'download']);
+    Route::get('/documents/view', [DocumentController::class, 'view']);
 
     // Approvals
     Route::get('/approvals', [\App\Http\Controllers\ApprovalController::class, 'index']);
@@ -212,6 +208,14 @@ Route::middleware(['auth:sanctum', 'firm.context', 'throttle:120,1'])->group(fun
     Route::post('/discussions/{id}/reply', [\App\Http\Controllers\DiscussionController::class, 'reply']);
     Route::put('/discussions/{id}', [\App\Http\Controllers\DiscussionController::class, 'update']);
     Route::delete('/discussions/{id}', [\App\Http\Controllers\DiscussionController::class, 'destroy']);
+
+    // Per-case real-time chat (Google-Chat-style room, restricted to case people)
+    Route::get('/projects/{projectId}/chat',                      [\App\Http\Controllers\ProjectChatController::class, 'show']);
+    Route::post('/projects/{projectId}/chat',                     [\App\Http\Controllers\ProjectChatController::class, 'send']);
+    Route::put('/projects/{projectId}/chat/messages/{messageId}', [\App\Http\Controllers\ProjectChatController::class, 'update']);
+    Route::delete('/projects/{projectId}/chat/messages/{messageId}', [\App\Http\Controllers\ProjectChatController::class, 'destroy']);
+    Route::post('/projects/{projectId}/chat/read',                [\App\Http\Controllers\ProjectChatController::class, 'markRead']);
+    Route::get('/projects/{projectId}/chat/attachment',           [\App\Http\Controllers\ProjectChatController::class, 'downloadAttachment']);
 
     // Settings
     Route::get('/settings',               [\App\Http\Controllers\SettingsController::class, 'getSettings']);

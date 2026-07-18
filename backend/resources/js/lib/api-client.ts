@@ -417,11 +417,12 @@ export const api = {
     const res = await this.request<PaginatedResponse<Record<string, unknown>> | Record<string, unknown>[]>('/documents')
     return Array.isArray(res) ? res : ((res as PaginatedResponse<Record<string, unknown>>).data ?? [])
   },
-  async uploadDocument(file: File, folder?: string, clientId?: number | null): Promise<Record<string, unknown>> {
+  async uploadDocument(file: File, folder?: string, clientId?: number | null, projectId?: number | null): Promise<Record<string, unknown>> {
     const formData = new FormData()
     formData.append('file', file)
     if (folder) formData.append('folder', folder)
     if (clientId) formData.append('client_id', String(clientId))
+    if (projectId) formData.append('project_id', String(projectId))
     const response = await fetch('/api/documents', {
       method: 'POST',
       headers: { 'X-XSRF-TOKEN': getCsrfToken(), Accept: 'application/json' },
@@ -476,6 +477,57 @@ export const api = {
   },
   async deleteDiscussion(threadId: number): Promise<any> {
     return this.request(`/discussions/${threadId}`, { method: 'DELETE' })
+  },
+
+  // ── Per-case chat (Google-Chat-style room) ──
+  async getProjectChat(projectId: number | string): Promise<any> {
+    return this.request(`/projects/${projectId}/chat`)
+  },
+  async sendProjectChat(
+    projectId: number | string,
+    payload: { content?: string; mentions?: number[]; attachments?: File[] },
+  ): Promise<any> {
+    const form = new FormData()
+    if (payload.content) form.append('content', payload.content)
+    ;(payload.mentions ?? []).forEach((id) => form.append('mentions[]', String(id)))
+    ;(payload.attachments ?? []).forEach((f) => form.append('attachments[]', f))
+    const response = await fetch(`/api/projects/${projectId}/chat`, {
+      method: 'POST',
+      headers: { 'X-XSRF-TOKEN': getCsrfToken(), Accept: 'application/json' },
+      credentials: 'same-origin',
+      body: form,
+    })
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}))
+      throw new Error((err as { message?: string }).message || 'Could not send message')
+    }
+    return response.json()
+  },
+  async editProjectChatMessage(projectId: number | string, messageId: number, content: string): Promise<any> {
+    return this.request(`/projects/${projectId}/chat/messages/${messageId}`, {
+      method: 'PUT', body: JSON.stringify({ content }),
+    })
+  },
+  async deleteProjectChatMessage(projectId: number | string, messageId: number): Promise<any> {
+    return this.request(`/projects/${projectId}/chat/messages/${messageId}`, { method: 'DELETE' })
+  },
+  async markProjectChatRead(projectId: number | string, lastReadMessageId: number): Promise<any> {
+    return this.request(`/projects/${projectId}/chat/read`, {
+      method: 'POST', body: JSON.stringify({ last_read_message_id: lastReadMessageId }),
+    })
+  },
+  async downloadChatAttachment(projectId: number | string, path: string, name: string): Promise<void> {
+    const response = await fetch(`/api/projects/${projectId}/chat/attachment?path=${encodeURIComponent(path)}`, {
+      headers: { Accept: 'application/octet-stream' }, credentials: 'same-origin',
+    })
+    if (!response.ok) throw new Error('Download failed')
+    const blob = await response.blob()
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = name
+    link.click()
+    URL.revokeObjectURL(url)
   },
 
   // ── Settings ──

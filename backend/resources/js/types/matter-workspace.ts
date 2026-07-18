@@ -123,6 +123,7 @@ export interface WorkspaceDocument {
   file_type?: string | null
   file_size: number
   category: string
+  storage_path?: string | null
   current_version: number
   status: string
   updated_at: string
