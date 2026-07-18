@@ -45,8 +45,10 @@ class AIController extends Controller
                 'error' => $e->getMessage(),
             ]);
 
+            // Return a generic message — never leak upstream/internal error
+            // detail (Groq errors, SQL, stack) to the client. Detail is logged above.
             return response()->json([
-                'message' => $e->getMessage() !== '' ? $e->getMessage() : 'AI service error. Please try again.',
+                'message' => 'AI service error. Please try again.',
             ], 500);
         }
     }

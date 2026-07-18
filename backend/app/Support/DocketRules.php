@@ -18,6 +18,8 @@ use Carbon\Carbon;
  */
 class DocketRules
 {
+    public const RULESET_VERSION = 'IN-PAT-2024.1';
+
     public const EVENT_TYPES = [
         'provisional_filed' => 'Provisional Application Filed',
         'application_filed' => 'Complete Application Filed',
@@ -25,6 +27,21 @@ class DocketRules
         'published'         => 'Application Published (S.11A)',
         'rfe_filed'         => 'Request for Examination Filed',
         'fer_received'      => 'First/Subsequent Examination Report Received',
+        'ser_received'      => 'Subsequent Examination Report Received',
+        'ter_received'      => 'Further Examination Report Received',
+        'us_filing_receipt' => 'USPTO Filing Receipt Received',
+        'us_missing_parts' => 'USPTO Missing Parts Notice Received',
+        'us_restriction_requirement' => 'USPTO Restriction Requirement Received',
+        'us_nonfinal_office_action' => 'USPTO Non-Final Office Action Received',
+        'us_final_office_action' => 'USPTO Final Office Action Received',
+        'us_advisory_action' => 'USPTO Advisory Action Received',
+        'us_notice_of_allowance' => 'USPTO Notice of Allowance Received',
+        'us_issue_fee_paid' => 'USPTO Issue Fee Paid',
+        'us_patent_issued' => 'USPTO Patent Issued',
+        'us_abandoned' => 'USPTO Application Abandoned',
+        'us_rce_filed' => 'USPTO RCE Filed',
+        'us_ptab_decision' => 'PTAB Decision Received',
+        'us_maintenance_window_open' => 'USPTO Maintenance Fee Window Open',
         'hearing_notice'    => 'Hearing Notice Received',
         'hearing_held'      => 'Hearing Attended',
         'granted'           => 'Patent Granted',
@@ -176,24 +193,14 @@ class DocketRules
             'created_by'            => $userId,
         ]);
 
-        foreach (self::deadlinesFor($eventType, $eventDate, $app) as $d) {
-            DocketDeadline::create([
-                'docket_event_id'       => $event->id,
-                'project_id'            => $projectId,
-                'patent_application_id' => $applicationId,
-                'title'                 => $d['title'],
-                'legal_basis'           => $d['legal_basis'],
-                'due_date'              => $d['due_date'],
-                'extended_due_date'     => $d['extended_due_date'],
-                'status'                => 'Open',
-            ]);
-        }
+        $project = $projectId ? \App\Models\Project::find($projectId) : null;
+        app(\App\Services\DeadlineRuleEngine::class)->generate($event, $project, $app);
 
         // Event side-effects on the application's legal status
         if ($app) {
             $newStatus = match ($eventType) {
                 'published'      => 'Published',
-                'fer_received'   => 'Under Examination',
+                'fer_received', 'ser_received', 'ter_received' => 'Under Examination',
                 'granted'        => 'Granted',
                 'refused'        => 'Refused',
                 'renewal_missed' => 'Lapsed',

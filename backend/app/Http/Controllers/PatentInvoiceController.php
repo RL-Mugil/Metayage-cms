@@ -71,8 +71,9 @@ class PatentInvoiceController extends Controller
         $q    = PatentInvoiceIn::with(['project:id,project_code,docket_number', 'client:id,company_name,legal_name,client_code'])
             ->orderByDesc('created_at');
 
-        if ($request->filled('type'))   $q->where('type',   $request->type);
-        if ($request->filled('status')) $q->where('status', $request->status);
+        if ($request->filled('type'))       $q->where('type',       $request->type);
+        if ($request->filled('status'))     $q->where('status',     $request->status);
+        if ($request->filled('project_id')) $q->where('project_id', (int) $request->project_id);
         if ($request->filled('search')) {
             $s = $request->search;
             $q->where(function ($query) use ($s) {

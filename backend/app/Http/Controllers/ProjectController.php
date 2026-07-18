@@ -11,12 +11,16 @@ use Illuminate\Support\Facades\DB;
 use App\Http\PaginationHelper;
 use App\Http\Requests\StoreProjectRequest;
 use App\Http\Requests\UpdateProjectRequest;
+use App\Http\Resources\MatterWorkspaceResource;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Inertia\Inertia;
 use Illuminate\Validation\ValidationException;
 use App\Services\GoogleCalendarService;
+use App\Services\MatterWorkspaceService;
+use App\Services\DocketNumberService;
+use App\Services\InventionFamilyService;
 use App\Http\Controllers\ProjectTrackerController;
 
 class ProjectController extends Controller
@@ -256,6 +260,14 @@ class ProjectController extends Controller
         return response()->json($project);
     }
 
+    public function workspace(Request $request, $id, MatterWorkspaceService $workspace)
+    {
+        $project = Project::findOrFail($id);
+        $this->authorize('view', $project);
+
+        return new MatterWorkspaceResource($workspace->build($project, $request->user()));
+    }
+
     public function store(StoreProjectRequest $request)
     {
         $user = $request->user();
@@ -308,6 +320,7 @@ class ProjectController extends Controller
      */
     private function createProjectWithCodes(array $validated): Project
     {
+        $validated = app(DocketNumberService::class)->assignForCreation($validated);
         $recordMode = $validated['record_mode'] ?? 'new';
         $manualProjectCode = strtoupper(trim((string) ($validated['project_code'] ?? '')));
         $manualDocket = strtoupper(trim((string) ($validated['docket_number'] ?? '')));
@@ -413,6 +426,7 @@ class ProjectController extends Controller
         }
 
         $project = Project::create($validated);
+        $family = app(InventionFamilyService::class)->attach($project);
 
         // Anchor Indian patent matters to a patent_application (the legal entity).
         // Chained matters share their predecessor's application via parent_project_id.
@@ -428,6 +442,7 @@ class ProjectController extends Controller
                 ? Project::where('id', $project->parent_project_id)->value('patent_application_id')
                 : null;
             $appId = $parentAppId ?: \App\Models\PatentApplication::create([
+                'invention_family_id' => $family->id,
                 'client_id'          => $project->client_id,
                 'application_number' => $project->application_number,
                 'title'              => $project->invention_title ?: $project->project_name,
@@ -469,9 +484,12 @@ class ProjectController extends Controller
         $deadlineChanged = array_key_exists('hard_deadline', $validated)
             && $validated['hard_deadline'] !== $project->hard_deadline;
 
-        // Auto-extract service_code from docket when editing a manually-entered UIN (4+3+2+3 = 12 chars)
-        if (empty($validated['service_code']) && !empty($validated['docket_number']) && strlen($validated['docket_number']) >= 12) {
-            $validated['service_code'] = strtoupper(substr($validated['docket_number'], 9, 3));
+        if (array_key_exists('patent_office_code', $validated) || array_key_exists('service_code', $validated)) {
+            $validated = array_merge($validated, app(DocketNumberService::class)->recanonicalize(
+                $project,
+                $validated['patent_office_code'] ?? null,
+                $validated['service_code'] ?? null,
+            ));
         }
 
         $project->update($validated);
@@ -1084,82 +1102,26 @@ class ProjectController extends Controller
         }
 
         $data = $request->validate([
-            'to_service' => 'required|string|max:10',
+            'to_service' => ['required', 'string', 'regex:/^[A-Za-z0-9]{3}$/'],
             'note'       => 'nullable|string|max:1000',
         ]);
 
-        return DB::transaction(function () use ($request, $id, $data) {
-            $project = Project::lockForUpdate()->findOrFail($id);
-            $toSvc   = strtoupper($data['to_service']);
+        $project = Project::findOrFail($id);
+        $this->authorize('update', $project);
+        $successor = app(InventionFamilyService::class)->createBranch($project, [
+            'patent_office_code' => $project->patent_office_code,
+            'service_code' => strtoupper($data['to_service']),
+            'note' => $data['note'] ?? null,
+            'complete_source' => true,
+        ], $request->user(), ['ip_address' => $request->ip(), 'user_agent' => $request->userAgent()]);
 
-            // Derive fromSvc: use stored service_code, else last 3 chars of docket, else empty
-            $storedSvc  = strtoupper($project->service_code ?? '');
-            $docketSvc  = $project->docket_number ? strtoupper(substr($project->docket_number, -3)) : '';
-            $fromSvc    = $storedSvc ?: $docketSvc;
+        Cache::increment('dashboard_v');
 
-            // No path restriction — user selects any service code freely.
-
-            $fromDocket = $project->docket_number;
-
-            // Freeze original_docket on first elevation
-            if (!$project->original_docket) {
-                $project->original_docket = $fromDocket;
-            }
-
-            // Build new docket: strip old service suffix (last 3 chars) and append new service code
-            $newDocket = $fromDocket;
-            if ($fromSvc && strlen($fromSvc) === 3 && str_ends_with(strtoupper($fromDocket ?? ''), $fromSvc)) {
-                $newDocket = substr($fromDocket, 0, -3) . $toSvc;
-            } else {
-                // No recognisable suffix — just append (e.g. docket had no service code)
-                $newDocket = ($fromDocket ?? '') . $toSvc;
-            }
-
-            $project->service_code   = $toSvc;
-            $project->docket_number  = $newDocket;
-            $project->save();
-
-            // Keep linked tracker row in sync with new docket and UIN
-            \App\Models\TrackerRow::where('project_id', $project->id)
-                ->update(['docket_number' => $newDocket, 'uin' => $newDocket]);
-
-            $this->reseedStages($project);
-
-            ProjectElevation::create([
-                'project_id'           => $project->id,
-                'predecessor_project_id' => null,
-                'from_service_code'    => $fromSvc,
-                'to_service_code'      => $toSvc,
-                'from_docket'          => $fromDocket,
-                'to_docket'            => $newDocket,
-                'elevated_at'          => now(),
-                'elevated_by_id'       => $request->user()->id,
-                'note'                 => $data['note'] ?? null,
-                'is_retroactive_link'  => false,
-            ]);
-
-            AuditLog::create([
-                'user_id'      => $request->user()->id,
-                'action'       => 'elevate',
-                'subject_type' => 'Project',
-                'subject_id'   => $project->id,
-                'metadata'     => [
-                    'from_service' => $fromSvc,
-                    'to_service'   => $toSvc,
-                    'from_docket'  => $fromDocket,
-                    'to_docket'    => $newDocket,
-                ],
-                'ip_address'   => $request->ip(),
-                'user_agent'   => $request->userAgent(),
-            ]);
-
-            Cache::increment('dashboard_v');
-
-            return response()->json([
-                'message' => "Elevated from {$fromSvc} to {$toSvc}",
-                'project' => $project->fresh(['stages', 'client']),
-            ]);
-        });
+        return response()->json([
+            'message' => "Created successor engagement {$successor->docket_number}.",
+            'project' => $successor,
+            'predecessor_id' => $project->id,
+        ], 201);
     }
 
     public function linkPredecessor(Request $request, $id)

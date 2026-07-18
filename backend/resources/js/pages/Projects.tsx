@@ -200,6 +200,7 @@ const CASE_TYPES = [
 
 const URGENCIES = ["Low", "Normal", "High", "Critical"];
 const STATUSES  = ["Open", "In Progress", "On Hold", "Closed", "Completed", "Granted", "Refused", "Abandoned"];
+const US_PATENT_STATUSES = ["Open", "Filed", "Missing Parts Pending", "Awaiting Publication", "Awaiting Examination", "Non-Final Action Received", "Final Action Received", "After-Final Strategy", "Appeal Pending", "Allowed", "Issue Fee Pending", "Issued", "Abandoned", "Revival Pending", "Expired", "Closed"];
 
 const ELEVATION_PATHS: Record<string, string[]> = {
   PAS:  ["PRV", "CPD", "CVP", "PCT", "DVA", "PAD"],
@@ -690,9 +691,8 @@ function CodeCombobox({ value, baseOptions, codeType, onSelect, placeholder, loc
       {addErr && <p className="text-xs text-destructive">{addErr}</p>}
       <div className="flex gap-2">
         <button type="button" onMouseDown={(e) => { e.preventDefault(); handleAdd(); }}
-          disabled={saving}
           className="flex-1 h-7 rounded bg-gold/90 hover:bg-gold text-xs font-medium text-black disabled:opacity-50">
-          {saving ? "Saving…" : "Save"}
+          Save
         </button>
         <button type="button" onMouseDown={(e) => { e.preventDefault(); setAdding(false); setAddErr(""); setNewCode(""); setNewDesc(""); }}
           className="flex-1 h-7 rounded border border-border text-xs hover:bg-muted/40">
@@ -1196,6 +1196,9 @@ export default function Projects() {
     }
     if (!editProj && form.record_mode === "existing" && !form.project_code.trim() && !form.docket_number.trim()) {
       setSaveErr("Existing case ID is required for legacy cases."); return;
+    }
+    if (!/^[A-Z0-9]{2}$/i.test(form.patent_office_code) || !/^[A-Z0-9]{3}$/i.test(form.service_code)) {
+      setSaveErr("A 2-character patent office code and 3-character service code are required."); return;
     }
     setSaving(true); setSaveErr("");
     try {
@@ -1893,6 +1896,12 @@ export default function Projects() {
                           const value = e.target.value.toUpperCase();
                           sf("project_code", value);
                           sf("docket_number", value);
+                          const client = clients.find((item) => String(item.id) === form.client_id);
+                          const clientCode = client?.client_code?.toUpperCase() ?? "";
+                          if (clientCode && value.startsWith(clientCode) && value.length === clientCode.length + 8) {
+                            sf("patent_office_code", value.slice(clientCode.length + 3, clientCode.length + 5));
+                            sf("service_code", value.slice(-3));
+                          }
                         }}
                         className={ic}
                         placeholder="e.g. A97M001INFER"
@@ -1965,7 +1974,7 @@ export default function Projects() {
                         if (s === "Granted") sf("patent_granted", true);
                         else if (form.patent_granted) sf("patent_granted", false);
                       }} className={ic}>
-                        {STATUSES.map((s) => <option key={s}>{s}</option>)}
+                        {(form.patent_office_code === "US" ? US_PATENT_STATUSES : STATUSES).map((s) => <option key={s}>{s}</option>)}
                       </select>
                     </div>
                   )}
@@ -1976,7 +1985,7 @@ export default function Projects() {
               <Section title="IP Details">
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <Lbl>Patent Office (Country)</Lbl>
+                    <Lbl req>Patent Office (Country)</Lbl>
                     <CodeCombobox
                       value={form.patent_office_code}
                       baseOptions={officeOptions}
@@ -1987,7 +1996,7 @@ export default function Projects() {
                     />
                   </div>
                   <div>
-                    <Lbl>Service Code</Lbl>
+                    <Lbl req>Service Code</Lbl>
                     <CodeCombobox
                       value={form.service_code}
                       baseOptions={serviceOptions}
@@ -2760,22 +2769,6 @@ export default function Projects() {
                                 <Button size="sm" variant="outline" className="h-7 w-7 p-0" title="Edit" onClick={() => openEdit(p)}>
                                   <Pencil className="h-3 w-3" />
                                 </Button>
-                                {canElevate && (
-                                  <Button size="sm" variant="outline"
-                                    className="h-7 w-7 p-0 text-amber-500 border-amber-500/30 hover:bg-amber-500/10"
-                                    title="Change Service"
-                                    onClick={() => { setElevateModal({ project: p }); setElevateToService(""); setElevateNote(""); setElevateErr(""); }}>
-                                    <ArrowUpCircle className="h-3 w-3" />
-                                  </Button>
-                                )}
-                                {canLinkPred && featLinkPred && (
-                                  <Button size="sm" variant="outline"
-                                    className="h-7 w-7 p-0 text-teal-500 border-teal-500/30 hover:bg-teal-500/10"
-                                    title="Link Predecessor"
-                                    onClick={() => { setLinkModal({ project: p }); setLinkSearch(""); setLinkPredecessorId(null); setLinkNote(""); setLinkErr(""); }}>
-                                    <Link2 className="h-3 w-3" />
-                                  </Button>
-                                )}
                                 <Button size="sm" variant="outline" title="Delete"
                                   className="h-7 w-7 p-0 text-destructive border-destructive/30 hover:bg-destructive/10"
                                   onClick={() => setDelTarget(p)}>

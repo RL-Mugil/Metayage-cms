@@ -28,7 +28,7 @@ class ProjectControllerTest extends TestCase
     {
         return Client::create(array_merge([
             'company_name' => 'Test Client',
-            'client_code'  => 'CLI-' . rand(10000, 99999),
+            'client_code'  => 'C' . str_pad((string) rand(1, 99), 2, '0', STR_PAD_LEFT) . 'M',
             'entity_type'  => 'Corporation',
             'industry'     => 'Tech',
             'status'       => 'Active',
@@ -69,6 +69,8 @@ class ProjectControllerTest extends TestCase
             'project_type' => 'Patent',
             'case_type'    => 'Patent',
             'client_id'    => $client->id,
+            'patent_office_code' => 'IN',
+            'service_code' => 'FER',
         ])->assertCreated()->assertJsonFragment(['project_name' => 'Patent Filing']);
     }
 
@@ -85,11 +87,14 @@ class ProjectControllerTest extends TestCase
             'project_type' => 'Patent',
             'case_type'    => 'Patent',
             'client_id'    => $client->id,
+            'patent_office_code' => 'IN',
+            'service_code' => 'FER',
             'status'       => 'Active',
         ])->assertCreated()->json();
 
         $this->assertNotNull($response['project_code']);
-        $this->assertStringStartsWith('PRJ-', $response['project_code']);
+        $this->assertSame($client->client_code . '001INFER', $response['project_code']);
+        $this->assertSame($response['project_code'], $response['docket_number']);
     }
 
     public function test_docket_number_auto_generated_and_unique(): void
@@ -105,6 +110,8 @@ class ProjectControllerTest extends TestCase
             'project_type' => 'Patent',
             'case_type'    => 'Filing',
             'client_id'    => $client->id,
+            'patent_office_code' => 'IN',
+            'service_code' => 'FER',
         ])->assertCreated()->json();
 
         $r2 = $this->postJson('/api/projects', [
@@ -112,12 +119,16 @@ class ProjectControllerTest extends TestCase
             'project_type' => 'Patent',
             'case_type'    => 'Filing',
             'client_id'    => $client->id,
+            'patent_office_code' => 'US',
+            'service_code' => 'FIL',
         ])->assertCreated()->json();
 
         // Both should have docket numbers and they must differ
         $this->assertNotEmpty($r1['docket_number']);
         $this->assertNotEmpty($r2['docket_number']);
         $this->assertNotEquals($r1['docket_number'], $r2['docket_number']);
+        $this->assertSame('C01M001INFER', $r1['docket_number']);
+        $this->assertSame('C01M002USFIL', $r2['docket_number']);
     }
 
     // ──── Input Validation ────
@@ -157,6 +168,8 @@ class ProjectControllerTest extends TestCase
             'project_type' => 'Patent',
             'case_type'    => 'Filing',
             'client_id'    => $client->id,
+            'patent_office_code' => 'IN',
+            'service_code' => 'FER',
         ])->assertCreated();
     }
 
@@ -330,6 +343,8 @@ class ProjectControllerTest extends TestCase
             'project_type' => 'Patent',
             'case_type'    => 'Filing',
             'client_id'    => $client->id,
+            'patent_office_code' => 'IN',
+            'service_code' => 'FER',
             'hard_deadline' => $futureDate,
         ])->assertCreated();
     }

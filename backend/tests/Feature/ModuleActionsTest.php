@@ -159,7 +159,15 @@ class ModuleActionsTest extends TestCase
     {
         Sanctum::actingAs($this->user('manager'));
 
-        $this->postJson('/api/feedback/request', ['client' => 'Acme', 'subject' => 'Q2 survey'])->assertCreated();
+        // Feedback requests are project-scoped and notify the client's portal users.
+        $portal  = $this->user('client');
+        $client  = Client::create(['company_name' => 'Acme', 'client_code' => 'C01M', 'status' => 'Active', 'portal_user_id' => $portal->id]);
+        $project = \App\Models\Project::create([
+            'project_code' => 'P-FB-1', 'docket_number' => 'C01M001INPRV', 'project_name' => 'Feedback Matter',
+            'client_id' => $client->id, 'project_type' => 'Patent', 'status' => 'Open',
+        ]);
+
+        $this->postJson('/api/feedback/request', ['project_id' => $project->id, 'subject' => 'Q2 survey'])->assertCreated();
         $this->assertDatabaseHas('ip_notifications', ['type' => 'feedback_request']);
     }
 
@@ -239,15 +247,18 @@ class ModuleActionsTest extends TestCase
         ]);
         Sanctum::actingAs($this->user('manager'));
 
-        $this->postJson('/api/integrations/slack/toggle')->assertOk()->assertJson(['connected' => true]);
+        // New contract: credentials must be saved before an integration can connect.
         $this->postJson('/api/integrations/slack/config', ['api_key' => 'sk-secret'])->assertOk();
+        $this->postJson('/api/integrations/slack/toggle')->assertOk()->assertJson(['connected' => true]);
 
         $list = $this->getJson('/api/integrations')->assertOk()->json();
         $this->assertTrue($list[0]['hasKey']);
         $this->assertArrayNotHasKey('config', $list[0]); // key material never leaves the server
 
+        // Integration list is readable by all internal staff (READ_ROLES); only
+        // WRITE_ROLES may configure. Secrets are stripped from the response above.
         Sanctum::actingAs($this->user('associate'));
-        $this->getJson('/api/integrations')->assertForbidden();
+        $this->getJson('/api/integrations')->assertOk();
     }
 
     // ── Portal ────────────────────────────────────────────────────────────────

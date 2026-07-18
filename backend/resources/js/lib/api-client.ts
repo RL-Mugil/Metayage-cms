@@ -4,6 +4,7 @@ import type {
   Notification, ReportResponse, AIResponse, DashboardMetrics,
   PaginatedResponse, SearchResult, Quotation, AuditLog, PatentInvoiceIn,
 } from '@/types'
+import type { MatterWorkspace, MatterWorkspaceResponse } from '@/types/matter-workspace'
 
 function getCsrfToken(): string {
   if (typeof document === 'undefined') return ''
@@ -56,6 +57,10 @@ export const api = {
   async getProjectStats(roleFilter?: string): Promise<{ total: number; open: number; in_progress: number; on_hold: number; overdue: number }> {
     const q = roleFilter && roleFilter !== 'all' ? `?role_filter=${roleFilter}` : ''
     return this.request(`/projects/stats${q}`)
+  },
+  async getMatterWorkspace(projectId: number | string): Promise<MatterWorkspace> {
+    const response = await this.request<MatterWorkspaceResponse>(`/projects/${projectId}/workspace`)
+    return response.data
   },
   async getClients(params?: string | URLSearchParams): Promise<PaginatedResponse<Client>> {
     let query = '';
@@ -140,6 +145,17 @@ export const api = {
   async updateProjectStage(id: number | string, stageName: string): Promise<Project> {
     return this.request(`/projects/${id}/stage`, { method: 'POST', body: JSON.stringify({ stage_name: stageName }) })
   },
+  async createFamilyEngagement(familyId: number | string, data: {
+    source_project_id: number
+    patent_office_code: string
+    service_code: string
+    application_number?: string
+    complete_source?: boolean
+    filing_date?: string
+    note?: string
+  }): Promise<{ message: string; project: Project }> {
+    return this.request(`/invention-families/${familyId}/engagements`, { method: 'POST', body: JSON.stringify(data) })
+  },
 
   // ── Docketing engine ──
   async getProjectDocket(projectId: number | string): Promise<any> {
@@ -150,6 +166,15 @@ export const api = {
   },
   async updateDocketDeadline(deadlineId: number | string, status: string, notes?: string): Promise<any> {
     return this.request(`/docket/deadlines/${deadlineId}`, { method: 'PATCH', body: JSON.stringify({ status, notes }) })
+  },
+  async reviewDocketDeadline(deadlineId: number | string, review_status: 'Approved' | 'Rejected', notes?: string): Promise<any> {
+    return this.request(`/docket/deadlines/${deadlineId}/review`, { method: 'PATCH', body: JSON.stringify({ review_status, notes }) })
+  },
+  async getDeadlineRules(): Promise<any[]> {
+    return this.request('/docket/rules')
+  },
+  async updateDeadlineRule(ruleId: number | string, status: 'Approved' | 'Retired'): Promise<any> {
+    return this.request(`/docket/rules/${ruleId}`, { method: 'PATCH', body: JSON.stringify({ status }) })
   },
   async updateRenewal(renewalId: number | string, status: string): Promise<any> {
     return this.request(`/docket/renewals/${renewalId}`, { method: 'PATCH', body: JSON.stringify({ status }) })
@@ -392,11 +417,12 @@ export const api = {
     const res = await this.request<PaginatedResponse<Record<string, unknown>> | Record<string, unknown>[]>('/documents')
     return Array.isArray(res) ? res : ((res as PaginatedResponse<Record<string, unknown>>).data ?? [])
   },
-  async uploadDocument(file: File, folder?: string, clientId?: number | null): Promise<Record<string, unknown>> {
+  async uploadDocument(file: File, folder?: string, clientId?: number | null, projectId?: number | null): Promise<Record<string, unknown>> {
     const formData = new FormData()
     formData.append('file', file)
     if (folder) formData.append('folder', folder)
     if (clientId) formData.append('client_id', String(clientId))
+    if (projectId) formData.append('project_id', String(projectId))
     const response = await fetch('/api/documents', {
       method: 'POST',
       headers: { 'X-XSRF-TOKEN': getCsrfToken(), Accept: 'application/json' },
@@ -406,7 +432,7 @@ export const api = {
     if (!response.ok) {
       const err = await response.json().catch(() => ({}))
       throw new Error((err as { message?: string }).message || 'Upload failed')
-    }
+  }
     return response.json()
   },
   async deleteDocument(path: string): Promise<{ message: string }> {
@@ -451,6 +477,113 @@ export const api = {
   },
   async deleteDiscussion(threadId: number): Promise<any> {
     return this.request(`/discussions/${threadId}`, { method: 'DELETE' })
+  },
+
+  // ── Direct messages + thread chat ──
+  async getDirectMessages(): Promise<{ data: any[] }> {
+    return this.request('/dm')
+  },
+  async getDmContacts(): Promise<{ data: any[] }> {
+    return this.request('/dm/contacts')
+  },
+  async openDirectMessage(userId: number): Promise<any> {
+    return this.request(`/dm/open/${userId}`, { method: 'POST' })
+  },
+  async getThreadChat(threadId: number | string): Promise<any> {
+    return this.request(`/threads/${threadId}/chat`)
+  },
+  async sendThreadChat(
+    threadId: number | string,
+    payload: { content?: string; mentions?: number[]; attachments?: File[] },
+  ): Promise<any> {
+    const form = new FormData()
+    if (payload.content) form.append('content', payload.content)
+    ;(payload.mentions ?? []).forEach((id) => form.append('mentions[]', String(id)))
+    ;(payload.attachments ?? []).forEach((f) => form.append('attachments[]', f))
+    const response = await fetch(`/api/threads/${threadId}/chat`, {
+      method: 'POST',
+      headers: { 'X-XSRF-TOKEN': getCsrfToken(), Accept: 'application/json' },
+      credentials: 'same-origin',
+      body: form,
+    })
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}))
+      throw new Error((err as { message?: string }).message || 'Could not send message')
+    }
+    return response.json()
+  },
+  async editThreadChatMessage(threadId: number | string, messageId: number, content: string): Promise<any> {
+    return this.request(`/threads/${threadId}/chat/messages/${messageId}`, { method: 'PUT', body: JSON.stringify({ content }) })
+  },
+  async deleteThreadChatMessage(threadId: number | string, messageId: number): Promise<any> {
+    return this.request(`/threads/${threadId}/chat/messages/${messageId}`, { method: 'DELETE' })
+  },
+  async markThreadChatRead(threadId: number | string, lastReadMessageId: number): Promise<any> {
+    return this.request(`/threads/${threadId}/chat/read`, { method: 'POST', body: JSON.stringify({ last_read_message_id: lastReadMessageId }) })
+  },
+  async downloadThreadAttachment(threadId: number | string, path: string, name: string): Promise<void> {
+    const response = await fetch(`/api/threads/${threadId}/chat/attachment?path=${encodeURIComponent(path)}`, {
+      headers: { Accept: 'application/octet-stream' }, credentials: 'same-origin',
+    })
+    if (!response.ok) throw new Error('Download failed')
+    const blob = await response.blob()
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = name
+    link.click()
+    URL.revokeObjectURL(url)
+  },
+
+  // ── Per-case chat (Google-Chat-style room) ──
+  async getProjectChat(projectId: number | string): Promise<any> {
+    return this.request(`/projects/${projectId}/chat`)
+  },
+  async sendProjectChat(
+    projectId: number | string,
+    payload: { content?: string; mentions?: number[]; attachments?: File[] },
+  ): Promise<any> {
+    const form = new FormData()
+    if (payload.content) form.append('content', payload.content)
+    ;(payload.mentions ?? []).forEach((id) => form.append('mentions[]', String(id)))
+    ;(payload.attachments ?? []).forEach((f) => form.append('attachments[]', f))
+    const response = await fetch(`/api/projects/${projectId}/chat`, {
+      method: 'POST',
+      headers: { 'X-XSRF-TOKEN': getCsrfToken(), Accept: 'application/json' },
+      credentials: 'same-origin',
+      body: form,
+    })
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}))
+      throw new Error((err as { message?: string }).message || 'Could not send message')
+    }
+    return response.json()
+  },
+  async editProjectChatMessage(projectId: number | string, messageId: number, content: string): Promise<any> {
+    return this.request(`/projects/${projectId}/chat/messages/${messageId}`, {
+      method: 'PUT', body: JSON.stringify({ content }),
+    })
+  },
+  async deleteProjectChatMessage(projectId: number | string, messageId: number): Promise<any> {
+    return this.request(`/projects/${projectId}/chat/messages/${messageId}`, { method: 'DELETE' })
+  },
+  async markProjectChatRead(projectId: number | string, lastReadMessageId: number): Promise<any> {
+    return this.request(`/projects/${projectId}/chat/read`, {
+      method: 'POST', body: JSON.stringify({ last_read_message_id: lastReadMessageId }),
+    })
+  },
+  async downloadChatAttachment(projectId: number | string, path: string, name: string): Promise<void> {
+    const response = await fetch(`/api/projects/${projectId}/chat/attachment?path=${encodeURIComponent(path)}`, {
+      headers: { Accept: 'application/octet-stream' }, credentials: 'same-origin',
+    })
+    if (!response.ok) throw new Error('Download failed')
+    const blob = await response.blob()
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = name
+    link.click()
+    URL.revokeObjectURL(url)
   },
 
   // ── Settings ──

@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Casts\EncryptedSafe;
+use App\Models\Concerns\BelongsToFirm;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -11,7 +12,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Client extends Model
 {
-    use SoftDeletes;
+    use BelongsToFirm, SoftDeletes;
 
     protected $fillable = [
         // Core

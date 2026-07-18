@@ -7,6 +7,9 @@ use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Facades\DB;
@@ -30,7 +33,26 @@ class User extends Authenticatable
             'email_verified_at'  => 'datetime',
             'password'           => 'hashed',
             'notification_prefs' => 'array',
+            'current_firm_id'    => 'integer',
         ];
+    }
+
+    public function currentFirm(): BelongsTo
+    {
+        return $this->belongsTo(Firm::class, 'current_firm_id');
+    }
+
+    public function firmMemberships(): HasMany
+    {
+        return $this->hasMany(FirmMembership::class);
+    }
+
+    public function firms(): BelongsToMany
+    {
+        return $this->belongsToMany(Firm::class, 'firm_user')
+            ->using(FirmMembership::class)
+            ->withPivot(['role', 'status', 'is_default', 'joined_at'])
+            ->withTimestamps();
     }
 
     /** Roles that belong to the external client portal. */

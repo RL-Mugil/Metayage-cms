@@ -432,6 +432,17 @@ export default function Financial() {
             } : {}),
           });
         }
+
+        // Deep-link edit from a project's Costs tab: /financial?india_edit={id}
+        const editId = qp.get("india_edit");
+        if (editId) {
+          api.getPatentInvoicesIn(new URLSearchParams({ per_page: "200" }))
+            .then(res => {
+              const rec = (res.data ?? []).find((r) => String(r.id) === editId);
+              if (rec) openEditIndia(rec);
+            })
+            .catch(() => {});
+        }
       })
       .catch(() => {})
       .finally(() => setLoading(false));

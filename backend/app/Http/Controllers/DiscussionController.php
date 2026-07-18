@@ -29,7 +29,11 @@ class DiscussionController extends Controller
     public function index(Request $request)
     {
         $user = $request->user();
-        $query = DiscussionThread::with(['messages.author:id,name'])->orderByDesc('updated_at');
+        // Per-case chat rooms (kind = case_chat) live on the project page, not
+        // in the general Discussions list.
+        $query = DiscussionThread::with(['messages.author:id,name'])
+            ->where('kind', 'thread')
+            ->orderByDesc('updated_at');
 
         if ($user->isClientRole()) {
             // Portal users see only threads shared with their client.

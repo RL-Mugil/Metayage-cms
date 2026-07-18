@@ -295,6 +295,13 @@ export default function Dashboard() {
           <StatCard label="MTD Revenue" value={formatCurrency(metrics.received_payments)} delta={metrics.revenue_delta ?? undefined} trend={metrics.revenue_delta_trend ?? "up"} icon={Wallet} accent="success" onClick={() => setDrillKey("revenue")} />
         </div>
 
+        <section className="border-y border-border py-4">
+          <div className="mb-3 flex items-center justify-between"><div><h2 className="text-sm font-semibold">Statutory deadline risk</h2><p className="mt-1 text-xs text-muted-foreground">Open deadlines visible within your matter scope</p></div><Link href="/projects" className="text-xs font-medium text-gold hover:underline">Open matters</Link></div>
+          <div className="grid grid-cols-2 gap-px overflow-hidden rounded-md border border-border bg-border lg:grid-cols-4">
+            {[["Overdue", metrics.deadline_risk?.overdue ?? 0], ["Next 7 days", metrics.deadline_risk?.next_7_days ?? 0], ["Unreviewed", metrics.deadline_risk?.unreviewed ?? 0], ["Critical", metrics.deadline_risk?.critical ?? 0]].map(([label, value]) => <div key={label as string} className="bg-background px-4 py-3"><p className="text-xs text-muted-foreground">{label}</p><p className={`mt-1 text-2xl font-semibold ${label === "Overdue" && Number(value) > 0 ? "text-destructive" : ""}`}>{value}</p></div>)}
+          </div>
+        </section>
+
         <div className="grid gap-6 lg:grid-cols-3">
           <Card className="lg:col-span-2 border-border">
             <CardHeader className="flex flex-row items-center justify-between">

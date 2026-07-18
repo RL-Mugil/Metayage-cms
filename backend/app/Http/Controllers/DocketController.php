@@ -3,10 +3,14 @@
 namespace App\Http\Controllers;
 
 use App\Models\DocketDeadline;
+use App\Models\DeadlineRuleDefinition;
+use App\Models\AuditLog;
 use App\Models\Project;
 use App\Support\DocketRules;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 
 class DocketController extends Controller
 {
@@ -16,9 +20,10 @@ class DocketController extends Controller
     public function show(Request $request, $projectId)
     {
         $project = Project::with('patentApplication.renewals')->findOrFail($projectId);
+        $this->authorize('view', $project);
         $app = $project->patentApplication;
 
-        $deadlines = DocketDeadline::with('event')
+        $deadlines = DocketDeadline::with(['event', 'reviewer:id,name', 'ruleDefinition.approver:id,name'])
             ->where(function ($q) use ($project, $app) {
                 $q->where('project_id', $project->id);
                 if ($app) {
@@ -45,6 +50,18 @@ class DocketController extends Controller
             'deadlines'   => $deadlines,
             'renewals'    => $app?->renewals ?? [],
             'event_types' => DocketRules::EVENT_TYPES,
+            'rule_engine' => [
+                'jurisdiction' => strtoupper((string) ($project->patent_office_code ?: $app?->jurisdiction ?: 'IN')),
+                'approved_rules' => DeadlineRuleDefinition::where('jurisdiction', strtoupper((string) ($project->patent_office_code ?: $app?->jurisdiction ?: 'IN')))->where('status', 'Approved')->count(),
+                'draft_rules' => DeadlineRuleDefinition::where('jurisdiction', strtoupper((string) ($project->patent_office_code ?: $app?->jurisdiction ?: 'IN')))->where('status', 'Draft')->count(),
+                'reviewer' => $project->docketReviewer()->first(['id', 'name']),
+            ],
+            'capabilities' => [
+                'can_manage' => ! $request->user()->isClientRole()
+                    && $request->user()->can('update', $project),
+                'can_approve_rules' => Gate::allows('approve-deadline-rules'),
+                'can_review_deadlines' => Gate::allows('review-docket-deadline', $project),
+            ],
         ]);
     }
 
@@ -53,10 +70,6 @@ class DocketController extends Controller
      */
     public function storeEvent(Request $request, $projectId)
     {
-        if (in_array($request->user()->role, ['client', 'client_admin'], true)) {
-            return response()->json(['message' => 'Unauthorized'], 403);
-        }
-
         $validated = $request->validate([
             'event_type' => 'required|string|in:' . implode(',', array_keys(DocketRules::EVENT_TYPES)),
             'event_date' => 'required|date',
@@ -64,6 +77,7 @@ class DocketController extends Controller
         ]);
 
         $project = Project::findOrFail($projectId);
+        $this->authorize('update', $project);
 
         $event = DocketRules::recordEvent(
             $validated['event_type'],
@@ -82,16 +96,15 @@ class DocketController extends Controller
      */
     public function updateDeadline(Request $request, $deadlineId)
     {
-        if (in_array($request->user()->role, ['client', 'client_admin'], true)) {
-            return response()->json(['message' => 'Unauthorized'], 403);
-        }
-
         $validated = $request->validate([
             'status' => 'required|string|in:Open,Completed,Missed,Waived',
             'notes'  => 'nullable|string|max:2000',
         ]);
 
-        $deadline = DocketDeadline::findOrFail($deadlineId);
+        $deadline = DocketDeadline::with(['project', 'application.projects'])->findOrFail($deadlineId);
+        $project = $deadline->project ?? $deadline->application?->projects->first();
+        abort_unless($project, 404);
+        $this->authorize('update', $project);
         $deadline->update([
             'status'       => $validated['status'],
             'completed_at' => $validated['status'] === 'Completed' ? now() : null,
@@ -101,20 +114,76 @@ class DocketController extends Controller
         return response()->json($deadline);
     }
 
+    public function reviewDeadline(Request $request, $deadlineId)
+    {
+        $validated = $request->validate([
+            'review_status' => 'required|string|in:Approved,Rejected',
+            'notes' => 'nullable|string|max:2000',
+        ]);
+        $deadline = DocketDeadline::with(['project', 'application.projects'])->findOrFail($deadlineId);
+        $project = $deadline->project ?? $deadline->application?->projects->first();
+        abort_unless($project, 404);
+        Gate::authorize('review-docket-deadline', $project);
+
+        return DB::transaction(function () use ($deadline, $validated, $request) {
+            $deadline->update([
+                'review_status' => $validated['review_status'],
+                'reviewed_by' => $request->user()->id,
+                'reviewed_at' => now(),
+                'notes' => $validated['notes'] ?? $deadline->notes,
+            ]);
+            AuditLog::create([
+                'user_id' => $request->user()->id, 'action' => 'review_deadline',
+                'subject_type' => 'DocketDeadline', 'subject_id' => $deadline->id,
+                'metadata' => ['review_status' => $validated['review_status'], 'rule_code' => $deadline->rule_code, 'rule_version' => $deadline->rule_version],
+                'ip_address' => $request->ip(), 'user_agent' => $request->userAgent(),
+            ]);
+            return response()->json($deadline->fresh('reviewer:id,name'));
+        });
+    }
+
+    public function rules(Request $request)
+    {
+        Gate::authorize('approve-deadline-rules');
+        return response()->json(DeadlineRuleDefinition::with('approver:id,name')
+            ->orderBy('jurisdiction')->orderBy('event_type')->orderBy('rule_code')->get());
+    }
+
+    public function approveRule(Request $request, $ruleId)
+    {
+        Gate::authorize('approve-deadline-rules');
+        $validated = $request->validate(['status' => 'required|string|in:Approved,Retired']);
+
+        return DB::transaction(function () use ($request, $validated, $ruleId) {
+            $rule = DeadlineRuleDefinition::lockForUpdate()->findOrFail($ruleId);
+            $rule->update([
+                'status' => $validated['status'],
+                'approved_by' => $validated['status'] === 'Approved' ? $request->user()->id : null,
+                'approved_at' => $validated['status'] === 'Approved' ? now() : null,
+            ]);
+            AuditLog::create([
+                'user_id' => $request->user()->id, 'action' => 'deadline_rule_status_change',
+                'subject_type' => 'DeadlineRuleDefinition', 'subject_id' => $rule->id,
+                'metadata' => ['rule_code' => $rule->rule_code, 'version' => $rule->version, 'status' => $rule->status],
+                'ip_address' => $request->ip(), 'user_agent' => $request->userAgent(),
+            ]);
+            return response()->json($rule->fresh('approver:id,name'));
+        });
+    }
+
     /**
      * Mark a renewal year paid / waived.
      */
     public function updateRenewal(Request $request, $renewalId)
     {
-        if (in_array($request->user()->role, ['client', 'client_admin'], true)) {
-            return response()->json(['message' => 'Unauthorized'], 403);
-        }
-
         $validated = $request->validate([
             'status' => 'required|string|in:Unpaid,Paid,Waived,Lapsed',
         ]);
 
-        $renewal = \App\Models\RenewalSchedule::findOrFail($renewalId);
+        $renewal = \App\Models\RenewalSchedule::with('application.projects')->findOrFail($renewalId);
+        $project = $renewal->application?->projects->first();
+        abort_unless($project, 404);
+        $this->authorize('update', $project);
         $renewal->update([
             'status'  => $validated['status'],
             'paid_at' => $validated['status'] === 'Paid' ? now() : null,
@@ -134,8 +203,12 @@ class DocketController extends Controller
             ->where('status', 'Open')
             ->whereDate('due_date', '<=', now()->addDays($days))
             ->orderBy('due_date')
-            ->limit(200)
-            ->get();
+            ->limit(500)
+            ->get()
+            ->filter(fn (DocketDeadline $deadline) => $deadline->project
+                && $request->user()->can('view', $deadline->project))
+            ->take(200)
+            ->values();
 
         return response()->json($deadlines);
     }

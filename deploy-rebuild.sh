@@ -20,6 +20,7 @@ tar --exclude='backend/vendor' \
 echo "=== Uploading to server ==="
 scp -i $KEY /tmp/mypl-cms-rebuild.tar.gz $SERVER:/tmp/mypl-cms-rebuild.tar.gz
 scp -i $KEY nginx-mypl-cms.conf $SERVER:/tmp/nginx-mypl-cms-new.conf
+scp -i $KEY nginx-security-headers.conf $SERVER:/tmp/nginx-security-headers-new.conf
 
 echo "=== Deploying on server ==="
 ssh -i $KEY $SERVER << 'ENDSSH'
@@ -31,6 +32,7 @@ tar -xzf /tmp/mypl-cms-rebuild.tar.gz --overwrite
 
 echo "--- Updating Nginx config ---"
 cp /tmp/nginx-mypl-cms-new.conf /etc/nginx/sites-available/mypl-cms
+cp /tmp/nginx-security-headers-new.conf /etc/nginx/snippets/security-headers.conf
 nginx -t && systemctl reload nginx
 
 echo "--- Installing PHP dependencies (locked versions) ---"
@@ -43,6 +45,28 @@ composer install --no-interaction --prefer-dist --optimize-autoloader --no-dev \
 
 echo "--- Installing Node.js dependencies ---"
 npm install --legacy-peer-deps
+
+echo "--- Configuring the public Reverb endpoint ---"
+set_env() {
+    local key="$1"
+    local value="$2"
+
+    if grep -q "^${key}=" .env; then
+        sed -i "s|^${key}=.*|${key}=${value}|" .env
+    else
+        printf '\n%s=%s\n' "$key" "$value" >> .env
+    fi
+}
+
+set_env REVERB_SERVER_HOST 127.0.0.1
+set_env REVERB_SERVER_PORT 8080
+set_env REVERB_HOST myipstrategy.com
+set_env REVERB_PORT 443
+set_env REVERB_SCHEME https
+set_env REVERB_ALLOWED_ORIGINS myipstrategy.com,www.myipstrategy.com
+set_env VITE_REVERB_HOST myipstrategy.com
+set_env VITE_REVERB_PORT 443
+set_env VITE_REVERB_SCHEME https
 
 echo "--- Building frontend assets ---"
 npm run build
@@ -133,10 +157,29 @@ stdout_logfile=/var/log/supervisor/mypl-scheduler.log
 stopwaitsecs=60
 SCHEDEOF
 
+echo "--- Setting up Reverb WebSocket server via Supervisor ---"
+# Long-lived WebSocket daemon on 127.0.0.1:8080. Nginx proxies /app and /apps
+# to it (see nginx-mypl-cms.conf). Powers real-time case chat (typing, read
+# receipts, instant delivery) and live notification toasts. Without this
+# process the app still works over HTTP but nothing pushes in real time.
+cat > /etc/supervisor/conf.d/mypl-reverb.conf << 'REVERBEOF'
+[program:mypl-reverb]
+process_name=%(program_name)s
+command=php /var/www/mypl-cms/backend/artisan reverb:start --host=127.0.0.1 --port=8080
+autostart=true
+autorestart=true
+user=www-data
+redirect_stderr=true
+stdout_logfile=/var/log/supervisor/mypl-reverb.log
+stopwaitsecs=10
+REVERBEOF
+
 supervisorctl reread || true
 supervisorctl update || true
 supervisorctl start mypl-horizon || supervisorctl restart mypl-horizon || true
 supervisorctl start mypl-scheduler || supervisorctl restart mypl-scheduler || true
+# Restart Reverb so it picks up the freshly-built app/config on every deploy.
+supervisorctl restart mypl-reverb || supervisorctl start mypl-reverb || true
 
 echo ""
 echo "=== Rebuild deployment complete! ==="
