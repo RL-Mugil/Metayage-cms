@@ -53,6 +53,13 @@ class InventionFamilyService
 
             $office = strtoupper($attributes['patent_office_code']);
             $service = strtoupper($attributes['service_code']);
+
+            // Enforce prosecution-correct service gating server-side, not only in
+            // the UI: a same-office successor (e.g. an FER-response engagement)
+            // cannot be created before its triggering office event has occurred.
+            // Cross-office branches and unconfigured service families are unaffected.
+            app(ServiceTransitionService::class)->assertAllowed($source, $office, $service);
+
             $docket = app(DocketNumberService::class)->compose(
                 $source->client->client_code,
                 $family->invention_number,

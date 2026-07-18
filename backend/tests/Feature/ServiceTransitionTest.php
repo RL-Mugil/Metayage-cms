@@ -18,19 +18,17 @@ class ServiceTransitionTest extends TestCase
 
     public function test_india_service_successors_are_gated_by_office_events(): void
     {
-        $this->markTestSkipped(
-            'POST /projects/{id}/elevate was retired in the Wave 4 migration; service elevation now '
-            . 'runs through the family-engagement API (POST /api/families/{id}/engagements), which is '
-            . 'the gated, prosecution-correct model. This test needs rewriting against that endpoint.'
-        );
-
         [$provisional, $partner] = $this->matter('C77M001INPRV');
-        app(InventionFamilyService::class)->attach($provisional);
+        $family = app(InventionFamilyService::class)->attach($provisional);
         Sanctum::actingAs($partner);
 
-        $complete = $this->postJson("/api/projects/{$provisional->id}/elevate", ['to_service' => 'CPT'])
-            ->assertCreated()
-            ->json('project');
+        // PRV → CPT is ungated (no triggering office event required).
+        $complete = $this->postJson("/api/invention-families/{$family->id}/engagements", [
+            'source_project_id'  => $provisional->id,
+            'patent_office_code' => 'IN',
+            'service_code'       => 'CPT',
+            'complete_source'    => true,
+        ])->assertCreated()->json('project');
 
         $this->assertSame('C77M001INCPT', $complete['docket_number']);
         $this->assertDatabaseHas('projects', [
@@ -42,9 +40,13 @@ class ServiceTransitionTest extends TestCase
             'stage_name' => 'Complete specification drafting',
         ]);
 
-        $this->postJson("/api/projects/{$complete['id']}/elevate", ['to_service' => 'FER'])
-            ->assertUnprocessable()
-            ->assertJsonValidationErrors('service_code');
+        // CPT → FER is gated on a fer_received event — the API must reject it
+        // until the office event exists (server-side, not merely in the UI).
+        $this->postJson("/api/invention-families/{$family->id}/engagements", [
+            'source_project_id'  => $complete['id'],
+            'patent_office_code' => 'IN',
+            'service_code'       => 'FER',
+        ])->assertUnprocessable()->assertJsonValidationErrors('service_code');
 
         DocketEvent::create([
             'project_id' => $complete['id'],
@@ -54,9 +56,11 @@ class ServiceTransitionTest extends TestCase
             'created_by' => $partner->id,
         ]);
 
-        $this->postJson("/api/projects/{$complete['id']}/elevate", ['to_service' => 'FER'])
-            ->assertCreated()
-            ->assertJsonPath('project.docket_number', 'C77M001INFER');
+        $this->postJson("/api/invention-families/{$family->id}/engagements", [
+            'source_project_id'  => $complete['id'],
+            'patent_office_code' => 'IN',
+            'service_code'       => 'FER',
+        ])->assertCreated()->assertJsonPath('project.docket_number', 'C77M001INFER');
     }
 
     /** @return array{Project, User} */

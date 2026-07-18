@@ -82,18 +82,18 @@ class InventionFamilyTest extends TestCase
 
     public function test_service_elevation_creates_successor_and_completes_source(): void
     {
-        $this->markTestSkipped(
-            'POST /projects/{id}/elevate was retired in the Wave 4 migration; service elevation now '
-            . 'runs through the family-engagement API (POST /api/families/{id}/engagements). This test '
-            . 'needs rewriting against that endpoint.'
-        );
-
         [$source, $partner] = $this->matter('C44M001INFIL');
-        app(InventionFamilyService::class)->attach($source);
+        $family = app(InventionFamilyService::class)->attach($source);
         Sanctum::actingAs($partner);
 
-        $response = $this->postJson("/api/projects/{$source->id}/elevate", [
-            'to_service' => 'FER',
+        // Service elevation now runs through the family-engagement API. A same-office
+        // successor with complete_source closes the source engagement. (FIL has no
+        // configured transition rules, so this elevation takes the ungated path.)
+        $response = $this->postJson("/api/invention-families/{$family->id}/engagements", [
+            'source_project_id'  => $source->id,
+            'patent_office_code' => 'IN',
+            'service_code'       => 'FER',
+            'complete_source'    => true,
         ])->assertCreated();
 
         $this->assertSame('C44M001INFER', $response->json('project.docket_number'));
