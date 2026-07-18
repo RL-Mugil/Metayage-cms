@@ -106,7 +106,7 @@ class ThreadChatController extends Controller
         }
         $users = User::whereIn('role', User::STAFF_ROLES)
             ->where('id', '!=', $me->id)
-            ->where('status', 'active')
+            ->whereRaw('LOWER(status) = ?', ['active'])
             ->orderBy('name')
             ->get(['id', 'name', 'role', 'avatar_url']);
 

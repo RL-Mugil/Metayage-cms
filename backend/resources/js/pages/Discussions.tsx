@@ -1,6 +1,6 @@
 import { Head, usePage } from "@inertiajs/react";
 import { useEffect, useMemo, useState } from "react";
-import { MessageSquare, Plus, Send, Loader2, Pencil, Trash2, Check, X, Users, MessagesSquare } from "lucide-react";
+import { MessageSquare, Plus, Send, Loader2, Pencil, Trash2, Check, X, Users, MessagesSquare, ChevronDown, Search } from "lucide-react";
 import AppLayout from "@/layouts/AppLayout";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
@@ -39,6 +39,56 @@ const TAG_COLORS: Record<Tag, string> = {
 
 const ALL_TAGS: Array<"All" | Tag>    = ["All", "General", "Project", "HR", "Finance"];
 const CLIENT_TAGS: Array<"All" | Tag> = ["All", "General", "Project"];
+
+/** Searchable client picker — matches by client code and by name. */
+function ClientCombobox({ clients, value, onChange }: { clients: any[]; value: string; onChange: (id: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const selected = clients.find((c) => String(c.id) === value);
+  const label = value ? (selected?.company_name ?? selected?.legal_name ?? "Selected client") : "Internal only";
+  const filtered = (q
+    ? clients.filter((c) => {
+        const s = q.toLowerCase();
+        return (c.company_name ?? "").toLowerCase().includes(s)
+          || (c.legal_name ?? "").toLowerCase().includes(s)
+          || (c.client_code ?? "").toLowerCase().includes(s);
+      })
+    : clients).slice(0, 100);
+
+  return (
+    <div className="relative">
+      <button type="button" onClick={() => setOpen((v) => !v)}
+        className="flex min-w-[240px] items-center justify-between gap-2 rounded-md border border-border bg-background px-3 py-2 text-sm text-muted-foreground focus:outline-none focus:ring-1 focus:ring-gold">
+        <span className="truncate">{value ? `Share with: ${label}` : "Internal only"}</span>
+        <ChevronDown className="h-4 w-4 flex-shrink-0" />
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute z-50 mt-1 w-72 rounded-md border border-border bg-popover shadow-lg">
+            <div className="flex items-center gap-2 border-b border-border px-2.5 py-2">
+              <Search className="h-3.5 w-3.5 text-muted-foreground" />
+              <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name or client code…"
+                className="w-full bg-transparent text-sm focus:outline-none" />
+            </div>
+            <div className="max-h-64 overflow-y-auto py-1">
+              <button type="button" onClick={() => { onChange(""); setOpen(false); setQ(""); }}
+                className="block w-full px-3 py-1.5 text-left text-sm hover:bg-muted">Internal only</button>
+              {filtered.map((c) => (
+                <button key={c.id} type="button" onClick={() => { onChange(String(c.id)); setOpen(false); setQ(""); }}
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-muted">
+                  <span className="font-mono text-[10px] text-gold">{c.client_code}</span>
+                  <span className="truncate">{c.company_name ?? c.legal_name}</span>
+                </button>
+              ))}
+              {filtered.length === 0 && <p className="px-3 py-3 text-center text-xs text-muted-foreground">No clients found.</p>}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
 
 export default function Discussions() {
   const { props } = usePage() as any;
@@ -288,10 +338,7 @@ export default function Discussions() {
                     {tagOptions.map((t) => <option key={t}>{t}</option>)}
                   </select>
                   {!isClientUser && (
-                    <select value={newClientId} onChange={(e) => setNewClientId(e.target.value)} className="rounded-md border border-border bg-background px-3 py-2 text-sm text-muted-foreground focus:outline-none focus:ring-1 focus:ring-gold max-w-[220px]">
-                      <option value="">Internal only</option>
-                      {clients.map((c: any) => <option key={c.id} value={c.id}>Share with: {c.company_name ?? c.legal_name}</option>)}
-                    </select>
+                    <ClientCombobox clients={clients} value={newClientId} onChange={setNewClientId} />
                   )}
                 </div>
                 <textarea rows={3} placeholder="Write your first message…" value={newMessage} onChange={(e) => setNewMessage(e.target.value)}

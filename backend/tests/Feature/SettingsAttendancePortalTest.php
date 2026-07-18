@@ -84,8 +84,8 @@ class SettingsAttendancePortalTest extends TestCase
 
         $this->putJson('/api/settings/password', [
             'current_password'      => 'wrong-password',
-            'password'              => 'newpassword123',
-            'password_confirmation' => 'newpassword123',
+            'password'              => 'NewPassword123!',
+            'password_confirmation' => 'NewPassword123!',
         ])->assertStatus(422)
           ->assertJsonValidationErrors(['current_password']);
     }
@@ -97,11 +97,11 @@ class SettingsAttendancePortalTest extends TestCase
 
         $this->putJson('/api/settings/password', [
             'current_password'      => 'password',
-            'password'              => 'newsecure123',
-            'password_confirmation' => 'newsecure123',
+            'password'              => 'NewSecure123!',
+            'password_confirmation' => 'NewSecure123!',
         ])->assertOk()->assertJson(['ok' => true]);
 
-        $this->assertTrue(Hash::check('newsecure123', $user->fresh()->password));
+        $this->assertTrue(Hash::check('NewSecure123!', $user->fresh()->password));
     }
 
     public function test_settings_system_only_accessible_by_admin_and_partner(): void
@@ -147,7 +147,7 @@ class SettingsAttendancePortalTest extends TestCase
 
         $this->postJson('/api/hrms/clock-in')->assertCreated();
         $this->postJson('/api/hrms/clock-in')->assertStatus(400)
-             ->assertJsonFragment(['message' => 'Already checked in today']);
+             ->assertJsonFragment(['message' => 'You are already clocked in. Please clock out first.']);
     }
 
     public function test_clock_out_updates_check_out_and_duration(): void
@@ -178,8 +178,11 @@ class SettingsAttendancePortalTest extends TestCase
 
     public function test_portal_clients_endpoint_returns_all_clients(): void
     {
-        Client::create(['company_name' => 'Alpha Corp', 'client_code' => 'ALPHA-001']);
-        Client::create(['company_name' => 'Beta Ltd',  'client_code' => 'BETA-001']);
+        // /api/portal/clients lists portal-linked clients (portal_user_id set).
+        $pa = $this->user('client', ['email' => 'portal-a@test.local']);
+        $pb = $this->user('client', ['email' => 'portal-b@test.local']);
+        Client::create(['company_name' => 'Alpha Corp', 'client_code' => 'ALPHA-001', 'portal_user_id' => $pa->id]);
+        Client::create(['company_name' => 'Beta Ltd',  'client_code' => 'BETA-001', 'portal_user_id' => $pb->id]);
 
         $user = $this->user('partner');
         Sanctum::actingAs($user);
@@ -195,10 +198,10 @@ class SettingsAttendancePortalTest extends TestCase
         Sanctum::actingAs($admin);
 
         $this->putJson("/api/users/{$target->id}/reset-password", [
-            'password' => 'resetted123',
+            'password' => 'Resetted123!',
         ])->assertOk()->assertJson(['ok' => true]);
 
-        $this->assertTrue(Hash::check('resetted123', $target->fresh()->password));
+        $this->assertTrue(Hash::check('Resetted123!', $target->fresh()->password));
     }
 
     public function test_non_admin_cannot_reset_others_password(): void

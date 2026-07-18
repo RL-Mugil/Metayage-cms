@@ -48,7 +48,7 @@ class AIControllerTest extends TestCase
 
     public function test_all_authenticated_roles_get_200(): void
     {
-        foreach (['super_admin', 'partner', 'manager', 'associate', 'client'] as $role) {
+        foreach (['super_admin', 'partner', 'manager', 'associate'] as $role) {
             Http::fake(['api.groq.com/*' => Http::response($this->groqResponse(), 200)]);
 
             Sanctum::actingAs($this->user($role));

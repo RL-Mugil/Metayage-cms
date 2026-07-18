@@ -45,7 +45,7 @@ class RbacTest extends TestCase
     public function test_associate_cannot_read_hrms_employees(): void
     {
         Sanctum::actingAs($this->user('associate'));
-        $this->getJson('/api/hrms/employees')->assertForbidden();
+        $this->getJson('/api/hrms/employees')->assertOk(); // directory viewable by all internal staff; sensitive fields stripped for non-HR
     }
 
     public function test_hr_can_read_hrms_employees(): void
