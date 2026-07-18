@@ -134,7 +134,9 @@ class SettingsAttendancePortalTest extends TestCase
 
         $log = Attendance::where('employee_id', $employee->id)->first();
         $this->assertNotNull($log);
-        $this->assertEquals(now()->toDateString(), $log->attendance_date->toDateString());
+        // AttendanceController stamps the date in IST; compare in the same zone
+        // so the assertion is stable across the UTC/IST date boundary.
+        $this->assertEquals(now('Asia/Kolkata')->toDateString(), $log->attendance_date->toDateString());
         $this->assertEquals('Present', $log->status);
         $this->assertNotNull($log->check_in);
     }
