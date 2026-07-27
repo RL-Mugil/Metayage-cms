@@ -108,13 +108,12 @@ class ProjectController extends Controller
             });
         } elseif ($user->isGalvanizer()) {
             $query->where($this->galvanizerWhereClause($user, $request->input('role_filter')));
-        } elseif (in_array($user->role, ['partner', 'director'], true)) {
+        } elseif (in_array($user->role, ['partner', 'director', 'associate'], true)) {
+            // Internal staff see every project; role_filter can narrow to "my cases".
             $rf = $request->input('role_filter');
             if ($rf && $rf !== 'all') {
                 $query->where($this->analystWhereClause($user, $rf));
             }
-        } elseif ($user->role === 'associate') {
-            $query->where($this->analystWhereClause($user, $request->input('role_filter')));
         }
 
         if ($request->filled('search')) {
