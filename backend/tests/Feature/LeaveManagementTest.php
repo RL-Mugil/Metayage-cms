@@ -475,10 +475,13 @@ class LeaveManagementTest extends TestCase
         ])->assertCreated();
 
         Sanctum::actingAs($employee2->user);
+        // addWeekdays (not addDays) so this can't land entirely on a weekend and get
+        // rejected as "0 business days" regardless of what day the suite runs on.
+        $casualFrom = now()->addWeekdays(30);
         $this->postJson('/api/hrms/leaves', [
             'leave_type' => 'Casual Leave',
-            'from_date'  => now()->addDays(30)->toDateString(),
-            'to_date'    => now()->addDays(31)->toDateString(),
+            'from_date'  => $casualFrom->toDateString(),
+            'to_date'    => $casualFrom->copy()->addWeekdays(1)->toDateString(),
             'reason'     => 'Test',
         ])->assertCreated();
 

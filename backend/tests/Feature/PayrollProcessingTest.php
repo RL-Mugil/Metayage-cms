@@ -293,9 +293,11 @@ class PayrollProcessingTest extends TestCase
         $hr = $this->user('hr');
         Sanctum::actingAs($hr);
 
-        for ($i = 1; $i <= 3; $i++) {
+        // Months distinct from every other hardcoded period in this file (2026-01, 2026-06,
+        // 2026-13) so this test can't collide with a run created elsewhere.
+        foreach (['2026-09', '2026-10', '2026-11'] as $period) {
             $this->postJson('/api/payroll/runs', [
-                'period' => '2026-' . str_pad($i, 2, '0', STR_PAD_LEFT),
+                'period' => $period,
             ])->assertStatus(202);
         }
 
