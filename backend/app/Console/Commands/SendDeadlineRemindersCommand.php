@@ -7,9 +7,11 @@ use App\Models\Client;
 use App\Models\Employee;
 use App\Models\Project;
 use App\Models\Reminder;
+use App\Models\RenewalSchedule;
 use App\Models\Task;
 use App\Models\TrackerRow;
 use App\Models\User;
+use App\Services\ReminderThresholdResolver;
 use App\Support\Notifier;
 use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
@@ -20,7 +22,9 @@ class SendDeadlineRemindersCommand extends Command
     protected $signature = 'reminders:send-deadlines';
     protected $description = 'Notify assignees of upcoming/overdue tracker, task and project deadlines, aging pending approvals, and auto-escalate overdue matters to directors/HR/system admins. Also materialises them as reminders.';
 
-    // Days-ahead thresholds for "upcoming" alerts.
+    // Days-ahead thresholds for "upcoming" alerts (tracker/task alerts — not
+    // client-scoped, see scanTracker()/scanTasks(); scanProjects() and
+    // scanRenewals() resolve per-client thresholds via ReminderThresholdResolver).
     private const THRESHOLDS = [1, 3, 7];
     // Days a client/colleague approval may sit Pending before it is chased.
     private const APPROVAL_AGING_DAYS = 3;
@@ -39,6 +43,8 @@ class SendDeadlineRemindersCommand extends Command
         $this->scanTracker($today);
         $this->scanTasks($today);
         $this->scanProjects($today);
+        $this->scanRenewals($today);
+        $this->scanPaymentAnomalies($today);
         $this->scanAgingApprovals();
 
         $this->info("Sent {$this->sent} deadline notifications / reminders.");
@@ -126,6 +132,32 @@ class SendDeadlineRemindersCommand extends Command
                 $dueDate,
                 'Deadline',
                 3,
+            );
+        }
+    }
+
+    /**
+     * Escalate an *upcoming* deadline (not yet overdue) — the 2-month/1-month
+     * standard cadence described on the call, distinct from escalate()'s
+     * overdue-triggered wording. Deduped per threshold via the entityKey
+     * (includes $daysRemaining) so the 2-month and 1-month escalations are
+     * each sent once, not suppressed by each other.
+     */
+    private function escalateUpcoming(string $entityKey, string $label, int $daysRemaining, string $actionUrl, array $meta, ?string $dueDate): void
+    {
+        foreach ($this->escalationRecipients() as $uid) {
+            $this->remind(
+                (int) $uid,
+                'deadline',
+                "ESCALATION — due in {$daysRemaining}d: {$label}",
+                "{$label} is due in {$daysRemaining} day(s) and has been escalated to you for oversight ahead of the deadline.",
+                $actionUrl,
+                $meta + ['escalated' => true, 'days_remaining' => $daysRemaining],
+                "escalation-upcoming:{$entityKey}:{$uid}",
+                "upcoming-d{$daysRemaining}",
+                $dueDate,
+                'Deadline',
+                30, // a given 2-month/1-month threshold fires once — no need to re-suppress for a month
             );
         }
     }
@@ -297,32 +329,68 @@ class SendDeadlineRemindersCommand extends Command
     {
         $done = ['Completed', 'Archived'];
         $team = ['assigned_partner_id', 'assigned_manager_id', 'patent_engineer_id'];
+        $resolver = app(ReminderThresholdResolver::class);
+        $clientsById = Client::query()->get(['id', 'reminder_cadence_override'])->keyBy('id');
 
-        foreach (self::THRESHOLDS as $days) {
-            $targetDate = $today->copy()->addDays($days)->toDateString();
-            $projects = Project::whereNotNull('hard_deadline')
-                ->whereDate('hard_deadline', $targetDate)
-                ->whereNotIn('status', $done)
-                ->get();
+        // Widest possible window (client overrides capped at 365 days —
+        // StoreClientRequest/UpdateClientRequest) — each project is then
+        // matched against its own client's resolved threshold set.
+        $upcoming = Project::whereNotNull('hard_deadline')
+            ->whereDate('hard_deadline', '>=', $today->toDateString())
+            ->whereDate('hard_deadline', '<=', $today->copy()->addDays(365)->toDateString())
+            ->whereNotIn('status', $done)
+            ->get();
 
-            foreach ($projects as $project) {
-                $label = $project->docket_number ?? $project->project_name ?? 'Case';
-                foreach (array_unique(array_filter(array_map(fn ($c) => $project->$c, $team))) as $uid) {
-                    $this->remind(
-                        (int) $uid,
-                        'deadline',
-                        $days === 1 ? "Case deadline tomorrow: {$label}" : "Case deadline in {$days} days: {$label}",
-                        "Hard deadline for {$label} is on "
-                            . Carbon::parse($project->hard_deadline)->format('d M Y') . ". Missing it can forfeit the IP right.",
-                        "/projects/{$project->id}",
-                        ['project_id' => $project->id, 'days_remaining' => $days],
-                        "project:{$project->id}:{$uid}",
-                        "d{$days}",
-                        Carbon::parse($project->hard_deadline)->toDateString(),
-                        'Deadline',
-                    );
-                }
+        foreach ($upcoming as $project) {
+            $client = $project->client_id ? $clientsById->get($project->client_id) : null;
+            $thresholds = $resolver->thresholdsFor(self::THRESHOLDS, $client);
+            $days = (int) $today->diffInDays(Carbon::parse($project->hard_deadline));
+
+            if (! in_array($days, $thresholds, true)) {
+                continue;
             }
+
+            $label = $project->docket_number ?? $project->project_name ?? 'Case';
+            foreach (array_unique(array_filter(array_map(fn ($c) => $project->$c, $team))) as $uid) {
+                $this->remind(
+                    (int) $uid,
+                    'deadline',
+                    $days === 1 ? "Case deadline tomorrow: {$label}" : "Case deadline in {$days} days: {$label}",
+                    "Hard deadline for {$label} is on "
+                        . Carbon::parse($project->hard_deadline)->format('d M Y') . ". Missing it can forfeit the IP right.",
+                    "/projects/{$project->id}",
+                    ['project_id' => $project->id, 'days_remaining' => $days],
+                    "project:{$project->id}:{$uid}",
+                    "d{$days}",
+                    Carbon::parse($project->hard_deadline)->toDateString(),
+                    'Deadline',
+                );
+            }
+        }
+
+        // Standard firm-wide escalation cadence (system_settings, see
+        // ReminderThresholdResolver::escalationCadence()): no escalation
+        // beyond ~3 months out, an escalation at the 2-month mark, another
+        // at the 1-month mark — ahead of the deadline, distinct from the
+        // overdue-triggered escalate() below.
+        $cadence = $resolver->escalationCadence();
+        foreach ($upcoming as $project) {
+            $days = (int) $today->diffInDays(Carbon::parse($project->hard_deadline));
+            if ($days > $cadence['none_beyond_days']) {
+                continue;
+            }
+            if (! in_array($days, [$cadence['at_2month_days'], $cadence['at_1month_days']], true)) {
+                continue;
+            }
+            $label = $project->docket_number ?? $project->project_name ?? 'Case';
+            $this->escalateUpcoming(
+                "project-upcoming:{$project->id}:{$days}",
+                $label,
+                $days,
+                "/projects/{$project->id}",
+                ['project_id' => $project->id, 'days_remaining' => $days],
+                Carbon::parse($project->hard_deadline)->toDateString(),
+            );
         }
 
         $overdue = Project::whereNotNull('hard_deadline')
@@ -357,6 +425,193 @@ class SendDeadlineRemindersCommand extends Command
                 "/projects/{$project->id}",
                 ['project_id' => $project->id],
                 Carbon::parse($project->hard_deadline)->toDateString(),
+            );
+        }
+    }
+
+    /* ───────────────────────── Renewal fees ───────────────────────── */
+
+    /**
+     * Renewal-fee reminders — the core ask from the call (Niramai wants an
+     * extra 1-month-before reminder on top of the standard 6-month/3-month
+     * ones). Base cadence is 180/90 days (6mo/3mo); each client's
+     * reminder_cadence_override adds to that (e.g. Niramai's extra 30);
+     * the jurisdiction-aware payment lead time (Indian ~1wk, foreign ~2wk —
+     * ReminderThresholdResolver::renewalLeadDaysFor()) is folded in as a
+     * "money needs to move now" threshold distinct from the informational
+     * 6/3-month ones. Recipients: the linked project's assigned team, or the
+     * client's account manager if no project is linked.
+     */
+    private function scanRenewals(Carbon $today): void
+    {
+        $resolver = app(ReminderThresholdResolver::class);
+        $baseCadence = [180, 90];
+
+        $upcoming = RenewalSchedule::with('application.client', 'application.projects')
+            ->where('status', 'Unpaid')
+            ->whereNotNull('due_date')
+            ->whereDate('due_date', '>=', $today->toDateString())
+            ->whereDate('due_date', '<=', $today->copy()->addDays(365)->toDateString())
+            ->get();
+
+        foreach ($upcoming as $renewal) {
+            $application = $renewal->application;
+            $client = $application?->client;
+            $leadDays = $resolver->renewalLeadDaysFor($application?->jurisdiction);
+            $thresholds = $resolver->thresholdsFor(array_merge($baseCadence, [$leadDays]), $client);
+            $days = (int) $today->diffInDays(Carbon::parse($renewal->due_date));
+
+            if (! in_array($days, $thresholds, true)) {
+                continue;
+            }
+
+            $project = $application?->projects?->first();
+            $label = $project?->docket_number ?? $application?->application_number ?? "Renewal Y{$renewal->renewal_year}";
+            $recipients = collect([
+                $project?->assigned_partner_id,
+                $project?->assigned_manager_id,
+                $project?->patent_engineer_id,
+                $client?->account_manager_id,
+            ])->filter()->unique();
+
+            if ($recipients->isEmpty()) {
+                continue;
+            }
+
+            $urgent = $days <= $leadDays;
+            $title = $urgent
+                ? "Renewal payment window: {$label} (Y{$renewal->renewal_year}) — {$days}d left"
+                : "Renewal due in {$days} days: {$label} (Y{$renewal->renewal_year})";
+            $desc = $urgent
+                ? "Year {$renewal->renewal_year} renewal for {$label} is due in {$days} day(s) — within the "
+                    . ($application?->jurisdiction === 'IN' ? 'Indian' : 'foreign attorney') . " payment lead window ({$leadDays}d). Get payment moving now."
+                : "Year {$renewal->renewal_year} renewal fee for {$label} is due in {$days} day(s).";
+
+            foreach ($recipients as $uid) {
+                $this->remind(
+                    (int) $uid,
+                    'renewal',
+                    $title,
+                    $desc,
+                    $project ? "/projects/{$project->id}" : '/pending-payments',
+                    ['renewal_id' => $renewal->id, 'days_remaining' => $days],
+                    "renewal:{$renewal->id}:{$uid}",
+                    "d{$days}",
+                    Carbon::parse($renewal->due_date)->toDateString(),
+                    'Deadline',
+                );
+            }
+        }
+
+        // Overdue unpaid renewals — abandonment risk, chase every 3 days.
+        $overdue = RenewalSchedule::with('application.client', 'application.projects')
+            ->where('status', 'Unpaid')
+            ->whereNotNull('due_date')
+            ->whereDate('due_date', '<', $today->toDateString())
+            ->get();
+
+        foreach ($overdue as $renewal) {
+            $application = $renewal->application;
+            $project = $application?->projects?->first();
+            $label = $project?->docket_number ?? $application?->application_number ?? "Renewal Y{$renewal->renewal_year}";
+            $daysLate = (int) Carbon::parse($renewal->due_date)->diffInDays($today);
+            $recipients = collect([
+                $project?->assigned_partner_id,
+                $project?->assigned_manager_id,
+                $project?->patent_engineer_id,
+                $application?->client?->account_manager_id,
+            ])->filter()->unique();
+
+            foreach ($recipients as $uid) {
+                $this->remind(
+                    (int) $uid,
+                    'renewal',
+                    "OVERDUE renewal ({$daysLate}d): {$label} (Y{$renewal->renewal_year})",
+                    "Year {$renewal->renewal_year} renewal for {$label} is {$daysLate} day(s) overdue — risk of abandonment/lapse.",
+                    $project ? "/projects/{$project->id}" : '/pending-payments',
+                    ['renewal_id' => $renewal->id, 'days_overdue' => $daysLate],
+                    "renewal:{$renewal->id}:{$uid}",
+                    'overdue',
+                    Carbon::parse($renewal->due_date)->toDateString(),
+                    'Deadline',
+                    3,
+                );
+            }
+
+            $this->escalate(
+                "renewal:{$renewal->id}",
+                "{$label} (Y{$renewal->renewal_year}) [renewal]",
+                $daysLate,
+                $project ? "/projects/{$project->id}" : '/pending-payments',
+                ['renewal_id' => $renewal->id],
+                Carbon::parse($renewal->due_date)->toDateString(),
+            );
+        }
+    }
+
+    /* ───────────────────────── Payment-pattern anomaly escalation ───────────────────────── */
+
+    /**
+     * A client manager configures how many days before a due date a client
+     * typically clears payment (Client.payment_clearance_pattern.lead_days).
+     * If ~70% of that lead window has elapsed with the renewal still unpaid,
+     * something's off the client's usual pattern — escalate early rather
+     * than waiting for the standard cadence. Mirrors the call's example:
+     * usually clears 2 weeks (14d) before → escalate around 10 days before
+     * if still unpaid (round(14 * 5/7) = 10).
+     */
+    private function scanPaymentAnomalies(Carbon $today): void
+    {
+        // Per-client escalateAtDays, precomputed once (0 or negative lead_days excluded).
+        $clients = Client::whereNotNull('payment_clearance_pattern')
+            ->get(['id', 'company_name', 'payment_clearance_pattern'])
+            ->map(function ($client) {
+                $leadDays = (int) ($client->payment_clearance_pattern['lead_days'] ?? 0);
+                $client->escalate_at_days = $leadDays > 0 ? (int) round($leadDays * 5 / 7) : null;
+                $client->lead_days = $leadDays;
+                return $client;
+            })
+            ->filter(fn ($client) => $client->escalate_at_days !== null);
+
+        if ($clients->isEmpty()) {
+            return;
+        }
+
+        // Single batched query for every candidate client instead of one query per
+        // client — window covers the widest escalate_at_days across all of them.
+        $maxWindow = (int) $clients->max('escalate_at_days');
+        $clientsById = $clients->keyBy('id');
+
+        $renewals = RenewalSchedule::with('application.projects')
+            ->where('status', 'Unpaid')
+            ->whereNotNull('due_date')
+            ->whereDate('due_date', '>=', $today->toDateString())
+            ->whereDate('due_date', '<=', $today->copy()->addDays($maxWindow)->toDateString())
+            ->whereHas('application', fn ($q) => $q->whereIn('client_id', $clientsById->keys()))
+            ->get();
+
+        foreach ($renewals as $renewal) {
+            $clientId = $renewal->application?->client_id;
+            $client = $clientId ? $clientsById->get($clientId) : null;
+            if (! $client) {
+                continue;
+            }
+
+            $days = (int) $today->diffInDays(Carbon::parse($renewal->due_date));
+            if ($days !== $client->escalate_at_days) {
+                continue;
+            }
+
+            $project = $renewal->application?->projects?->first();
+            $label = $project?->docket_number ?? $renewal->application?->application_number ?? "Renewal Y{$renewal->renewal_year}";
+
+            $this->escalateUpcoming(
+                "renewal-anomaly:{$renewal->id}",
+                "{$label} — {$client->company_name} usually pays {$client->lead_days}d ahead, still unpaid",
+                $days,
+                $project ? "/projects/{$project->id}" : '/pending-payments',
+                ['renewal_id' => $renewal->id, 'client_id' => $client->id, 'pattern_lead_days' => $client->lead_days],
+                Carbon::parse($renewal->due_date)->toDateString(),
             );
         }
     }

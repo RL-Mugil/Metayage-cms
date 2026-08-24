@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Client;
 use App\Models\Project;
+use App\Services\ActionItemService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -148,112 +149,19 @@ class PatentPortfolioController extends Controller
         }
         $invoices = $invoicesQ->get(['id', 'invoice_code', 'client_id', 'project_id', 'total_amount', 'balance_due', 'currency', 'created_at', 'status']);
 
-        // Enrich invoices with docket number from project
-        $invoices = $invoices->map(function ($inv) {
-            $project = DB::table('projects')->where('id', $inv->project_id)->first(['docket_number']);
-            $inv->docket_number = $project?->docket_number ?? $inv->invoice_code;
+        // Enrich invoices with docket number from project — single batched lookup
+        // instead of one query per invoice.
+        $projectDockets = DB::table('projects')
+            ->whereIn('id', $invoices->pluck('project_id')->filter()->unique())
+            ->pluck('docket_number', 'id');
+        $invoices = $invoices->map(function ($inv) use ($projectDockets) {
+            $inv->docket_number = $projectDockets->get($inv->project_id) ?? $inv->invoice_code;
             return $inv;
         });
 
-        // Action required: active (non-terminal) projects only
-        $actionRequired = (clone $base)
-            ->whereNotIn('status', $terminalStatuses)
-            ->with(['stages' => fn($q) => $q->where('status', 'In Progress')])
-            ->orderByRaw("CASE WHEN urgency='Critical' THEN 1 WHEN urgency='High' THEN 2 ELSE 3 END")
-            ->limit(100)
-            ->get(['id', 'docket_number', 'filing_date', 'status', 'urgency', 'hard_deadline', 'patent_office_code', 'service_code']);
-
-        $actionRequired = $actionRequired->map(function ($p) {
-            $stage = $p->stages->first();
-            $svcCode = strtoupper($p->service_code ?? substr($p->docket_number ?? '', -3));
-
-            // Derive human-readable pending action from new stage vocabulary
-            $stageName = $stage?->stage_name ?? '';
-            $pendingAction = match (true) {
-                $p->urgency === 'Critical'                                          => 'Urgent — immediate action needed',
-                $p->urgency === 'High'                                              => 'High priority — review and respond',
-                // Search / FTO
-                str_contains($stageName, 'Disclosure Requested')
-                  || str_contains($stageName, 'Awaiting IDF')                       => 'Awaiting IDF',
-                str_contains($stageName, 'Prior Art Search In Progress')
-                  || str_contains($stageName, 'Search Parameters')                  => 'Prior art search in progress',
-                str_contains($stageName, 'Search Report Drafted')                   => 'Search report being drafted',
-                str_contains($stageName, 'Search Report Reviewed')                  => 'Search report under internal review',
-                str_contains($stageName, 'Search Report Shared')                    => 'Search report shared with client',
-                // Drafting
-                str_contains($stageName, 'Draft Started')
-                  || str_contains($stageName, 'Drafting Started')
-                  || str_contains($stageName, 'Specification Drafting Started')     => 'Drafting in progress',
-                str_contains($stageName, 'Internal Review')                         => 'Internal review underway',
-                str_contains($stageName, 'Corrections Incorporated')                => 'Corrections being incorporated',
-                str_contains($stageName, 'Partner Review')                          => 'Partner review underway',
-                str_contains($stageName, 'Claims Drafted')
-                  || str_contains($stageName, 'Claims Shared')                      => 'Claims — awaiting client approval',
-                str_contains($stageName, 'Claims Approved')                         => 'Claims approved — drafting in progress',
-                str_contains($stageName, 'Client Review')
-                  || str_contains($stageName, 'Shared with Client')
-                  || str_contains($stageName, 'Client Feedback')                    => 'Awaiting client approval',
-                str_contains($stageName, 'Client Approved')                         => 'Client approved — preparing to file',
-                // Filing
-                str_contains($stageName, 'Forms Prepared')
-                  || str_contains($stageName, 'Government Fees')                    => 'Ready to file',
-                str_contains($stageName, 'Filed with IPO')
-                  || str_contains($stageName, 'Filed at Receiving Office')          => 'Filed — tracking',
-                str_contains($stageName, 'Application Number Received')             => 'Application number received',
-                // Post-filing — examination
-                str_contains($stageName, 'RFE Filed')
-                  || str_contains($stageName, 'Awaiting First Examination')         => 'RFE filed — awaiting FER',
-                str_contains($stageName, 'Examination Report Received')             => 'FER received — attorney review needed',
-                str_contains($stageName, 'Response Deadline Docketed')              => 'FER received — response deadline running',
-                str_contains($stageName, 'Objections Analyzed')
-                  || str_contains($stageName, 'Response Strategy')                  => 'FER — strategy being formulated',
-                str_contains($stageName, 'Claims Amended')
-                  || str_contains($stageName, 'Arguments Drafted')                  => 'FER response being drafted',
-                str_contains($stageName, 'Response Filed')                          => 'FER response filed — awaiting decision',
-                // Hearing
-                str_contains($stageName, 'Hearing Notice')
-                  || str_contains($stageName, 'Hearing Date')                       => 'Hearing scheduled',
-                str_contains($stageName, 'Arguments Prepared')
-                  || str_contains($stageName, 'Prior Art / Documents')              => 'Hearing — preparing arguments',
-                str_contains($stageName, 'Written Arguments')
-                  || str_contains($stageName, 'Written Submissions')
-                  || str_contains($stageName, 'Hearing Attended')                   => 'Hearing attended — awaiting order',
-                // Grant / renewal / post-grant
-                str_contains($stageName, 'Patent Active')
-                  || str_contains($stageName, 'Grant Order')                        => 'Granted',
-                str_contains($stageName, 'Renewal')                                 => 'Renewal due',
-                str_contains($stageName, 'Opposition')                              => 'Opposition pending',
-                str_contains($stageName, 'Appeal')                                  => 'Appeal in progress',
-                str_contains($stageName, 'Abandonment')
-                  || str_contains($stageName, 'Restoration')
-                  || str_contains($stageName, 'Lapse')
-                  || str_contains($stageName, 'Restore')                            => 'Abandoned / lapsed — restoration pending',
-                str_contains($stageName, 'Withdrawal')                              => 'Withdrawal in progress',
-                // Fallback by service code
-                in_array($svcCode, ['PAS', 'SRH', 'FTO'])                          => 'Prior art search / patentability assessment',
-                in_array($svcCode, ['PRV'])                                         => 'Provisional application — drafting or filing',
-                in_array($svcCode, ['CPT', 'CPD', 'CVP', 'CPE'])                   => 'Complete specification — drafting or filing',
-                in_array($svcCode, ['PCT'])                                         => 'PCT — national/international filing',
-                in_array($svcCode, ['NAP', 'NPE', 'NAF', 'NPA'])                   => 'PCT national phase entry',
-                in_array($svcCode, ['FER', 'SER', 'TER'])                          => 'Examination — response to office action required',
-                in_array($svcCode, ['HRG'])                                         => 'Hearing — preparation or response required',
-                in_array($svcCode, ['GRT'])                                         => 'Granted',
-                in_array($svcCode, ['RNF'])                                         => 'Renewal due',
-                default                                                             => 'Awaiting next action',
-            };
-
-            return [
-                'id'                 => $p->id,
-                'docket_number'      => $p->docket_number ?? '—',
-                'filing_date'        => $p->filing_date,
-                'status'             => $p->status,           // actual project status (Open / In Progress / On Hold)
-                'current_stage'      => $stage?->stage_name ?? null,
-                'service_code'       => $p->service_code ?? null,
-                'urgency'            => $p->urgency,
-                'patent_office_code' => $p->patent_office_code,
-                'pending_action'     => $pendingAction,
-            ];
-        });
+        // Action required: active (non-terminal) projects only. Derivation lives in
+        // ActionItemService, shared with the client dashboard's interactive feed.
+        $actionRequired = app(ActionItemService::class)->forBase($base, 100);
 
         // Client list for the selector.
         // - Clients / associates: hidden (they're locked to their own scope)

@@ -13,6 +13,7 @@ class Approval extends Model
         'approver_id',
         'client_id',
         'type',
+        'kind',
         'title',
         'description',
         'subject_type',

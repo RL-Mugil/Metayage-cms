@@ -7,9 +7,12 @@ use App\Models\Client;
 use App\Models\Invoice;
 use App\Models\Task;
 use App\Models\TimeEntry;
+use App\Models\ZohoInvoice;
+use App\Services\ActionItemService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 
 class DashboardController extends Controller
@@ -19,9 +22,95 @@ class DashboardController extends Controller
         return Inertia::render('Dashboard');
     }
 
+    /**
+     * client_finance is billing-only — no case/task/deadline visibility at all, so it
+     * gets a dedicated, much smaller payload instead of falling through the full
+     * (and much more expensive) firm-metrics query below.
+     */
+    private function financeOnlyMetrics(Request $request)
+    {
+        $user = $request->user();
+        $client = $request->attributes->get('portal_client') ?? Client::forUser($user);
+
+        if (! $client) {
+            return response()->json([
+                'metrics' => [
+                    'zoho_outstanding' => 0, 'zoho_collected_mtd' => 0, 'ledger_balance' => 0,
+                    'pending_invoices' => [], 'action_items' => [], 'renewal_items' => [],
+                ],
+                'charts' => ['stage_distribution' => []],
+            ]);
+        }
+
+        $zohoQuery = ZohoInvoice::where('zoho_type', 'invoice')->where('client_id', $client->id);
+        $zohoOutstanding = (float) (clone $zohoQuery)
+            ->whereIn('status', ['overdue', 'unpaid', 'partially_paid', 'sent', 'viewed'])
+            ->sum('balance');
+        $zohoCollectedMtd = (float) (clone $zohoQuery)
+            ->where('status', 'paid')
+            ->whereMonth('txn_date', now()->month)
+            ->whereYear('txn_date', now()->year)
+            ->sum('total');
+
+        $ledgerBalance = (float) (DB::table('client_ledger')
+            ->where('client_id', $client->id)
+            ->orderByDesc('id')
+            ->value('balance') ?? 0);
+
+        $pendingInvoices = Invoice::where('client_id', $client->id)
+            ->whereIn('status', ['Sent', 'Overdue', 'Partially Paid', 'Viewed'])
+            ->orderByDesc('created_at')
+            ->limit(10)
+            ->get(['id', 'invoice_code', 'total_amount', 'balance_due', 'currency', 'status', 'due_date']);
+
+        // client_finance needs to see what's coming due and what it'll cost —
+        // scoped to finance_relevant (renewal) items only, never drafting/
+        // technical action items (see ActionItemService::financeActionFeed()).
+        $financeActionItems = app(ActionItemService::class)->financeActionFeed($client->id)->all();
+        $renewalItems = array_values(array_filter($financeActionItems, fn ($item) => $item['is_renewal']));
+
+        return response()->json([
+            'metrics' => [
+                'zoho_outstanding' => $zohoOutstanding,
+                'zoho_collected_mtd' => $zohoCollectedMtd,
+                'ledger_balance' => $ledgerBalance,
+                'pending_invoices' => $pendingInvoices,
+                'action_items' => $financeActionItems,
+                'renewal_items' => $renewalItems,
+            ],
+            'charts' => ['stage_distribution' => []],
+        ]);
+    }
+
+    /**
+     * inventor is scoped by the project_inventors pivot, not by any Client — an
+     * inventor can be inventor-of-record across multiple different clients'
+     * cases. Dedicated payload for the same reason financeOnlyMetrics() is:
+     * the big firm-metrics query below has no scoping branch for this role and
+     * would otherwise leak the unscoped firm-wide view.
+     */
+    private function inventorOnlyMetrics(Request $request)
+    {
+        $user = $request->user();
+        $actionItems = app(ActionItemService::class)->inventorActionFeed($user->id)->all();
+
+        return response()->json([
+            'metrics' => ['action_items' => $actionItems],
+            'charts' => ['stage_distribution' => []],
+        ]);
+    }
+
     public function metrics(Request $request)
     {
         $user = $request->user();
+
+        if ($user->role === 'client_finance') {
+            return $this->financeOnlyMetrics($request);
+        }
+
+        if ($user->isInventor()) {
+            return $this->inventorOnlyMetrics($request);
+        }
 
         // Base metrics query
         $activeMattersQuery  = Project::whereIn('status', ['Open', 'In Progress']);
@@ -131,8 +220,28 @@ class DashboardController extends Controller
         $wipAmount      = 0;
         $invoicedAmount = 0;
         $receivedAmount = 0;
+        $zohoOutstanding  = 0;
+        $zohoCollectedMtd = 0;
 
         if ($canSeeFinancials) {
+            // Zoho Books figures — sourced from the local zoho_invoices mirror (kept fresh by
+            // the zoho:sync command), not a live call. Supplements, doesn't replace, the
+            // Invoice-based figures below (Zoho is a separate, unreconciled system of record).
+            $zohoQuery = \App\Models\ZohoInvoice::where('zoho_type', 'invoice');
+            if ($user->isClientRole()) {
+                $zohoQuery->where('client_id', optional(Client::forUser($user))->id ?? 0);
+            } elseif ($user->isGalvanizer()) {
+                $zohoQuery->whereHas('project', fn ($q) => $user->applyProjectScope($q));
+            }
+            $zohoOutstanding = (float) (clone $zohoQuery)
+                ->whereIn('status', ['overdue', 'unpaid', 'partially_paid', 'sent', 'viewed'])
+                ->sum('balance');
+            $zohoCollectedMtd = (float) (clone $zohoQuery)
+                ->where('status', 'paid')
+                ->whereMonth('txn_date', now()->month)
+                ->whereYear('txn_date', now()->year)
+                ->sum('total');
+
             $wipQuery = TimeEntry::where('status', 'Approved')->where('billable', true);
             if ($user->isClientRole()) {
                 $wipQuery->whereHas('project.client.contacts', fn ($q) => $q->where('email', $user->email));
@@ -149,6 +258,24 @@ class DashboardController extends Controller
 
             $invoicedAmount = (float) $invoiceAgg->invoiced;
             $receivedAmount = (float) $invoiceAgg->paid + (float) $invoiceAgg->partial_paid;
+        }
+
+        // Interactive action feed — client/client_admin only. Renewals-first, urgency,
+        // then nearest deadline (see ActionItemService::clientActionFeed). Not part of
+        // the coarse cache above since it's cheap and role-specific to begin with.
+        $actionItems = [];
+        if (in_array($user->role, ['client', 'client_admin'], true)) {
+            $portalClient = $request->attributes->get('portal_client') ?? Client::forUser($user);
+            if ($portalClient) {
+                $actionItems = app(ActionItemService::class)->clientActionFeed($portalClient->id)->all();
+            }
+        } else {
+            // Internal staff — same "more intelligence, not narrowing" scope
+            // already applied to $activeMattersQuery above (manager/associate
+            // role_filter, galvanizer circle). Feeds owner/finance_relevant
+            // badges + the shared case-detail modal on the staff dashboard,
+            // full visibility preserved (see Initiative 2b).
+            $actionItems = app(ActionItemService::class)->staffActionFeed(clone $activeMattersQuery)->all();
         }
 
         // Stage distribution — only count stages currently "In Progress"
@@ -233,6 +360,9 @@ class DashboardController extends Controller
                 'revenue_delta'         => $fmtPctDelta((float)$receivedThisMonth, (float)$receivedLastMonth),
                 'revenue_delta_trend'   => $receivedThisMonth >= $receivedLastMonth ? 'up' : 'down',
                 'deadline_risk'         => $deadlineRisk,
+                'zoho_outstanding'      => $zohoOutstanding,
+                'zoho_collected_mtd'    => $zohoCollectedMtd,
+                'action_items'          => $actionItems,
             ],
             'charts' => [
                 'stage_distribution' => $stagesDist,

@@ -14,6 +14,7 @@ type ApprovalStatus = "pending" | "approved" | "rejected";
 interface Approval {
   id: number;
   type: ApprovalType;
+  kind?: "budget" | "technical" | null;
   requester: string;
   description: string;
   amount?: string | null;
@@ -37,11 +38,14 @@ export default function Approvals() {
   const { props: pageProps } = usePage() as any;
   const role: string = pageProps.auth?.user?.role ?? "";
   const isClientUser = ["client", "client_admin"].includes(role);
+  const isInventor = role === "inventor";
   const isClientAdmin = role === "client_admin";
-  // Any internal staff may raise an approval (to a client or a colleague).
-  const canCreateApproval = !isClientUser;
-  // Internal approvers act on Leave/Expense; client_admin acts on Client type;
-  // colleague approvals are resolvable by whoever the backend flags (can_resolve).
+  // Any internal staff may raise an approval (to a client or a colleague) —
+  // inventors only view/resolve technical approvals sent to them, they don't raise any.
+  const canCreateApproval = !isClientUser && !isInventor;
+  // Internal approvers act on Leave/Expense; client_admin/inventor act on
+  // Client type (kind-gated, see canAct() below); colleague approvals are
+  // resolvable by whoever the backend flags (can_resolve).
   const canActInternal = ["super_admin", "hr", "partner"].includes(role);
 
   const [items, setItems] = useState<Approval[]>([]);
@@ -55,7 +59,9 @@ export default function Approvals() {
   const [recipientMode, setRecipientMode] = useState<"client" | "colleague">("client");
   const [clients, setClients] = useState<any[]>([]);
   const [colleagues, setColleagues] = useState<any[]>([]);
-  const [form, setForm] = useState({ client_id: "", approver_id: "", title: "", description: "" });
+  const [form, setForm] = useState<{ client_id: string; approver_id: string; title: string; description: string; kind: "budget" | "technical" }>(
+    { client_id: "", approver_id: "", title: "", description: "", kind: "budget" }
+  );
   const [clientSearch, setClientSearch] = useState("");
   const [colleagueSearch, setColleagueSearch] = useState("");
   const [saving, setSaving] = useState(false);
@@ -66,7 +72,7 @@ export default function Approvals() {
   const [resolveComment, setResolveComment] = useState("");
   const [resolving, setResolving] = useState(false);
 
-  const filterTypes: (ApprovalType | "All")[] = isClientUser
+  const filterTypes: (ApprovalType | "All")[] = isClientUser || isInventor
     ? ["All"]
     : ["All", "Leave", "Expense", "Client", "Colleague"];
 
@@ -126,9 +132,10 @@ export default function Approvals() {
         approver_id: isColleague ? Number(form.approver_id) : undefined,
         title: form.title.trim(),
         description: form.description.trim() || undefined,
+        kind: isColleague ? undefined : form.kind,
       });
       setShowNew(false);
-      setForm({ client_id: "", approver_id: "", title: "", description: "" });
+      setForm({ client_id: "", approver_id: "", title: "", description: "", kind: "budget" });
       load();
     } catch (e: any) {
       setNewError(e?.message || "Failed to create approval request.");
@@ -137,10 +144,11 @@ export default function Approvals() {
     }
   }
 
-  // Can the current user act on this row?
+  // Can the current user act on this row? Client/Colleague rows are already
+  // kind-aware from the backend (ApprovalController::canResolveClientApproval()) —
+  // trust can_resolve rather than re-deriving role logic here.
   const canAct = (a: Approval) => {
-    if (a.type === "Client") return isClientAdmin && (a.can_resolve ?? true);
-    if (a.type === "Colleague") return a.can_resolve ?? false;
+    if (a.type === "Client" || a.type === "Colleague") return a.can_resolve ?? false;
     return canActInternal && !isClientUser;
   };
 
@@ -216,6 +224,25 @@ export default function Approvals() {
                       <option key={c.id} value={c.id}>{c.company_name ?? c.legal_name} ({c.client_code})</option>
                     ))}
                   </select>
+                  <label className="block text-xs text-muted-foreground mt-3 mb-1">Approval kind</label>
+                  <div className="flex gap-1 border border-border rounded-lg p-1 bg-muted/30">
+                    {([
+                      { v: "budget" as const, label: "Budget / estimate" },
+                      { v: "technical" as const, label: "Technical / draft" },
+                    ]).map((k) => (
+                      <button key={k.v} type="button" onClick={() => setForm(p => ({ ...p, kind: k.v }))}
+                        className={`flex-1 px-3 py-1.5 rounded text-xs font-medium transition-colors ${
+                          form.kind === k.v ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
+                        }`}>
+                        {k.label}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    {form.kind === "budget"
+                      ? "Client admin approves spend before work proceeds."
+                      : "Draft ready to file — the inventor and/or client admin can sign off."}
+                  </p>
                 </div>
               ) : (
                 <div>
@@ -398,6 +425,11 @@ export default function Approvals() {
                         <span className={`px-2 py-0.5 rounded text-xs font-medium border ${typeColors[a.type]}`}>
                           {a.type}
                         </span>
+                        {a.kind && (
+                          <span className="ml-1 px-1.5 py-0.5 rounded text-[10px] font-medium border border-border text-muted-foreground capitalize">
+                            {a.kind}
+                          </span>
+                        )}
                       </td>
                       <td className="px-4 py-3 font-medium">{a.requester}</td>
                       <td className="px-4 py-3">

@@ -8,6 +8,7 @@ use App\Models\Client;
 use App\Models\Employee;
 use App\Models\ExpenseClaim;
 use App\Models\LeaveRequest;
+use App\Models\Project;
 use App\Models\User;
 use App\Services\LeaveApprovalService;
 use App\Support\Notifier;
@@ -18,6 +19,24 @@ class ApprovalController extends Controller
 {
     private const APPROVER_ROLES = User::LEAVE_APPROVER_ROLES;
     private const CLIENT_APPROVAL_CREATORS = ['super_admin', 'partner', 'manager'];
+
+    /**
+     * A given approval row is resolvable by client_admin for either kind, or
+     * by an inventor for technical-kind only (see resolve()'s Client branch
+     * for the matching authorization check). `kind === null` is a legacy row
+     * predating the budget/technical distinction — client_admin only, same
+     * as before this column existed.
+     */
+    private function canResolveClientApproval(Approval $a, User $user): bool
+    {
+        if ($a->status !== 'Pending') {
+            return false;
+        }
+        if ($user->role === 'client_admin') {
+            return true;
+        }
+        return $user->isInventor() && $a->kind === 'technical';
+    }
 
     /** List approvals for a client portal user (their own client only). */
     private function clientIndex(Request $request)
@@ -35,12 +54,11 @@ class ApprovalController extends Controller
             ->orderByDesc('created_at')
             ->paginate($perPage);
 
-        $canResolve = $user->role === 'client_admin';
-
         return response()->json([
             'data' => collect($paginated->items())->map(fn ($a) => [
                 'id'          => $a->id,
                 'type'        => 'Client',
+                'kind'        => $a->kind,
                 'requester'   => $a->requester?->name ?? '—',
                 'title'       => $a->title,
                 'description' => $a->title . ($a->description ? " — {$a->description}" : ''),
@@ -51,7 +69,58 @@ class ApprovalController extends Controller
                 'status'      => strtolower($a->status),
                 'urgency'     => 'Normal',
                 'comments'    => $a->comments,
-                'can_resolve' => $canResolve && $a->status === 'Pending',
+                'can_resolve' => $this->canResolveClientApproval($a, $user),
+                'created_at'  => $a->created_at,
+            ]),
+            'total'        => $paginated->total(),
+            'per_page'     => $paginated->perPage(),
+            'current_page' => $paginated->currentPage(),
+            'last_page'    => $paginated->lastPage(),
+            'has_more'     => $paginated->hasMorePages(),
+        ]);
+    }
+
+    /**
+     * List technical-kind approvals for an inventor — scoped to the clients
+     * of projects where they're listed as inventor (project_inventors pivot;
+     * an inventor isn't tied to a single Client the way a portal login is,
+     * see User::isInventor()/Client::forUser()'s CLIENT_ROLES gate). Budget-
+     * kind approvals never surface here — inventors don't approve spend.
+     */
+    private function inventorIndex(Request $request)
+    {
+        $user = $request->user();
+
+        $clientIds = Project::whereHas('inventors', fn ($q) => $q->where('users.id', $user->id))
+            ->whereNotNull('client_id')
+            ->distinct()
+            ->pluck('client_id');
+
+        $perPage   = max(1, min((int) $request->query('per_page', 25), 500));
+        $paginated = Approval::with('requester:id,name', 'client:id,company_name')
+            ->whereIn('client_id', $clientIds)
+            ->where('type', 'client')
+            ->where('kind', 'technical')
+            ->orderByDesc('created_at')
+            ->paginate($perPage);
+
+        return response()->json([
+            'data' => collect($paginated->items())->map(fn ($a) => [
+                'id'          => $a->id,
+                'type'        => 'Client',
+                'kind'        => $a->kind,
+                'requester'   => $a->requester?->name ?? '—',
+                'title'       => $a->title,
+                'description' => ($a->client?->company_name ? "For {$a->client->company_name}: " : '')
+                    . $a->title . ($a->description ? " — {$a->description}" : ''),
+                'amount'      => null,
+                'from_date'   => null,
+                'to_date'     => null,
+                'submitted'   => $a->created_at?->toDateString(),
+                'status'      => strtolower($a->status),
+                'urgency'     => 'Normal',
+                'comments'    => $a->comments,
+                'can_resolve' => $this->canResolveClientApproval($a, $user),
                 'created_at'  => $a->created_at,
             ]),
             'total'        => $paginated->total(),
@@ -68,6 +137,10 @@ class ApprovalController extends Controller
 
         if ($user->isClientRole()) {
             return $this->clientIndex($request);
+        }
+
+        if ($user->isInventor()) {
+            return $this->inventorIndex($request);
         }
 
         // All internal staff may view the approvals page. Leave/expense visibility
@@ -163,6 +236,7 @@ class ApprovalController extends Controller
                 return [
                     'id'          => $a->id,
                     'type'        => $isColleague ? 'Colleague' : 'Client',
+                    'kind'        => $a->kind,
                     'requester'   => $a->requester?->name ?? '—',
                     'title'       => $a->title,
                     'description' => ($isColleague ? "To {$recipient}: " : "For {$recipient}: ")
@@ -239,6 +313,11 @@ class ApprovalController extends Controller
             'approver_id' => 'nullable|integer|exists:users,id',
             'title'       => 'required|string|max:255',
             'description' => 'nullable|string|max:5000',
+            // 'budget' = client_admin approves an estimate before work proceeds;
+            // 'technical' = draft ready to file, actionable by inventor and/or
+            // client_admin (see resolve()/canResolveClientApproval()). Only
+            // meaningful for client-bound approvals — ignored for colleague ones.
+            'kind'        => 'nullable|in:budget,technical',
         ]);
 
         if (empty($validated['client_id']) && empty($validated['approver_id'])) {
@@ -250,11 +329,19 @@ class ApprovalController extends Controller
             return response()->json(['message' => 'You cannot send an approval to yourself.'], 422);
         }
 
+        // Only super_admin/partner/manager may raise a *client-bound* approval
+        // (CLIENT_APPROVAL_CREATORS) — colleague approvals stay open to any
+        // internal staff. This constant existed but was never enforced.
+        if (! $isColleague && ! in_array($user->role, self::CLIENT_APPROVAL_CREATORS, true)) {
+            return response()->json(['message' => 'Only a super admin, partner, or manager may raise a client approval.'], 403);
+        }
+
         $approval = Approval::create([
             'requester_id' => $user->id,
             'approver_id'  => $isColleague ? $validated['approver_id'] : $user->id, // client flow updates approver_id on resolve
             'client_id'    => $isColleague ? null : $validated['client_id'],
             'type'         => $isColleague ? 'colleague' : 'client',
+            'kind'         => $isColleague ? null : ($validated['kind'] ?? null),
             'title'        => $validated['title'],
             'description'  => $validated['description'] ?? null,
             'subject_type' => $isColleague ? 'User' : 'Client',
@@ -348,16 +435,33 @@ class ApprovalController extends Controller
             return response()->json(['ok' => true]);
         }
 
-        // ── Client approvals: only the client_admin of that client may act ──
+        // ── Client approvals: client_admin acts on either kind; an inventor
+        // may act only on kind='technical' approvals addressed to a client
+        // they're inventor-of-record for (see canResolveClientApproval()). ──
         if ($validated['type'] === 'Client') {
-            if ($user->role !== 'client_admin') {
+            $approval = Approval::findOrFail($validated['id']);
+
+            if ($user->role === 'client_admin') {
+                $ownClient = $request->attributes->get('portal_client') ?? Client::forUser($user);
+                if (! $ownClient || (int) $approval->client_id !== (int) $ownClient->id) {
+                    return response()->json(['message' => 'Forbidden'], 403);
+                }
+                $resolverLabel = $ownClient->company_name;
+            } elseif ($user->isInventor()) {
+                if ($approval->kind !== 'technical') {
+                    return response()->json(['message' => 'Only your portal admin can approve or reject a budget approval.'], 403);
+                }
+                $inventorClientIds = Project::whereHas('inventors', fn ($q) => $q->where('users.id', $user->id))
+                    ->whereNotNull('client_id')
+                    ->pluck('client_id');
+                if (! $inventorClientIds->contains($approval->client_id)) {
+                    return response()->json(['message' => 'Forbidden'], 403);
+                }
+                $resolverLabel = $user->name . ' (inventor)';
+            } else {
                 return response()->json(['message' => 'Only your portal admin can approve or reject.'], 403);
             }
-            $ownClient = $request->attributes->get('portal_client') ?? Client::forUser($user);
-            $approval  = Approval::findOrFail($validated['id']);
-            if (! $ownClient || (int) $approval->client_id !== (int) $ownClient->id) {
-                return response()->json(['message' => 'Forbidden'], 403);
-            }
+
             if ($approval->status !== 'Pending') {
                 return response()->json(['message' => "Already {$approval->status}."], 422);
             }
@@ -373,7 +477,7 @@ class ApprovalController extends Controller
                 $approval->requester_id,
                 'approval',
                 "Client approval {$validated['action']}",
-                "{$user->name} ({$ownClient->company_name}) {$validated['action']}: {$approval->title}",
+                "{$resolverLabel} {$validated['action']}: {$approval->title}",
                 '/approvals',
                 ['approval_id' => $approval->id],
             );
@@ -383,7 +487,7 @@ class ApprovalController extends Controller
                 'action'       => 'resolve_approval',
                 'subject_type' => 'Approval',
                 'subject_id'   => $approval->id,
-                'metadata'     => ['action' => $validated['action']],
+                'metadata'     => ['action' => $validated['action'], 'kind' => $approval->kind],
                 'ip_address'   => $request->ip(),
                 'user_agent'   => $request->userAgent(),
             ]);

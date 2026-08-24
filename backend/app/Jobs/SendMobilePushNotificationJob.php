@@ -9,10 +9,20 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 class SendMobilePushNotificationJob implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+
+    public int $tries = 3;
+    public int $timeout = 30;
+
+    /** Exponential backoff between retries (seconds). */
+    public function backoff(): array
+    {
+        return [10, 60, 300];
+    }
 
     /**
      * @param array<int> $userIds
@@ -84,5 +94,10 @@ class SendMobilePushNotificationJob implements ShouldQueue
                 }
             }
         }
+    }
+
+    public function failed(\Throwable $e): void
+    {
+        Log::error('SendMobilePushNotificationJob failed for user_ids [' . implode(',', $this->userIds) . "]: {$e->getMessage()}");
     }
 }

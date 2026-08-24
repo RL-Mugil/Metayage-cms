@@ -102,7 +102,21 @@ Route::middleware(['auth:sanctum', 'firm.context', 'throttle:120,1'])->group(fun
     Route::patch('/docket/deadlines/{id}/review', [\App\Http\Controllers\DocketController::class, 'reviewDeadline']);
     Route::get('/docket/rules', [\App\Http\Controllers\DocketController::class, 'rules']);
     Route::patch('/docket/rules/{id}', [\App\Http\Controllers\DocketController::class, 'approveRule']);
+    Route::patch('/projects/{id}/docket/application', [\App\Http\Controllers\DocketController::class, 'updateApplication']);
+    Route::post('/projects/{id}/docket/renewals', [\App\Http\Controllers\DocketController::class, 'storeRenewal']);
     Route::patch('/docket/renewals/{id}', [\App\Http\Controllers\DocketController::class, 'updateRenewal']);
+
+    // Renewal approve -> invoice -> proof -> confirm loop (RenewalActionController, on PatentInvoiceIn)
+    Route::get('/pending-payments', [\App\Http\Controllers\RenewalActionController::class, 'index']);
+    Route::post('/projects/{id}/renewals/approve', [\App\Http\Controllers\RenewalActionController::class, 'approve']);
+    Route::post('/pending-payments/{id}/proof', [\App\Http\Controllers\RenewalActionController::class, 'submitProof']);
+    Route::post('/pending-payments/{id}/confirm', [\App\Http\Controllers\RenewalActionController::class, 'confirmReceipt']);
+    Route::post('/pending-payments/{id}/status-note', [\App\Http\Controllers\RenewalActionController::class, 'postStatusNote']);
+
+    // Inventor role (Phase 3) — staff manage a case's inventors here.
+    Route::get('/projects/{id}/inventors', [\App\Http\Controllers\InventorController::class, 'index']);
+    Route::post('/projects/{id}/inventors', [\App\Http\Controllers\InventorController::class, 'store']);
+    Route::delete('/projects/{id}/inventors/{userId}', [\App\Http\Controllers\InventorController::class, 'destroy']);
 
     // Tasks & Time tracking
     Route::get('/tasks', [TaskController::class, 'index']);
@@ -241,6 +255,9 @@ Route::middleware(['auth:sanctum', 'firm.context', 'throttle:120,1'])->group(fun
     Route::put('/settings/system',         [\App\Http\Controllers\SettingsController::class, 'updateSystem']);
     Route::put('/settings/feature-flags', [\App\Http\Controllers\SettingsController::class, 'updateFeatureFlags']);
     Route::put('/settings/dropdown',      [\App\Http\Controllers\SettingsController::class, 'updateDropdown']);
+    Route::put('/settings/renewal-fee-rates', [\App\Http\Controllers\SettingsController::class, 'updateRenewalFeeRates']);
+    Route::put('/settings/escalation-cadence', [\App\Http\Controllers\SettingsController::class, 'updateEscalationCadence']);
+    Route::apiResource('fee-rate-cards', \App\Http\Controllers\FeeRateCardController::class)->except(['show']);
     Route::post('/settings/avatar',       [\App\Http\Controllers\SettingsController::class, 'uploadAvatar']);
     Route::delete('/settings/avatar',     [\App\Http\Controllers\SettingsController::class, 'removeAvatar']);
 
@@ -299,6 +316,13 @@ Route::middleware(['auth:sanctum', 'firm.context', 'throttle:120,1'])->group(fun
     Route::post('/integrations/{slug}/config', [\App\Http\Controllers\IntegrationController::class, 'saveConfig']);
     Route::post('/integrations/{slug}/test', [\App\Http\Controllers\IntegrationController::class, 'test']);
     Route::get('/integrations/{slug}/logs', [\App\Http\Controllers\WebhookController::class, 'logs']);
+    Route::get('/integrations/zoho/all', [\App\Http\Controllers\ZohoBooksController::class, 'index']);
+    Route::get('/integrations/zoho/clients/{clientId}/summary', [\App\Http\Controllers\ZohoBooksController::class, 'clientSummary']);
+    Route::get('/integrations/zoho/me/summary', [\App\Http\Controllers\ZohoBooksController::class, 'mySummary']);
+    Route::get('/integrations/zoho/projects/{projectId}/summary', [\App\Http\Controllers\ZohoBooksController::class, 'projectSummary']);
+    Route::post('/integrations/zoho/match', [\App\Http\Controllers\ZohoBooksController::class, 'matchBatch']);
+    Route::post('/integrations/zoho/sync', [\App\Http\Controllers\ZohoBooksController::class, 'sync']);
+    Route::get('/integrations/zoho/analytics/monthly', [\App\Http\Controllers\ZohoBooksController::class, 'monthlyAnalytics']);
 
     // Client Portal
     Route::get('/portal/clients', [\App\Http\Controllers\PortalController::class, 'clients']);

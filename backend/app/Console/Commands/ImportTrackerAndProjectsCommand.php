@@ -159,22 +159,53 @@ class ImportTrackerAndProjectsCommand extends Command
             try {
                 $projectCode = $docket ?: ('AUTO-' . strtoupper(substr(preg_replace('/[^A-Za-z0-9]/', '', $clientName), 0, 6)) . rand(1000, 9999));
 
-                $project = Project::updateOrCreate(
-                    ['docket_number' => $docket ?: null, 'client_id' => $client->id],
-                    [
-                        'project_code'        => $projectCode,
-                        'project_name'        => $clientName . ($docket ? ' - ' . $docket : ''),
-                        'client_id'           => $client->id,
-                        'case_type'           => $recordType,
-                        'project_type'        => $recordType,
-                        'assigned_manager_id' => $managerUser?->id,
-                        'assigned_partner_id' => $partnerUser?->id,
-                        'patent_engineer_id'  => $this->resolveUser($pr)?->id,
-                        'status'              => 'Active',
-                        'start_date'          => $startDate,
-                        'hard_deadline'       => $dueDate,
-                    ]
-                );
+                $existing = Project::where('docket_number', $docket ?: null)->where('client_id', $client->id)->first();
+
+                $attrs = [
+                    'project_code'        => $projectCode,
+                    'project_name'        => $clientName . ($docket ? ' - ' . $docket : ''),
+                    'client_id'           => $client->id,
+                    'case_type'           => $recordType,
+                    'project_type'        => $recordType,
+                    'assigned_manager_id' => $managerUser?->id,
+                    'assigned_partner_id' => $partnerUser?->id,
+                    'patent_engineer_id'  => $this->resolveUser($pr)?->id,
+                    'start_date'          => $startDate,
+                    'hard_deadline'       => $dueDate,
+                ];
+
+                // Status: new projects always get 'Active'. Existing ones only get
+                // their status reconciled from the tracker's status column when
+                // (a) the tracker value maps to one of Project's own known status
+                // values (never write an unrecognized free-text tracker string
+                // into Project.status), and (b) nobody has manually edited the
+                // project since our own last sync — updated_at newer than
+                // tracker_status_synced_at means a manual edit happened in
+                // between import runs, so we leave status alone rather than
+                // clobbering it. See migration 2026_08_25_000001.
+                if (! $existing) {
+                    $attrs['status'] = 'Active';
+                    $attrs['tracker_status_synced_at'] = now();
+                } else {
+                    $mapped = $this->mapTrackerStatus($status);
+                    $editedSinceLastSync = $existing->tracker_status_synced_at
+                        && $existing->updated_at
+                        && $existing->updated_at->gt($existing->tracker_status_synced_at);
+                    if ($mapped && ! $editedSinceLastSync) {
+                        $attrs['status'] = $mapped;
+                        $attrs['tracker_status_synced_at'] = now();
+                    }
+                }
+
+                // Reuse $existing instead of a second updateOrCreate() lookup (which
+                // would re-run the identical docket_number+client_id query).
+                if ($existing) {
+                    $existing->fill($attrs);
+                    $existing->save();
+                    $project = $existing;
+                } else {
+                    $project = Project::create($attrs + ['docket_number' => $docket ?: null, 'client_id' => $client->id]);
+                }
                 $projectId = $project->id;
 
                 // Seed pipeline stages if not present
@@ -228,6 +259,27 @@ class ImportTrackerAndProjectsCommand extends Command
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
+
+    /**
+     * Conservative tracker-status → Project.status mapping: only reconcile
+     * when the tracker's free-text value clearly matches a status Project
+     * already uses elsewhere in the app (see e.g. ActionItemService::
+     * TERMINAL_STATUSES and the Open/In Progress filters in
+     * DashboardController::metrics()) — anything else is left alone so a
+     * spreadsheet typo or unrelated status word never lands in Project.status.
+     */
+    private function mapTrackerStatus(string $raw): ?string
+    {
+        $known = ['Open', 'In Progress', 'Granted', 'Refused', 'Abandoned', 'Closed', 'Completed'];
+        $normalized = trim($raw);
+        foreach ($known as $status) {
+            if (strcasecmp($normalized, $status) === 0) {
+                return $status;
+            }
+        }
+        return null;
+    }
+
     private function parseDate(string $raw): ?Carbon
     {
         $raw = trim($raw);

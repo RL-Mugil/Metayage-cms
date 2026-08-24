@@ -14,6 +14,49 @@ function getCsrfToken(): string {
 
 export type { User, Client, Project, Task, Invoice, Employee, PaginatedResponse, SearchResult, Quotation, AuditLog, PatentInvoiceIn }
 
+export interface ZohoBooksCase {
+  project_id: number
+  docket_number: string
+  source: 'uin' | 'docket'
+}
+
+export interface ZohoBooksRecord {
+  number: string | null
+  date: string | null
+  status: string | null
+  total: number
+  balance: number | null
+  url: string | null
+  application_no: string | null
+  patent_office: string | null
+  case: ZohoBooksCase | null
+}
+
+export interface ZohoClientSummary {
+  outstanding_balance: number
+  invoices: ZohoBooksRecord[]
+  estimates: ZohoBooksRecord[]
+}
+
+export interface ZohoAllRow {
+  id: number
+  type: 'invoice' | 'quote'
+  number: string | null
+  client: string | null
+  client_code: string | null
+  docket_number: string | null
+  project_name: string | null
+  date: string | null
+  due_date: string | null
+  status: string | null
+  total: number
+  balance: number | null
+  currency: string
+  url: string | null
+  match_source: 'uin' | 'docket' | null
+  synced_at: string | null
+}
+
 export const api = {
   async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     const method = (options.method || 'GET').toUpperCase()
@@ -178,6 +221,41 @@ export const api = {
   },
   async updateRenewal(renewalId: number | string, status: string): Promise<any> {
     return this.request(`/docket/renewals/${renewalId}`, { method: 'PATCH', body: JSON.stringify({ status }) })
+  },
+  // Manual renewal-year entry for cases outside the IN S.53 auto-generation path (e.g. non-IN jurisdictions).
+  async addRenewal(projectId: number | string, data: { renewal_year: number; due_date: string }): Promise<any> {
+    return this.request(`/projects/${projectId}/docket/renewals`, { method: 'POST', body: JSON.stringify(data) })
+  },
+  // Fields the IPO-style status view needs that nothing else auto-generates.
+  async updateApplicationStatusFields(projectId: number | string, data: { application_type?: string | null; fer_reply_date?: string | null; certificate_issue_date?: string | null; post_grant_journal_date?: string | null }): Promise<any> {
+    return this.request(`/projects/${projectId}/docket/application`, { method: 'PATCH', body: JSON.stringify(data) })
+  },
+  // ── Renewal approve → invoice → proof → confirm loop (PatentInvoiceIn-backed) ──
+  async getPendingPayments(params?: URLSearchParams): Promise<any> {
+    const q = params ? `?${params.toString()}` : ''
+    return this.request(`/pending-payments${q}`)
+  },
+  async approveRenewal(projectId: number | string, years: number): Promise<any> {
+    return this.request(`/projects/${projectId}/renewals/approve`, { method: 'POST', body: JSON.stringify({ years }) })
+  },
+  async submitRenewalProof(invoiceId: number | string, documentId: number): Promise<any> {
+    return this.request(`/pending-payments/${invoiceId}/proof`, { method: 'POST', body: JSON.stringify({ document_id: documentId }) })
+  },
+  async confirmRenewalReceipt(invoiceId: number | string): Promise<any> {
+    return this.request(`/pending-payments/${invoiceId}/confirm`, { method: 'POST' })
+  },
+  async postRenewalStatusNote(invoiceId: number | string, note: string): Promise<any> {
+    return this.request(`/pending-payments/${invoiceId}/status-note`, { method: 'POST', body: JSON.stringify({ status_note: note }) })
+  },
+  // ── Inventor role (Phase 3) ──
+  async getProjectInventors(projectId: number | string): Promise<any[]> {
+    return this.request(`/projects/${projectId}/inventors`)
+  },
+  async addProjectInventor(projectId: number | string, data: { name: string; email: string; password?: string }): Promise<any> {
+    return this.request(`/projects/${projectId}/inventors`, { method: 'POST', body: JSON.stringify(data) })
+  },
+  async removeProjectInventor(projectId: number | string, userId: number): Promise<any> {
+    return this.request(`/projects/${projectId}/inventors/${userId}`, { method: 'DELETE' })
   },
   async getUpcomingDeadlines(days = 90): Promise<any[]> {
     return this.request(`/docket/upcoming?days=${days}`)
@@ -617,6 +695,26 @@ export const api = {
   async updateDropdown(key: 'dropdown_service_codes' | 'dropdown_country_codes', items: { code: string; label: string }[]): Promise<any> {
     return this.request('/settings/dropdown', { method: 'PUT', body: JSON.stringify({ key, items }) })
   },
+  async updateRenewalFeeRates(data: { government_fee: number; professional_fee: number; currency?: string }): Promise<any> {
+    return this.request('/settings/renewal-fee-rates', { method: 'PUT', body: JSON.stringify(data) })
+  },
+  // ── Fee rate card ── (default: active rows only, for auto-fill lookups; pass includeInactive for the admin grid)
+  async getFeeRateCards(opts?: { jurisdiction?: string; includeInactive?: boolean }): Promise<any[]> {
+    const params = new URLSearchParams()
+    if (opts?.jurisdiction) params.set('jurisdiction', opts.jurisdiction)
+    if (opts?.includeInactive) params.set('include_inactive', '1')
+    const q = params.toString()
+    return this.request(`/fee-rate-cards${q ? `?${q}` : ''}`)
+  },
+  async createFeeRateCard(data: Record<string, unknown>): Promise<any> {
+    return this.request('/fee-rate-cards', { method: 'POST', body: JSON.stringify(data) })
+  },
+  async updateFeeRateCard(id: number | string, data: Record<string, unknown>): Promise<any> {
+    return this.request(`/fee-rate-cards/${id}`, { method: 'PUT', body: JSON.stringify(data) })
+  },
+  async deleteFeeRateCard(id: number | string): Promise<any> {
+    return this.request(`/fee-rate-cards/${id}`, { method: 'DELETE' })
+  },
   async uploadAvatar(file: File): Promise<{ ok: boolean; avatar_url: string }> {
     const form = new FormData()
     form.append('avatar', file)
@@ -722,8 +820,32 @@ export const api = {
   async saveIntegrationConfig(slug: string, apiKey: string): Promise<{ ok: boolean; message: string }> {
     return this.request(`/integrations/${slug}/config`, { method: 'POST', body: JSON.stringify({ api_key: apiKey }) })
   },
+  async saveZohoConfig(data: { client_id: string; client_secret: string; refresh_token: string; organization_id: string; region?: string }): Promise<{ ok: boolean; message: string }> {
+    return this.request('/integrations/zoho/config', { method: 'POST', body: JSON.stringify(data) })
+  },
   async testIntegration(slug: string): Promise<{ ok: boolean; message: string }> {
     return this.request(`/integrations/${slug}/test`, { method: 'POST' })
+  },
+  async getZohoClientSummary(clientId: number | string): Promise<ZohoClientSummary> {
+    return this.request(`/integrations/zoho/clients/${clientId}/summary`)
+  },
+  async getZohoMySummary(): Promise<ZohoClientSummary> {
+    return this.request('/integrations/zoho/me/summary')
+  },
+  async getZohoProjectSummary(projectId: number | string): Promise<ZohoClientSummary> {
+    return this.request(`/integrations/zoho/projects/${projectId}/summary`)
+  },
+  async zohoMatchBatch(uins: string[]): Promise<Record<string, { status: string | null; balance: number | null; total: number; url: string | null }>> {
+    return this.request('/integrations/zoho/match', { method: 'POST', body: JSON.stringify({ uins }) })
+  },
+  async zohoSyncNow(): Promise<{ ok: boolean; message: string }> {
+    return this.request('/integrations/zoho/sync', { method: 'POST' })
+  },
+  async getZohoMonthlyAnalytics(): Promise<{ month: string; total: number }[]> {
+    return this.request('/integrations/zoho/analytics/monthly')
+  },
+  async getZohoAll(params?: URLSearchParams): Promise<PaginatedResponse<ZohoAllRow>> {
+    return this.request(`/integrations/zoho/all${params ? `?${params}` : ''}`)
   },
 
   // ── Client Portal ──
@@ -851,13 +973,13 @@ export const api = {
   async deleteStaffUser(id: number): Promise<{ ok: boolean }> {
     return this.request(`/staff-users/${id}`, { method: 'DELETE' })
   },
-  async createMyPortalUser(data: { name: string; email: string; password: string }): Promise<any> {
+  async createMyPortalUser(data: { name: string; email: string; password: string; role?: "client" | "client_finance" }): Promise<any> {
     return this.request('/my-portal/users', { method: 'POST', body: JSON.stringify(data) })
   },
   async deleteMyPortalUser(userId: number): Promise<{ ok: boolean }> {
     return this.request(`/my-portal/users/${userId}`, { method: 'DELETE' })
   },
-  async createApproval(data: { client_id?: number; approver_id?: number; title: string; description?: string }): Promise<any> {
+  async createApproval(data: { client_id?: number; approver_id?: number; title: string; description?: string; kind?: 'budget' | 'technical' }): Promise<any> {
     return this.request('/approvals', { method: 'POST', body: JSON.stringify(data) })
   },
 

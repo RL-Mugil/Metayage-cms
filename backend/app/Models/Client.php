@@ -16,10 +16,10 @@ class Client extends Model
 
     protected $fillable = [
         // Core
-        'client_code', 'client_type',
+        'client_code', 'client_type', 'zoho_contact_id',
         // Identity
         'legal_name', 'company_name', 'trade_name',
-        'entity_type', 'entity_subtype',
+        'entity_type', 'entity_subtype', 'fee_entity_tier',
         'pan_number', 'cin_number', 'tax_id', 'website',
         // GST
         'has_gstin', 'gstin', 'gst_type',
@@ -33,6 +33,7 @@ class Client extends Model
         'industry',
         'credit_limit', 'payment_terms', 'currency_preference',
         'billing_frequency', 'communication_preference',
+        'reminder_cadence_override', 'payment_clearance_pattern',
         'account_manager_id', 'date_onboarded',
         // Banking
         'bank_name', 'bank_account', 'bank_ifsc',
@@ -48,6 +49,8 @@ class Client extends Model
     protected $casts = [
         'secondary_jurisdictions'  => 'array',
         'communication_preference' => 'array',
+        'reminder_cadence_override' => 'array',
+        'payment_clearance_pattern' => 'array',
         'date_onboarded'           => 'date',
         'credit_limit'             => 'decimal:2',
         'has_gstin'                => 'boolean',

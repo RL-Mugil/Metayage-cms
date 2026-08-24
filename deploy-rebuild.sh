@@ -58,6 +58,7 @@ set_env() {
     fi
 }
 
+set_env SESSION_SECURE_COOKIE true
 set_env REVERB_SERVER_HOST 127.0.0.1
 set_env REVERB_SERVER_PORT 8080
 set_env REVERB_HOST myipstrategy.com

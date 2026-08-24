@@ -18,7 +18,7 @@ class Project extends Model
         'assigned_partner_id', 'assigned_manager_id', 'assigned_team',
         'start_date', 'target_filing_date', 'hard_deadline',
         'idf_received_date', 'advance_payment_date', 'partial_payment_date', 'full_payment_date',
-        'status', 'urgency', 'tags',
+        'status', 'urgency', 'tags', 'tracker_status_synced_at',
         // IP matter fields
         'docket_number', 'original_docket', 'invention_number', 'docket_trak_ref', 'application_number', 'patent_office_code', 'service_code',
         'case_type', 'filing_date', 'patent_granted', 'secondary_manager_id', 'patent_engineer_id', 'notes', 'circle',
@@ -40,6 +40,7 @@ class Project extends Model
         'partial_payment_date'=> 'date',
         'full_payment_date'   => 'date',
         'google_task_ids'     => 'array',
+        'tracker_status_synced_at' => 'datetime',
     ];
 
     public function client(): BelongsTo
@@ -70,6 +71,12 @@ class Project extends Model
     public function docketReviewer(): BelongsTo
     {
         return $this->belongsTo(User::class, 'docket_reviewer_id');
+    }
+
+    /** inventor-role Users listed as inventor-of-record on this case (see project_inventors). */
+    public function inventors(): \Illuminate\Database\Eloquent\Relations\BelongsToMany
+    {
+        return $this->belongsToMany(User::class, 'project_inventors', 'project_id', 'user_id')->withTimestamps();
     }
 
     public function partner(): BelongsTo

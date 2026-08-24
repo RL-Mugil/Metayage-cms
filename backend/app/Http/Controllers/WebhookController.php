@@ -8,12 +8,33 @@ use Illuminate\Support\Facades\DB;
 
 class WebhookController extends Controller
 {
-    /** Receive an inbound webhook from an external integration. Public endpoint (no auth). */
+    /**
+     * Receive an inbound webhook from an external integration. Public endpoint
+     * (no auth) — anyone can POST here, so an integration that has configured a
+     * shared secret (Integration.config['webhook_secret']) must present a valid
+     * HMAC-SHA256 signature or the payload is rejected before it's logged.
+     * Integrations with no secret configured are logged as before — no forced
+     * migration for existing/legacy connections that predate this check.
+     */
     public function receive(Request $request, string $slug)
     {
-        $exists = Integration::where('slug', $slug)->where('connected', true)->exists();
-        if (!$exists) {
+        $integration = Integration::where('slug', $slug)->where('connected', true)->first();
+        if (!$integration) {
             return response()->json(['ok' => false, 'message' => 'Integration not found or not connected.'], 404);
+        }
+
+        $secret = $integration->config['webhook_secret'] ?? null;
+        if ($secret) {
+            $signature = $request->header('X-Webhook-Signature', '');
+            $expected  = 'sha256=' . hash_hmac('sha256', $request->getContent(), $secret);
+            if (! $signature || ! hash_equals($expected, $signature)) {
+                DB::table('integration_logs')->insert([
+                    'slug' => $slug, 'event_type' => 'webhook', 'status' => 'error',
+                    'summary' => 'Rejected: invalid or missing signature',
+                    'payload' => null, 'created_at' => now(), 'updated_at' => now(),
+                ]);
+                return response()->json(['ok' => false, 'message' => 'Invalid signature.'], 401);
+            }
         }
 
         DB::table('integration_logs')->insert([

@@ -67,7 +67,12 @@ class FinancialController extends Controller
 
     public function inertiaIndex(Request $request)
     {
-        return Inertia::render('financial');
+        // Must match the file's exact casing ('Financial.tsx') — the lowercase
+        // page name resolved to a stale orphan file (resources/js/pages/financial.tsx,
+        // dated Jul 18, never touched since) on the server's case-sensitive
+        // filesystem, which silently masked every edit made to Financial.tsx
+        // in production despite successful deploys. See PR/commit notes.
+        return Inertia::render('Financial');
     }
 
     public function stats(Request $request)
@@ -423,7 +428,17 @@ class FinancialController extends Controller
         $user      = $request->user();
         $this->authorize('create', \App\Models\Invoice::class);
         $quotation = Quotation::findOrFail($id);
-        if ($user->isGalvanizer() && (! $quotation->project || ! $user->canAccessCircle($quotation->project->circle))) {
+        // Same ownership scoping as storeQuotation() — resolveAuthorizedProject()
+        // throws 403 via ProjectPolicy::view() if the quotation's project exists
+        // but isn't one this user (associate/galvanizer/etc.) may view; these two
+        // checks then require associates/galvanizers to have a project at all,
+        // closing the gap where an associate could otherwise update/cancel/convert
+        // any client's quotation, not just their own assigned cases.
+        $project = $this->resolveAuthorizedProject($user, $quotation->project_id);
+        if ($user->role === 'associate' && !$project) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+        if ($user->isGalvanizer() && !$project) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
@@ -457,7 +472,12 @@ class FinancialController extends Controller
         $user      = $request->user();
         $this->authorize('create', \App\Models\Invoice::class);
         $quotation = Quotation::findOrFail($id);
-        if ($user->isGalvanizer() && (! $quotation->project || ! $user->canAccessCircle($quotation->project->circle))) {
+        // See updateQuotation() — same ownership scoping, closes the same gap.
+        $project = $this->resolveAuthorizedProject($user, $quotation->project_id);
+        if ($user->role === 'associate' && !$project) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+        if ($user->isGalvanizer() && !$project) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
@@ -481,7 +501,12 @@ class FinancialController extends Controller
         $user      = $request->user();
         $this->authorize('create', \App\Models\Invoice::class);
         $quotation = Quotation::with('client')->findOrFail($id);
-        if ($user->isGalvanizer() && (! $quotation->project || ! $user->canAccessCircle($quotation->project->circle))) {
+        // See updateQuotation() — same ownership scoping, closes the same gap.
+        $project = $this->resolveAuthorizedProject($user, $quotation->project_id);
+        if ($user->role === 'associate' && !$project) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+        if ($user->isGalvanizer() && !$project) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
@@ -701,7 +726,10 @@ class FinancialController extends Controller
                     }
                 });
             } catch (\Throwable $e) {
-                $errors[] = "Invoice #{$invId}: {$e->getMessage()}";
+                // Log the real exception server-side; never echo raw driver/DB text
+                // (constraint/column names etc.) back to the client.
+                report($e);
+                $errors[] = "Invoice #{$invId}: could not be processed — see server logs.";
             }
         }
 

@@ -15,7 +15,7 @@ use Inertia\Inertia;
 // Auth routes
 Route::middleware('guest')->group(function () {
     Route::get('/login', [AuthController::class, 'showLogin'])->name('login');
-    Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:10,1')->name('login.post');
+    Route::post('/login', [AuthController::class, 'login'])->middleware(['throttle:10,1', 'throttle:login-email'])->name('login.post');
 
     // Password reset
     Route::get('/forgot-password', [\App\Http\Controllers\Auth\PasswordResetController::class, 'showLinkRequest'])->name('password.request');
@@ -38,6 +38,7 @@ Route::middleware(['auth', 'firm.context'])->group(function () {
     Route::get('/project-tracker', [ProjectTrackerController::class, 'inertiaIndex'])->name('project-tracker');
     Route::get('/calendar', fn () => Inertia::render('Calendar'))->name('calendar');
     Route::get('/financial', [FinancialController::class, 'inertiaIndex'])->name('financial.index');
+    Route::get('/pending-payments', fn () => Inertia::render('PendingPayments'))->name('pending-payments');
     Route::get('/documents', fn () => Inertia::render('Documents'))->name('documents');
     Route::get('/ai', fn () => Inertia::render('AI'))->name('ai');
     Route::get('/analytics', fn () => Inertia::render('Analytics'))->name('analytics');

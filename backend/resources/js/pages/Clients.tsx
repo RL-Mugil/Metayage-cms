@@ -123,21 +123,26 @@ type CType = "individual" | "organization";
 interface CF {
   record_mode: "new" | "existing"; client_code: string;
   client_type: CType; nationality: string; has_gstin: boolean; gstin: string;
-  legal_name: string; entity_subtype: string; pan_number: string; cin_number: string;
+  legal_name: string; entity_subtype: string; fee_entity_tier: string; pan_number: string; cin_number: string;
   trade_name: string; website: string; contact_name: string; contact_email: string;
   phone: string; address: string; state: string;
   industry: string; payment_terms: string;
   account_manager_id: string; bank_name: string; bank_account: string; bank_ifsc: string;
   referred_by_code: string; accounts_person: string; remarks: string; status: string;
+  // Reminders — UI-friendly text, transformed to reminder_cadence_override
+  // (number[]) / payment_clearance_pattern ({lead_days}) on save. See
+  // ReminderThresholdResolver::thresholdsFor()/Client.php.
+  reminder_extra_days: string; payment_clearance_lead_days: string;
 }
 const BLANK: CF = {
   record_mode:"new", client_code:"",
   client_type:"organization", nationality:"India", has_gstin:false, gstin:"",
-  legal_name:"", entity_subtype:"", pan_number:"", cin_number:"", trade_name:"", website:"",
+  legal_name:"", entity_subtype:"", fee_entity_tier:"", pan_number:"", cin_number:"", trade_name:"", website:"",
   contact_name:"", contact_email:"", phone:"", address:"", state:"",
   industry:"", payment_terms:"Net 30",
   account_manager_id:"", bank_name:"", bank_account:"", bank_ifsc:"",
   referred_by_code:"", accounts_person:"", remarks:"", status:"Active",
+  reminder_extra_days:"", payment_clearance_lead_days:"",
 };
 
 // ── KPI Drill-down Modal ─────────────────────────────────────────────────────
@@ -643,6 +648,7 @@ export default function Clients() {
       gstin:            c.gstin             ?? "",
       legal_name:       c.legal_name        ?? c.company_name ?? "",
       entity_subtype:   c.entity_subtype    ?? "",
+      fee_entity_tier:  c.fee_entity_tier   ?? "",
       pan_number:       c.pan_number        ?? "",
       cin_number:       c.cin_number        ?? "",
       trade_name:       c.trade_name        ?? "",
@@ -662,6 +668,8 @@ export default function Clients() {
       accounts_person:  c.accounts_person   ?? "",
       remarks:          c.remarks           ?? "",
       status:           c.status            ?? "Active",
+      reminder_extra_days: Array.isArray(c.reminder_cadence_override) ? c.reminder_cadence_override.join(", ") : "",
+      payment_clearance_lead_days: c.payment_clearance_pattern?.lead_days != null ? String(c.payment_clearance_pattern.lead_days) : "",
     });
     setEditC(c); setFErr(""); setShowForm(true);
   }
@@ -673,10 +681,17 @@ export default function Clients() {
     }
     setSaving(true); setFErr("");
     try {
+      const { reminder_extra_days, payment_clearance_lead_days, ...formRest } = form;
+      const reminderDays = reminder_extra_days
+        .split(",").map((s) => parseInt(s.trim(), 10)).filter((n) => Number.isInteger(n) && n >= 0);
+      const clearanceLead = payment_clearance_lead_days.trim() ? parseInt(payment_clearance_lead_days, 10) : null;
+
       const payload = {
-        ...form,
+        ...formRest,
         client_code: form.client_code.trim().toUpperCase() || null,
         account_manager_id: form.account_manager_id ? parseInt(form.account_manager_id) : null,
+        reminder_cadence_override: reminderDays.length ? reminderDays : null,
+        payment_clearance_pattern: clearanceLead != null && !Number.isNaN(clearanceLead) ? { lead_days: clearanceLead } : null,
       };
       if (editC) {
         const { record_mode, client_code, ...updatePayload } = payload;
@@ -1037,6 +1052,15 @@ export default function Clients() {
                         .map((n)=><option key={n}>{n}</option>)}
                     </select>
                   </div>
+                  <div>
+                    <Lbl>Fee Entity Tier</Lbl>
+                    <select value={form.fee_entity_tier} onChange={(e)=>set("fee_entity_tier",e.target.value)} className={ic}>
+                      <option value="">Not set</option>
+                      <option value="individual_startup_msme">Individual / Startup / MSME</option>
+                      <option value="large_entity_standard">Large Entity / Standard</option>
+                    </select>
+                    <p className="mt-1 text-[10px] text-muted-foreground">Drives auto-populated government/professional fees on quotes &amp; invoices for this client.</p>
+                  </div>
                 </div>
               </Section>
 
@@ -1158,6 +1182,24 @@ export default function Clients() {
                     <select value={form.status} onChange={(e)=>set("status",e.target.value)} className={ic}>
                       {["Active","Inactive","Prospect","On Hold"].map((s)=><option key={s}>{s}</option>)}
                     </select>
+                  </div>
+                </div>
+              </Section>
+
+              {/* ── 4b. Reminders ─────────────────────────────────────────── */}
+              <Section title="Reminders" open={false}>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Lbl>Extra reminder days (before due date)</Lbl>
+                    <input value={form.reminder_extra_days} onChange={(e)=>set("reminder_extra_days",e.target.value)} className={ic}
+                      placeholder="e.g. 30 for an extra 1-month reminder"/>
+                    <p className="mt-1 text-[11px] text-muted-foreground">Comma-separated day counts, added on top of the standard 6-month/3-month renewal reminders.</p>
+                  </div>
+                  <div>
+                    <Lbl>Typical payment lead time (days before due date)</Lbl>
+                    <input type="number" min={0} value={form.payment_clearance_lead_days} onChange={(e)=>set("payment_clearance_lead_days",e.target.value)} className={ic}
+                      placeholder="e.g. 14 if they usually pay 2 weeks early"/>
+                    <p className="mt-1 text-[11px] text-muted-foreground">If this client is still unpaid well past their usual pattern, they'll be escalated early.</p>
                   </div>
                 </div>
               </Section>

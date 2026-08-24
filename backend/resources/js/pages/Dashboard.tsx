@@ -1,6 +1,6 @@
 import { Head, Link } from "@inertiajs/react";
 import { useEffect, useState, useCallback } from "react";
-import { Briefcase, Users, Wallet, Clock, ArrowUpRight, TrendingUp, Loader2, Download, X, Search, ChevronLeft, ChevronRight, Archive } from "lucide-react";
+import { Briefcase, Users, Wallet, Clock, ArrowUpRight, TrendingUp, Loader2, Download, X, Search, ChevronLeft, ChevronRight, Archive, Landmark } from "lucide-react";
 import AppLayout from "@/layouts/AppLayout";
 import { PageHeader } from "@/components/page-header";
 import { StatCard } from "@/components/stat-card";
@@ -12,6 +12,10 @@ import { statusColor } from "@/lib/utils";
 import { usePage } from "@inertiajs/react";
 import { AnalystRoleFilter, useAnalystRoleFilter } from "@/components/analyst-role-filter";
 import { fmtDate } from "@/lib/date-utils";
+import { ClientActionDashboard } from "@/pages/dashboard/ClientActionDashboard";
+import { ClientFinanceDashboard } from "@/pages/dashboard/ClientFinanceDashboard";
+import { InventorDashboard } from "@/pages/dashboard/InventorDashboard";
+import { ActionItem, ActionItemRow, RenewalApproveModal } from "@/components/action-item-row";
 
 function formatCurrency(val: number) {
   if (val >= 100000) return `₹ ${(val / 100000).toFixed(1)}L`;
@@ -117,7 +121,24 @@ function DashboardDrillModal({ config, onClose }: { config: DrillConfig; onClose
   );
 }
 
+/**
+ * Role router: client_finance and client/client_admin get their own dedicated,
+ * interactive dashboards (each a self-contained component with its own data
+ * fetching) instead of the internal staff dashboard below — kept as a separate
+ * component per role rather than a mid-component conditional return, so hooks
+ * stay unconditional within each one.
+ */
 export default function Dashboard() {
+  const { props } = usePage() as any;
+  const role = props.auth?.user?.role;
+
+  if (role === "client_finance") return <ClientFinanceDashboard />;
+  if (role === "client" || role === "client_admin") return <ClientActionDashboard />;
+  if (role === "inventor") return <InventorDashboard />;
+  return <StaffDashboard />;
+}
+
+function StaffDashboard() {
   const { props } = usePage() as any;
   const user = props.auth?.user;
   const [roleFilter, setRoleFilter] = useAnalystRoleFilter();
@@ -128,6 +149,9 @@ export default function Dashboard() {
   const [invoices, setInvoices] = useState<any[]>([]);
   const [loading, setLoading]   = useState(true);
   const [drillKey, setDrillKey] = useState<DrillKey | null>(null);
+  const [renewalItem, setRenewalItem] = useState<ActionItem | null>(null);
+
+  const feeRates = props.systemSettings?.renewal_fee_rates ?? { government_fee: 0, professional_fee: 0, currency: "INR" };
 
   useEffect(() => {
     const isAnalyst = user?.role === 'associate';
@@ -276,7 +300,17 @@ export default function Dashboard() {
           <DashboardDrillModal config={DRILL_CONFIGS[drillKey]} onClose={() => setDrillKey(null)} />
         )}
 
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
+        {renewalItem && (
+          <RenewalApproveModal
+            item={renewalItem}
+            feeRates={feeRates}
+            canApprove={false /* renewal approval is a client_admin action, not staff's */}
+            onClose={() => setRenewalItem(null)}
+            onApproved={() => setRenewalItem(null)}
+          />
+        )}
+
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-6">
           <StatCard
             label="Active Cases"
             value={metrics.active_matters.toString()}
@@ -293,6 +327,7 @@ export default function Dashboard() {
           <StatCard label="Active Clients" value={metrics.clients.toString()} delta={metrics.clients_delta ?? undefined} trend={metrics.clients_delta_trend ?? "up"} icon={Users} accent="gold" onClick={() => setDrillKey("active_clients")} />
           <StatCard label="WIP (unbilled)" value={formatCurrency(metrics.wip_balance)} delta={metrics.wip_delta ?? undefined} trend={metrics.wip_delta_trend ?? "neutral"} icon={Clock} accent="info" onClick={() => setDrillKey("wip")} />
           <StatCard label="MTD Revenue" value={formatCurrency(metrics.received_payments)} delta={metrics.revenue_delta ?? undefined} trend={metrics.revenue_delta_trend ?? "up"} icon={Wallet} accent="success" onClick={() => setDrillKey("revenue")} />
+          <StatCard label="Zoho Outstanding" value={formatCurrency(metrics.zoho_outstanding ?? 0)} icon={Landmark} accent="info" subtitle={`Collected MTD ${formatCurrency(metrics.zoho_collected_mtd ?? 0)}`} />
         </div>
 
         <section className="border-y border-border py-4">
@@ -301,6 +336,24 @@ export default function Dashboard() {
             {[["Overdue", metrics.deadline_risk?.overdue ?? 0], ["Next 7 days", metrics.deadline_risk?.next_7_days ?? 0], ["Unreviewed", metrics.deadline_risk?.unreviewed ?? 0], ["Critical", metrics.deadline_risk?.critical ?? 0]].map(([label, value]) => <div key={label as string} className="bg-background px-4 py-3"><p className="text-xs text-muted-foreground">{label}</p><p className={`mt-1 text-2xl font-semibold ${label === "Overdue" && Number(value) > 0 ? "text-destructive" : ""}`}>{value}</p></div>)}
           </div>
         </section>
+
+        {(metrics.action_items ?? []).length > 0 && (
+          <Card className="border-border">
+            <CardHeader>
+              <CardTitle className="font-display flex items-center gap-2">
+                <Clock className="h-4 w-4" /> Action Required
+              </CardTitle>
+              <p className="text-xs text-muted-foreground mt-1">
+                Renewals first, then urgency and nearest deadline — click a case for details, click a renewal for the fee breakdown.
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {(metrics.action_items as ActionItem[]).slice(0, 8).map((item) => (
+                <ActionItemRow key={item.id} item={item} onRenewClick={setRenewalItem} showOwnerBadge />
+              ))}
+            </CardContent>
+          </Card>
+        )}
 
         <div className="grid gap-6 lg:grid-cols-3">
           <Card className="lg:col-span-2 border-border">

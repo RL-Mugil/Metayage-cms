@@ -45,10 +45,25 @@ class SettingsController extends Controller
                 'fiscalMonth' => $rows['fiscal_month']  ?? 'April',
                 'maxUploadMB' => $rows['max_upload_mb'] ?? '50',
             ];
+            // Standard deadline-escalation cadence (see ReminderThresholdResolver::
+            // escalationCadence() for the defaults these fall back to).
+            $data['escalation'] = [
+                'at2MonthDays'   => $rows['escalation_2month_days']    ?? '60',
+                'at1MonthDays'   => $rows['escalation_1month_days']    ?? '30',
+                'noneBeyondDays' => $rows['escalation_none_beyond_days'] ?? '90',
+            ];
         }
 
         return response()->json($data);
     }
+
+    /** Content-sniffed MIME → safe stored extension. Never trust the client-supplied filename. */
+    private const AVATAR_MIME_EXTENSIONS = [
+        'image/jpeg' => 'jpg',
+        'image/png'  => 'png',
+        'image/gif'  => 'gif',
+        'image/webp' => 'webp',
+    ];
 
     public function uploadAvatar(Request $request)
     {
@@ -63,8 +78,13 @@ class SettingsController extends Controller
             Storage::disk('public')->delete($old);
         }
 
-        $ext  = $request->file('avatar')->getClientOriginalExtension();
-        $name = "avatars/user_{$user->id}_{$user->updated_at?->timestamp}." . $ext;
+        // Extension derived from the content-sniffed MIME type, NOT the client-supplied
+        // original filename — getClientOriginalExtension() is attacker-controlled and
+        // storing a file under a client-chosen extension (e.g. "shell.php" on an
+        // image/PHP polyglot that still passes image validation) would let it execute
+        // as PHP once served from the public disk. Fall back to 'jpg' defensively;
+        // the `mimes:` rule above already guarantees getMimeType() is one of these four.
+        $ext  = self::AVATAR_MIME_EXTENSIONS[$request->file('avatar')->getMimeType()] ?? 'jpg';
         $path = $request->file('avatar')->storeAs('avatars', "user_{$user->id}." . $ext, 'public');
         $url  = Storage::disk('public')->url($path);
 
@@ -210,6 +230,53 @@ class SettingsController extends Controller
         return response()->json(['ok' => true]);
     }
 
+    /**
+     * Firm-wide standard escalation cadence — "no escalation beyond 3
+     * months, escalate at 2 months, again at 1 month" (see the call notes
+     * behind ReminderThresholdResolver::escalationCadence()). A client's own
+     * reminder_cadence_override doesn't touch this — it's the fallback used
+     * when a client has no override, and drives SendDeadlineRemindersCommand's
+     * upcoming-deadline escalation independent of client-specific reminders.
+     */
+    public function updateEscalationCadence(Request $request)
+    {
+        $user = $request->user();
+        if (!in_array($user->role, ['super_admin', 'partner'])) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        $validated = $request->validate([
+            'at2MonthDays'   => 'required|integer|min:1|max:3650',
+            'at1MonthDays'   => 'required|integer|min:1|max:3650',
+            'noneBeyondDays' => 'required|integer|min:1|max:3650',
+        ]);
+
+        $map = [
+            'at2MonthDays'   => 'escalation_2month_days',
+            'at1MonthDays'   => 'escalation_1month_days',
+            'noneBeyondDays' => 'escalation_none_beyond_days',
+        ];
+
+        foreach ($validated as $field => $value) {
+            DB::table('system_settings')->updateOrInsert(
+                ['key' => $map[$field]],
+                ['value' => (string) $value, 'updated_at' => now()]
+            );
+        }
+
+        Cache::forget('system_settings_shared');
+
+        AuditLog::create([
+            'user_id'    => $user->id,
+            'action'     => 'update_escalation_cadence',
+            'metadata'   => $validated,
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+        ]);
+
+        return response()->json(['ok' => true]);
+    }
+
     public function updateFeatureFlags(Request $request)
     {
         $user = $request->user();
@@ -269,6 +336,47 @@ class SettingsController extends Controller
             'user_id'    => $user->id,
             'action'     => 'update_dropdown_' . $validated['key'],
             'metadata'   => ['count' => count($validated['items'])],
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+        ]);
+
+        return response()->json(['ok' => true]);
+    }
+
+    /**
+     * Renewal fee rates used by the client portal's "approve renewal" auto-calc
+     * (RenewalActionController::approve()). Deliberately a plain lookup, not a
+     * fee-schedule engine — the user updates these numbers here from time to
+     * time and the portal just multiplies years-selected × rate.
+     */
+    public function updateRenewalFeeRates(Request $request)
+    {
+        $user = $request->user();
+        if ($user->role !== 'super_admin') {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        $validated = $request->validate([
+            'government_fee'  => 'required|numeric|min:0',
+            'professional_fee' => 'required|numeric|min:0',
+            'currency'         => 'nullable|string|max:10',
+        ]);
+
+        DB::table('system_settings')->updateOrInsert(
+            ['key' => 'renewal_fee_rates'],
+            ['value' => json_encode([
+                'government_fee'   => (float) $validated['government_fee'],
+                'professional_fee' => (float) $validated['professional_fee'],
+                'currency'         => $validated['currency'] ?? 'INR',
+            ]), 'updated_at' => now()]
+        );
+
+        Cache::forget('system_settings_shared');
+
+        AuditLog::create([
+            'user_id'    => $user->id,
+            'action'     => 'update_renewal_fee_rates',
+            'metadata'   => $validated,
             'ip_address' => $request->ip(),
             'user_agent' => $request->userAgent(),
         ]);
