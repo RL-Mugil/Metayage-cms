@@ -98,6 +98,24 @@ class FirmOwnershipCompatibilityTest extends TestCase
         ]);
     }
 
+    public function test_owned_models_are_automatically_scoped_to_current_firm(): void
+    {
+        $legacyFirm = Firm::query()->where('slug', 'legacy-firm')->sole();
+        $secondFirm = $this->firm('isolated-firm');
+
+        $legacyClient = app(FirmContext::class)->run($legacyFirm, fn () => Client::query()->create([
+            'client_code' => 'L01M', 'company_name' => 'Legacy Tenant Client', 'status' => 'Active',
+        ]));
+        $secondClient = app(FirmContext::class)->run($secondFirm, fn () => Client::query()->create([
+            'client_code' => 'S02F', 'company_name' => 'Second Tenant Client', 'status' => 'Active',
+        ]));
+
+        app(FirmContext::class)->run($legacyFirm, function () use ($legacyClient, $secondClient): void {
+            $this->assertTrue(Client::query()->whereKey($legacyClient->id)->exists());
+            $this->assertFalse(Client::query()->whereKey($secondClient->id)->exists());
+        });
+    }
+
     private function user(string $role, string $email): User
     {
         return User::query()->create([

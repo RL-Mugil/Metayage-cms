@@ -13,7 +13,7 @@ class Project extends Model
     use BelongsToFirm, SoftDeletes;
 
     protected $fillable = [
-        'project_code', 'matter_reference', 'client_id', 'invention_family_id', 'project_type', 'project_name',
+        'project_code', 'matter_reference', 'client_id', 'ip_record_id', 'invention_family_id', 'project_type', 'project_name',
         'invention_title', 'technology_field', 'parent_project_id', 'priority_date',
         'assigned_partner_id', 'assigned_manager_id', 'assigned_team',
         'start_date', 'target_filing_date', 'hard_deadline',
@@ -46,6 +46,11 @@ class Project extends Model
     public function client(): BelongsTo
     {
         return $this->belongsTo(Client::class);
+    }
+
+    public function ipRecord(): BelongsTo
+    {
+        return $this->belongsTo(IpRecord::class);
     }
 
     public function parentProject(): BelongsTo

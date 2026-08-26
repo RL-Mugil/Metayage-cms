@@ -164,6 +164,9 @@ export default function Integrations() {
   const [testResult, setTestResult] = useState<Record<string, "ok" | "fail" | null>>({});
   const [apiKeys, setApiKeys] = useState<Record<string, string>>({});
   const [keySaved, setKeySaved] = useState<Record<string, boolean>>({});
+  const [zohoFields, setZohoFields] = useState({ client_id: "", client_secret: "", refresh_token: "", organization_id: "", region: "in" });
+  const [zohoSaving, setZohoSaving] = useState(false);
+  const [zohoSyncing, setZohoSyncing] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [banner, setBanner] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const [logsOpen, setLogsOpen] = useState<string | null>(null);
@@ -247,6 +250,30 @@ export default function Integrations() {
       .finally(() => setLogsLoading(null));
   };
 
+  const saveZoho = () => {
+    const { client_id, client_secret, refresh_token, organization_id } = zohoFields;
+    if (!client_id || !client_secret || !refresh_token || !organization_id) return;
+    setZohoSaving(true);
+    api.saveZohoConfig(zohoFields)
+      .then(() => {
+        setKeySaved((p) => ({ ...p, zoho: true }));
+        setZohoFields({ client_id: "", client_secret: "", refresh_token: "", organization_id: "", region: "in" });
+        setList((prev) => prev.map((item) => item.id === "zoho" ? { ...item, hasKey: true } : item));
+        setBanner({ kind: "ok", text: "Zoho Books credentials saved." });
+        setTimeout(() => setKeySaved((p) => ({ ...p, zoho: false })), 3000);
+      })
+      .catch((error) => setBanner({ kind: "err", text: error instanceof Error ? error.message : "Failed to save Zoho Books credentials." }))
+      .finally(() => setZohoSaving(false));
+  };
+
+  const syncZohoNow = () => {
+    setZohoSyncing(true);
+    api.zohoSyncNow()
+      .then((r) => setBanner({ kind: "ok", text: r.message }))
+      .catch((error) => setBanner({ kind: "err", text: error instanceof Error ? error.message : "Sync failed." }))
+      .finally(() => setZohoSyncing(false));
+  };
+
   const saveKey = (id: string) => {
     const key = apiKeys[id];
     if (!key) return;
@@ -317,26 +344,26 @@ export default function Integrations() {
                 </div>
                 <div className="flex gap-2 mt-4">
                   {canManage ? (
-                    intg.connected ? (
-                      <>
-                        <Button size="sm" variant="outline" className="h-7 text-xs flex-1"
-                          onClick={() => setConfigOpen(configOpen === intg.id ? null : intg.id)}
-                          disabled={busyId === intg.id}>
-                          <Settings className="h-3 w-3 mr-1" /> Configure
-                        </Button>
+                    <>
+                      <Button size="sm" variant="outline" className="h-7 text-xs flex-1"
+                        onClick={() => setConfigOpen(configOpen === intg.id ? null : intg.id)}
+                        disabled={busyId === intg.id}>
+                        <Settings className="h-3 w-3 mr-1" /> Configure
+                      </Button>
+                      {intg.connected ? (
                         <Button size="sm" variant="outline" className="h-7 text-xs border-red-200 text-red-600 hover:bg-red-50"
                           onClick={() => toggle(intg.id)}
                           disabled={busyId === intg.id}>
                           <X className="h-3 w-3 mr-1" /> Disconnect
                         </Button>
-                      </>
-                    ) : (
-                      <Button size="sm" className="h-7 text-xs flex-1 bg-gold hover:bg-gold/90 text-black"
-                        onClick={() => toggle(intg.id)}
-                        disabled={busyId === intg.id}>
-                        {busyId === intg.id ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Plug className="h-3 w-3 mr-1" />} Connect
-                      </Button>
-                    )
+                      ) : (
+                        <Button size="sm" className="h-7 text-xs bg-gold hover:bg-gold/90 text-black"
+                          onClick={() => toggle(intg.id)}
+                          disabled={busyId === intg.id}>
+                          {busyId === intg.id ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Plug className="h-3 w-3 mr-1" />} Connect
+                        </Button>
+                      )}
+                    </>
                   ) : (
                     <span className="text-xs text-muted-foreground italic">
                       {intg.connected ? "Connected — managed by your admin" : "Not connected"}
@@ -346,18 +373,53 @@ export default function Integrations() {
 
                 {canManage && configOpen === intg.id && (
                   <div className="mt-4 pt-4 border-t border-border space-y-3">
-                    <div>
-                      <label className="text-xs font-medium text-muted-foreground">API Key {intg.hasKey && <span className="text-green-600">(saved)</span>}</label>
-                      <div className="mt-1 flex items-center gap-2">
-                        <input type="password" placeholder="sk-••••••••••••••••"
-                          value={apiKeys[intg.id] || ""}
-                          onChange={(e) => setApiKeys((p) => ({ ...p, [intg.id]: e.target.value }))}
-                          className="flex-1 h-8 rounded border border-border bg-background px-3 text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
-                        <Button size="sm" variant="outline" className="h-8 text-xs" disabled={!apiKeys[intg.id]}
-                          onClick={() => saveKey(intg.id)}>Save</Button>
+                    {intg.id === "zoho" ? (
+                      <div className="space-y-2">
+                        <label className="text-xs font-medium text-muted-foreground">
+                          Zoho Books credentials (read-only access) {intg.hasKey && <span className="text-green-600">(saved)</span>}
+                        </label>
+                        <p className="text-[11px] text-muted-foreground">
+                          From a Zoho API Console Self Client for org <code>924754718</code> (Metayage Private Ltd).
+                        </p>
+                        <input placeholder="Client ID" value={zohoFields.client_id}
+                          onChange={(e) => setZohoFields((p) => ({ ...p, client_id: e.target.value }))}
+                          className="w-full h-8 rounded border border-border bg-background px-3 text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
+                        <input type="password" placeholder="Client Secret" value={zohoFields.client_secret}
+                          onChange={(e) => setZohoFields((p) => ({ ...p, client_secret: e.target.value }))}
+                          className="w-full h-8 rounded border border-border bg-background px-3 text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
+                        <input type="password" placeholder="Refresh Token" value={zohoFields.refresh_token}
+                          onChange={(e) => setZohoFields((p) => ({ ...p, refresh_token: e.target.value }))}
+                          className="w-full h-8 rounded border border-border bg-background px-3 text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
+                        <div className="flex items-center gap-2">
+                          <input placeholder="Organization ID" value={zohoFields.organization_id}
+                            onChange={(e) => setZohoFields((p) => ({ ...p, organization_id: e.target.value }))}
+                            className="flex-1 h-8 rounded border border-border bg-background px-3 text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
+                          <select value={zohoFields.region}
+                            onChange={(e) => setZohoFields((p) => ({ ...p, region: e.target.value }))}
+                            className="h-8 rounded border border-border bg-background px-2 text-xs">
+                            <option value="in">.in (India)</option>
+                            <option value="com">.com (US)</option>
+                            <option value="eu">.eu</option>
+                          </select>
+                          <Button size="sm" variant="outline" className="h-8 text-xs" disabled={zohoSaving || !zohoFields.client_id || !zohoFields.client_secret || !zohoFields.refresh_token || !zohoFields.organization_id}
+                            onClick={saveZoho}>{zohoSaving ? <Loader2 className="h-3 w-3 animate-spin" /> : "Save"}</Button>
+                        </div>
+                        {keySaved.zoho && <span className="text-xs text-green-600">Credentials saved securely.</span>}
                       </div>
-                      {keySaved[intg.id] && <span className="text-xs text-green-600">Key saved securely.</span>}
-                    </div>
+                    ) : (
+                      <div>
+                        <label className="text-xs font-medium text-muted-foreground">API Key {intg.hasKey && <span className="text-green-600">(saved)</span>}</label>
+                        <div className="mt-1 flex items-center gap-2">
+                          <input type="password" placeholder="sk-••••••••••••••••"
+                            value={apiKeys[intg.id] || ""}
+                            onChange={(e) => setApiKeys((p) => ({ ...p, [intg.id]: e.target.value }))}
+                            className="flex-1 h-8 rounded border border-border bg-background px-3 text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
+                          <Button size="sm" variant="outline" className="h-8 text-xs" disabled={!apiKeys[intg.id]}
+                            onClick={() => saveKey(intg.id)}>Save</Button>
+                        </div>
+                        {keySaved[intg.id] && <span className="text-xs text-green-600">Key saved securely.</span>}
+                      </div>
+                    )}
                     <div>
                       <label className="text-xs font-medium text-muted-foreground">Webhook URL</label>
                       <div className="mt-1 flex items-center gap-2">
@@ -380,6 +442,11 @@ export default function Integrations() {
                         <Activity className="h-3 w-3 mr-1" /> Logs
                         {logsOpen === intg.id ? <ChevronUp className="h-3 w-3 ml-1" /> : <ChevronDown className="h-3 w-3 ml-1" />}
                       </Button>
+                      {intg.id === "zoho" && (
+                        <Button size="sm" variant="outline" className="h-7 text-xs" disabled={zohoSyncing} onClick={syncZohoNow}>
+                          {zohoSyncing ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <RefreshCw className="h-3 w-3 mr-1" />} Sync Now
+                        </Button>
+                      )}
                       {testResult[intg.id] === "ok" && <span className="text-xs text-green-600 flex items-center gap-1"><CheckCircle className="h-3 w-3" /> Connected</span>}
                       {testResult[intg.id] === "fail" && <span className="text-xs text-red-600 flex items-center gap-1"><X className="h-3 w-3" /> Failed</span>}
                     </div>

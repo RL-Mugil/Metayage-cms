@@ -21,6 +21,8 @@ use App\Services\GoogleCalendarService;
 use App\Services\MatterWorkspaceService;
 use App\Services\DocketNumberService;
 use App\Services\InventionFamilyService;
+use App\Services\ApplicationNumberSyncService;
+use App\Services\JurisdictionLifecycleService;
 use App\Http\Controllers\ProjectTrackerController;
 
 class ProjectController extends Controller
@@ -96,7 +98,7 @@ class ProjectController extends Controller
         // - partner/manager/patentEngineer are intentionally omitted — the frontend
         //   falls back to the separately-loaded users array via userName().
         $query = Project::with([
-            'client:id,client_code,company_name,legal_name,nationality,gst_type',
+            'client:id,client_code,company_name,legal_name,nationality,gst_type,state,referred_by_code,fee_entity_tier',
             'stages' => fn ($q) => $q->where('status', 'In Progress')
                                      ->select('project_id', 'stage_name', 'status', 'sequence_order'),
         ]);
@@ -115,6 +117,8 @@ class ProjectController extends Controller
             }
         } elseif ($user->role === 'associate') {
             $query->where($this->analystWhereClause($user, $request->input('role_filter')));
+        } elseif ($user->isInventor()) {
+            $query->whereHas('inventors', fn ($q) => $q->where('users.id', $user->id));
         }
 
         if ($request->filled('search')) {
@@ -211,6 +215,8 @@ class ProjectController extends Controller
                     };
                 });
             }
+        } elseif ($user->isInventor()) {
+            $q->whereIn('p.id', $user->projectsAsInventor()->pluck('projects.id'));
         }
 
         $counts = $q->selectRaw('ps.stage_name, COUNT(*) as count')
@@ -241,6 +247,8 @@ class ProjectController extends Controller
             }
         } elseif ($user->role === 'associate') {
             $q->where($this->analystWhereClause($user, $request->input('role_filter')));
+        } elseif ($user->isInventor()) {
+            $q->whereIn('id', $user->projectsAsInventor()->pluck('projects.id'));
         }
 
         $counts = $q->selectRaw('UPPER(service_code) as svc, COUNT(*) as cnt')
@@ -428,20 +436,48 @@ class ProjectController extends Controller
         $project = Project::create($validated);
         $family = app(InventionFamilyService::class)->attach($project);
 
-        // Anchor Indian patent matters to a patent_application (the legal entity).
-        // Chained matters share their predecessor's application via parent_project_id.
+        // Anchor patent prosecution matters to a patent_application (the legal entity).
+        // These service codes (India + US) look like active prosecution regardless of
+        // jurisdiction — the application's jurisdiction is taken from the project's own
+        // patent_office_code, so an IN and a US engagement for the same client/invention
+        // get separate PatentApplication rows (they're separate real-world applications),
+        // while chained matters in the same office share an application via
+        // parent_project_id (formal successor/branch) or, failing that, via a sibling
+        // engagement that already shares the same 9-character docket prefix — client
+        // code + invention number + office code — since that's the same real-world case
+        // regardless of which service engagement created the application first.
         $svc = strtoupper($validated['service_code'] ?? '');
-        $indiaPatentSvcs = [
+        $prosecutionSvcs = [
+            // India
             'PRV', 'CPT', 'CPD', 'CVP', 'CPE', 'PCT', 'NAP', 'NPE', 'NAF', 'NPA',
             'DVA', 'PAD', '9EP', '98A', '18F', '18A', 'FER', 'SER', 'TER',
             'HRG', 'GRT', 'RNF', 'OPP', 'PGO', '27F', 'ROA', 'ERH', '24F',
             'RPO', 'ABN', 'WDR',
+            // US
+            'NPV', 'NPD', 'NPP', 'NPS', 'CNS', 'DIV', 'CIP', 'OAR', 'AFT', 'RCE',
+            'APP', 'ISF', 'M35', 'M75', 'M15', 'REI', 'XPR', 'REV', 'IPR', 'PGR',
         ];
-        if (in_array($svc, $indiaPatentSvcs, true) && (empty($project->patent_office_code) || $project->patent_office_code === 'IN')) {
+        if (in_array($svc, $prosecutionSvcs, true)) {
+            $syncService = app(ApplicationNumberSyncService::class);
+            $prefix = $syncService->docketPrefix($project->docket_number);
+
             $parentAppId = $project->parent_project_id
                 ? Project::where('id', $project->parent_project_id)->value('patent_application_id')
                 : null;
-            $appId = $parentAppId ?: \App\Models\PatentApplication::create([
+
+            // Independently-created siblings sharing the same docket prefix — no
+            // formal parent/successor relationship, and no application number
+            // entered yet — are still the same real-world case; link immediately
+            // rather than waiting for someone to type an application number later.
+            $siblingAppId = (! $parentAppId && $prefix)
+                ? Project::where('client_id', $project->client_id)
+                    ->where('id', '!=', $project->id)
+                    ->where('docket_number', 'like', $prefix.'%')
+                    ->whereNotNull('patent_application_id')
+                    ->value('patent_application_id')
+                : null;
+
+            $appId = $parentAppId ?: $siblingAppId ?: \App\Models\PatentApplication::create([
                 'invention_family_id' => $family->id,
                 'client_id'          => $project->client_id,
                 'application_number' => $project->application_number,
@@ -449,22 +485,43 @@ class ProjectController extends Controller
                 'priority_date'      => $project->priority_date,
                 'filing_date'        => $project->filing_date,
                 'legal_status'       => 'Pending',
-                'jurisdiction'       => 'IN',
+                'jurisdiction'       => $project->patent_office_code ?: 'IN',
             ])->id;
             $project->update(['patent_application_id' => $appId]);
+            // (Nothing to retag here: $project was just created, so it cannot yet
+            // have any DocketEvent/DocketDeadline history of its own — unlike
+            // ApplicationNumberSyncService::backfill(), which links pre-existing
+            // siblings and does need relinkDocketRecords().)
         }
 
-        // Seed pipeline stages based on service code
-        $serviceStages = $this->stagesForServiceCode($svc);
-        foreach ($serviceStages as $index => $stageName) {
-            ProjectStage::create([
-                'project_id'     => $project->id,
-                'stage_name'     => $stageName,
-                'status'         => $index === 0 ? 'In Progress' : 'Pending',
-                'sequence_order' => $index,
-                'duration_days'  => 15,
-                'due_date'       => Carbon::now()->addDays(($index + 1) * 15),
-            ]);
+        // If an application number was supplied at creation, backfill/group it against
+        // any existing sibling engagements sharing the same docket prefix (see
+        // ApplicationNumberSyncService docblock for the exact matching rule).
+        if (! empty($validated['application_number'])) {
+            app(ApplicationNumberSyncService::class)->backfill($project->fresh(), $validated['application_number']);
+        }
+
+        // Seed the "Prosecution lifecycle" stepper from the DB-driven jurisdiction
+        // template — the same mechanism successor/branch engagements already use via
+        // InventionFamilyService — so a stage's gate_criteria can drive auto-completion
+        // from matching docket events (see StageAdvancementService). Fall back to the
+        // legacy hardcoded stage list for any jurisdiction/service combination that
+        // isn't templated yet, so project creation never hard-fails.
+        try {
+            $template = app(JurisdictionLifecycleService::class)->resolve($project->patent_office_code ?: 'IN', $svc);
+            app(JurisdictionLifecycleService::class)->apply($project, $template);
+        } catch (ValidationException $e) {
+            $serviceStages = $this->stagesForServiceCode($svc);
+            foreach ($serviceStages as $index => $stageName) {
+                ProjectStage::create([
+                    'project_id'     => $project->id,
+                    'stage_name'     => $stageName,
+                    'status'         => $index === 0 ? 'In Progress' : 'Pending',
+                    'sequence_order' => $index,
+                    'duration_days'  => 15,
+                    'due_date'       => Carbon::now()->addDays(($index + 1) * 15),
+                ]);
+            }
         }
 
         return $project;
@@ -493,6 +550,32 @@ class ProjectController extends Controller
         }
 
         $project->update($validated);
+
+        // application_number is the one field that isn't just this project's own —
+        // entering/editing it backfills every sibling engagement sharing the same
+        // docket prefix (client + invention + patent office) onto one shared
+        // PatentApplication. See ApplicationNumberSyncService for the exact rule.
+        $backfilled = collect();
+        if (array_key_exists('application_number', $validated) && ! empty($validated['application_number'])) {
+            $backfilled = app(ApplicationNumberSyncService::class)->backfill($project->fresh(), $validated['application_number']);
+        }
+
+        // IPO-style status fields live on the shared PatentApplication, not this
+        // Project row — writing them here means every sibling engagement on the
+        // same application (see above) reads the same value immediately, since
+        // they all point at the one PatentApplication row.
+        // Gate on $request->has(), not array_key_exists($validated) — other
+        // callers of this endpoint (Kanban drag, quick status changes, …) send
+        // partial payloads that never mention these keys at all, and a blanket
+        // "key exists in $validated" check would silently null them out here.
+        $applicationFieldKeys = ['application_type', 'fer_reply_date', 'certificate_issue_date', 'post_grant_journal_date'];
+        $applicationFields = collect($applicationFieldKeys)
+            ->filter(fn ($key) => $request->has($key))
+            ->mapWithKeys(fn ($key) => [$key => $validated[$key] ?? null])
+            ->all();
+        if ($applicationFields && $project->patentApplication) {
+            $project->patentApplication->update($applicationFields);
+        }
 
         // When status changes to a terminal state, clear the active pipeline stage.
         // Granted/Completed → mark all stages Completed (case is fully done).
@@ -561,7 +644,16 @@ class ProjectController extends Controller
         }
 
         Cache::increment('dashboard_v');
-        return response()->json($project);
+
+        $fresh = $project->fresh();
+        if ($backfilled->isNotEmpty()) {
+            $fresh->setAttribute('application_number_backfilled', $backfilled->map(fn ($sibling) => [
+                'id' => $sibling->id,
+                'docket_number' => $sibling->docket_number,
+            ])->values());
+        }
+
+        return response()->json($fresh);
     }
 
     public function updateStage(Request $request, $id)

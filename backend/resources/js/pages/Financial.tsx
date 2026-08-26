@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { api, downloadCSV } from "@/lib/api-client";
 import type { Quotation, PatentInvoiceIn } from "@/lib/api-client";
+import { ZohoBooksPanel } from "@/components/zoho-books-panel";
 import { statusColor } from "@/lib/utils";
 import { fmtDate } from "@/lib/date-utils";
 
@@ -259,7 +260,7 @@ const QUOTE_STATUS_COLOR: Record<string, string> = {
 export default function Financial() {
   const { props: pageProps } = usePage() as any;
   const role = pageProps.auth?.user?.role;
-  const isClientUser = ["client", "client_admin"].includes(role);
+  const isClientUser = ["client", "client_admin", "client_finance"].includes(role);
 
   // Tab
   const [activeTab, setActiveTab] = useState("india");
@@ -313,6 +314,29 @@ export default function Financial() {
   const [editIndiaRec, setEditIndiaRec]     = useState<PatentInvoiceIn | null>(null);
   const [indiaSaving, setIndiaSaving]       = useState(false);
   const [indiaErr, setIndiaErr]             = useState("");
+  const [zohoStatusMap, setZohoStatusMap]   = useState<Record<string, { status: string | null; balance: number | null; total: number; url: string | null }>>({});
+
+  // ── Zoho Books tab (all synced invoices/quotes across every case) ───────────
+  const [zohoAllRows, setZohoAllRows]     = useState<import("@/lib/api-client").ZohoAllRow[]>([]);
+  const [zohoAllLoading, setZohoAllLoading] = useState(false);
+  const [zohoAllSearch, setZohoAllSearch] = useState("");
+  const [zohoAllType, setZohoAllType]     = useState<"all" | "invoice" | "quote">("all");
+
+  function loadZohoAll(overrides: { type?: string; search?: string } = {}) {
+    setZohoAllLoading(true);
+    const type = overrides.type ?? zohoAllType;
+    const search = overrides.search ?? zohoAllSearch;
+    const params = new URLSearchParams({ per_page: "200" });
+    if (type !== "all") params.set("type", type);
+    if (search.trim()) params.set("search", search.trim());
+    api.getZohoAll(params).then(res => setZohoAllRows(res.data ?? [])).catch(() => setZohoAllRows([])).finally(() => setZohoAllLoading(false));
+  }
+
+  useEffect(() => {
+    if (activeTab !== "zoho") return;
+    loadZohoAll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
 
   const blankIndia = () => ({
     type: "invoice" as "invoice" | "quote",
@@ -326,11 +350,13 @@ export default function Financial() {
     entity_status: "", patent_office_application_number: "",
     additional_information: "", patent_office_acknowledgement: "",
     remarks: "", uin_old: "", uin_old_2: "",
-    patent_office_fees: "0", service_fees: "0", other_expenses: "0",
+    patent_office_fees: "0", service_fees: "0", discount_percentage: "0", other_expenses: "0",
     attorney_fees: "0", consultant_fees: "0", referral_fees: "0",
   });
   const [indiaForm, setIndiaForm] = useState(blankIndia());
   const sif = (f: string, v: string) => setIndiaForm(p => ({ ...p, [f]: v }));
+  const [feeRateCards, setFeeRateCards] = useState<any[]>([]);
+  const [feeRateNote, setFeeRateNote] = useState("");
 
   function syncInvoiceProject(projectId: string) {
     const project = projects.find((p) => String(p.id) === projectId);
@@ -350,6 +376,77 @@ export default function Financial() {
     }));
   }
 
+  // Per-invoice fee-tier selector — most existing clients don't have
+  // fee_entity_tier set on their record yet, so this always lets staff pick a
+  // tier right here to get fees populated, defaulting to the client's stored
+  // tier when one exists but never blocking on it.
+  const [feeTierChoice, setFeeTierChoice] = useState<"" | "individual_startup_msme" | "large_entity_standard">("");
+  // Renewal fees are year-banded, not a single flat amount — only relevant
+  // when the case's service code is a renewal ('REN' in real project data;
+  // 'RNF' is the config/project_import_codes.php dictionary name for the same thing).
+  const [renewalYear, setRenewalYear] = useState("");
+  const isRenewalService = (svcCode: string) => svcCode.toUpperCase() === "REN" || svcCode.toUpperCase() === "RNF";
+
+  function lookupFeeRow(officeCode: string, svcCode: string, tierChoice: string, year: string) {
+    const tier = tierChoice === "individual_startup_msme" ? "discounted"
+      : tierChoice === "large_entity_standard" ? "standard" : null;
+    const yearNum = parseFloat(year);
+    const candidates = feeRateCards.filter((r) =>
+      r.jurisdiction === officeCode.toUpperCase() && r.service_code === svcCode.toUpperCase()
+      && (isRenewalService(svcCode)
+        ? (!isNaN(yearNum) && r.year_from != null && r.year_to != null && yearNum >= parseFloat(r.year_from) && yearNum <= parseFloat(r.year_to))
+        : (r.year_from == null && r.year_to == null)));
+    return (tier && candidates.find((r) => r.entity_tier === tier))
+      ?? candidates.find((r) => r.entity_tier == null)
+      ?? null;
+  }
+
+  function applyFeeLookup(officeCode: string, svcCode: string, tierChoice: string, year: string) {
+    if (isRenewalService(svcCode) && !year) {
+      setFeeRateNote("Enter the renewal year above — government fees are banded by year, not flat.");
+      return;
+    }
+
+    const rateRow = lookupFeeRow(officeCode, svcCode, tierChoice, year);
+
+    let note = "";
+    if (!tierChoice && !rateRow) {
+      note = "Pick an entity tier above to auto-fill government/professional fees for this case.";
+    } else if (rateRow) {
+      if (rateRow.fee_breakdown) {
+        note = "Government fee is multi-currency — see fee_breakdown in Settings > Finance; total manually.";
+      } else if (rateRow.professional_fee_max_amount) {
+        note = `Professional fee shown is the low end of a range (up to ${rateRow.professional_fee_currency} ${rateRow.professional_fee_max_amount}) — adjust if needed.`;
+      }
+      if (rateRow.govt_fee_currency && rateRow.professional_fee_currency && rateRow.govt_fee_currency !== rateRow.professional_fee_currency) {
+        note = (note ? note + " " : "") + `Mixed currency: govt fee in ${rateRow.govt_fee_currency}, professional fee in ${rateRow.professional_fee_currency} — verify before sending.`;
+      }
+    } else if (tierChoice) {
+      note = `No fee rate card row for ${officeCode || "this office"}/${svcCode || "this service"}${isRenewalService(svcCode) ? ` year ${year}` : ""} yet — add one in Settings > Finance, or enter amounts manually.`;
+    }
+    setFeeRateNote(note);
+
+    if (rateRow) {
+      setIndiaForm(prev => ({
+        ...prev,
+        entity_status: tierChoice === "individual_startup_msme" ? "Individual/Startup/MSME"
+          : tierChoice === "large_entity_standard" ? "Large Entity" : prev.entity_status,
+        patent_office_fees: rateRow.govt_fee_amount != null ? String(rateRow.govt_fee_amount) : prev.patent_office_fees,
+        service_fees: rateRow.professional_fee_amount != null ? String(rateRow.professional_fee_amount) : prev.service_fees,
+      }));
+    }
+  }
+
+  function onFeeTierChange(value: typeof feeTierChoice) {
+    setFeeTierChoice(value);
+    applyFeeLookup(indiaForm.patent_office_code, indiaForm.service_code, value, renewalYear);
+  }
+
+  function onRenewalYearChange(value: string) {
+    setRenewalYear(value);
+    applyFeeLookup(indiaForm.patent_office_code, indiaForm.service_code, feeTierChoice, value);
+  }
+
   // Auto-fill from project selection
   function fillFromProject(projectId: string) {
     const proj = projects.find(p => String(p.id) === projectId);
@@ -357,6 +454,18 @@ export default function Financial() {
     // Use eager-loaded client on the project; fall back to clients state
     const client = (proj as any).client ?? clients.find(c => c.id === proj.client_id);
     const uin = proj.docket_number ?? proj.project_code ?? "";
+    const officeCode = proj.patent_office_code || uin.slice(7, 9) || "";
+    const svcCode = proj.service_code ?? "";
+
+    // Default the tier selector from the client record when it's set; most
+    // existing clients don't have one yet, so this often starts blank and
+    // staff picks it below — the lookup still needs officeCode/svcCode, which
+    // only land in state a few lines down, so run it after this setIndiaForm.
+    const initialTier: typeof feeTierChoice = client?.fee_entity_tier === "individual_startup_msme" ? "individual_startup_msme"
+      : client?.fee_entity_tier === "large_entity_standard" ? "large_entity_standard" : "";
+    setFeeTierChoice(initialTier);
+    setRenewalYear("");
+
     setIndiaForm(prev => ({
       ...prev,
       project_id: projectId,
@@ -364,21 +473,27 @@ export default function Financial() {
       docket_number: uin,
       client_code_prefix: uin.slice(0, 4),
       invention_number: uin.slice(4, 7),
-      patent_office_code: proj.patent_office_code || uin.slice(7, 9) || "",
+      patent_office_code: officeCode,
       first_inventor_name: proj.invention_title ?? "",
       invention_title: proj.project_name ?? "",
-      service_code: proj.service_code ?? "",
+      service_code: svcCode,
       client_name: client?.legal_name ?? client?.company_name ?? "",
       client_reference: client?.referred_by_code ?? "",
       state_of_supply: client?.state ?? "",
     }));
+
+    applyFeeLookup(officeCode, svcCode, initialTier, "");
   }
 
-  // Live GST and totals from form
+  // Live GST and totals from form. Discount applies to the professional
+  // (service) fee only, before GST — mirrors PatentInvoiceController::computeTotals().
   function computeIndiaGst(form: typeof indiaForm) {
-    const svc    = parseFloat(form.service_fees)  || 0;
+    const svcRaw = parseFloat(form.service_fees)  || 0;
     const pof    = parseFloat(form.patent_office_fees) || 0;
     const other  = parseFloat(form.other_expenses) || 0;
+    const discountPct = parseFloat((form as any).discount_percentage) || 0;
+    const discountAmt = Math.round(svcRaw * (discountPct / 100) * 100) / 100;
+    const svc    = svcRaw - discountAmt;
     const isKarnataka = (form.state_of_supply ?? "").toLowerCase() === "karnataka";
     const igst   = isKarnataka ? 0 : Math.round(svc * 0.18 * 100) / 100;
     const cgst   = isKarnataka ? Math.round(svc * 0.09 * 100) / 100 : 0;
@@ -387,11 +502,12 @@ export default function Financial() {
     const atty   = parseFloat(form.attorney_fees)   || 0;
     const cons   = parseFloat(form.consultant_fees) || 0;
     const ref    = parseFloat(form.referral_fees)   || 0;
-    return { igst, cgst, sgst, total, net: Math.round((total - atty - cons - ref) * 100) / 100 };
+    return { igst, cgst, sgst, total, discountAmt, net: Math.round((total - atty - cons - ref) * 100) / 100 };
   }
 
   useEffect(() => {
     api.getFinancialStats().then(setStats).catch(() => {});
+    api.getFeeRateCards().then(setFeeRateCards).catch(() => setFeeRateCards([]));
     Promise.all([api.getInvoices(), api.getClients(), api.getProjects()])
       .then(([i, c, p]) => {
         const loadedClients  = Array.isArray(c) ? c : (c as any).data || [];
@@ -467,7 +583,15 @@ export default function Financial() {
     if (type !== "all")   params.set("type",   type);
     if (status !== "all") params.set("status", status);
     if (indiaSearch.trim()) params.set("search", indiaSearch.trim());
-    api.getPatentInvoicesIn(params).then(res => { setIndiaRecords(res.data ?? []); setIndiaSelIds(new Set()); }).catch(() => {}).finally(() => setIndiaLoading(false));
+    api.getPatentInvoicesIn(params).then(res => {
+      const records = res.data ?? [];
+      setIndiaRecords(records);
+      setIndiaSelIds(new Set());
+      const uins = records.map(r => r.invoice_uin || r.docket_number).filter(Boolean) as string[];
+      if (isInternal && uins.length > 0) {
+        api.zohoMatchBatch(uins).then(setZohoStatusMap).catch(() => setZohoStatusMap({}));
+      }
+    }).catch(() => {}).finally(() => setIndiaLoading(false));
   }
 
   const allIndiaSelected = indiaRecords.length > 0 && indiaRecords.every(r => indiaSelectedIds.has(r.id));
@@ -693,6 +817,8 @@ export default function Financial() {
       uin_old_2:                        indiaForm.uin_old_2 || undefined,
       patent_office_fees:               parseFloat(indiaForm.patent_office_fees) || 0,
       service_fees:                     parseFloat(indiaForm.service_fees) || 0,
+      discount_percentage:              parseFloat((indiaForm as any).discount_percentage) || 0,
+      discount_amount:                  gst.discountAmt,
       other_expenses:                   parseFloat(indiaForm.other_expenses) || 0,
       attorney_fees:                    parseFloat(indiaForm.attorney_fees) || 0,
       consultant_fees:                  parseFloat(indiaForm.consultant_fees) || 0,
@@ -720,12 +846,18 @@ export default function Financial() {
   function openCreateIndia(prefill?: Partial<typeof indiaForm>) {
     setEditIndiaRec(null);
     setIndiaForm({ ...blankIndia(), ...prefill });
+    setFeeTierChoice("");
+    setRenewalYear("");
+    setFeeRateNote("");
     setIndiaErr("");
     setShowIndiaModal(true);
   }
 
   function openEditIndia(r: PatentInvoiceIn) {
     setEditIndiaRec(r);
+    setFeeTierChoice("");
+    setRenewalYear("");
+    setFeeRateNote("");
     setIndiaForm({
       type: r.type, project_id: String(r.project_id), client_id: String(r.client_id),
       docket_number: r.docket_number ?? "",
@@ -751,6 +883,7 @@ export default function Financial() {
       uin_old_2: r.uin_old_2 ?? "",
       patent_office_fees: String(r.patent_office_fees ?? 0),
       service_fees: String(r.service_fees ?? 0),
+      discount_percentage: String((r as any).discount_percentage ?? 0),
       other_expenses: String(r.other_expenses ?? 0),
       attorney_fees: String(r.attorney_fees ?? 0),
       consultant_fees: String(r.consultant_fees ?? 0),
@@ -781,6 +914,12 @@ export default function Financial() {
           </>
         }
       />
+
+      {isClientUser && (
+        <div className="px-8 pt-6">
+          <ZohoBooksPanel title="Your Billing — Live from Zoho Books" fetchSummary={() => api.getZohoMySummary()} />
+        </div>
+      )}
 
       {/* New Invoice Modal */}
       {showModal && (
@@ -1046,8 +1185,13 @@ export default function Financial() {
 
         {/* Tab bar */}
         <div className="flex items-center gap-1 border-b border-border">
-          <button className="px-4 py-2 text-sm font-medium border-b-2 border-gold text-gold flex items-center gap-1.5">
+          <button onClick={() => setActiveTab("india")}
+            className={`px-4 py-2 text-sm font-medium border-b-2 flex items-center gap-1.5 ${activeTab === "india" ? "border-gold text-gold" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
             <IndianRupee className="h-3.5 w-3.5" />Indian Patents
+          </button>
+          <button onClick={() => setActiveTab("zoho")}
+            className={`px-4 py-2 text-sm font-medium border-b-2 flex items-center gap-1.5 ${activeTab === "zoho" ? "border-gold text-gold" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
+            <DollarSign className="h-3.5 w-3.5" />Zoho Books
           </button>
         </div>
 
@@ -1271,6 +1415,7 @@ export default function Financial() {
                           )}
                           <th className="px-2 py-2.5 text-left sticky left-0 bg-muted/40 z-10 min-w-[130px]">Type / Status</th>
                           <th className="px-2 py-2.5 text-left sticky left-[130px] bg-muted/40 z-10 min-w-[160px]" title="Invoice UIN">UIN</th>
+                          {isInternal && <th className="px-2 py-2.5 text-left min-w-[90px]" title="Live status from Zoho Books">Zoho</th>}
                           <th className="px-2 py-2.5 text-left min-w-[90px]" title="Invoice Date">Inv Date</th>
                           <th className="px-2 py-2.5 text-left min-w-[90px]" title="Tax Invoice Date">Tax Date ⁱ</th>
                           <th className="px-2 py-2.5 text-left min-w-[90px]" title="Tax Serial Number">Tax Serial ⁱ</th>
@@ -1336,6 +1481,19 @@ export default function Financial() {
                                 </div>
                               </td>
                               <td className="px-2 py-1.5 sticky left-[130px] bg-card z-10 font-mono text-gold font-semibold">{r.invoice_uin || r.docket_number}</td>
+                              {isInternal && (() => {
+                                const zs = zohoStatusMap[String(r.invoice_uin || r.docket_number || "").toUpperCase()];
+                                return (
+                                  <td className="px-2 py-1.5">
+                                    {zs ? (
+                                      <a href={zs.url ?? undefined} target={zs.url ? "_blank" : undefined} rel="noreferrer"
+                                        className="px-1.5 py-0.5 rounded text-[9px] font-medium bg-blue-500/15 text-blue-400 capitalize hover:underline">
+                                        {zs.status || "synced"}{zs.balance != null && zs.balance > 0 ? ` · ₹${zs.balance.toLocaleString()}` : ""}
+                                      </a>
+                                    ) : <span className="text-muted-foreground text-[10px]">—</span>}
+                                  </td>
+                                );
+                              })()}
                               <td className="px-2 py-1.5 font-mono text-muted-foreground">{fmtDate(r.invoice_date)}</td>
                               <td className="px-2 py-1.5 font-mono text-muted-foreground">{isInv ? fmtDate(r.tax_invoice_date) : "—"}</td>
                               <td className="px-2 py-1.5 text-muted-foreground">{isInv ? (r.tax_serial_number || "—") : "—"}</td>
@@ -1399,7 +1557,7 @@ export default function Financial() {
                           );
                         })}
                         {indiaRecords.length === 0 && (
-                          <tr><td colSpan={isInternal ? 37 : 33} className="px-4 py-10 text-center text-muted-foreground">
+                          <tr><td colSpan={isInternal ? 38 : 33} className="px-4 py-10 text-center text-muted-foreground">
                             No records found. Adjust filters or create your first record above.
                           </td></tr>
                         )}
@@ -1441,6 +1599,82 @@ export default function Financial() {
                   <button onClick={() => setIndiaSelIds(new Set())} className="text-xs text-muted-foreground hover:text-foreground ml-auto">Clear</button>
                 </div>
               </div>
+            )}
+          </>
+        )}
+
+        {/* ── Zoho Books Tab — every synced invoice/quote across every case ───── */}
+        {activeTab === "zoho" && (
+          <>
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <input className="h-9 pl-9 pr-3 w-64 rounded-md border border-border bg-background text-sm focus:outline-none focus:ring-1 focus:ring-gold"
+                  placeholder="Search UIN, client, case…" value={zohoAllSearch}
+                  onChange={e => setZohoAllSearch(e.target.value)}
+                  onKeyDown={e => e.key === "Enter" && loadZohoAll()} />
+              </div>
+              {(["all", "invoice", "quote"] as const).map(t => (
+                <button key={t} onClick={() => { setZohoAllType(t); loadZohoAll({ type: t }); }}
+                  className={`px-3 py-1 rounded text-xs font-medium border transition-colors ${zohoAllType === t ? "bg-gold text-black border-gold" : "border-border text-muted-foreground hover:text-foreground"}`}>
+                  {t === "all" ? "All" : t === "invoice" ? "Invoices" : "Quotes"}
+                </button>
+              ))}
+              <Button size="sm" variant="outline" className="h-8 text-xs ml-auto" onClick={() => loadZohoAll()}>
+                {zohoAllLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : "Refresh"}
+              </Button>
+            </div>
+
+            {zohoAllLoading ? (
+              <div className="flex items-center justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-gold" /></div>
+            ) : (
+              <Card className="border-border">
+                <CardContent className="p-0">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead className="bg-muted/40 text-[10px] uppercase tracking-wider text-muted-foreground">
+                        <tr>
+                          <th className="px-3 py-2.5 text-left">Type</th>
+                          <th className="px-3 py-2.5 text-left">UIN / Number</th>
+                          <th className="px-3 py-2.5 text-left">Case</th>
+                          <th className="px-3 py-2.5 text-left">Client</th>
+                          <th className="px-3 py-2.5 text-left">Date</th>
+                          <th className="px-3 py-2.5 text-left">Status</th>
+                          <th className="px-3 py-2.5 text-right">Total</th>
+                          <th className="px-3 py-2.5 text-right">Balance</th>
+                          <th className="px-3 py-2.5"></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {zohoAllRows.map(r => (
+                          <tr key={`${r.type}-${r.id}`} className="border-t border-border hover:bg-muted/20">
+                            <td className="px-3 py-2">
+                              <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${r.type === "invoice" ? "bg-blue-500/15 text-blue-400" : "bg-violet-500/15 text-violet-400"}`}>
+                                {r.type === "invoice" ? "INV" : "QUO"}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2 font-mono text-gold font-semibold">{r.number || "—"}</td>
+                            <td className="px-3 py-2 font-mono text-muted-foreground">{r.docket_number || <span className="italic">unmatched</span>}</td>
+                            <td className="px-3 py-2">{r.client || "—"}</td>
+                            <td className="px-3 py-2 text-muted-foreground">{fmtDate(r.date)}</td>
+                            <td className="px-3 py-2"><Badge variant="outline" className="text-[10px] capitalize">{r.status || "—"}</Badge></td>
+                            <td className="px-3 py-2 text-right font-mono">{fmt(r.total)}</td>
+                            <td className="px-3 py-2 text-right font-mono text-muted-foreground">{r.balance != null ? fmt(r.balance) : "—"}</td>
+                            <td className="px-3 py-2 text-right">
+                              {r.url && <a href={r.url} target="_blank" rel="noreferrer" className="text-muted-foreground hover:text-foreground text-xs">View</a>}
+                            </td>
+                          </tr>
+                        ))}
+                        {zohoAllRows.length === 0 && (
+                          <tr><td colSpan={9} className="px-4 py-10 text-center text-muted-foreground">
+                            No Zoho-synced records yet. Run "Sync Now" on the Zoho Books card under Integrations, or wait for the next scheduled sync.
+                          </td></tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </CardContent>
+              </Card>
             )}
           </>
         )}
@@ -1606,6 +1840,26 @@ export default function Financial() {
                     <span className="w-4 h-4 rounded-full bg-gold text-black flex items-center justify-center text-[9px] font-bold">4</span>
                     Financials (INR)
                   </h3>
+                  <div className="mb-2 grid grid-cols-2 gap-2">
+                    <div>
+                      {lbl("Entity Tier (auto-fills fees below)")}
+                      <select value={feeTierChoice} onChange={e => onFeeTierChange(e.target.value as any)} className={inp}>
+                        <option value="">Not set — pick to auto-fill</option>
+                        <option value="individual_startup_msme">Individual / Startup / MSME</option>
+                        <option value="large_entity_standard">Large Entity / Standard</option>
+                      </select>
+                    </div>
+                    {isRenewalService(indiaForm.service_code) && (
+                      <div>
+                        {lbl("Renewal Year (which year is this?)")}
+                        <input type="number" min="1" max="20" value={renewalYear}
+                          onChange={e => onRenewalYearChange(e.target.value)} className={inp} placeholder="e.g. 4" />
+                      </div>
+                    )}
+                  </div>
+                  {feeRateNote && (
+                    <p className="mb-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-700 dark:text-amber-400">{feeRateNote}</p>
+                  )}
                   <div className="grid grid-cols-4 gap-2">
                     <div>
                       {lbl("Patent Office Fees *")}
@@ -1619,15 +1873,25 @@ export default function Financial() {
                       {lbl("Other Expenses *")}
                       <input type="number" min="0" step="0.01" value={indiaForm.other_expenses} onChange={e => sif("other_expenses", e.target.value)} className={inp} />
                     </div>
-                    <div className="col-span-1" />
+                    <div>
+                      {lbl("Discount %")}
+                      <input type="number" min="0" max="100" step="0.01" value={(indiaForm as any).discount_percentage ?? "0"}
+                        onChange={e => sif("discount_percentage", e.target.value)} className={inp} placeholder="0" />
+                      <p className="mt-0.5 text-[9px] text-muted-foreground">Off service fees only. Zero if none.</p>
+                    </div>
                     {/* GST preview */}
-                    <div className="col-span-4 bg-muted/30 rounded-lg px-4 py-3 grid grid-cols-4 gap-3 text-xs">
+                    <div className="col-span-4 bg-muted/30 rounded-lg px-4 py-3 grid grid-cols-5 gap-3 text-xs">
                       <div>
                         <div className="text-muted-foreground text-[10px]">State of Supply</div>
                         <div className="font-medium">{indiaForm.state_of_supply || "—"}</div>
                         <div className="text-[10px] text-muted-foreground mt-0.5">
                           {(indiaForm.state_of_supply ?? "").toLowerCase() === "karnataka" ? "CGST + SGST (9% + 9%)" : indiaForm.state_of_supply ? "IGST (18%)" : "Enter state above"}
                         </div>
+                      </div>
+                      <div>
+                        <div className="text-muted-foreground text-[10px]">Discount</div>
+                        <div className="font-mono font-medium">−₹{gst.discountAmt.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</div>
+                        <div className="text-[10px] text-muted-foreground mt-0.5">On service fees</div>
                       </div>
                       <div>
                         {(indiaForm.state_of_supply ?? "").toLowerCase() === "karnataka" ? (
@@ -1646,7 +1910,7 @@ export default function Financial() {
                       <div>
                         <div className="text-muted-foreground text-[10px]">Invoice Amount</div>
                         <div className="font-mono font-bold text-gold text-sm">₹{gst.total.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</div>
-                        <div className="text-[10px] text-muted-foreground mt-0.5">PO + Svc + GST + Other</div>
+                        <div className="text-[10px] text-muted-foreground mt-0.5">PO + net Svc + GST + Other</div>
                       </div>
                       <div />
                     </div>

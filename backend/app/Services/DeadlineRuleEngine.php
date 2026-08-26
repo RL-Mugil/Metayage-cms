@@ -12,6 +12,15 @@ use Illuminate\Support\Collection;
 
 class DeadlineRuleEngine
 {
+    public function simulateRule(DeadlineRuleDefinition $rule, Carbon $anchor): array
+    {
+        $due = $this->offset($anchor, $rule->offset_unit, $rule->offset_value);
+        $outer = $rule->outer_offset_value === null ? null : $this->offset($anchor, $rule->offset_unit, $rule->outer_offset_value);
+        return ['rule_code' => $rule->rule_code, 'version' => $rule->version, 'anchor_date' => $anchor->toDateString(),
+            'statutory_due_date' => $due->toDateString(), 'outer_limit_date' => $outer?->toDateString(),
+            'trace' => ['unit' => $rule->offset_unit, 'offset' => $rule->offset_value, 'outer_offset' => $rule->outer_offset_value]];
+    }
+
     public function activeRules(string $jurisdiction, string $eventType, Carbon $eventDate): Collection
     {
         return DeadlineRuleDefinition::query()
@@ -39,6 +48,7 @@ class DeadlineRuleEngine
             return DocketDeadline::create([
                 'docket_event_id' => $event->id,
                 'project_id' => $project?->id,
+                'ip_record_id' => $project?->ip_record_id,
                 'patent_application_id' => $application?->id,
                 'deadline_rule_definition_id' => $rule->id,
                 'title' => $rule->title,
@@ -62,6 +72,7 @@ class DeadlineRuleEngine
                 ],
                 'review_status' => 'Unreviewed',
                 'due_date' => $due,
+                'statutory_due_date' => $due,
                 'extended_due_date' => $outer,
                 'status' => 'Open',
             ]);

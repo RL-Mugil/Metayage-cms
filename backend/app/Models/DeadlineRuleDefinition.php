@@ -2,14 +2,18 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToFirm;
 use Illuminate\Database\Eloquent\Model;
 
 class DeadlineRuleDefinition extends Model
 {
+    use BelongsToFirm;
+
     protected $fillable = [
         'rule_code', 'version', 'jurisdiction', 'right_type', 'event_type', 'title',
         'legal_basis', 'anchor_field', 'offset_unit', 'offset_value', 'outer_offset_value',
         'effective_from', 'effective_to', 'status', 'approved_by', 'approved_at',
+        'source_type', 'parent_rule_id', 'created_by',
     ];
 
     protected $casts = [

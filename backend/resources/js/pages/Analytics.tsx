@@ -114,6 +114,7 @@ export default function Analytics() {
   const [invoices, setInvoices] = useState<any[]>([]);
   const [clients, setClients] = useState<any[]>([]);
   const [tracker, setTracker] = useState<any>(null);
+  const [zohoMonthly, setZohoMonthly] = useState<{ month: string; total: number }[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -125,8 +126,10 @@ export default function Analytics() {
       api.getInvoices().catch(() => []),
       api.getClients().catch(() => []),
       api.getTrackerAnalytics().catch(() => null),
+      api.getZohoMonthlyAnalytics().catch(() => []),
     ])
-      .then(([p, t, i, c, tr]) => {
+      .then(([p, t, i, c, tr, zm]) => {
+        setZohoMonthly(Array.isArray(zm) ? zm : []);
         setProjects(Array.isArray(p) ? p : (p as any).data || []);
         setTasks(Array.isArray(t) ? t : (t as any).data || []);
         setInvoices(Array.isArray(i) ? i : (i as any).data || []);
@@ -150,10 +153,10 @@ export default function Analytics() {
     .reduce((sum, invoice) => sum + Number(invoice.total_amount || 0), 0);
 
   const monthlyRevenue = useMemo(() => {
-    const months: { key: string; month: string; revenue: number }[] = [];
+    const months: { key: string; month: string; revenue: number; zoho_collected: number }[] = [];
     for (let i = 11; i >= 0; i -= 1) {
       const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      months.push({ key: monthKey(date), month: monthLabel(date), revenue: 0 });
+      months.push({ key: monthKey(date), month: monthLabel(date), revenue: 0, zoho_collected: 0 });
     }
 
     const byMonth = new Map(months.map((entry) => [entry.key, entry]));
@@ -165,9 +168,13 @@ export default function Analytics() {
       const bucket = byMonth.get(monthKey(date));
       if (bucket) bucket.revenue += Number(invoice.total_amount || 0);
     });
+    zohoMonthly.forEach((entry) => {
+      const bucket = byMonth.get(entry.month);
+      if (bucket) bucket.zoho_collected += Number(entry.total || 0);
+    });
 
     return months;
-  }, [invoices, now]);
+  }, [invoices, zohoMonthly, now]);
 
   const matterDistribution = useMemo(() => {
     const counts = { Patents: 0, Trademarks: 0, Copyrights: 0, Other: 0 };
@@ -290,6 +297,7 @@ export default function Analytics() {
                   <Tooltip content={<CustomTooltip />} />
                   <Legend wrapperStyle={{ fontSize: 12 }} />
                   <Bar dataKey="revenue" name="Revenue" fill="#C8971D" radius={[3, 3, 0, 0]} />
+                  <Bar dataKey="zoho_collected" name="Zoho Collected" fill="#3b82f6" radius={[3, 3, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </CardContent>

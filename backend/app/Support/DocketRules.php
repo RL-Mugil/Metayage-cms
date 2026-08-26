@@ -50,6 +50,16 @@ class DocketRules
         'opposition_notice' => 'Pre-Grant Opposition Notice Received',
     ];
 
+    /** Events that must never be accepted without an active, approved rule. */
+    public const DEADLINE_TRIGGER_TYPES = [
+        'provisional_filed', 'application_filed', 'pct_filed', 'published',
+        'fer_received', 'ser_received', 'ter_received', 'hearing_notice', 'hearing_held',
+        'granted', 'refused', 'renewal_missed', 'opposition_notice',
+        'us_missing_parts', 'us_restriction_requirement', 'us_nonfinal_office_action',
+        'us_final_office_action', 'us_advisory_action', 'us_notice_of_allowance',
+        'us_ptab_decision', 'us_maintenance_window_open',
+    ];
+
     /**
      * @return array<int, array{title: string, legal_basis: string, due_date: Carbon, extended_due_date: ?Carbon}>
      */
@@ -186,6 +196,7 @@ class DocketRules
 
         $event = DocketEvent::create([
             'project_id'            => $projectId,
+            'ip_record_id'          => $projectId ? \App\Models\Project::find($projectId)?->ip_record_id : null,
             'patent_application_id' => $applicationId,
             'event_type'            => $eventType,
             'event_date'            => $eventDate,
@@ -194,7 +205,7 @@ class DocketRules
         ]);
 
         $project = $projectId ? \App\Models\Project::find($projectId) : null;
-        app(\App\Services\DeadlineRuleEngine::class)->generate($event, $project, $app);
+        self::generateDeadlines($event, $project, $app);
 
         // Event side-effects on the application's legal status
         if ($app) {
@@ -227,7 +238,44 @@ class DocketRules
             }
         }
 
+        // Event side-effect on the project's own lifecycle stepper — never
+        // touches sibling projects (see StageAdvancementService docblock).
+        if ($project) {
+            app(\App\Services\StageAdvancementService::class)->advance($project, $eventType, $eventDate);
+        }
+
         return $event;
+    }
+
+    /** Generate deadlines immediately. Approved database rules take precedence;
+     * built-in statutory calculations keep routine docketing usable without a
+     * separate approval workflow. */
+    public static function generateDeadlines(DocketEvent $event, ?\App\Models\Project $project, ?PatentApplication $app): void
+    {
+        $generated = app(\App\Services\DeadlineRuleEngine::class)->generate($event, $project, $app);
+        if ($generated->isNotEmpty()) {
+            return;
+        }
+
+        foreach (self::deadlinesFor($event->event_type, Carbon::parse($event->event_date), $app) as $definition) {
+            DocketDeadline::create([
+                'docket_event_id' => $event->id,
+                'project_id' => $project?->id,
+                'ip_record_id' => $project?->ip_record_id,
+                'patent_application_id' => $app?->id,
+                'title' => $definition['title'],
+                'legal_basis' => $definition['legal_basis'],
+                'due_date' => $definition['due_date'],
+                'statutory_due_date' => $definition['due_date'],
+                'extended_due_date' => $definition['extended_due_date'],
+                'source_type' => 'Built-in Rule',
+                'rule_code' => self::RULESET_VERSION,
+                'rule_version' => self::RULESET_VERSION,
+                'risk_level' => 'Critical',
+                'review_status' => 'Approved',
+                'status' => 'Open',
+            ]);
+        }
     }
 
     /**

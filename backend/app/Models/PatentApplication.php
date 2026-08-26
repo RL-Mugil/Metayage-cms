@@ -15,9 +15,11 @@ class PatentApplication extends Model
     ];
 
     protected $fillable = [
-        'client_id', 'invention_family_id', 'application_number', 'title',
+        'client_id', 'ip_record_id', 'invention_family_id', 'application_number', 'title',
         'priority_date', 'filing_date', 'publication_date', 'rfe_filed_date',
         'grant_number', 'grant_date', 'legal_status', 'jurisdiction',
+        // IPO-style status view fields — no auto-generation event for these (see DocketRules), staff-entered.
+        'application_type', 'fer_reply_date', 'certificate_issue_date', 'post_grant_journal_date',
     ];
 
     protected $casts = [
@@ -26,11 +28,19 @@ class PatentApplication extends Model
         'publication_date' => 'date',
         'rfe_filed_date'   => 'date',
         'grant_date'       => 'date',
+        'fer_reply_date'   => 'date',
+        'certificate_issue_date'  => 'date',
+        'post_grant_journal_date' => 'date',
     ];
 
     public function client()
     {
         return $this->belongsTo(Client::class);
+    }
+
+    public function ipRecord()
+    {
+        return $this->belongsTo(IpRecord::class);
     }
 
     public function inventionFamily()

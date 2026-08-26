@@ -9,7 +9,10 @@ class ProjectPolicy
 {
     public function viewAny(User $user): bool
     {
-        return true;
+        return in_array($user->role, [
+            'super_admin', 'partner', 'director', 'manager', 'associate', 'paralegal',
+            'finance', 'galvanizer', 'client', 'client_admin', 'inventor',
+        ], true);
     }
 
     public function view(User $user, Project $project): bool
@@ -22,10 +25,14 @@ class ProjectPolicy
             return $user->canAccessCircle($project->circle);
         }
 
+        if ($user->isInventor()) {
+            return $project->inventors()->where('users.id', $user->id)->exists();
+        }
+
         // Associates and paralegals may only view projects they are directly assigned to.
         // Mirrors the scope in ProjectController::index() exactly to prevent
         // policy/controller divergence causing spurious 403s.
-        if ($user->role === 'associate') {
+        if (in_array($user->role, ['associate', 'paralegal'], true)) {
             // Patent Analysts: cases where they are PR, CM or SCM,
             // or have a task assigned on the case.
             if ($project->patent_engineer_id === $user->id) return true;
@@ -35,7 +42,7 @@ class ProjectPolicy
             return false;
         }
 
-        return true;
+        return in_array($user->role, ['super_admin', 'partner', 'director', 'manager', 'finance'], true);
     }
 
     public function create(User $user): bool

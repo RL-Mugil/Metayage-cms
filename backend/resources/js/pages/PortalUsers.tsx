@@ -24,7 +24,7 @@ export default function PortalUsers() {
 
   // Add user modal
   const [showAdd, setShowAdd] = useState(false);
-  const [form, setForm] = useState({ name: "", email: "", password: "" });
+  const [form, setForm] = useState<{ name: string; email: string; password: string; role: "client" | "client_finance" }>({ name: "", email: "", password: "", role: "client" });
   const [saving, setSaving] = useState(false);
   const [addError, setAddError] = useState("");
   const [created, setCreated] = useState<{ email: string } | null>(null);
@@ -46,7 +46,7 @@ export default function PortalUsers() {
     setSaving(true);
     setAddError("");
     try {
-      const res = await api.createMyPortalUser({ name: form.name.trim(), email: form.email.trim(), password: form.password });
+      const res = await api.createMyPortalUser({ name: form.name.trim(), email: form.email.trim(), password: form.password, role: form.role });
       setCreated({ email: res.user?.email ?? form.email });
       load();
     } catch (e: any) {
@@ -79,7 +79,7 @@ export default function PortalUsers() {
         title="Portal Users"
         description="Add or remove people from your company who can access this portal."
         actions={
-          <Button onClick={() => { setShowAdd(true); setForm({ name: "", email: "", password: "" }); setCreated(null); setAddError(""); }}>
+          <Button onClick={() => { setShowAdd(true); setForm({ name: "", email: "", password: "", role: "client" }); setCreated(null); setAddError(""); }}>
             <Plus className="h-4 w-4 mr-2" /> Add User
           </Button>
         }
@@ -131,6 +131,14 @@ export default function PortalUsers() {
                       placeholder="Min. 6 characters — share it with them"
                       className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-gold" />
                     <p className="text-[10px] text-muted-foreground mt-1">They can change it later in Settings → Security.</p>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-muted-foreground mb-1">Access</label>
+                    <select value={form.role} onChange={e => setForm(p => ({ ...p, role: e.target.value as "client" | "client_finance" }))}
+                      className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold">
+                      <option value="client">Full access — cases, deadlines, approvals, billing</option>
+                      <option value="client_finance">Finance only — billing and invoices</option>
+                    </select>
                   </div>
                 </div>
                 <div className="flex gap-2 mt-5">
@@ -205,6 +213,8 @@ export default function PortalUsers() {
                           <Badge className="bg-gold/15 text-gold border-gold/30 flex items-center gap-1 w-fit">
                             <ShieldCheck className="h-3 w-3" /> Admin
                           </Badge>
+                        ) : u.role === "client_finance" ? (
+                          <Badge variant="secondary">Finance only</Badge>
                         ) : (
                           <Badge variant="secondary">Member</Badge>
                         )}
@@ -213,7 +223,7 @@ export default function PortalUsers() {
                         {u.created_at ? new Date(u.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "—"}
                       </td>
                       <td className="px-4 py-3">
-                        {u.role === "client" && (
+                        {(u.role === "client" || u.role === "client_finance") && (
                           <Button size="sm" variant="outline"
                             className="text-xs h-7 text-destructive border-destructive/40 hover:bg-destructive/10"
                             onClick={() => setConfirmRemove(u)}>

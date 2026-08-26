@@ -28,11 +28,12 @@ class DocumentController extends Controller
         return $request->attributes->get('portal_client') ?? \App\Models\Client::forUser($user);
     }
 
-    public const FOLDERS = ['General', 'Patents', 'Trademarks', 'Contracts', 'Correspondence', 'Invoices'];
+    public const FOLDERS = ['General', 'Patents', 'Trademarks', 'Contracts', 'Correspondence', 'Invoices', 'Payment Proof'];
 
     public function index(Request $request)
     {
         $user = $request->user();
+        $this->authorize('viewAny', Document::class);
         if ($user->isClientRole()) {
             // Client portal users see only documents tagged to their client.
             $client = $this->clientFor($request);
@@ -126,6 +127,7 @@ class DocumentController extends Controller
     public function store(Request $request)
     {
         $user = $request->user();
+        $this->authorize('create', Document::class);
         $ownClient = null;
         if ($user->isClientRole()) {
             $ownClient = $this->clientFor($request);
@@ -145,19 +147,13 @@ class DocumentController extends Controller
         if ($ownClient) {
             $request->merge(['client_id' => $ownClient->id, 'project_id' => null]);
         }
-        if ($user->isGalvanizer()) {
-            if ($request->project_id) {
-                $project = \App\Models\Project::findOrFail($request->project_id);
-                if (! $user->canAccessCircle($project->circle)) {
-                    return response()->json(['message' => 'Selected case is outside your assigned circle.'], 403);
-                }
-            }
-            if ($request->client_id) {
-                $client = \App\Models\Client::findOrFail($request->client_id);
-                if (! $user->canAccessCircle($client->circle)) {
-                    return response()->json(['message' => 'Selected client is outside your assigned circle.'], 403);
-                }
-            }
+        if ($request->project_id) {
+            $project = \App\Models\Project::findOrFail($request->project_id);
+            $this->authorize('attachToProject', [Document::class, $project]);
+        }
+        if ($request->client_id) {
+            $client = \App\Models\Client::findOrFail($request->client_id);
+            $this->authorize('attachToClient', [Document::class, $client]);
         }
 
         $file   = $request->file('file');
@@ -235,6 +231,9 @@ class DocumentController extends Controller
             return response()->json(['message' => 'Invalid path'], 422);
         }
 
+        $authorizedDocument = Document::where('storage_path', $path)->firstOrFail();
+        $this->authorize('view', $authorizedDocument);
+
         // Clients may only download documents tagged to their own client.
         if ($user->isClientRole()) {
             $doc = Document::where('storage_path', $path)->first();
@@ -296,6 +295,8 @@ class DocumentController extends Controller
         }
 
         $doc = Document::where('storage_path', $path)->first();
+        abort_unless($doc, 404);
+        $this->authorize('view', $doc);
 
         if ($user->isClientRole()) {
             if (! $doc || (int) $doc->client_id !== (int) $client->id) {
@@ -342,6 +343,8 @@ class DocumentController extends Controller
         }
 
         $doc = Document::where('storage_path', $path)->first();
+        abort_unless($doc, 404);
+        $this->authorize('delete', $doc);
         if ($doc) {
             // Managers may only delete documents belonging to projects they manage.
             if ($user->role === 'manager' && $doc->project_id) {

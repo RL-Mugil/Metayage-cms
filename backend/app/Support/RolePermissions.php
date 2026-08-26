@@ -118,6 +118,32 @@ final class RolePermissions
                 'portal_users' => 'view_edit',
                 'hrms' => 'none',
             ],
+            // Billing-only client login: sees financial/invoice data for its own client
+            // and nothing else — no case visibility, no approvals, no portal user management.
+            'client_finance' => [
+                'clients' => 'none',
+                'projects' => 'none',
+                'kanban' => 'none',
+                'tasks' => 'none',
+                'documents' => 'self_only',
+                'financial' => 'self_only',
+                'approvals' => 'none',
+                'portal_users' => 'none',
+                'hrms' => 'none',
+            ],
+            // Inventor login: read-only, scoped to cases where they're inventor-of-record
+            // (project_inventors), not to any one client — see ProjectPolicy::view().
+            'inventor' => [
+                'clients' => 'none',
+                'projects' => 'self_only',
+                'kanban' => 'none',
+                'tasks' => 'none',
+                'documents' => 'none',
+                'financial' => 'none',
+                'approvals' => 'none',
+                'portal_users' => 'none',
+                'hrms' => 'none',
+            ],
         ];
 
         return $matrix[$role] ?? [];

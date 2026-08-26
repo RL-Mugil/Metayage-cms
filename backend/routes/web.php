@@ -32,6 +32,7 @@ Route::middleware(['auth', 'firm.context'])->group(function () {
     Route::get('/clients', [ClientController::class, 'inertiaIndex'])->name('clients.index');
     Route::get('/clients/{id}', [ClientController::class, 'inertiaShow'])->name('clients.show');
     Route::get('/projects', [ProjectController::class, 'inertiaIndex'])->name('projects.index');
+    Route::get('/ip-records', fn () => Inertia::render('IpRecords'))->name('ip-records.index');
     Route::get('/projects/{id}', [ProjectController::class, 'inertiaShow'])->name('projects.show');
     Route::get('/tasks', [TaskController::class, 'inertiaIndex'])->name('tasks.index');
     Route::get('/kanban', fn () => Inertia::render('Kanban'))->name('kanban');

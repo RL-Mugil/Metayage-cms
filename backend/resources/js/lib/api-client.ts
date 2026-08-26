@@ -14,6 +14,56 @@ function getCsrfToken(): string {
 
 export type { User, Client, Project, Task, Invoice, Employee, PaginatedResponse, SearchResult, Quotation, AuditLog, PatentInvoiceIn }
 
+export interface ReminderProfile {
+  id: number
+  name: string
+  frequency: 'daily' | 'weekly' | 'monthly'
+  timezone: string
+  send_time: string
+  horizon_days: number
+  recipients: string[]
+  filters: Record<string, string | number | boolean | null>
+  columns: string[]
+  color_bands: { red: number; amber: number }
+  send_empty: boolean
+  email_enabled: boolean
+  in_app_enabled: boolean
+  critical_alerts_enabled: boolean
+  active: boolean
+}
+
+export interface DocketWorklistItem {
+  id: number
+  title: string
+  statutory_due_date: string
+  operational_due_date: string
+  days_remaining: number
+  band: 'overdue' | 'red' | 'amber' | 'green'
+  risk_level: string
+  review_status: string
+  rule_code: string | null
+  record: { id: number; code: string; type: string; title: string } | null
+  project: { id: number; docket_number: string; name: string } | null
+  client: { id: number; code: string; name: string } | null
+}
+
+export interface IpRecord {
+  id: number
+  record_code: string
+  record_type: 'Patent' | 'Trademark'
+  jurisdiction: string
+  title: string
+  client_reference: string | null
+  legal_status: string
+  status_date: string | null
+  data_quality_status: string
+  tags: string[]
+  uins: string[]
+  client?: { id: number; client_code: string; name: string }
+  responsible_user?: { id: number; name: string } | null
+  backup_user?: { id: number; name: string } | null
+}
+
 export interface ZohoBooksCase {
   project_id: number
   docket_number: string
@@ -207,11 +257,20 @@ export const api = {
   async recordDocketEvent(projectId: number | string, data: { event_type: string; event_date: string; notes?: string }): Promise<any> {
     return this.request(`/projects/${projectId}/docket/events`, { method: 'POST', body: JSON.stringify(data) })
   },
-  async updateDocketDeadline(deadlineId: number | string, status: string, notes?: string): Promise<any> {
-    return this.request(`/docket/deadlines/${deadlineId}`, { method: 'PATCH', body: JSON.stringify({ status, notes }) })
+  async updateDocketEvent(eventId: number | string, data: { event_type: string; event_date: string; notes?: string | null }): Promise<any> {
+    return this.request(`/docket/events/${eventId}`, { method: 'PUT', body: JSON.stringify(data) })
   },
-  async reviewDocketDeadline(deadlineId: number | string, review_status: 'Approved' | 'Rejected', notes?: string): Promise<any> {
-    return this.request(`/docket/deadlines/${deadlineId}/review`, { method: 'PATCH', body: JSON.stringify({ review_status, notes }) })
+  async deleteDocketEvent(eventId: number | string): Promise<{ message: string }> {
+    return this.request(`/docket/events/${eventId}`, { method: 'DELETE' })
+  },
+  async createDocketDeadline(projectId: number | string, data: { title: string; due_date: string; extended_due_date?: string | null; legal_basis?: string | null; notes?: string | null; risk_level: 'Low' | 'Medium' | 'High' | 'Critical' }): Promise<any> {
+    return this.request(`/projects/${projectId}/docket/deadlines`, { method: 'POST', body: JSON.stringify(data) })
+  },
+  async updateDocketDeadline(deadlineId: number | string, data: { title?: string; due_date?: string; extended_due_date?: string | null; legal_basis?: string | null; notes?: string | null; risk_level?: 'Low' | 'Medium' | 'High' | 'Critical'; status?: string }): Promise<any> {
+    return this.request(`/docket/deadlines/${deadlineId}`, { method: 'PATCH', body: JSON.stringify(data) })
+  },
+  async deleteDocketDeadline(deadlineId: number | string): Promise<{ message: string }> {
+    return this.request(`/docket/deadlines/${deadlineId}`, { method: 'DELETE' })
   },
   async getDeadlineRules(): Promise<any[]> {
     return this.request('/docket/rules')
@@ -423,12 +482,13 @@ export const api = {
     const extra = params ? '&' + params.toString() : ''
     return this.request(`/reports/data?type=${encodeURIComponent(type)}${extra}`)
   },
-  async generateReport(data: { type: string; format: "PDF" | "Excel" | "CSV"; fromDate?: string; toDate?: string }): Promise<ReportResponse & { export_id: number }> {
+  async generateReport(data: { type: string; format: "PDF" | "Excel" | "CSV"; fromDate?: string; toDate?: string; clientCode?: string }): Promise<ReportResponse & { export_id: number }> {
     return this.request('/reports/generate', { method: 'POST', body: JSON.stringify({
       type: data.type,
       format: data.format,
       from_date: data.fromDate || null,
       to_date: data.toDate || null,
+      client_code: data.clientCode?.trim() || null,
     }) })
   },
   async getReportHistory(): Promise<Array<{ id: number; name: string; type: string; generated_by: string; generated_at: string; format: string; row_count: number; filters: Record<string, string | null> }>> {
@@ -746,7 +806,10 @@ export const api = {
     const query = params ? '?' + params.toString() : ''
     return this.request(`/compliance${query}`)
   },
-  async updateCompliance(id: number | string, data: { assignee?: string; note?: string; resolved?: boolean }): Promise<Record<string, unknown>> {
+  async createCompliance(data: Record<string, unknown>): Promise<Record<string, unknown>> {
+    return this.request('/compliance', { method: 'POST', body: JSON.stringify(data) })
+  },
+  async updateCompliance(id: number | string, data: { assignee_id?: number | null; note?: string; resolved?: boolean }): Promise<Record<string, unknown>> {
     return this.request(`/compliance/${id}`, { method: 'PUT', body: JSON.stringify(data) })
   },
   async remindCompliance(id: number | string): Promise<{ message: string }> {
@@ -766,6 +829,21 @@ export const api = {
   },
   async deleteReminder(id: number | string): Promise<{ message: string }> {
     return this.request(`/reminders/${id}`, { method: 'DELETE' })
+  },
+  async getReminderProfile(): Promise<ReminderProfile> {
+    return this.request('/reminder-profile')
+  },
+  async updateReminderProfile(data: ReminderProfile): Promise<ReminderProfile> {
+    return this.request('/reminder-profile', { method: 'PUT', body: JSON.stringify(data) })
+  },
+  async previewReminderProfile(): Promise<{ counts: Record<'overdue' | 'red' | 'amber' | 'green', number>; data: DocketWorklistItem[] }> {
+    return this.request('/reminder-profile/preview', { method: 'POST' })
+  },
+  async getDocketWorklist(params?: URLSearchParams): Promise<PaginatedResponse<DocketWorklistItem>> {
+    return this.request(`/docket/worklist${params ? `?${params.toString()}` : ''}`)
+  },
+  async getIpRecords(params?: URLSearchParams): Promise<PaginatedResponse<IpRecord>> {
+    return this.request(`/ip-records${params ? `?${params.toString()}` : ''}`)
   },
   async getEmployeeWorkload(): Promise<{ user_id: number; project_count: number; tracker_count: number; total: number }[]> {
     return this.request('/hrms/employees/workload')
@@ -1088,14 +1166,15 @@ export const api = {
 }
 
 // ── CSV Download Utility ──
-export function downloadCSV(filename: string, rows: Record<string, any>[]): void {
+export function downloadCSV(filename: string, rows: Record<string, unknown>[]): void {
   if (!rows.length) return
   const headers = Object.keys(rows[0])
   const csvContent = [
     headers.join(','),
     ...rows.map(row =>
       headers.map(h => {
-        const val = row[h] == null ? '' : String(row[h])
+        let val = row[h] == null ? '' : String(row[h])
+        if (/^[=+\-@]/.test(val)) val = `'${val}`
         return val.includes(',') || val.includes('"') || val.includes('\n')
           ? `"${val.replace(/"/g, '""')}"` : val
       }).join(',')

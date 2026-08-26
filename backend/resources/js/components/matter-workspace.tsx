@@ -4,12 +4,15 @@ import {
   Activity, ArrowLeft, BriefcaseBusiness, CalendarClock, CheckCircle2,
   CircleDollarSign, Clock3, Eye, FileText, GitBranch, History, ListChecks,
   MessageSquare, Plus, Trash2, Download, Upload, Loader2, Pencil, FileSignature,
-  Scale, ShieldCheck, Users,
+  Scale, ShieldCheck, Users, RefreshCw,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { DocketDeadlines } from "@/components/docket-deadlines"
 import { ProjectChat } from "@/components/project-chat"
+import { ZohoBooksPanel } from "@/components/zoho-books-panel"
+import { InventorsPanel } from "@/components/inventors-panel"
+import { IpoStatusPanel } from "@/components/ipo-status-panel"
 import { api } from "@/lib/api-client"
 import type {
   MatterWorkspace as WorkspaceData,
@@ -73,6 +76,15 @@ export function MatterWorkspace({ data, projectId, tab, onTabChange }: MatterWor
   const [chatSeen, setChatSeen] = useState(false)
   const chatUnread = chatSeen ? 0 : (data.chat_unread ?? 0)
 
+  // Renewal engagements don't have a meaningful workflow stage list — show
+  // years-paid progress instead (from application.renewals, already loaded).
+  // 'REN' is what real project data actually carries; 'RNF' is the dictionary
+  // name in config/project_import_codes.php — accept either.
+  const isRenewalProject = project.service_code === "REN" || project.service_code === "RNF"
+  const renewals = application?.renewals ?? []
+  const renewalsPaid = renewals.filter((r) => r.status === "Paid").length
+  const renewalsTotal = renewals.length || 18 // years 3-20 if no schedule rows exist yet
+
   return (
     <div className="min-h-full bg-background">
       <header className="border-b border-border bg-background">
@@ -122,7 +134,9 @@ export function MatterWorkspace({ data, projectId, tab, onTabChange }: MatterWor
           <div className="space-y-6">
             <section className="grid gap-px overflow-hidden rounded-md border border-border bg-border sm:grid-cols-2 xl:grid-cols-5">
               {[
-                { label: "Current stage", value: data.stages.find((stage) => stage.status === "In Progress")?.stage_name || "Not started", icon: GitBranch },
+                isRenewalProject
+                  ? { label: "Renewal progress", value: `${renewalsPaid} of ${renewalsTotal} years paid`, icon: RefreshCw }
+                  : { label: "Current stage", value: data.stages.find((stage) => stage.status === "In Progress")?.stage_name || "Not started", icon: GitBranch },
                 { label: "Nearest deadline", value: formatDate(summary.nearest_due_date), icon: CalendarClock },
                 { label: "Overdue", value: String(summary.overdue), icon: Clock3, alert: summary.overdue > 0 },
                 { label: "Unreviewed", value: String(summary.unreviewed), icon: ShieldCheck, alert: summary.unreviewed > 0 },
@@ -134,6 +148,21 @@ export function MatterWorkspace({ data, projectId, tab, onTabChange }: MatterWor
                 </div>
               ))}
             </section>
+
+            {application && (
+              <section>
+                <IpoStatusPanel
+                  projectId={projectId}
+                  application={application}
+                  project={project}
+                  client={project.client}
+                  events={data.events}
+                  documents={data.documents}
+                  canManage={data.capabilities.can_update}
+                  onUpdated={() => window.location.reload()}
+                />
+              </section>
+            )}
 
             <section className="grid gap-6 xl:grid-cols-[minmax(0,1.5fr)_minmax(320px,0.7fr)]">
               <div>
@@ -172,6 +201,8 @@ export function MatterWorkspace({ data, projectId, tab, onTabChange }: MatterWor
                 </div>
               </div>
             </section>
+
+            <section><InventorsPanel projectId={projectId} canManage={data.capabilities.can_update} /></section>
 
             {project.notes && <section><h2 className="mb-2 text-sm font-semibold">Matter notes</h2><p className="whitespace-pre-wrap rounded-md border border-border bg-muted/20 p-4 text-sm leading-6 text-muted-foreground">{project.notes}</p></section>}
           </div>
@@ -227,6 +258,7 @@ export function MatterWorkspace({ data, projectId, tab, onTabChange }: MatterWor
           <section className="space-y-6">
             <div className="grid gap-px overflow-hidden rounded-md border border-border bg-border sm:grid-cols-3">{[["Total invoiced", data.financials.summary.total_invoiced], ["Received", data.financials.summary.total_received], ["Pending", data.financials.summary.total_pending]].map(([label, value]) => <div key={label} className="bg-background p-4"><p className="text-xs text-muted-foreground">{label}</p><p className="mt-2 text-xl font-semibold">{formatMoney(value)}</p></div>)}</div>
             <PatentInvoicesWorkspace project={project} canManage={data.capabilities.can_view_financials} />
+            <ZohoBooksPanel title="Zoho Books — Live Case Billing" fetchSummary={() => api.getZohoProjectSummary(project.id)} />
           </section>
         )}
 
@@ -270,9 +302,27 @@ function FamilyWorkspace({ data, projectId }: { data: WorkspaceData; projectId: 
     } finally { setSaving(false) }
   }
 
+  const jurisdictionNames: Record<string, string> = { IN: "India", US: "United States (USPTO)", EP: "Europe (EPO)", WO: "PCT (International)", CN: "China", JP: "Japan", GB: "United Kingdom" }
+  const groupedByOffice = engagements.reduce<Record<string, typeof engagements>>((acc, matter) => {
+    const office = (matter.patent_office_code || "—").toUpperCase()
+    acc[office] = acc[office] ?? []
+    acc[office].push(matter)
+    return acc
+  }, {})
+  const officeKeys = Object.keys(groupedByOffice).sort()
+  const multiJurisdiction = officeKeys.length > 1
+
   return <section className="space-y-5">
     <div className="flex flex-wrap items-end justify-between gap-3">
-      <div><h2 className="text-base font-semibold">Global invention family</h2><p className="mt-1 text-sm text-muted-foreground">{data.family ? `${data.family.invention_number} - ${data.family.title}` : "This legacy matter has not been assigned to a family."}</p></div>
+      <div>
+        <h2 className="text-base font-semibold">Global patent family</h2>
+        <p className="mt-1 text-sm text-muted-foreground">{data.family ? `${data.family.invention_number} - ${data.family.title}` : "This legacy matter has not been assigned to a family."}</p>
+        {multiJurisdiction && (
+          <p className="mt-1 text-xs text-muted-foreground">
+            The same invention, filed separately in {officeKeys.length} jurisdictions below — each has its own distinct application number and is a separate legal application, not a merged case.
+          </p>
+        )}
+      </div>
       {data.family && data.capabilities.can_update && <Button size="sm" onClick={() => setOpen((value) => !value)}><GitBranch className="mr-2 h-4 w-4" />New branch</Button>}
     </div>
     {open && <div className="grid gap-3 rounded-md border border-border bg-muted/20 p-4 sm:grid-cols-[140px_180px_minmax(180px,1fr)_auto] sm:items-end">
@@ -284,7 +334,39 @@ function FamilyWorkspace({ data, projectId }: { data: WorkspaceData; projectId: 
       {sameOffice && data.allowed_transitions.length === 0 && <p className="text-sm text-muted-foreground sm:col-span-4">No configured successor service is available for this engagement.</p>}
       {error && <p className="text-sm text-destructive sm:col-span-4">{error}</p>}
     </div>}
-    {engagements.length === 0 ? <EmptyState icon={GitBranch} title="No related engagements" body="Create a jurisdiction or service branch to build this family." /> : <div className="overflow-x-auto rounded-md border border-border"><table className="w-full min-w-[720px] text-sm"><thead className="bg-muted/40 text-left text-xs text-muted-foreground"><tr><th className="p-3">UIN</th><th className="p-3">Matter</th><th className="p-3">Office</th><th className="p-3">Service</th><th className="p-3">Filed</th><th className="p-3">Status</th></tr></thead><tbody>{engagements.map((matter) => <tr key={matter.id} className="border-t border-border hover:bg-muted/20"><td className="p-3"><Link href={`/projects/${matter.id}`} className="font-mono text-xs font-semibold text-gold hover:underline">{matter.docket_number || matter.project_code}</Link></td><td className="p-3 font-medium">{matter.project_name}</td><td className="p-3">{matter.patent_office_code || "-"}</td><td className="p-3">{matter.service_code || "-"}</td><td className="p-3">{formatDate(matter.filing_date)}</td><td className="p-3"><Badge variant="outline">{matter.status}</Badge></td></tr>)}</tbody></table></div>}
+    {engagements.length === 0 ? <EmptyState icon={GitBranch} title="No related engagements" body="Create a jurisdiction or service branch to build this family." /> : (
+      <div className="space-y-4">
+        {officeKeys.map((office) => (
+          <div key={office} className="overflow-hidden rounded-md border border-border">
+            <div className="flex items-center justify-between bg-muted/40 px-3 py-2">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                {office} — {jurisdictionNames[office] ?? "Other jurisdiction"}
+              </h3>
+              <span className="text-[11px] text-muted-foreground">{groupedByOffice[office].length} engagement{groupedByOffice[office].length === 1 ? "" : "s"}</span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[720px] text-sm">
+                <thead className="bg-muted/20 text-left text-xs text-muted-foreground">
+                  <tr><th className="p-3">UIN</th><th className="p-3">Matter</th><th className="p-3">Application No.</th><th className="p-3">Service</th><th className="p-3">Filed</th><th className="p-3">Status</th></tr>
+                </thead>
+                <tbody>
+                  {groupedByOffice[office].map((matter) => (
+                    <tr key={matter.id} className="border-t border-border hover:bg-muted/20">
+                      <td className="p-3"><Link href={`/projects/${matter.id}`} className="font-mono text-xs font-semibold text-gold hover:underline">{matter.docket_number || matter.project_code}</Link></td>
+                      <td className="p-3 font-medium">{matter.project_name}</td>
+                      <td className="p-3 font-mono text-xs">{matter.application_number || "—"}</td>
+                      <td className="p-3">{matter.service_code || "-"}</td>
+                      <td className="p-3">{formatDate(matter.filing_date)}</td>
+                      <td className="p-3"><Badge variant="outline">{matter.status}</Badge></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ))}
+      </div>
+    )}
   </section>
 }
 

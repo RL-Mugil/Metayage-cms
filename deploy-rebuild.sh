@@ -4,7 +4,7 @@
 
 SERVER="root@139.59.85.216"
 DEPLOY_PATH="/var/www/mypl-cms"
-KEY="~/.ssh/id_ed25519"
+KEY="${DEPLOY_KEY:-$HOME/.ssh/id_ed25519}"
 
 echo "=== Packaging backend ==="
 cd "$(dirname "$0")"
@@ -40,11 +40,10 @@ cd /var/www/mypl-cms/backend
 # install (not update) so production uses the committed composer.lock and
 # never drifts to newer dependency versions on a deploy. Fall back to update
 # only if the lock is out of sync with composer.json.
-composer install --no-interaction --prefer-dist --optimize-autoloader --no-dev \
-  || composer update --no-interaction --prefer-dist --optimize-autoloader --no-dev
+composer install --no-interaction --prefer-dist --optimize-autoloader --no-dev
 
 echo "--- Installing Node.js dependencies ---"
-npm install --legacy-peer-deps
+npm ci --legacy-peer-deps --no-audit --no-fund
 
 echo "--- Configuring the public Reverb endpoint ---"
 set_env() {
@@ -115,10 +114,8 @@ echo "  MAIL_PASSWORD=your-password"
 echo "--- Running migrations ---"
 php artisan migrate --force
 
-echo "--- Seeding module demo data (idempotent) ---"
-php artisan db:seed --class=DemoModulesSeeder --force || true
 echo "--- Seeding public holidays (idempotent) ---"
-php artisan db:seed --class=PublicHolidaysSeeder --force || true
+php artisan db:seed --class=PublicHolidaysSeeder --force
 
 echo "--- Clearing caches ---"
 php artisan config:clear
@@ -128,10 +125,10 @@ php artisan cache:clear
 php artisan optimize
 
 echo "--- Publishing Horizon assets ---"
-php artisan horizon:publish --ansi || true
+php artisan horizon:publish --ansi
 
 echo "--- Installing Reverb ---"
-php artisan reverb:install --no-interaction || true
+php artisan reverb:install --no-interaction
 
 echo "--- Fixing permissions ---"
 chown -R www-data:www-data /var/www/mypl-cms/backend/storage
@@ -186,12 +183,15 @@ stdout_logfile=/var/log/supervisor/mypl-reverb.log
 stopwaitsecs=10
 REVERBEOF
 
-supervisorctl reread || true
-supervisorctl update || true
-supervisorctl start mypl-horizon || supervisorctl restart mypl-horizon || true
-supervisorctl start mypl-scheduler || supervisorctl restart mypl-scheduler || true
+supervisorctl reread
+supervisorctl update
+supervisorctl restart mypl-horizon
+supervisorctl restart mypl-scheduler
 # Restart Reverb so it picks up the freshly-built app/config on every deploy.
-supervisorctl restart mypl-reverb || supervisorctl start mypl-reverb || true
+supervisorctl restart mypl-reverb
+
+echo "--- Post-deploy health check ---"
+curl --fail --silent --show-error --head -H 'Host: myipstrategy.com' http://127.0.0.1/login >/dev/null
 
 echo ""
 echo "=== Rebuild deployment complete! ==="

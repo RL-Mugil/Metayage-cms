@@ -46,6 +46,13 @@ class UpdateProjectRequest extends FormRequest
             'urgency'               => 'nullable|string',
             'notes'                 => 'nullable|string',
             'circle'                => 'nullable|in:A,B',
+            // IPO-style status view fields — stored on the linked PatentApplication,
+            // not on this model (see ProjectController::update()); harmless no-ops if
+            // the project has no linked application yet.
+            'application_type'         => 'nullable|string|max:100',
+            'fer_reply_date'           => 'nullable|date',
+            'certificate_issue_date'   => 'nullable|date',
+            'post_grant_journal_date'  => 'nullable|date',
         ];
     }
 }

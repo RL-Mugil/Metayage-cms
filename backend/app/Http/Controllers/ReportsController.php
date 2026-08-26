@@ -10,11 +10,16 @@ use App\Models\ReportExport;
 use App\Models\TimeEntry;
 use App\Models\Task;
 use App\Models\TrackerRow;
+use App\Models\ZohoInvoice;
+use App\Models\DocketDeadline;
+use App\Models\RenewalSchedule;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class ReportsController extends Controller
 {
@@ -29,6 +34,7 @@ class ReportsController extends Controller
         'overdue-cases' => ['super_admin', 'partner', 'manager', 'galvanizer'],
         'deadline-forecast' => ['super_admin', 'partner', 'manager', 'galvanizer'],
         'payment-collection' => ['super_admin', 'partner', 'manager', 'finance', 'galvanizer'],
+        'zoho-summary' => ['super_admin', 'partner', 'manager', 'finance', 'galvanizer'],
     ];
 
     private const REPORT_NAMES = [
@@ -42,25 +48,26 @@ class ReportsController extends Controller
         'overdue-cases' => 'Overdue Cases Report',
         'deadline-forecast' => 'Deadline Forecast',
         'payment-collection' => 'Payment Collection',
+        'zoho-summary' => 'Zoho Books Summary',
     ];
 
     public function getData(Request $request): JsonResponse
     {
-        [$type, $user, $perPage, $page, $from, $to] = $this->resolveContext($request);
-        $payload = $this->buildReportPayload($type, $user, $perPage, $page, $from, $to);
+        [$type, $user, $perPage, $page, $from, $to, $clientCode] = $this->resolveContext($request);
+        $payload = $this->buildReportPayload($type, $user, $perPage, $page, $from, $to, $clientCode);
 
         return response()->json($payload);
     }
 
     public function generate(Request $request): JsonResponse
     {
-        [$type, $user, $perPage, $page, $from, $to] = $this->resolveContext($request);
+        [$type, $user, , , $from, $to, $clientCode] = $this->resolveContext($request);
         $format = strtoupper((string) $request->input('format', 'PDF'));
         if (! in_array($format, ['PDF', 'CSV', 'EXCEL'], true)) {
             $format = 'PDF';
         }
 
-        $payload = $this->buildReportPayload($type, $user, $perPage, $page, $from, $to);
+        $payload = $this->buildCompleteReportPayload($type, $user, $from, $to, $clientCode);
 
         $export = ReportExport::create([
             'generated_by_id' => $user->id,
@@ -70,8 +77,9 @@ class ReportsController extends Controller
             'filters' => [
                 'from_date' => $from?->toDateString(),
                 'to_date' => $to?->toDateString(),
+                'client_code' => $clientCode,
             ],
-            'row_count' => count($payload['rows']),
+            'row_count' => $payload['total'],
             'snapshot' => $payload['rows'],
         ]);
 
@@ -118,32 +126,76 @@ class ReportsController extends Controller
 
     private function resolveContext(Request $request): array
     {
+        $validated = $request->validate([
+            'type' => ['nullable', 'string', Rule::in(array_keys(self::REPORT_ACCESS))],
+            'from_date' => ['nullable', 'date'],
+            'to_date' => ['nullable', 'date', 'after_or_equal:from_date'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:1000'],
+            'page' => ['nullable', 'integer', 'min:1'],
+            'format' => ['nullable', 'string', Rule::in(['PDF', 'CSV', 'Excel', 'EXCEL'])],
+            'client_code' => ['nullable', 'string', 'max:50'],
+        ]);
         $user = $request->user();
-        $type = (string) $request->get('type', 'matter-status');
-        $perPage = max(1, min((int) $request->get('per_page', 100), 1000));
-        $page = max(1, (int) $request->get('page', 1));
-        $from = $request->filled('from_date') ? Carbon::parse((string) $request->get('from_date'))->startOfDay() : null;
-        $to = $request->filled('to_date') ? Carbon::parse((string) $request->get('to_date'))->endOfDay() : null;
+        $type = (string) ($validated['type'] ?? 'matter-status');
+        $perPage = (int) ($validated['per_page'] ?? 100);
+        $page = (int) ($validated['page'] ?? 1);
+        $from = isset($validated['from_date']) ? Carbon::parse($validated['from_date'])->startOfDay() : null;
+        $to = isset($validated['to_date']) ? Carbon::parse($validated['to_date'])->endOfDay() : null;
+        $clientCode = filled($validated['client_code'] ?? null)
+            ? strtoupper(trim((string) $validated['client_code']))
+            : null;
+        if ($type === 'deadline-forecast') {
+            $from ??= now()->startOfDay();
+            $to ??= now()->addDays(60)->endOfDay();
+        } elseif ($type === 'ip-deadline') {
+            $from ??= now()->startOfDay();
+        }
 
         $allowedRoles = self::REPORT_ACCESS[$type] ?? ['super_admin'];
         abort_unless(in_array($user->role, $allowedRoles, true), 403, 'Forbidden');
 
-        return [$type, $user, $perPage, $page, $from, $to];
+        if ($clientCode && ! Client::query()->where('client_code', $clientCode)->exists()) {
+            throw ValidationException::withMessages([
+                'client_code' => ['No client exists with this client code.'],
+            ]);
+        }
+
+        return [$type, $user, $perPage, $page, $from, $to, $clientCode];
     }
 
-    private function buildReportPayload(string $type, $user, int $perPage, int $page, ?Carbon $from, ?Carbon $to): array
+    private function buildCompleteReportPayload(string $type, $user, ?Carbon $from, ?Carbon $to, ?string $clientCode): array
     {
-        return match ($type) {
-            'client-portfolio' => $this->clientPortfolio($user, $perPage, $page, $from, $to),
-            'matter-status' => $this->matterStatus($user, $perPage, $page, $from, $to),
-            'financial-summary' => $this->financialSummary($user, $perPage, $page, $from, $to),
+        $page = 1;
+        $rows = [];
+        do {
+            $payload = $this->buildReportPayload($type, $user, 1000, $page, $from, $to, $clientCode);
+            array_push($rows, ...$payload['rows']);
+            $page++;
+        } while ($page <= $payload['last_page']);
+
+        $payload['rows'] = $rows;
+        $payload['total'] = count($rows);
+        $payload['per_page'] = count($rows);
+        $payload['current_page'] = 1;
+        $payload['last_page'] = 1;
+
+        return $payload;
+    }
+
+    private function buildReportPayload(string $type, $user, int $perPage, int $page, ?Carbon $from, ?Carbon $to, ?string $clientCode): array
+    {
+        $payload = match ($type) {
+            'client-portfolio' => $this->clientPortfolio($user, $perPage, $page, $from, $to, $clientCode),
+            'matter-status' => $this->matterStatus($user, $perPage, $page, $from, $to, $clientCode),
+            'financial-summary' => $this->financialSummary($user, $perPage, $page, $from, $to, $clientCode),
             'hrms' => $this->hrmsReport($perPage, $page, $from, $to),
-            'ip-deadline' => $this->ipDeadline($user, $perPage, $page, $from, $to),
+            'ip-deadline' => $this->ipDeadline($user, $perPage, $page, $from, $to, $clientCode),
             'productivity' => $this->productivity($user, $perPage, $page, $from, $to),
             'tracker-workload' => $this->trackerWorkload($user, $perPage, $page, $from, $to),
-            'overdue-cases' => $this->overdueCases($user, $perPage, $page, $from, $to),
-            'deadline-forecast' => $this->deadlineForecast($user, $perPage, $page, $from, $to),
-            'payment-collection' => $this->paymentCollection($user, $perPage, $page, $from, $to),
+            'overdue-cases' => $this->overdueCases($user, $perPage, $page, $from, $to, $clientCode),
+            'deadline-forecast' => $this->deadlineForecast($user, $perPage, $page, $from, $to, $clientCode),
+            'payment-collection' => $this->paymentCollection($user, $perPage, $page, $from, $to, $clientCode),
+            'zoho-summary' => $this->zohoSummary($user, $perPage, $page, $from, $to, $clientCode),
             default => [
                 'type' => $type,
                 'rows' => [],
@@ -154,20 +206,42 @@ class ReportsController extends Controller
                 'generated_at' => now()->toDateTimeString(),
             ],
         };
+
+        $payload['rows'] = collect($payload['rows'])->map(function ($row) {
+            $row = (array) $row;
+            if (! array_key_exists('Application Number', $row) && ! array_key_exists('application_number', $row)) {
+                $row['Application Number'] = '';
+            }
+            $row['Notes'] = (string) ($row['Notes'] ?? '');
+            return $row;
+        })->values()->all();
+
+        return $payload;
     }
 
-    private function clientPortfolio($user, int $perPage, int $page, ?Carbon $from, ?Carbon $to): array
+    private function clientPortfolio($user, int $perPage, int $page, ?Carbon $from, ?Carbon $to, ?string $clientCode): array
     {
         $query = Client::with('contacts', 'accountManager')
             ->withCount([
                 'projects as projects_count' => fn ($q) => $this->applyProjectOperationalDateRange($q, $from, $to),
-                'projects as active_projects_count' => fn ($q) => $this->applyProjectOperationalDateRange($q, $from, $to)
-                    ->whereNotIn('status', ['Completed', 'Closed', 'Granted']),
-            ]);
+                'projects as active_projects_count' => function ($q) use ($from, $to) {
+                    $this->applyProjectOperationalDateRange($q, $from, $to);
+                    $q->whereNotIn('status', ['Completed', 'Closed', 'Granted', 'Abandoned']);
+                },
+            ])
+            ->withSum(['invoices as total_billed' => function ($q) use ($from, $to) {
+                $q->where('status', '<>', 'Cancelled');
+                $this->applyDateRange($q, 'issue_date', $from, $to);
+            }], 'total_amount')
+            ->withSum(['invoices as total_outstanding' => function ($q) use ($from, $to) {
+                $q->where('status', '<>', 'Cancelled');
+                $this->applyDateRange($q, 'issue_date', $from, $to);
+            }], 'balance_due');
 
         if ($from || $to) {
             $query->whereHas('projects', fn ($q) => $this->applyProjectOperationalDateRange($q, $from, $to));
         }
+        $query->when($clientCode, fn ($q) => $q->where('client_code', $clientCode));
 
         if ($user->role === 'manager') {
             $query->where('account_manager_id', $user->id);
@@ -185,16 +259,21 @@ class ReportsController extends Controller
             'status' => $client->status,
             'projects_count' => $client->projects_count,
             'active_projects_count' => $client->active_projects_count,
+            'total_billed' => round((float) ($client->total_billed ?? 0), 2),
+            'total_received' => round((float) ($client->total_billed ?? 0) - (float) ($client->total_outstanding ?? 0), 2),
+            'total_outstanding' => round((float) ($client->total_outstanding ?? 0), 2),
             'account_manager' => $client->accountManager?->name,
         ]);
 
         return $this->paginatedResponse('client-portfolio', $rows, $paginator, $perPage);
     }
 
-    private function matterStatus($user, int $perPage, int $page, ?Carbon $from, ?Carbon $to): array
+    private function matterStatus($user, int $perPage, int $page, ?Carbon $from, ?Carbon $to, ?string $clientCode): array
     {
-        $query = Project::with('client', 'manager', 'stages');
+        $query = Project::with('client', 'manager', 'stages', 'patentApplication')
+            ->whereNotIn('status', ['Completed', 'Closed', 'Granted', 'Abandoned']);
         $this->applyProjectOperationalDateRange($query, $from, $to);
+        $query->when($clientCode, fn ($q) => $q->whereHas('client', fn ($client) => $client->where('client_code', $clientCode)));
         if ($user->role === 'manager') {
             $query->where('assigned_manager_id', $user->id);
         } elseif ($user->isGalvanizer()) {
@@ -204,6 +283,8 @@ class ReportsController extends Controller
         $paginator = $query->paginate($perPage, ['*'], 'page', $page);
         $rows = $paginator->getCollection()->map(fn ($project) => [
             'project_code' => $project->project_code,
+            'client_code' => $project->client?->client_code,
+            'application_number' => $project->application_number ?? $project->patentApplication?->application_number,
             'project_name' => $project->project_name,
             'client' => $project->client?->company_name,
             'project_type' => $project->project_type,
@@ -217,10 +298,11 @@ class ReportsController extends Controller
         return $this->paginatedResponse('matter-status', $rows, $paginator, $perPage);
     }
 
-    private function financialSummary($user, int $perPage, int $page, ?Carbon $from, ?Carbon $to): array
+    private function financialSummary($user, int $perPage, int $page, ?Carbon $from, ?Carbon $to, ?string $clientCode): array
     {
-        $query = Invoice::with('client');
+        $query = Invoice::with('client', 'project.patentApplication');
         $this->applyDateRange($query, 'issue_date', $from, $to);
+        $query->when($clientCode, fn ($q) => $q->whereHas('client', fn ($client) => $client->where('client_code', $clientCode)));
         if ($user->role === 'manager') {
             $query->whereHas('project', fn ($q) => $q->where('assigned_manager_id', $user->id));
         } elseif ($user->isGalvanizer()) {
@@ -230,16 +312,55 @@ class ReportsController extends Controller
         $paginator = $query->paginate($perPage, ['*'], 'page', $page);
         $rows = $paginator->getCollection()->map(fn ($invoice) => [
             'invoice_code' => $invoice->invoice_code,
+            'client_code' => $invoice->client?->client_code,
+            'project_code' => $invoice->project?->project_code,
+            'application_number' => $invoice->project?->application_number ?? $invoice->project?->patentApplication?->application_number,
             'client' => $invoice->client?->company_name,
             'issue_date' => $invoice->issue_date,
             'due_date' => $invoice->due_date,
             'total_amount' => $invoice->total_amount,
+            'amount_received' => round((float) $invoice->total_amount - (float) $invoice->balance_due, 2),
             'balance_due' => $invoice->balance_due,
             'status' => $invoice->status,
             'currency' => $invoice->currency,
         ]);
 
         return $this->paginatedResponse('financial-summary', $rows, $paginator, $perPage);
+    }
+
+    /**
+     * Additive alongside (not replacing) financial-summary — a snapshot of the local
+     * Zoho Books mirror (App\Models\ZohoInvoice, refreshed by the zoho:sync command).
+     */
+    private function zohoSummary($user, int $perPage, int $page, ?Carbon $from, ?Carbon $to, ?string $clientCode): array
+    {
+        $query = ZohoInvoice::with('client:id,client_code,company_name', 'project.patentApplication')->orderByDesc('txn_date');
+        $this->applyDateRange($query, 'txn_date', $from, $to);
+        $query->when($clientCode, fn ($q) => $q->whereHas('client', fn ($client) => $client->where('client_code', $clientCode)));
+        if ($user->role === 'manager') {
+            $query->whereHas('project', fn ($q) => $q->where('assigned_manager_id', $user->id));
+        } elseif ($user->isGalvanizer()) {
+            $query->whereHas('project', fn ($q) => $user->applyProjectScope($q));
+        }
+
+        $paginator = $query->paginate($perPage, ['*'], 'page', $page);
+        $rows = $paginator->getCollection()->map(fn ($r) => [
+            'number' => $r->number,
+            'type' => $r->zoho_type,
+            'client' => $r->client?->company_name,
+            'client_code' => $r->client?->client_code,
+            'project_code' => $r->project?->project_code,
+            'application_number' => $r->project?->application_number ?? $r->project?->patentApplication?->application_number,
+            'docket_number' => $r->project?->docket_number,
+            'date' => $r->txn_date,
+            'status' => $r->status,
+            'total' => $r->total,
+            'balance' => $r->balance,
+            'currency' => $r->currency,
+            'synced_at' => $r->synced_at,
+        ]);
+
+        return $this->paginatedResponse('zoho-summary', $rows, $paginator, $perPage);
     }
 
     private function hrmsReport(int $perPage, int $page, ?Carbon $from, ?Carbon $to): array
@@ -259,8 +380,13 @@ class ReportsController extends Controller
         $this->applyDateRange($attendance, 'attendance_date', $from, $to);
         $attendance = $attendance->groupBy('employee_id')->get()->keyBy('employee_id');
 
+        $leaveFrom = $from?->toDateString() ?? '1900-01-01';
+        $leaveTo = $to?->toDateString() ?? '9999-12-31';
         $leave = DB::table('leave_requests')
-            ->selectRaw("employee_id, COALESCE(SUM(total_days), 0) AS approved_leave_days")
+            ->selectRaw(
+                'employee_id, COALESCE(SUM((LEAST(to_date, ?::date) - GREATEST(from_date, ?::date)) + 1), 0) AS approved_leave_days',
+                [$leaveTo, $leaveFrom],
+            )
             ->whereIn('employee_id', $employeeIds)
             ->where('status', 'Approved')
             ->when($from, fn ($q) => $q->whereDate('to_date', '>=', $from->toDateString()))
@@ -305,19 +431,24 @@ class ReportsController extends Controller
         return $this->paginatedResponse('hrms', $rows, $paginator, $perPage);
     }
 
-    private function ipDeadline($user, int $perPage, int $page, ?Carbon $from, ?Carbon $to): array
+    private function ipDeadline($user, int $perPage, int $page, ?Carbon $from, ?Carbon $to, ?string $clientCode): array
     {
-        $query = Project::with('client')->whereNotNull('hard_deadline');
-        $this->applyDateRange($query, 'hard_deadline', $from, $to);
+        $from ??= now()->startOfDay();
+
+        $projectQuery = Project::with('client', 'patentApplication')->whereNotNull('hard_deadline');
+        $this->applyDateRange($projectQuery, 'hard_deadline', $from, $to);
+        $projectQuery->when($clientCode, fn ($q) => $q->whereHas('client', fn ($client) => $client->where('client_code', $clientCode)));
         if ($user->role === 'manager') {
-            $query->where('assigned_manager_id', $user->id);
+            $projectQuery->where('assigned_manager_id', $user->id);
         } elseif ($user->isGalvanizer()) {
-            $user->applyProjectScope($query);
+            $user->applyProjectScope($projectQuery);
         }
 
-        $paginator = $query->orderBy('hard_deadline')->paginate($perPage, ['*'], 'page', $page);
-        $rows = $paginator->getCollection()->map(fn ($project) => [
+        $rows = $projectQuery->get()->map(fn ($project) => [
+            'source' => 'Matter hard deadline',
             'project_code' => $project->project_code,
+            'client_code' => $project->client?->client_code,
+            'application_number' => $project->application_number ?? $project->patentApplication?->application_number,
             'project_name' => $project->project_name,
             'client' => $project->client?->company_name,
             'project_type' => $project->project_type,
@@ -327,14 +458,70 @@ class ReportsController extends Controller
             'status' => $project->status,
         ]);
 
-        return $this->paginatedResponse('ip-deadline', $rows, $paginator, $perPage);
+        $docketQuery = DocketDeadline::with(['project.client'])
+            ->whereNotIn('status', ['Completed', 'Waived']);
+        $this->applyDateRange($docketQuery, 'due_date', $from, $to);
+        $docketQuery->when($clientCode, fn ($q) => $q->whereHas('project.client', fn ($client) => $client->where('client_code', $clientCode)));
+        if ($user->role === 'manager') {
+            $docketQuery->whereHas('project', fn ($q) => $q->where('assigned_manager_id', $user->id));
+        } elseif ($user->isGalvanizer()) {
+            $docketQuery->whereHas('project', fn ($q) => $user->applyProjectScope($q));
+        }
+        $rows = $rows->concat($docketQuery->get()->map(fn ($deadline) => [
+            'source' => 'Statutory docket deadline',
+            'project_code' => $deadline->project?->project_code,
+            'client_code' => $deadline->project?->client?->client_code,
+            'application_number' => $deadline->project?->application_number,
+            'project_name' => $deadline->title,
+            'client' => $deadline->project?->client?->company_name,
+            'project_type' => $deadline->legal_basis,
+            'deadline' => $deadline->due_date?->toDateString(),
+            'days_left' => $deadline->due_date ? now()->startOfDay()->diffInDays($deadline->due_date, false) : null,
+            'urgency' => $deadline->risk_level,
+            'status' => $deadline->status,
+        ]));
+
+        $renewalQuery = RenewalSchedule::with(['application.client', 'application.projects'])
+            ->whereNotIn('status', ['Paid', 'Waived', 'Lapsed']);
+        $this->applyDateRange($renewalQuery, 'due_date', $from, $to);
+        $renewalQuery->when($clientCode, fn ($q) => $q->whereHas('application.client', fn ($client) => $client->where('client_code', $clientCode)));
+        if ($user->role === 'manager') {
+            $renewalQuery->whereHas('application.projects', fn ($q) => $q->where('assigned_manager_id', $user->id));
+        } elseif ($user->isGalvanizer()) {
+            $renewalQuery->whereHas('application.projects', fn ($q) => $user->applyProjectScope($q));
+        }
+        $rows = $rows->concat($renewalQuery->get()->map(function ($renewal) {
+            $project = $renewal->application?->projects?->first();
+            return [
+                'source' => 'Patent renewal fee',
+                'project_code' => $project?->project_code,
+                'client_code' => $renewal->application?->client?->client_code,
+                'application_number' => $renewal->application?->application_number,
+                'project_name' => "Renewal year {$renewal->renewal_year}",
+                'client' => $renewal->application?->client?->company_name,
+                'project_type' => $renewal->application?->jurisdiction,
+                'deadline' => $renewal->due_date?->toDateString(),
+                'days_left' => $renewal->due_date ? now()->startOfDay()->diffInDays($renewal->due_date, false) : null,
+                'urgency' => $renewal->due_date?->isBefore(now()->addDays(30)) ? 'High' : 'Normal',
+                'status' => $renewal->status,
+            ];
+        }));
+
+        return $this->collectionPaginatedResponse(
+            'ip-deadline',
+            $rows->sortBy('deadline')->values(),
+            $perPage,
+            $page,
+        );
     }
 
     private function productivity($user, int $perPage, int $page, ?Carbon $from, ?Carbon $to): array
     {
-        $query = TimeEntry::with(['user', 'project', 'task', 'approvedBy']);
+        $query = TimeEntry::with(['user', 'project.client', 'project.patentApplication', 'task', 'approvedBy']);
         $this->applyDateRange($query, 'entry_date', $from, $to);
-        if ($user->isGalvanizer()) {
+        if ($user->role === 'manager') {
+            $query->whereHas('project', fn ($q) => $q->where('assigned_manager_id', $user->id));
+        } elseif ($user->isGalvanizer()) {
             $query->whereHas('project', fn ($q) => $user->applyProjectScope($q));
         }
         $paginator = $query->paginate($perPage, ['*'], 'page', $page);
@@ -342,6 +529,9 @@ class ReportsController extends Controller
             'entry_date' => $entry->entry_date?->toDateString(),
             'employee' => $entry->user?->name,
             'project_code' => $entry->project?->project_code,
+            'client_code' => $entry->project?->client?->client_code,
+            'application_number' => $entry->project?->application_number ?? $entry->project?->patentApplication?->application_number,
+            'title' => $entry->project?->project_name,
             'task_title' => $entry->task?->title,
             'hours_logged' => $entry->duration_hours,
             'billable' => $entry->billable ? 'Yes' : 'No',
@@ -397,20 +587,27 @@ class ReportsController extends Controller
         return $this->collectionPaginatedResponse('tracker-workload', $rows, $perPage, $page);
     }
 
-    private function overdueCases($user, int $perPage, int $page, ?Carbon $from, ?Carbon $to): array
+    private function overdueCases($user, int $perPage, int $page, ?Carbon $from, ?Carbon $to, ?string $clientCode): array
     {
-        $query = TrackerRow::with(['pcmUser:id,name', 'scmUser:id,name', 'prUser:id,name'])
+        $query = TrackerRow::with(['pcmUser:id,name', 'scmUser:id,name', 'prUser:id,name', 'project.client', 'project.patentApplication'])
             ->whereNotNull('delivery_due_date')
             ->whereDate('delivery_due_date', '<', now()->toDateString())
             ->orderBy('delivery_due_date');
         $this->applyDateRange($query, 'delivery_due_date', $from, $to);
+        $query->when($clientCode, fn ($q) => $q->whereHas('project.client', fn ($client) => $client->where('client_code', $clientCode)));
         if ($user->isGalvanizer()) {
             $query->whereIn('circle_id', $this->allowedTrackerCircleIds($user));
+        } elseif ($user->role === 'manager') {
+            $query->whereHas('project', fn ($q) => $q->where('assigned_manager_id', $user->id));
         }
 
         $paginator = $query->paginate($perPage, ['*'], 'page', $page);
         $rows = $paginator->getCollection()->map(fn ($row) => [
             'Docket #' => $row->docket_number ?? '—',
+            'Client Code' => $row->project?->client?->client_code ?? '—',
+            'Case Code' => $row->project?->project_code ?? '—',
+            'Title' => $row->project?->project_name ?? '—',
+            'Application Number' => $row->project?->application_number ?? $row->project?->patentApplication?->application_number ?? '',
             'Client' => $row->client_name ?? '—',
             'Record Type' => $row->record_type ?? '—',
             'PCM' => $row->pcmUser?->name ?? '—',
@@ -425,20 +622,29 @@ class ReportsController extends Controller
         return $this->paginatedResponse('overdue-cases', $rows, $paginator, $perPage);
     }
 
-    private function deadlineForecast($user, int $perPage, int $page, ?Carbon $from, ?Carbon $to): array
+    private function deadlineForecast($user, int $perPage, int $page, ?Carbon $from, ?Carbon $to, ?string $clientCode): array
     {
-        $query = TrackerRow::with(['pcmUser:id,name'])
+        $from ??= now()->startOfDay();
+        $to ??= now()->addDays(60)->endOfDay();
+        $query = TrackerRow::with(['pcmUser:id,name', 'project.client', 'project.patentApplication'])
             ->whereNotNull('delivery_due_date')
             ->whereDate('delivery_due_date', '>=', now()->toDateString())
             ->orderBy('delivery_due_date');
         $this->applyDateRange($query, 'delivery_due_date', $from, $to);
+        $query->when($clientCode, fn ($q) => $q->whereHas('project.client', fn ($client) => $client->where('client_code', $clientCode)));
         if ($user->isGalvanizer()) {
             $query->whereIn('circle_id', $this->allowedTrackerCircleIds($user));
+        } elseif ($user->role === 'manager') {
+            $query->whereHas('project', fn ($q) => $q->where('assigned_manager_id', $user->id));
         }
 
         $paginator = $query->paginate($perPage, ['*'], 'page', $page);
         $rows = $paginator->getCollection()->map(fn ($row) => [
             'Docket #' => $row->docket_number ?? '—',
+            'Client Code' => $row->project?->client?->client_code ?? '—',
+            'Case Code' => $row->project?->project_code ?? '—',
+            'Title' => $row->project?->project_name ?? '—',
+            'Application Number' => $row->project?->application_number ?? $row->project?->patentApplication?->application_number ?? '',
             'Client' => $row->client_name ?? '—',
             'Record Type' => $row->record_type ?? '—',
             'PCM' => $row->pcmUser?->name ?? '—',
@@ -452,12 +658,19 @@ class ReportsController extends Controller
         return $this->paginatedResponse('deadline-forecast', $rows, $paginator, $perPage);
     }
 
-    private function paymentCollection($user, int $perPage, int $page, ?Carbon $from, ?Carbon $to): array
+    private function paymentCollection($user, int $perPage, int $page, ?Carbon $from, ?Carbon $to, ?string $clientCode): array
     {
         $query = DB::table('tracker_rows')->whereNotNull('client_name');
         $this->applyDateRange($query, 'delivery_due_date', $from, $to);
+        if ($clientCode) {
+            $query->whereIn('project_id', Project::query()
+                ->whereHas('client', fn ($client) => $client->where('client_code', $clientCode))
+                ->select('id'));
+        }
         if ($user->isGalvanizer()) {
             $query->whereIn('circle_id', $this->allowedTrackerCircleIds($user));
+        } elseif ($user->role === 'manager') {
+            $query->whereIn('project_id', Project::query()->where('assigned_manager_id', $user->id)->select('id'));
         }
         $paginator = $query
             ->selectRaw("
@@ -540,6 +753,10 @@ class ReportsController extends Controller
 
     private function trackerCircleSql($user): string
     {
+        if ($user->role === 'manager') {
+            return ' AND project_id IN (SELECT id FROM projects WHERE assigned_manager_id = '.((int) $user->id).')';
+        }
+
         if (! $user->isGalvanizer()) {
             return '';
         }

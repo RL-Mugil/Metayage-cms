@@ -14,11 +14,30 @@ use App\Http\PaginationHelper;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Redis;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 
 class FinancialController extends Controller
 {
+    /** Generate a sequential code while holding a PostgreSQL transaction lock. */
+    private function nextCode(string $prefix, string $column, string $modelClass): string
+    {
+        $year = Carbon::now()->year;
+        DB::statement('SELECT pg_advisory_xact_lock(?)', [crc32("{$prefix}:{$year}")]);
+        $last = $modelClass::query()
+            ->where($column, 'like', "{$prefix}-{$year}-%")
+            ->orderByDesc($column)
+            ->value($column);
+        $sequence = $last ? ((int) substr($last, -5)) + 1 : 1;
+
+        return sprintf('%s-%s-%05d', $prefix, $year, $sequence);
+    }
+
+    /** Lock the client row so its ledger balance has one writer at a time. */
+    private function lockLedgerOwner(int $clientId): Client
+    {
+        return Client::query()->lockForUpdate()->findOrFail($clientId);
+    }
     /**
      * Compute GST breakdown based on client's location.
      * Karnataka client  → CGST 9% + SGST 9% (intra-state)
@@ -202,18 +221,9 @@ class FinancialController extends Controller
         $taxDetails  = $gst['tax_details'];
         $totalAmount = $subtotal + $taxAmount;
 
-        $invoice = \DB::transaction(function () use ($validated, $subtotal, $taxAmount, $taxRate, $taxDetails, $totalAmount) {
-            // Redis atomic counter: O(1) vs locking the entire invoices table.
-            // On first use (or after Redis restart) we seed from the DB max.
-            $year = date('Y');
-            $redisKey = "seq:invoice:{$year}";
-            if (!Redis::exists($redisKey)) {
-                $last = Invoice::where('invoice_code', 'like', "INV-{$year}-%")
-                    ->orderBy('invoice_code', 'desc')->value('invoice_code');
-                Redis::setnx($redisKey, $last ? (int) substr($last, -5) : 0);
-            }
-            $seq = Redis::incr($redisKey);
-            $code = sprintf('INV-%s-%05d', $year, $seq);
+        $invoice = DB::transaction(function () use ($validated, $subtotal, $taxAmount, $taxRate, $taxDetails, $totalAmount, $user, $request) {
+            $code = $this->nextCode('INV', 'invoice_code', Invoice::class);
+            $this->lockLedgerOwner((int) $validated['client_id']);
 
             $invoice = Invoice::create([
                 'invoice_code' => $code,
@@ -258,18 +268,15 @@ class FinancialController extends Controller
                 'notes' => $validated['notes'] ?? null,
             ]);
 
+            AuditLog::create([
+                'user_id' => $user->id, 'action' => 'create_invoice',
+                'subject_type' => 'Invoice', 'subject_id' => $invoice->id,
+                'metadata' => ['code' => $invoice->invoice_code, 'total' => $totalAmount],
+                'ip_address' => $request->ip(), 'user_agent' => $request->userAgent(),
+            ]);
+
             return $invoice;
         });
-
-        AuditLog::create([
-            'user_id' => $user->id,
-            'action' => 'create_invoice',
-            'subject_type' => 'Invoice',
-            'subject_id' => $invoice->id,
-            'metadata' => ['code' => $invoice->invoice_code, 'total' => $totalAmount],
-            'ip_address' => $request->ip(),
-            'user_agent' => $request->userAgent(),
-        ]);
 
         Cache::increment('dashboard_v');
         return response()->json($invoice->load('client'), 201);
@@ -291,7 +298,18 @@ class FinancialController extends Controller
             return $this->deleteInvoice($request, $id);
         }
 
-        $invoice->update($validated);
+        $invoice = DB::transaction(function () use ($invoice, $validated, $user, $request) {
+            $locked = Invoice::query()->lockForUpdate()->findOrFail($invoice->id);
+            $before = $locked->only(array_keys($validated));
+            $locked->update($validated);
+            AuditLog::create([
+                'user_id' => $user->id, 'action' => 'update_invoice',
+                'subject_type' => 'Invoice', 'subject_id' => $locked->id,
+                'metadata' => ['before' => $before, 'after' => $locked->only(array_keys($validated))],
+                'ip_address' => $request->ip(), 'user_agent' => $request->userAgent(),
+            ]);
+            return $locked;
+        });
         Cache::increment('dashboard_v');
         return response()->json($invoice->load('client'));
     }
@@ -379,18 +397,10 @@ class FinancialController extends Controller
         $subtotal = (float) $validated['total_amount']; // user enters pre-tax fee amount
         $gst      = $this->computeGst($client, $subtotal);
 
-        $quotation = \DB::transaction(function () use ($validated, $subtotal, $gst) {
-            $year    = date('Y');
-            $redisKey = "seq:quotation:{$year}";
-            if (!Redis::exists($redisKey)) {
-                $last = Quotation::where('quote_code', 'like', "QUO-{$year}-%")
-                    ->orderBy('quote_code', 'desc')->value('quote_code');
-                Redis::setnx($redisKey, $last ? (int) substr($last, -5) : 0);
-            }
-            $seq  = Redis::incr($redisKey);
-            $code = sprintf('QUO-%s-%05d', $year, $seq);
+        $quotation = DB::transaction(function () use ($validated, $subtotal, $gst, $user, $request) {
+            $code = $this->nextCode('QUO', 'quote_code', Quotation::class);
 
-            return Quotation::create([
+            $quotation = Quotation::create([
                 'quote_code'              => $code,
                 'client_id'               => $validated['client_id'],
                 'project_id'              => $validated['project_id'] ?? null,
@@ -407,17 +417,14 @@ class FinancialController extends Controller
                 'currency'                => $validated['currency'] ?? 'INR',
                 'status'                  => 'Draft',
             ]);
+            AuditLog::create([
+                'user_id' => $user->id, 'action' => 'create_quotation',
+                'subject_type' => 'Quotation', 'subject_id' => $quotation->id,
+                'metadata' => ['code' => $quotation->quote_code, 'total' => $quotation->total_amount],
+                'ip_address' => $request->ip(), 'user_agent' => $request->userAgent(),
+            ]);
+            return $quotation;
         });
-
-        AuditLog::create([
-            'user_id'      => $user->id,
-            'action'       => 'create_quotation',
-            'subject_type' => 'Quotation',
-            'subject_id'   => $quotation->id,
-            'metadata'     => ['code' => $quotation->quote_code, 'total' => $validated['total_amount']],
-            'ip_address'   => $request->ip(),
-            'user_agent'   => $request->userAgent(),
-        ]);
 
         Cache::increment('dashboard_v');
         return response()->json($quotation->load('client'), 201);
@@ -522,16 +529,9 @@ class FinancialController extends Controller
         $taxDetails  = $gst['tax_details'];
         $totalAmount = $subtotal + $taxAmount;
 
-        $invoice = \DB::transaction(function () use ($quotation, $client, $subtotal, $taxAmount, $taxRate, $taxDetails, $totalAmount) {
-            $year     = date('Y');
-            $redisKey = "seq:invoice:{$year}";
-            if (!Redis::exists($redisKey)) {
-                $last = Invoice::where('invoice_code', 'like', "INV-{$year}-%")
-                    ->orderBy('invoice_code', 'desc')->value('invoice_code');
-                Redis::setnx($redisKey, $last ? (int) substr($last, -5) : 0);
-            }
-            $seq  = Redis::incr($redisKey);
-            $code = sprintf('INV-%s-%05d', $year, $seq);
+        $invoice = DB::transaction(function () use ($quotation, $client, $subtotal, $taxAmount, $taxRate, $taxDetails, $totalAmount, $user, $request) {
+            $code = $this->nextCode('INV', 'invoice_code', Invoice::class);
+            $this->lockLedgerOwner((int) $quotation->client_id);
 
             $invoice = Invoice::create([
                 'invoice_code'  => $code,
@@ -575,18 +575,15 @@ class FinancialController extends Controller
 
             $quotation->update(['status' => 'Accepted']);
 
+            AuditLog::create([
+                'user_id' => $user->id, 'action' => 'convert_quotation',
+                'subject_type' => 'Invoice', 'subject_id' => $invoice->id,
+                'metadata' => ['quote_code' => $quotation->quote_code, 'invoice_code' => $invoice->invoice_code],
+                'ip_address' => $request->ip(), 'user_agent' => $request->userAgent(),
+            ]);
+
             return $invoice;
         });
-
-        AuditLog::create([
-            'user_id'      => $user->id,
-            'action'       => 'convert_quotation',
-            'subject_type' => 'Invoice',
-            'subject_id'   => $invoice->id,
-            'metadata'     => ['quote_code' => $quotation->quote_code, 'invoice_code' => $invoice->invoice_code],
-            'ip_address'   => $request->ip(),
-            'user_agent'   => $request->userAgent(),
-        ]);
 
         Cache::increment('dashboard_v');
         return response()->json($invoice->load('client'), 201);
@@ -653,14 +650,7 @@ class FinancialController extends Controller
                     } elseif ($validated['action'] === 'mark_paid') {
                         if (!in_array($invoice->status, ['Sent', 'Overdue', 'Partially Paid'])) { $skipped++; return; }
 
-                        $year   = date('Y');
-                        $recKey = "seq:receipt:{$year}";
-                        if (!Redis::exists($recKey)) {
-                            $last = Payment::where('receipt_code', 'like', "REC-{$year}-%")
-                                ->orderBy('receipt_code', 'desc')->value('receipt_code');
-                            Redis::setnx($recKey, $last ? (int) substr($last, -5) : 0);
-                        }
-                        $receiptCode = sprintf('REC-%s-%05d', $year, Redis::incr($recKey));
+                        $receiptCode = $this->nextCode('REC', 'receipt_code', Payment::class);
 
                         Payment::create([
                             'client_id'      => $invoice->client_id,
@@ -752,7 +742,7 @@ class FinancialController extends Controller
         $invoiceForAuth = Invoice::findOrFail($validated['invoice_id']);
         $this->authorize('pay', $invoiceForAuth);
 
-        $payment = \DB::transaction(function () use ($validated) {
+        $payment = DB::transaction(function () use ($validated, $user, $request) {
             // Lock the invoice row so concurrent payments cannot double-apply.
             $invoice = Invoice::lockForUpdate()->findOrFail($validated['invoice_id']);
             $client = Client::findOrFail($invoice->client_id);
@@ -763,15 +753,8 @@ class FinancialController extends Controller
                 ]);
             }
 
-            // Redis atomic counter for receipt codes.
-            $year = date('Y');
-            $recKey = "seq:receipt:{$year}";
-            if (!Redis::exists($recKey)) {
-                $last = Payment::where('receipt_code', 'like', "REC-{$year}-%")
-                    ->orderBy('receipt_code', 'desc')->value('receipt_code');
-                Redis::setnx($recKey, $last ? (int) substr($last, -5) : 0);
-            }
-            $receiptCode = sprintf('REC-%s-%05d', $year, Redis::incr($recKey));
+            $this->lockLedgerOwner((int) $client->id);
+            $receiptCode = $this->nextCode('REC', 'receipt_code', Payment::class);
 
             // 1. Create Payment record
             $payment = Payment::create([
@@ -810,20 +793,15 @@ class FinancialController extends Controller
                 'notes' => $validated['notes'] ?? null,
             ]);
 
+            AuditLog::create([
+                'user_id' => $user->id, 'action' => 'record_payment',
+                'subject_type' => 'Payment', 'subject_id' => $payment->id,
+                'metadata' => ['amount' => $payment->amount, 'invoice_code' => $invoice->invoice_code],
+                'ip_address' => $request->ip(), 'user_agent' => $request->userAgent(),
+            ]);
+
             return $payment;
         });
-
-        $invoice = Invoice::find($validated['invoice_id']);
-
-        AuditLog::create([
-            'user_id' => $user->id,
-            'action' => 'record_payment',
-            'subject_type' => 'Payment',
-            'subject_id' => $payment->id,
-            'metadata' => ['amount' => $payment->amount, 'invoice_code' => $invoice->invoice_code],
-            'ip_address' => $request->ip(),
-            'user_agent' => $request->userAgent(),
-        ]);
 
         Cache::increment('dashboard_v');
         return response()->json($payment, 201);

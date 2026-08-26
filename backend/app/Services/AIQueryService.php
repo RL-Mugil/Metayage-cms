@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\User;
+use App\Models\Firm;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -82,7 +83,7 @@ class AIQueryService
 
         if ($sql) {
             $this->guardSql($sql, $userContext);
-            $results = DB::connection('ai_readonly')->select($sql);
+            $results = $this->executeReadOnly($sql);
             $explanation = trim((string) preg_replace('/```sql[\s\S]*?```/i', '', $content));
         }
 
@@ -106,6 +107,10 @@ class AIQueryService
     {
         $role = $userContext['role'] ?? 'staff';
 
+        if (Firm::active()->limit(2)->count() > 1) {
+            throw new \RuntimeException('Live AI SQL is disabled until tenant-filtered database views are configured.');
+        }
+
         if (! preg_match('/^\s*(SELECT|WITH)\b/i', $sql)) {
             throw new \RuntimeException('Only SELECT queries are permitted.');
         }
@@ -114,12 +119,19 @@ class AIQueryService
             throw new \RuntimeException('Unsafe SQL keyword detected.');
         }
 
-        if (substr_count($sql, ';') > 1) {
-            throw new \RuntimeException('Multiple statements are not permitted.');
+        $withoutTrailingTerminator = rtrim(trim($sql), ';');
+        if (str_contains($withoutTrailingTerminator, ';') || preg_match('/(--|\/\*)/', $sql)) {
+            throw new \RuntimeException('Multiple statements and SQL comments are not permitted.');
         }
 
         if (preg_match('/\bpassword\b/i', $sql)) {
             throw new \RuntimeException('Access to password column is not permitted.');
+        }
+
+        preg_match_all('/\b(?:FROM|JOIN)\s+(?:"?public"?\.)?"?([a-z_][a-z0-9_]*)"?/i', $sql, $matches);
+        $referencedTables = array_unique(array_map('strtolower', $matches[1] ?? []));
+        if ($referencedTables === [] || array_diff($referencedTables, self::ALLOWED_TABLES) !== []) {
+            throw new \RuntimeException('The query references a table that is not approved for AI access.');
         }
 
         if (in_array($role, User::CLIENT_ROLES, true)) {
@@ -410,7 +422,18 @@ SQL,
         return [
             'response' => $response,
             'sql_query' => $sql,
-            'results' => DB::connection('ai_readonly')->select($sql),
+            'results' => $this->executeReadOnly($sql),
         ];
+    }
+
+    private function executeReadOnly(string $sql): array
+    {
+        $connection = DB::connection('ai_readonly');
+
+        return $connection->transaction(function () use ($connection, $sql): array {
+            $connection->statement("SET LOCAL statement_timeout = '5000ms'");
+            $connection->statement('SET TRANSACTION READ ONLY');
+            return $connection->select($sql);
+        });
     }
 }

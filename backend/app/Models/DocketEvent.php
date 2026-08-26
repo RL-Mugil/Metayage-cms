@@ -10,7 +10,7 @@ class DocketEvent extends Model
     use BelongsToFirm;
 
     protected $fillable = [
-        'project_id', 'patent_application_id', 'event_type', 'event_date', 'notes', 'created_by',
+        'project_id', 'ip_record_id', 'patent_application_id', 'event_type', 'event_date', 'notes', 'created_by',
     ];
 
     protected $casts = [
@@ -25,6 +25,11 @@ class DocketEvent extends Model
     public function application()
     {
         return $this->belongsTo(PatentApplication::class, 'patent_application_id');
+    }
+
+    public function ipRecord()
+    {
+        return $this->belongsTo(IpRecord::class);
     }
 
     public function deadlines()

@@ -94,17 +94,31 @@ Route::middleware(['auth:sanctum', 'firm.context', 'throttle:120,1'])->group(fun
     Route::post('/projects/docket-import/preview', [\App\Http\Controllers\ProjectDocketImportController::class, 'preview'])->middleware('throttle:60,1');
     Route::post('/projects/docket-import/import', [\App\Http\Controllers\ProjectDocketImportController::class, 'import'])->middleware('throttle:30,1');
 
+    // Canonical IP assets — durable legal records linked to one or more service engagements.
+    Route::get('/ip-records', [\App\Http\Controllers\IpRecordController::class, 'index']);
+    Route::post('/ip-records', [\App\Http\Controllers\IpRecordController::class, 'store']);
+    Route::get('/ip-records/{ipRecord}', [\App\Http\Controllers\IpRecordController::class, 'show']);
+
     // Docketing engine — events, statutory deadlines, renewals
     Route::get('/docket/upcoming', [\App\Http\Controllers\DocketController::class, 'upcoming']);
+    Route::get('/docket/worklist', \App\Http\Controllers\DocketWorklistController::class);
     Route::get('/projects/{id}/docket', [\App\Http\Controllers\DocketController::class, 'show']);
     Route::post('/projects/{id}/docket/events', [\App\Http\Controllers\DocketController::class, 'storeEvent']);
+    Route::put('/docket/events/{id}', [\App\Http\Controllers\DocketController::class, 'updateEvent']);
+    Route::delete('/docket/events/{id}', [\App\Http\Controllers\DocketController::class, 'destroyEvent']);
+    Route::post('/projects/{id}/docket/deadlines', [\App\Http\Controllers\DocketController::class, 'storeDeadline']);
     Route::patch('/docket/deadlines/{id}', [\App\Http\Controllers\DocketController::class, 'updateDeadline']);
-    Route::patch('/docket/deadlines/{id}/review', [\App\Http\Controllers\DocketController::class, 'reviewDeadline']);
+    Route::delete('/docket/deadlines/{id}', [\App\Http\Controllers\DocketController::class, 'destroyDeadline']);
     Route::get('/docket/rules', [\App\Http\Controllers\DocketController::class, 'rules']);
     Route::patch('/docket/rules/{id}', [\App\Http\Controllers\DocketController::class, 'approveRule']);
+    Route::post('/docket/rules/{id}/copy', [\App\Http\Controllers\DocketController::class, 'copyRule']);
+    Route::post('/docket/rules/{id}/simulate', [\App\Http\Controllers\DocketController::class, 'simulateRule']);
     Route::patch('/projects/{id}/docket/application', [\App\Http\Controllers\DocketController::class, 'updateApplication']);
     Route::post('/projects/{id}/docket/renewals', [\App\Http\Controllers\DocketController::class, 'storeRenewal']);
     Route::patch('/docket/renewals/{id}', [\App\Http\Controllers\DocketController::class, 'updateRenewal']);
+    Route::get('/reminder-profile', [\App\Http\Controllers\ReminderProfileController::class, 'show']);
+    Route::put('/reminder-profile', [\App\Http\Controllers\ReminderProfileController::class, 'update']);
+    Route::post('/reminder-profile/preview', [\App\Http\Controllers\ReminderProfileController::class, 'preview']);
 
     // Renewal approve -> invoice -> proof -> confirm loop (RenewalActionController, on PatentInvoiceIn)
     Route::get('/pending-payments', [\App\Http\Controllers\RenewalActionController::class, 'index']);
@@ -268,6 +282,7 @@ Route::middleware(['auth:sanctum', 'firm.context', 'throttle:120,1'])->group(fun
     // Compliance
     Route::get('/compliance/stats', [\App\Http\Controllers\ComplianceController::class, 'stats']);
     Route::get('/compliance', [\App\Http\Controllers\ComplianceController::class, 'index']);
+    Route::post('/compliance', [\App\Http\Controllers\ComplianceController::class, 'store']);
     Route::put('/compliance/{id}', [\App\Http\Controllers\ComplianceController::class, 'update']);
     Route::post('/compliance/{id}/remind', [\App\Http\Controllers\ComplianceController::class, 'remind']);
 

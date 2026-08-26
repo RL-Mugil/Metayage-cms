@@ -48,9 +48,10 @@ class MyPortalController extends Controller
                 }
             })
             ->whereIn('role', User::CLIENT_ROLES)
-            // Postgres: DISTINCT + ORDER BY raw expression is invalid — plain
-            // column ordering ('client_admin' sorts after 'client', so desc
-            // puts admins first) keeps both.
+            // Postgres: DISTINCT + ORDER BY raw expression is invalid — plain column
+            // ordering keeps both. Desc puts 'client_finance' first, then
+            // 'client_admin', then 'client' — not admins-first anymore now that a
+            // third role exists, but avoids reintroducing the DISTINCT/ORDER BY error.
             ->orderByDesc('role')
             ->orderBy('name')
             ->distinct()
@@ -68,13 +69,16 @@ class MyPortalController extends Controller
             'name'     => 'required|string|max:255',
             'email'    => 'required|email|max:255|unique:users,email',
             'password' => ['required', 'max:100', PasswordRule::min(8)->mixedCase()->symbols()],
+            // client_admin is deliberately excluded — a client_admin can only provision
+            // full case-visibility or billing-only sub-users, never another admin.
+            'role'     => 'nullable|string|in:client,client_finance',
         ]);
 
         $newUser = User::create([
             'name'     => $validated['name'],
             'email'    => $validated['email'],
             'password' => Hash::make($validated['password']),
-            'role'     => 'client',
+            'role'     => $validated['role'] ?? 'client',
             'status'   => 'Active',
         ]);
 
@@ -119,10 +123,10 @@ class MyPortalController extends Controller
 
         $target = User::findOrFail($userId);
 
-        // Only plain client users of the same company can be removed —
+        // Only plain client/client_finance users of the same company can be removed —
         // never admins, never yourself, never firm staff.
         $belongs = $client->contacts()->where('email', $target->email)->exists();
-        if (! $belongs || $target->role !== 'client' || $target->id === $request->user()->id) {
+        if (! $belongs || ! in_array($target->role, ['client', 'client_finance'], true) || $target->id === $request->user()->id) {
             return response()->json(['message' => 'You can only remove client users of your own company.'], 403);
         }
 

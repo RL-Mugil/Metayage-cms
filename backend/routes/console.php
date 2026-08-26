@@ -14,6 +14,14 @@ Schedule::command('reminders:send-deadlines')->dailyAt('09:00');
 // Statutory docket deadline escalation (60/30/7/1/0 days + overdue) — daily at 8:30 AM
 Schedule::command('docket:notify-deadlines')->dailyAt('08:30');
 
+// User-configurable DocketTrak-style email reports; the command applies each
+// profile's timezone, frequency and idempotency period itself.
+Schedule::command('reminders:send-docket-digests')->everyFiveMinutes()->withoutOverlapping()->onOneServer();
+
+// Keep the compliance read model aligned with projects, statutory docket rules,
+// patent lifecycle deadlines, trademark matters, and renewal schedules.
+Schedule::command('compliance:sync')->hourly()->withoutOverlapping()->onOneServer();
+
 // Pull Google Task completions back into IPFlow every 15 minutes. Guarded against
 // overlap since it makes a Google API call per connected user — a slow/rate-limited
 // run could otherwise still be going when the next tick starts, double-processing

@@ -34,6 +34,7 @@ class AIController extends Controller
                 'name'  => $user->name,
                 'email' => $user->email,
                 'role'  => $user->role,
+                'firm_id' => $request->attributes->get('firm_id'),
             ]);
 
             return response()->json($result);

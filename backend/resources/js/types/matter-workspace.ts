@@ -9,6 +9,7 @@ export interface WorkspaceClient {
   company_name?: string | null
   legal_name?: string | null
   client_code?: string | null
+  contact_email?: string | null
 }
 
 export interface WorkspaceProject {
@@ -19,6 +20,7 @@ export interface WorkspaceProject {
   invention_number?: string | null
   project_name: string
   invention_title?: string | null
+  technology_field?: string | null
   project_type?: string | null
   case_type?: string | null
   patent_office_code?: string | null
@@ -47,17 +49,40 @@ export interface WorkspaceFamily {
   client?: WorkspaceClient | null
 }
 
+export interface WorkspaceRenewalInvoice {
+  id: number
+  invoice_uin: string
+  patent_office_fees?: number | string | null
+  payment_status?: string | null
+  payment_confirmed_at?: string | null
+}
+
+export interface WorkspaceRenewal {
+  id: number
+  renewal_year: number
+  due_date: string
+  status: string
+  paid_at?: string | null
+  invoice?: WorkspaceRenewalInvoice | null
+}
+
 export interface WorkspaceApplication {
   id: number
   application_number?: string | null
+  application_type?: string | null
   title?: string | null
   priority_date?: string | null
   filing_date?: string | null
   publication_date?: string | null
+  rfe_filed_date?: string | null
+  fer_reply_date?: string | null
   grant_number?: string | null
   grant_date?: string | null
+  certificate_issue_date?: string | null
+  post_grant_journal_date?: string | null
   legal_status: string
   jurisdiction: string
+  renewals?: WorkspaceRenewal[]
 }
 
 export interface WorkspaceStage {
@@ -137,6 +162,7 @@ export interface RelatedMatter {
   project_name: string
   service_code?: string | null
   patent_office_code?: string | null
+  application_number?: string | null
   status: string
   priority_date?: string | null
   filing_date?: string | null

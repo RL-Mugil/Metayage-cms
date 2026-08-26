@@ -55,14 +55,35 @@ class User extends Authenticatable
             ->withTimestamps();
     }
 
-    /** Roles that belong to the external client portal. */
-    public const CLIENT_ROLES = ['client', 'client_admin'];
+    /**
+     * Roles that belong to the external client portal.
+     * client_admin: full case + billing visibility, manages portal sub-users, resolves approvals.
+     * client: same case visibility as client_admin, no sub-user/approval management.
+     * client_finance: billing/ledger only — no case, approval, or deadline visibility.
+     */
+    public const CLIENT_ROLES = ['client', 'client_admin', 'client_finance'];
     public const STAFF_ROLES = ['super_admin', 'partner', 'manager', 'hr', 'finance', 'associate', 'paralegal', 'galvanizer'];
     public const LEAVE_APPROVER_ROLES = ['super_admin', 'partner', 'hr'];
 
     public function isClientRole(): bool
     {
         return in_array($this->role, self::CLIENT_ROLES, true);
+    }
+
+    public function isInventor(): bool
+    {
+        return $this->role === 'inventor';
+    }
+
+    /**
+     * Cases this user is inventor-of-record on (via project_inventors). Unlike
+     * every other portal role, an inventor is not scoped to one Client —
+     * they can be inventor across multiple different clients' cases (e.g. an
+     * outside professor), so this is keyed by user_id directly, not Client::forUser().
+     */
+    public function projectsAsInventor(): BelongsToMany
+    {
+        return $this->belongsToMany(Project::class, 'project_inventors', 'user_id', 'project_id')->withTimestamps();
     }
 
     public function isGalvanizer(): bool

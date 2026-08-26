@@ -1,6 +1,6 @@
 import { Head, usePage, router } from "@inertiajs/react";
 import { useState, useEffect, useRef, useCallback } from "react";
-import { User, Bell, Shield, Palette, Settings as SettingsIcon, Key, Building, Loader2, Camera, Trash2, ZoomIn, ZoomOut, RotateCcw, Plus, X } from "lucide-react";
+import { User, Bell, Shield, Palette, Settings as SettingsIcon, Key, Building, Loader2, Camera, Trash2, ZoomIn, ZoomOut, RotateCcw, Plus, X, Landmark, Check } from "lucide-react";
 import AppLayout from "@/layouts/AppLayout";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -26,7 +26,7 @@ const TIMEZONES = [
 
 const LANGUAGES = ["English", "Hindi", "Tamil", "Telugu"];
 
-type Tab = "profile" | "notifications" | "security" | "appearance" | "system";
+type Tab = "profile" | "notifications" | "security" | "appearance" | "system" | "finance";
 
 const tabs: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: "profile",       label: "Profile",       icon: User },
@@ -34,7 +34,16 @@ const tabs: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: "security",      label: "Security",      icon: Shield },
   { id: "appearance",    label: "Appearance",    icon: Palette },
   { id: "system",        label: "System",        icon: Building },
+  { id: "finance",       label: "Finance",       icon: Landmark },
 ];
+
+const FEE_JURISDICTIONS = ["IN", "US", "EP", "WO"] as const;
+const BLANK_FEE_ROW = {
+  jurisdiction: "IN", service_code: "", entity_tier: "", year_from: "", year_to: "",
+  validation_country: "", govt_fee_amount: "", govt_fee_currency: "INR",
+  professional_fee_amount: "", professional_fee_currency: "INR", professional_fee_max_amount: "",
+  professional_fee_charge_basis: "per_unit", notes: "", is_active: true,
+};
 
 function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
   return (
@@ -101,6 +110,13 @@ export default function Settings() {
   });
   const [savingFlags, setSavingFlags] = useState(false);
 
+  const [renewalFees, setRenewalFees] = useState({
+    government_fee: String(sysSettings.renewal_fee_rates?.government_fee ?? 0),
+    professional_fee: String(sysSettings.renewal_fee_rates?.professional_fee ?? 0),
+    currency: sysSettings.renewal_fee_rates?.currency ?? "INR",
+  });
+  const [savingRenewalFees, setSavingRenewalFees] = useState(false);
+
   const [svcCodes, setSvcCodes]   = useState<{code:string;label:string}[]>(sysSettings.dropdown_service_codes ?? []);
   const [ctyCodes, setCtyCodes]   = useState<{code:string;label:string}[]>(sysSettings.dropdown_country_codes ?? []);
   const [newSvcCode,  setNewSvcCode]  = useState("");
@@ -113,7 +129,7 @@ export default function Settings() {
   const [ctyAddErr, setCtyAddErr] = useState("");
   const [savingDropdown, setSavingDropdown] = useState<"service"|"country"|null>(null);
 
-  const visibleTabs = canManageSystem ? tabs : tabs.filter((item) => item.id !== "system");
+  const visibleTabs = canManageSystem ? tabs : tabs.filter((item) => item.id !== "system" && item.id !== "finance");
 
   useEffect(() => {
     api.getSettings().then((data) => {
@@ -124,8 +140,64 @@ export default function Settings() {
   }, []);
 
   useEffect(() => {
-    if (!canManageSystem && tab === "system") setTab("profile");
+    if (!canManageSystem && (tab === "system" || tab === "finance")) setTab("profile");
   }, [canManageSystem, tab]);
+
+  const [feeRows, setFeeRows] = useState<any[]>([]);
+  const [feeLoading, setFeeLoading] = useState(false);
+  const [feeJurisdiction, setFeeJurisdiction] = useState<typeof FEE_JURISDICTIONS[number]>("IN");
+  const [feeEdits, setFeeEdits] = useState<Record<number, any>>({});
+  const [feeSavingId, setFeeSavingId] = useState<number | null>(null);
+  const [newFeeRow, setNewFeeRow] = useState({ ...BLANK_FEE_ROW });
+  const [feeAddErr, setFeeAddErr] = useState("");
+
+  const loadFeeRows = useCallback(() => {
+    setFeeLoading(true);
+    api.getFeeRateCards({ jurisdiction: feeJurisdiction, includeInactive: true })
+      .then((rows) => { setFeeRows(rows); setFeeEdits({}); })
+      .catch(() => setFeeRows([]))
+      .finally(() => setFeeLoading(false));
+  }, [feeJurisdiction]);
+
+  useEffect(() => {
+    if (tab === "finance" && isSuperAdmin) loadFeeRows();
+  }, [tab, isSuperAdmin, loadFeeRows]);
+
+  function feeField(row: any, key: string) {
+    return feeEdits[row.id]?.[key] ?? row[key] ?? "";
+  }
+  function setFeeField(row: any, key: string, value: any) {
+    setFeeEdits((p) => ({ ...p, [row.id]: { ...(p[row.id] ?? {}), [key]: value } }));
+  }
+  async function saveFeeRow(row: any) {
+    const edits = feeEdits[row.id];
+    if (!edits) return;
+    setFeeSavingId(row.id);
+    try {
+      const updated = await api.updateFeeRateCard(row.id, edits);
+      setFeeRows((rs) => rs.map((r) => r.id === row.id ? updated : r));
+      setFeeEdits((p) => { const n = { ...p }; delete n[row.id]; return n; });
+      flashSaved();
+    } catch { setError("Failed to save fee rate row."); }
+    finally { setFeeSavingId(null); }
+  }
+  async function deleteFeeRow(id: number) {
+    if (!confirm("Delete this fee rate row?")) return;
+    try { await api.deleteFeeRateCard(id); setFeeRows((rs) => rs.filter((r) => r.id !== id)); } catch { setError("Failed to delete."); }
+  }
+  async function addFeeRow() {
+    if (!newFeeRow.service_code.trim()) { setFeeAddErr("Service code is required."); return; }
+    setFeeAddErr("");
+    try {
+      const payload: any = { ...newFeeRow, jurisdiction: feeJurisdiction };
+      ["entity_tier", "year_from", "year_to", "validation_country", "govt_fee_amount", "govt_fee_currency",
+        "professional_fee_amount", "professional_fee_currency", "professional_fee_max_amount", "notes"]
+        .forEach((k) => { if (payload[k] === "") payload[k] = null; });
+      const created = await api.createFeeRateCard(payload);
+      setFeeRows((rs) => [...rs, created]);
+      setNewFeeRow({ ...BLANK_FEE_ROW });
+    } catch (e: any) { setFeeAddErr(e?.message || "Failed to add row."); }
+  }
 
   const flashSaved = () => { setError(""); setSaved(true); setTimeout(() => setSaved(false), 2500); };
 
@@ -630,6 +702,62 @@ export default function Settings() {
                 </Card>
               )}
 
+              {/* Renewal fee rates — super_admin only. A plain lookup the client
+                  portal's "approve renewal" flow multiplies by years selected —
+                  update these here whenever government/professional fees change,
+                  no code deploy needed. */}
+              {isSuperAdmin && (
+                <Card className="border-border">
+                  <CardHeader>
+                    <CardTitle className="font-display">Renewal Fee Rates</CardTitle>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Used by the client portal's renewal approval flow: total payable = years selected × (government fee + professional fee).
+                    </p>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid gap-4 sm:grid-cols-3">
+                      <div>
+                        <label className="block text-xs font-medium text-muted-foreground mb-1">Government Fee (per year)</label>
+                        <input type="number" min={0} value={renewalFees.government_fee}
+                          onChange={(e) => setRenewalFees((p) => ({ ...p, government_fee: e.target.value }))}
+                          className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-muted-foreground mb-1">Professional Fee (per year)</label>
+                        <input type="number" min={0} value={renewalFees.professional_fee}
+                          onChange={(e) => setRenewalFees((p) => ({ ...p, professional_fee: e.target.value }))}
+                          className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-muted-foreground mb-1">Currency</label>
+                        <input value={renewalFees.currency}
+                          onChange={(e) => setRenewalFees((p) => ({ ...p, currency: e.target.value.toUpperCase() }))}
+                          maxLength={10}
+                          className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+                      </div>
+                    </div>
+                    <Button
+                      onClick={async () => {
+                        setSavingRenewalFees(true);
+                        try {
+                          await api.updateRenewalFeeRates({
+                            government_fee: parseFloat(renewalFees.government_fee) || 0,
+                            professional_fee: parseFloat(renewalFees.professional_fee) || 0,
+                            currency: renewalFees.currency,
+                          });
+                          flashSaved();
+                        } catch { setError("Failed to save renewal fee rates."); }
+                        finally { setSavingRenewalFees(false); }
+                      }}
+                      disabled={savingRenewalFees}
+                      className="bg-gold hover:bg-gold/90 text-black"
+                    >
+                      {savingRenewalFees ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <SettingsIcon className="h-4 w-4 mr-2" />}Save Renewal Fee Rates
+                    </Button>
+                  </CardContent>
+                </Card>
+              )}
+
               {/* Dropdown Managers — super_admin only */}
               {isSuperAdmin && (
                 <>
@@ -812,6 +940,112 @@ export default function Settings() {
                   </Card>
                 </>
               )}
+            </div>
+          )}
+
+          {tab === "finance" && isSuperAdmin && (
+            <div className="space-y-6">
+              <Card className="border-border">
+                <CardHeader>
+                  <CardTitle className="font-display">Fee Rate Card</CardTitle>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Government + professional fees by jurisdiction, service, and client entity tier — drives
+                    auto-populated amounts on quotes/invoices and the renewal-approval flow. Editable after auto-fill either way.
+                  </p>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="flex gap-1.5">
+                    {FEE_JURISDICTIONS.map((j) => (
+                      <button key={j} onClick={() => setFeeJurisdiction(j)}
+                        className={`h-8 rounded-md border px-3 text-xs font-medium ${feeJurisdiction === j ? "border-gold bg-gold/10 text-foreground" : "border-border text-muted-foreground hover:border-gold/40"}`}>
+                        {j}
+                      </button>
+                    ))}
+                  </div>
+
+                  {feeLoading ? (
+                    <div className="flex justify-center py-10"><Loader2 className="h-5 w-5 animate-spin text-gold" /></div>
+                  ) : (
+                    <div className="overflow-x-auto rounded-md border border-border">
+                      <table className="w-full min-w-[1100px] text-xs">
+                        <thead className="bg-muted/40 text-left text-muted-foreground">
+                          <tr>
+                            <th className="p-2">Service</th><th className="p-2">Tier</th>
+                            <th className="p-2">Yr from</th><th className="p-2">Yr to</th>
+                            <th className="p-2">Validation Country</th>
+                            <th className="p-2">Govt Fee</th><th className="p-2">Govt Ccy</th>
+                            <th className="p-2">Prof Fee</th><th className="p-2">Prof Ccy</th><th className="p-2">Prof Max</th>
+                            <th className="p-2">Charge Basis</th><th className="p-2">Notes</th>
+                            <th className="p-2">Active</th><th className="p-2"></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {feeRows.map((row) => {
+                            const dirty = !!feeEdits[row.id];
+                            return (
+                              <tr key={row.id} className={`border-t border-border ${dirty ? "bg-gold/5" : ""}`}>
+                                <td className="p-1"><input value={feeField(row, "service_code")} onChange={(e) => setFeeField(row, "service_code", e.target.value.toUpperCase())} className="w-16 h-7 rounded border border-border bg-background px-1 font-mono" /></td>
+                                <td className="p-1">
+                                  <select value={feeField(row, "entity_tier") ?? ""} onChange={(e) => setFeeField(row, "entity_tier", e.target.value || null)} className="h-7 rounded border border-border bg-background px-1">
+                                    <option value="">Universal</option>
+                                    <option value="discounted">Discounted</option>
+                                    <option value="standard">Standard</option>
+                                  </select>
+                                </td>
+                                <td className="p-1"><input value={feeField(row, "year_from") ?? ""} onChange={(e) => setFeeField(row, "year_from", e.target.value)} className="w-14 h-7 rounded border border-border bg-background px-1" /></td>
+                                <td className="p-1"><input value={feeField(row, "year_to") ?? ""} onChange={(e) => setFeeField(row, "year_to", e.target.value)} className="w-14 h-7 rounded border border-border bg-background px-1" /></td>
+                                <td className="p-1"><input value={feeField(row, "validation_country") ?? ""} onChange={(e) => setFeeField(row, "validation_country", e.target.value)} className="w-28 h-7 rounded border border-border bg-background px-1" /></td>
+                                <td className="p-1"><input value={feeField(row, "govt_fee_amount") ?? ""} onChange={(e) => setFeeField(row, "govt_fee_amount", e.target.value)} className="w-20 h-7 rounded border border-border bg-background px-1" /></td>
+                                <td className="p-1"><input value={feeField(row, "govt_fee_currency") ?? ""} onChange={(e) => setFeeField(row, "govt_fee_currency", e.target.value.toUpperCase())} className="w-14 h-7 rounded border border-border bg-background px-1" /></td>
+                                <td className="p-1"><input value={feeField(row, "professional_fee_amount") ?? ""} onChange={(e) => setFeeField(row, "professional_fee_amount", e.target.value)} className="w-20 h-7 rounded border border-border bg-background px-1" /></td>
+                                <td className="p-1"><input value={feeField(row, "professional_fee_currency") ?? ""} onChange={(e) => setFeeField(row, "professional_fee_currency", e.target.value.toUpperCase())} className="w-14 h-7 rounded border border-border bg-background px-1" /></td>
+                                <td className="p-1"><input value={feeField(row, "professional_fee_max_amount") ?? ""} onChange={(e) => setFeeField(row, "professional_fee_max_amount", e.target.value)} className="w-20 h-7 rounded border border-border bg-background px-1" /></td>
+                                <td className="p-1">
+                                  <select value={feeField(row, "professional_fee_charge_basis")} onChange={(e) => setFeeField(row, "professional_fee_charge_basis", e.target.value)} className="h-7 rounded border border-border bg-background px-1">
+                                    <option value="per_unit">Per year</option>
+                                    <option value="flat_per_transaction">Flat/txn</option>
+                                  </select>
+                                </td>
+                                <td className="p-1"><input value={feeField(row, "notes") ?? ""} onChange={(e) => setFeeField(row, "notes", e.target.value)} className="w-40 h-7 rounded border border-border bg-background px-1" /></td>
+                                <td className="p-1 text-center"><Toggle checked={!!feeField(row, "is_active")} onChange={(v) => setFeeField(row, "is_active", v)} /></td>
+                                <td className="p-1 whitespace-nowrap">
+                                  {dirty && (
+                                    <button onClick={() => saveFeeRow(row)} disabled={feeSavingId === row.id} className="mr-1 rounded p-1 text-green-600 hover:bg-green-500/10">
+                                      {feeSavingId === row.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                                    </button>
+                                  )}
+                                  <button onClick={() => deleteFeeRow(row.id)} className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                          {feeRows.length === 0 && (
+                            <tr><td colSpan={14} className="p-4 text-center text-muted-foreground">No rate rows for {feeJurisdiction} yet.</td></tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  <div className="rounded-md border border-border bg-muted/20 p-3 space-y-2">
+                    <p className="text-xs font-medium text-muted-foreground">Add a new {feeJurisdiction} row</p>
+                    <div className="grid grid-cols-6 gap-2">
+                      <input value={newFeeRow.service_code} onChange={(e) => setNewFeeRow((p) => ({ ...p, service_code: e.target.value.toUpperCase() }))} placeholder="Service code" className="h-8 rounded border border-border bg-background px-2 text-xs font-mono" />
+                      <select value={newFeeRow.entity_tier} onChange={(e) => setNewFeeRow((p) => ({ ...p, entity_tier: e.target.value }))} className="h-8 rounded border border-border bg-background px-2 text-xs">
+                        <option value="">Universal</option>
+                        <option value="discounted">Discounted</option>
+                        <option value="standard">Standard</option>
+                      </select>
+                      <input value={newFeeRow.year_from} onChange={(e) => setNewFeeRow((p) => ({ ...p, year_from: e.target.value }))} placeholder="Yr from" className="h-8 rounded border border-border bg-background px-2 text-xs" />
+                      <input value={newFeeRow.year_to} onChange={(e) => setNewFeeRow((p) => ({ ...p, year_to: e.target.value }))} placeholder="Yr to" className="h-8 rounded border border-border bg-background px-2 text-xs" />
+                      <input value={newFeeRow.govt_fee_amount} onChange={(e) => setNewFeeRow((p) => ({ ...p, govt_fee_amount: e.target.value }))} placeholder="Govt fee" className="h-8 rounded border border-border bg-background px-2 text-xs" />
+                      <input value={newFeeRow.professional_fee_amount} onChange={(e) => setNewFeeRow((p) => ({ ...p, professional_fee_amount: e.target.value }))} placeholder="Professional fee" className="h-8 rounded border border-border bg-background px-2 text-xs" />
+                    </div>
+                    {feeAddErr && <p className="text-xs text-destructive">{feeAddErr}</p>}
+                    <Button size="sm" onClick={addFeeRow}><Plus className="h-3 w-3 mr-1" />Add Row</Button>
+                  </div>
+                </CardContent>
+              </Card>
             </div>
           )}
         </div>

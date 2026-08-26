@@ -5,6 +5,7 @@ import AppLayout from "@/layouts/AppLayout";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { ZohoBooksPanel } from "@/components/zoho-books-panel";
 import { api } from "@/lib/api-client";
 import { statusColor } from "@/lib/utils";
 
@@ -68,6 +69,9 @@ export default function ClientShow({ clientId }: Props) {
             ))}
           </CardContent>
         </Card>
+        <div className="lg:col-span-3">
+          <ZohoBooksPanel fetchSummary={() => api.getZohoClientSummary(clientId)} />
+        </div>
       </div>
     </AppLayout>
   );

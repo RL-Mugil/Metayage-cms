@@ -12,6 +12,13 @@ class AIControllerTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        config()->set('services.groq.api_key', 'test-groq-key');
+    }
+
     private function groqResponse(string $content = 'Here is a general answer about IP law.'): array
     {
         return [

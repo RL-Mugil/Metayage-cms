@@ -3,16 +3,22 @@
 namespace App\Providers;
 
 use App\Models\Client;
+use App\Models\ComplianceItem;
 use App\Models\Employee;
 use App\Models\Invoice;
+use App\Models\IpRecord;
 use App\Models\Project;
+use App\Models\Reminder;
 use App\Models\Task;
 use App\Models\User;
 use App\Observers\UserObserver;
 use App\Policies\ClientPolicy;
+use App\Policies\ComplianceItemPolicy;
 use App\Policies\EmployeePolicy;
 use App\Policies\InvoicePolicy;
+use App\Policies\IpRecordPolicy;
 use App\Policies\ProjectPolicy;
+use App\Policies\ReminderPolicy;
 use App\Policies\TaskPolicy;
 use App\Support\FirmContext;
 use Illuminate\Cache\RateLimiting\Limit;
@@ -35,9 +41,12 @@ class AppServiceProvider extends ServiceProvider
         User::observe(UserObserver::class);
 
         Gate::policy(Client::class,   ClientPolicy::class);
+        Gate::policy(ComplianceItem::class, ComplianceItemPolicy::class);
         Gate::policy(Project::class,  ProjectPolicy::class);
         Gate::policy(Task::class,     TaskPolicy::class);
         Gate::policy(Invoice::class,  InvoicePolicy::class);
+        Gate::policy(IpRecord::class, IpRecordPolicy::class);
+        Gate::policy(Reminder::class, ReminderPolicy::class);
         Gate::policy(Employee::class, EmployeePolicy::class);
         Gate::define('approve-deadline-rules', fn (User $user): bool => in_array($user->role, ['super_admin', 'partner'], true));
         Gate::define('review-docket-deadline', fn (User $user, Project $project): bool =>

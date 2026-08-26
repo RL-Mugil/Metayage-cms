@@ -6,6 +6,7 @@ use App\Models\AuditLog;
 use App\Models\PatentInvoiceIn;
 use App\Models\Project;
 use App\Models\Client;
+use App\Services\PatentInvoiceUinService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -27,16 +28,12 @@ class PatentInvoiceController extends Controller
     // ── Invoice UIN serial ────────────────────────────────────────────────────────
     // First invoice for a project/type → docket_number
     // Second → docket_number/1, third → docket_number/2, etc.
+    // (extracted to PatentInvoiceUinService so RenewalActionController's renewal
+    // invoices use the exact same numbering)
 
     private function computeUin(string $docketNumber, string $type, ?int $excludeId = null): string
     {
-        $count = PatentInvoiceIn::where('docket_number', $docketNumber)
-            ->where('type', $type)
-            ->when($excludeId, fn ($q) => $q->where('id', '!=', $excludeId))
-            ->lockForUpdate()
-            ->count();
-
-        return $count === 0 ? $docketNumber : $docketNumber . '/' . $count;
+        return app(PatentInvoiceUinService::class)->next($docketNumber, $type, $excludeId);
     }
 
     // ── Compute derived totals ────────────────────────────────────────────────────
@@ -47,14 +44,23 @@ class PatentInvoiceController extends Controller
         $svc          = (float) ($data['service_fees']       ?? 0);
         $other        = (float) ($data['other_expenses']     ?? 0);
         $state        = $data['state_of_supply'] ?? '';
-        $gst          = $this->computeGst($state, $svc);
-        $invoiceAmt   = $pof + $svc + $gst['igst'] + $gst['cgst'] + $gst['sgst'] + $other;
+
+        // Discount applies to the professional (service) fee only — government
+        // fees are statutory and never discounted — and is taken off before GST,
+        // so GST is charged on the net service fee, not the pre-discount one.
+        $discountPct  = (float) ($data['discount_percentage'] ?? 0);
+        $discountAmt  = round($svc * ($discountPct / 100), 2);
+        $netSvc       = $svc - $discountAmt;
+
+        $gst          = $this->computeGst($state, $netSvc);
+        $invoiceAmt   = $pof + $netSvc + $gst['igst'] + $gst['cgst'] + $gst['sgst'] + $other;
         $netRevenue   = $invoiceAmt
                         - (float) ($data['attorney_fees']   ?? 0)
                         - (float) ($data['consultant_fees'] ?? 0)
                         - (float) ($data['referral_fees']   ?? 0);
 
         return array_merge($data, [
+            'discount_amount' => $discountAmt,
             'igst_amount'    => $gst['igst'],
             'cgst_amount'    => $gst['cgst'],
             'sgst_amount'    => $gst['sgst'],
@@ -147,6 +153,7 @@ class PatentInvoiceController extends Controller
             'uin_old_2'                        => 'nullable|string|max:80',
             'patent_office_fees'               => 'required|numeric|min:0',
             'service_fees'                     => 'required|numeric|min:0',
+            'discount_percentage'              => 'nullable|numeric|min:0|max:100',
             'other_expenses'                   => 'required|numeric|min:0',
             'attorney_fees'                    => 'nullable|numeric|min:0',
             'consultant_fees'                  => 'nullable|numeric|min:0',
@@ -222,6 +229,7 @@ class PatentInvoiceController extends Controller
             'uin_old_2'                        => 'nullable|string|max:80',
             'patent_office_fees'               => 'sometimes|numeric|min:0',
             'service_fees'                     => 'sometimes|numeric|min:0',
+            'discount_percentage'              => 'nullable|numeric|min:0|max:100',
             'other_expenses'                   => 'sometimes|numeric|min:0',
             'attorney_fees'                    => 'nullable|numeric|min:0',
             'consultant_fees'                  => 'nullable|numeric|min:0',

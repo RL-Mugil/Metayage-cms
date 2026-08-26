@@ -6,7 +6,7 @@ import {
   LayoutDashboard, Users, Briefcase, GitBranch, ListChecks,
   BellRing, UserCircle2, FolderLock, MessagesSquare, CheckCircle2,
   Bell, BarChart3, FileBarChart2, Wallet, Sparkles, Building2, Star, Layers,
-  CalendarDays, Plug, Settings, IdCard, Scale, LogOut, TableProperties, ShieldCheck, Award, LayoutGrid, Trash2,
+  CalendarDays, Plug, Settings, IdCard, Scale, LogOut, TableProperties, ShieldCheck, Award, LayoutGrid, Trash2, CreditCard,
 } from "lucide-react";
 import {
   Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel,
@@ -41,6 +41,7 @@ const clientGroups = (isAdmin: boolean) => [
       { to: "/discussions", title: "Discussions", icon: MessagesSquare },
       { to: "/approvals", title: "Approvals", icon: CheckCircle2 },
       { to: "/financial", title: "Invoices & Payments", icon: Wallet },
+      { to: "/pending-payments", title: "Pending Payments", icon: CreditCard },
     ],
   },
   {
@@ -54,11 +55,51 @@ const clientGroups = (isAdmin: boolean) => [
   },
 ];
 
+// Billing-only nav for the client_finance role — no case/kanban/approval
+// visibility, matching RestrictClientPages' allowlist for this role.
+const financeGroups = [
+  {
+    label: "Overview",
+    items: [{ to: "/", title: "Dashboard", icon: LayoutDashboard }],
+  },
+  {
+    label: "Billing",
+    items: [
+      { to: "/financial", title: "Invoices & Payments", icon: Wallet },
+      { to: "/pending-payments", title: "Pending Payments", icon: CreditCard },
+      { to: "/documents", title: "Documents", icon: FolderLock },
+    ],
+  },
+  {
+    label: "Account",
+    items: [
+      { to: "/notifications", title: "Notifications", icon: Bell },
+      { to: "/settings", title: "Settings", icon: Settings },
+    ],
+  },
+];
+
+// Minimal nav for the inventor role — a dashboard of their own cases (across
+// possibly multiple clients, see User::projectsAsInventor()) and nothing else.
+const inventorGroups = [
+  {
+    label: "Overview",
+    items: [{ to: "/", title: "Your Inventions", icon: LayoutDashboard }],
+  },
+  {
+    label: "Account",
+    items: [
+      { to: "/notifications", title: "Notifications", icon: Bell },
+      { to: "/settings", title: "Settings", icon: Settings },
+    ],
+  },
+];
+
 const ROLE_LABEL: Record<string, string> = {
   super_admin: "System Admin", partner: "Director", manager: "Patent Attorney",
   hr: "HR", finance: "Accountant", associate: "Patent Analyst", paralegal: "Paralegal",
   galvanizer: "Galvanizer",
-  client: "Client", client_admin: "Client Admin",
+  client: "Client", client_admin: "Client Admin", client_finance: "Finance", inventor: "Inventor",
 };
 
 const groups = [
@@ -75,6 +116,7 @@ const groups = [
     items: [
       { to: "/clients", title: "Clients", icon: Users },
       { to: "/projects", title: "Projects", icon: Briefcase },
+      { to: "/ip-records", title: "IP Portfolio", icon: Award },
       { to: "/project-tracker", title: "Project Tracker", icon: TableProperties },
       { to: "/tasks", title: "Tasks", icon: ListChecks },
       { to: "/kanban", title: "Kanban Board", icon: Layers },
@@ -104,6 +146,7 @@ const groups = [
     label: "Finance & Insight",
     items: [
       { to: "/financial", title: "Financial Suite", icon: Wallet },
+      { to: "/pending-payments", title: "Pending Payments", icon: CreditCard },
       { to: "/analytics", title: "Analytics", icon: BarChart3 },
       { to: "/reports", title: "Reports", icon: FileBarChart2 },
     ],
@@ -196,7 +239,11 @@ export function AppSidebar() {
         </Link>
       </SidebarHeader>
       <SidebarContent ref={contentRef}>
-        {(["client", "client_admin"].includes(user?.role)
+        {(user?.role === "client_finance"
+          ? financeGroups
+          : user?.role === "inventor"
+          ? inventorGroups
+          : ["client", "client_admin"].includes(user?.role)
           ? clientGroups(user?.role === "client_admin")
           : groups
         ).map((g) => {

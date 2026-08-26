@@ -111,6 +111,28 @@ class ModuleActionsTest extends TestCase
         $this->assertEquals(1, Reminder::where('source', "compliance:{$item->id}")->count());
     }
 
+    public function test_manager_can_create_and_search_manual_compliance_item_with_audit_log(): void
+    {
+        Sanctum::actingAs($manager = $this->user('manager'));
+
+        $id = $this->postJson('/api/compliance', [
+            'matter' => 'C99M001INPAT — FER response',
+            'type' => 'Patent',
+            'jurisdiction' => 'IPO India',
+            'deadline' => now()->addDays(45)->toDateString(),
+            'action_required' => 'File response to First Examination Report',
+            'assignee_id' => $manager->id,
+            'note' => 'Awaiting inventor instructions',
+        ])->assertCreated()->json('id');
+
+        $this->getJson('/api/compliance?search=C99M001INPAT')
+            ->assertOk()->assertJsonPath('data.0.id', $id);
+        $this->assertDatabaseHas('audit_logs', [
+            'user_id' => $manager->id, 'action' => 'create',
+            'subject_type' => 'ComplianceItem', 'subject_id' => $id,
+        ]);
+    }
+
     // ── Reminders ─────────────────────────────────────────────────────────────
 
     public function test_reminder_crud_and_scoping(): void

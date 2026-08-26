@@ -1,7 +1,7 @@
 import { Head } from "@inertiajs/react";
 import { useEffect, useState } from "react";
-import { Bell, BellOff, CheckCircle2, Clock, Calendar, Plus, AlertCircle, Loader2, Trash2, HelpCircle, X } from "lucide-react";
-import { api } from "@/lib/api-client";
+import { Bell, BellOff, CheckCircle2, Clock, Calendar, Plus, AlertCircle, Loader2, Trash2, HelpCircle, X, SlidersHorizontal } from "lucide-react";
+import { api, type ReminderProfile } from "@/lib/api-client";
 import AppLayout from "@/layouts/AppLayout";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -43,6 +43,10 @@ export default function Reminders() {
   const [showForm, setShowForm]     = useState(false);
   const [employees, setEmployees]   = useState<EmployeeOption[]>([]);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [profile, setProfile] = useState<ReminderProfile | null>(null);
+  const [showProfile, setShowProfile] = useState(false);
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [previewCounts, setPreviewCounts] = useState<Record<"overdue" | "red" | "amber" | "green", number> | null>(null);
 
   // Help-request modal state
   const [helpReminder, setHelpReminder]   = useState<Reminder | null>(null);
@@ -78,6 +82,10 @@ export default function Reminders() {
         );
       })
       .catch(() => {});
+    api.getReminderProfile().then((value) => {
+      setProfile({ ...value, send_time: value.send_time.slice(0, 5) });
+      return api.previewReminderProfile();
+    }).then((preview) => setPreviewCounts(preview.counts)).catch(() => {});
   }, []);
 
   function toggleComplete(id: number) {
@@ -104,7 +112,7 @@ export default function Reminders() {
     if (!newReminder.title || !newReminder.dueDate) return;
     setSaving(true);
     try {
-      const scope = newReminder.remindTo === "self" ? "self" : "team";
+      const scope = newReminder.remindTo === "self" ? "self" : "user";
       await api.createReminder({
         title: newReminder.title,
         description: newReminder.description || null,
@@ -112,6 +120,7 @@ export default function Reminders() {
         due_date: newReminder.dueDate,
         due_time: newReminder.dueTime || null,
         scope,
+        assigned_user_id: scope === "user" ? Number(newReminder.remindTo) : null,
       });
       setNewReminder({ title: "", description: "", dueDate: "", dueTime: "", category: "Deadline", remindTo: "self" });
       setShowForm(false);
@@ -143,6 +152,19 @@ export default function Reminders() {
       /* stay open */
     } finally {
       setHelpSending(false);
+    }
+  }
+
+  async function saveProfile() {
+    if (!profile) return;
+    setProfileSaving(true);
+    try {
+      const updated = await api.updateReminderProfile(profile);
+      setProfile(updated);
+      const preview = await api.previewReminderProfile();
+      setPreviewCounts(preview.counts);
+    } finally {
+      setProfileSaving(false);
     }
   }
 
@@ -179,20 +201,61 @@ export default function Reminders() {
         title="Reminders"
         description="Automated deadline and follow-up reminders"
         actions={
-          <Button onClick={() => setShowForm(!showForm)} className="bg-gold text-background hover:bg-gold/90">
-            <Plus className="mr-2 h-4 w-4" />New Reminder
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => setShowProfile(!showProfile)}><SlidersHorizontal className="mr-2 h-4 w-4" />Docket email</Button>
+            <Button onClick={() => setShowForm(!showForm)} className="bg-gold text-background hover:bg-gold/90"><Plus className="mr-2 h-4 w-4" />New Reminder</Button>
+          </div>
         }
       />
 
       <div className="px-8 py-6 space-y-6">
-        {/* Stats */}
+        {showProfile && profile && (
+          <Card className="border-gold/40">
+            <CardHeader><CardTitle className="text-base">Daily Docket Reminder</CardTitle></CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-4 md:grid-cols-4">
+                <label className="space-y-1 text-xs text-muted-foreground">Frequency
+                  <select className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" value={profile.frequency} onChange={(event) => setProfile({ ...profile, frequency: event.target.value as ReminderProfile["frequency"] })}>
+                    <option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option>
+                  </select>
+                </label>
+                <label className="space-y-1 text-xs text-muted-foreground">Send time
+                  <input type="time" className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" value={profile.send_time.slice(0, 5)} onChange={(event) => setProfile({ ...profile, send_time: event.target.value })} />
+                </label>
+                <label className="space-y-1 text-xs text-muted-foreground">Date horizon
+                  <select className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" value={profile.horizon_days} onChange={(event) => setProfile({ ...profile, horizon_days: Number(event.target.value) })}>
+                    <option value={30}>Next 30 days</option><option value={60}>Next 60 days</option><option value={90}>Next 90 days</option><option value={365}>Next year</option>
+                  </select>
+                </label>
+                <label className="space-y-1 text-xs text-muted-foreground">Recipients
+                  <input className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground" value={profile.recipients.join(", ")} onChange={(event) => setProfile({ ...profile, recipients: event.target.value.split(",").map((value) => value.trim()).filter(Boolean) })} />
+                </label>
+              </div>
+              <div className="flex flex-wrap items-center gap-4 text-xs">
+                {(["email_enabled", "in_app_enabled", "critical_alerts_enabled", "send_empty"] as const).map((key) => (
+                  <label key={key} className="flex items-center gap-2"><input type="checkbox" checked={profile[key]} onChange={(event) => setProfile({ ...profile, [key]: event.target.checked })} />{key.replaceAll("_", " ")}</label>
+                ))}
+              </div>
+              <div className="rounded-md border border-border bg-muted/20 p-3">
+                <p className="mb-2 text-xs font-medium">Statutory docket deadline preview</p>
+                <p className="mb-2 text-[11px] text-muted-foreground">Counts open deadlines generated by approved docket rules. Manual reminders shown below are not included.</p>
+                {previewCounts ? <div className="flex gap-3 text-xs"><span>Overdue {previewCounts.overdue}</span><span className="text-red-500">0–7 days {previewCounts.red}</span><span className="text-amber-500">8–30 days {previewCounts.amber}</span><span className="text-emerald-500">Later {previewCounts.green}</span></div> : <span className="text-xs text-muted-foreground">Loading preview…</span>}
+              </div>
+              <Button onClick={saveProfile} disabled={profileSaving}>{profileSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Save and preview</Button>
+            </CardContent>
+          </Card>
+        )}
+        <div>
+          <h2 className="text-sm font-semibold">Manual reminders</h2>
+          <p className="text-xs text-muted-foreground">Reminders created by you or assigned to you. These are separate from statutory docket deadlines.</p>
+        </div>
+        {/* Manual reminder stats */}
         <div className="grid grid-cols-3 gap-4">
           <Card className="border-border">
             <CardContent className="flex items-center gap-3 py-4">
               <Bell className="h-5 w-5 text-gold" />
               <div>
-                <p className="text-xs text-muted-foreground">Total Active</p>
+                <p className="text-xs text-muted-foreground">Active Manual</p>
                 <p className="text-2xl font-bold text-foreground">{active.length}</p>
               </div>
             </CardContent>

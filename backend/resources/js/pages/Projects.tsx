@@ -756,8 +756,13 @@ interface PF {
   invention_title: string; technology_field: string;
   application_number: string; patent_office_code: string; service_code: string;
   filing_date: string; target_filing_date: string; hard_deadline: string;
-  idf_received_date: string; advance_payment_date: string;
-  partial_payment_date: string; full_payment_date: string;
+  idf_received_date: string;
+  // IPO-style application status fields (stored on the linked PatentApplication,
+  // not on Project — see DocketController::updateApplication()). Payment dates
+  // were removed from this form: they're derived from the Invoice/Pending
+  // Payments tab now (the actual payment-made date), not typed here.
+  application_type: string; fer_reply_date: string;
+  certificate_issue_date: string; post_grant_journal_date: string;
   urgency: string; status: string;
   patent_granted: boolean;
   assigned_partner_id: string; assigned_manager_id: string;
@@ -771,8 +776,9 @@ const BLANK: PF = {
   invention_title: "", technology_field: "",
   application_number: "", patent_office_code: "IN", service_code: "FIL",
   filing_date: "", target_filing_date: "", hard_deadline: "",
-  idf_received_date: "", advance_payment_date: "",
-  partial_payment_date: "", full_payment_date: "",
+  idf_received_date: "",
+  application_type: "", fer_reply_date: "",
+  certificate_issue_date: "", post_grant_journal_date: "",
   urgency: "Normal", status: "Open",
   patent_granted: false,
   assigned_partner_id: "", assigned_manager_id: "",
@@ -1007,6 +1013,7 @@ export default function Projects() {
   const [form, setForm]          = useState<PF>(BLANK);
   const [saving, setSaving]      = useState(false);
   const [saveErr, setSaveErr]    = useState("");
+  const [backfillNotice, setBackfillNotice] = useState<string[] | null>(null);
 
   const [delTarget, setDelTarget] = useState<any>(null);
   const [deleting, setDeleting]  = useState(false);
@@ -1157,7 +1164,16 @@ export default function Projects() {
 
   function openCreate() { setForm(BLANK); setEditProj(null); setSaveErr(""); setShowModal(true); }
 
-  function openEdit(p: any) {
+  async function openEdit(p: any) {
+    // IPO-status fields live on the linked PatentApplication, not on the
+    // project list row — fetch them so the form doesn't clobber existing
+    // values with blanks on save.
+    let app: any = null;
+    try {
+      const docket = await api.getProjectDocket(p.id);
+      app = docket?.application ?? null;
+    } catch { /* no linked application yet — fields just start blank */ }
+
     setForm({
       record_mode:         "existing",
       project_code:        p.project_code         ?? "",
@@ -1175,9 +1191,10 @@ export default function Projects() {
       target_filing_date:  p.target_filing_date    ? p.target_filing_date.split("T")[0] : "",
       hard_deadline:       p.hard_deadline         ? p.hard_deadline.split("T")[0] : "",
       idf_received_date:   p.idf_received_date     ? p.idf_received_date.split("T")[0] : "",
-      advance_payment_date: p.advance_payment_date ? p.advance_payment_date.split("T")[0] : "",
-      partial_payment_date: p.partial_payment_date ? p.partial_payment_date.split("T")[0] : "",
-      full_payment_date:   p.full_payment_date     ? p.full_payment_date.split("T")[0] : "",
+      application_type:        app?.application_type ?? "",
+      fer_reply_date:           app?.fer_reply_date ? app.fer_reply_date.split("T")[0] : "",
+      certificate_issue_date:   app?.certificate_issue_date ? app.certificate_issue_date.split("T")[0] : "",
+      post_grant_journal_date:  app?.post_grant_journal_date ? app.post_grant_journal_date.split("T")[0] : "",
       urgency:             p.urgency               ?? "Normal",
       status:              p.status                ?? "Open",
       assigned_partner_id:   p.assigned_partner_id  ? String(p.assigned_partner_id) : "",
@@ -1220,6 +1237,11 @@ export default function Projects() {
         const updated = await api.updateProject(editProj.id, updatePayload as any);
         setProjects((prev) => prev.map((p) => p.id === editProj.id
           ? { ...p, ...updated, client: p.client } : p));
+        const backfilled = (updated as any).application_number_backfilled as { id: number; docket_number: string }[] | undefined;
+        if (backfilled && backfilled.length > 0) {
+          setBackfillNotice(backfilled.map((b) => b.docket_number));
+          setTimeout(() => setBackfillNotice(null), 8000);
+        }
       } else {
         const created = await api.createProject(payload as any);
         const clientObj = clients.find((c) => c.id === parseInt(form.client_id));
@@ -2065,22 +2087,41 @@ export default function Projects() {
                     <input type="date" value={form.idf_received_date}
                       onChange={(e) => sf("idf_received_date", e.target.value)} className={ic} />
                   </div>
-                  <div>
-                    <Lbl>Advance Payment Received</Lbl>
-                    <input type="date" value={form.advance_payment_date}
-                      onChange={(e) => sf("advance_payment_date", e.target.value)} className={ic} />
-                  </div>
-                  <div>
-                    <Lbl>Partial Payment Date</Lbl>
-                    <input type="date" value={form.partial_payment_date}
-                      onChange={(e) => sf("partial_payment_date", e.target.value)} className={ic} />
-                  </div>
-                  <div>
-                    <Lbl>Full Payment Received</Lbl>
-                    <input type="date" value={form.full_payment_date}
-                      onChange={(e) => sf("full_payment_date", e.target.value)} className={ic} />
-                  </div>
                 </div>
+                <p className="mt-3 text-xs text-muted-foreground">
+                  Payment dates (advance, partial, full) are no longer entered here — they're derived from the actual
+                  payment-made date recorded on the Invoice / Pending Payments tab.
+                </p>
+              </Section>
+
+              {/* ── 3b. Application Status (IPO-style view) ─────────────── */}
+              <Section title="Application Status" open={!!editProj}>
+                {!editProj ? (
+                  <p className="text-xs text-muted-foreground">Available once the case is created and linked to an application number.</p>
+                ) : (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="col-span-2">
+                      <Lbl>Application Type</Lbl>
+                      <input value={form.application_type} onChange={(e) => sf("application_type", e.target.value)}
+                        placeholder="e.g. Ordinary Application, Convention Application, PCT National Phase…" className={ic} />
+                    </div>
+                    <div>
+                      <Lbl>Reply to FER Date</Lbl>
+                      <input type="date" value={form.fer_reply_date}
+                        onChange={(e) => sf("fer_reply_date", e.target.value)} className={ic} />
+                    </div>
+                    <div>
+                      <Lbl>Date of Certificate Issue</Lbl>
+                      <input type="date" value={form.certificate_issue_date}
+                        onChange={(e) => sf("certificate_issue_date", e.target.value)} className={ic} />
+                    </div>
+                    <div>
+                      <Lbl>Post Grant Journal Date</Lbl>
+                      <input type="date" value={form.post_grant_journal_date}
+                        onChange={(e) => sf("post_grant_journal_date", e.target.value)} className={ic} />
+                    </div>
+                  </div>
+                )}
               </Section>
 
               {/* ── 4. Team Assignment ───────────────────────────────── */}
@@ -3226,6 +3267,19 @@ export default function Projects() {
           </div>
         </>,
         document.body
+      )}
+
+      {backfillNotice && backfillNotice.length > 0 && (
+        <div className="fixed bottom-4 right-4 z-[100] max-w-sm rounded-md border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs text-emerald-700 shadow-lg dark:text-emerald-400">
+          <div className="flex items-start justify-between gap-2">
+            <p>
+              Application number also applied to: <span className="font-mono font-semibold">{backfillNotice.join(", ")}</span>
+            </p>
+            <button onClick={() => setBackfillNotice(null)} className="flex-shrink-0 text-emerald-700/70 hover:text-emerald-700 dark:text-emerald-400/70">
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
       )}
     </AppLayout>
   );

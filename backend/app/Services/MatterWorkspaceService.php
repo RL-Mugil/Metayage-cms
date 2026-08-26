@@ -24,12 +24,12 @@ class MatterWorkspaceService
     public function build(Project $project, User $user): array
     {
         $project->load([
-            'client:id,company_name,legal_name,client_code,portal_user_id,portal_enabled',
+            'client:id,company_name,legal_name,client_code,contact_email,portal_user_id,portal_enabled',
             'partner:id,name,email',
             'manager:id,name,email',
             'secondaryManager:id,name,email',
             'patentEngineer:id,name,email',
-            'patentApplication.renewals',
+            'patentApplication.renewals.invoice:id,invoice_uin,patent_office_fees,payment_status,payment_confirmed_at',
             'inventionFamily.client:id,client_code,company_name,legal_name',
             'lifecycleTemplate:id,jurisdiction,service_code,name,version,effective_from',
             'docketReviewer:id,name,email',

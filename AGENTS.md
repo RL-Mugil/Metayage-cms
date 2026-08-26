@@ -68,7 +68,7 @@ IPFlow replaces all of that with a unified platform.
 ├─────────────────────────────────────────────────┤
 │  DATABASE (PostgreSQL 16)                       │
 │  30+ tables, encrypted PII columns              │
-│  Port: 5432 (dev) / 5433 (prod)                 │
+│  Port: 5432 (dev) / 5433 app PostgreSQL         │
 └─────────────────────────────────────────────────┘
 ```
 
@@ -77,6 +77,7 @@ IPFlow replaces all of that with a unified platform.
 - **Production server:** DigitalOcean droplet at `139.59.85.216`
 - **Domain:** `mypl-cms.139-59-85-216.sslip.io` (SSL via Let's Encrypt)
 - **Reverse proxy:** Nginx → PHP-FPM (backend) + serves built frontend static files
+- **Production database topology:** Laravel uses the `mypl-cms-postgres` PostgreSQL 16 container exposed on `127.0.0.1:5433`. A separate host PostgreSQL 16 cluster listens on `127.0.0.1:5434`; it is not the MYPL application database. Preserve both services unless the topology is deliberately migrated.
 - **Deployment:** Manual via `deploy-rebuild.sh` (SCP + SSH)
 
 ### Key Directories

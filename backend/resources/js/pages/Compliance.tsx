@@ -1,6 +1,6 @@
 import { Head } from "@inertiajs/react";
 import { Fragment, useEffect, useState, useCallback } from "react";
-import { Shield, AlertTriangle, CheckCircle, Clock, Globe, Download, Loader2, X, Search, ChevronLeft, ChevronRight } from "lucide-react";
+import { Shield, AlertTriangle, CheckCircle, Clock, Globe, Download, Loader2, X, Search, ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { api, downloadCSV } from "@/lib/api-client";
 import { fmtDate } from "@/lib/date-utils";
 import AppLayout from "@/layouts/AppLayout";
@@ -23,6 +23,10 @@ interface ComplianceItem {
   status: AlertLevel;
   action: string;
   assignee: string | null;
+  assignee_id: number | null;
+  source_type: string;
+  client: { id: number; client_code: string; legal_name?: string; company_name?: string } | null;
+  project: { id: number; project_code: string; docket_number?: string; application_number?: string } | null;
   notes: { text: string; by: string; at: string }[];
 }
 
@@ -132,6 +136,7 @@ function ComplianceKpiModal({ kpi, onClose }: { kpi: ComplianceKpiDef; onClose: 
 export default function Compliance() {
   const [items, setItems] = useState<ComplianceItem[]>([]);
   const [users, setUsers] = useState<any[]>([]);
+  const [clients, setClients] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState<AlertLevel | "All">("All");
   const [filterType, setFilterType] = useState<MatterType | Jurisdiction | "All">("All");
@@ -141,14 +146,46 @@ export default function Compliance() {
   const [feedback, setFeedback] = useState<Record<number, string>>({});
   const [complianceStats, setComplianceStats] = useState({ critical: 0, at_risk: 0, on_track: 0, compliant: 0 });
   const [kpiModal, setKpiModal] = useState<ComplianceKpiDef | null>(null);
+  const [error, setError] = useState("");
+  const [search, setSearch] = useState("");
+  const [clientId, setClientId] = useState("");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+  const [showCreate, setShowCreate] = useState(false);
+  const [newItem, setNewItem] = useState({ matter: "", type: "Patent", jurisdiction: "IPO India", deadline: "", action_required: "", client_id: "", assignee_id: "", note: "" });
 
-  const load = () => api.getCompliance().then((d) => setItems(d as unknown as ComplianceItem[])).catch(() => {}).finally(() => setLoading(false));
+  const load = useCallback(() => {
+    setLoading(true); setError("");
+    const params = new URLSearchParams({ per_page: "100" });
+    if (search.trim()) params.set("search", search.trim());
+    if (clientId) params.set("client_id", clientId);
+    if (fromDate) params.set("from_date", fromDate);
+    if (toDate) params.set("to_date", toDate);
+    if (filterType !== "All") params.set((['USPTO','EPO','WIPO','IPO India','EUIPO'].includes(filterType) ? "jurisdiction" : "type"), filterType);
+    if (filterStatus !== "All") params.set("status", filterStatus);
+    return api.getCompliancePaged(params).then((d) => setItems((d?.data ?? []) as unknown as ComplianceItem[]))
+      .catch((e: Error) => setError(e.message || "Compliance data could not be loaded."))
+      .finally(() => setLoading(false));
+  }, [search, clientId, fromDate, toDate, filterType, filterStatus]);
 
   useEffect(() => {
     load();
-    api.getUsers().then(setUsers).catch(() => {});
+    api.getUsers().then(setUsers).catch((e: Error) => setError(e.message));
+    api.getAllClients().then(setClients).catch((e: Error) => setError(e.message));
     api.getComplianceStats().then(setComplianceStats).catch(() => {});
-  }, []);
+  }, [load]);
+
+  async function createItem() {
+    setBusy(true); setError("");
+    try {
+      await api.createCompliance({ ...newItem, client_id: newItem.client_id ? Number(newItem.client_id) : null, assignee_id: newItem.assignee_id ? Number(newItem.assignee_id) : null });
+      setShowCreate(false);
+      setNewItem({ matter: "", type: "Patent", jurisdiction: "IPO India", deadline: "", action_required: "", client_id: "", assignee_id: "", note: "" });
+      await load();
+      const stats = await api.getComplianceStats(); setComplianceStats(stats);
+    } catch (e) { setError(e instanceof Error ? e.message : "Compliance item could not be created."); }
+    finally { setBusy(false); }
+  }
 
   const say = (id: number, msg: string) => {
     setFeedback((p) => ({ ...p, [id]: msg }));
@@ -162,10 +199,11 @@ export default function Compliance() {
     finally { setBusy(false); }
   }
 
-  async function assignAttorney(item: ComplianceItem, name: string) {
-    if (!name) return;
+  async function assignAttorney(item: ComplianceItem, userId: string) {
+    if (!userId) return;
+    const user = users.find((candidate) => String(candidate.id) === userId);
     setBusy(true);
-    try { await api.updateCompliance(item.id, { assignee: name }); say(item.id, `Assigned to ${name}.`); load(); }
+    try { await api.updateCompliance(item.id, { assignee_id: Number(userId) }); say(item.id, `Assigned to ${user?.name ?? "selected user"}.`); load(); }
     catch (e: any) { say(item.id, e.message || "Failed."); }
     finally { setBusy(false); }
   }
@@ -185,11 +223,7 @@ export default function Compliance() {
     finally { setBusy(false); }
   }
 
-  const filtered = items.filter((i) => {
-    if (filterStatus !== "All" && i.status !== filterStatus) return false;
-    if (filterType !== "All" && i.type !== filterType && i.jurisdiction !== filterType) return false;
-    return true;
-  });
+  const filtered = items;
 
   if (loading) return (
     <AppLayout>
@@ -207,13 +241,30 @@ export default function Compliance() {
         eyebrow="Operations"
         title="Compliance & IP Deadlines"
         description="Track maintenance fees, renewals, and regulatory deadlines"
-        actions={<Button variant="outline" size="sm" onClick={() => {
+        actions={<div className="flex gap-2"><Button size="sm" onClick={() => setShowCreate(true)}><Plus className="h-4 w-4 mr-2" />Add obligation</Button><Button variant="outline" size="sm" onClick={() => {
           const rows = filtered.map(i => ({ Matter: i.matter, Type: i.type, Jurisdiction: i.jurisdiction, Deadline: i.deadline, DaysLeft: i.daysLeft, Status: i.status, Action: i.action, Assignee: i.assignee }));
           downloadCSV(`compliance-report-${new Date().toISOString().slice(0,10)}.csv`, rows);
-        }}><Download className="h-4 w-4 mr-2" />Export Report</Button>}
+        }}><Download className="h-4 w-4 mr-2" />Export Report</Button></div>}
       />
       <div className="px-8 py-6 space-y-6">
         {kpiModal && <ComplianceKpiModal kpi={kpiModal} onClose={() => setKpiModal(null)} />}
+        {showCreate && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <form className="w-full max-w-xl rounded-xl border border-border bg-background p-6 shadow-2xl space-y-4" onSubmit={(e) => { e.preventDefault(); createItem(); }}>
+            <div className="flex justify-between"><div><h2 className="font-display text-lg font-semibold">Add compliance obligation</h2><p className="text-xs text-muted-foreground">Create a deadline not already generated from a case or renewal.</p></div><button type="button" onClick={() => setShowCreate(false)}><X className="h-5 w-5" /></button></div>
+            <div className="grid grid-cols-2 gap-3">
+              <input required className="col-span-2 h-9 rounded border bg-background px-3 text-sm" placeholder="Matter / reference" value={newItem.matter} onChange={e => setNewItem({...newItem, matter:e.target.value})} />
+              <select className="h-9 rounded border bg-background px-3 text-sm" value={newItem.type} onChange={e => setNewItem({...newItem,type:e.target.value})}>{["Patent","Trademark","Copyright","Design","Other"].map(v=><option key={v}>{v}</option>)}</select>
+              <input required className="h-9 rounded border bg-background px-3 text-sm" placeholder="Jurisdiction" value={newItem.jurisdiction} onChange={e => setNewItem({...newItem,jurisdiction:e.target.value})} />
+              <input required type="date" className="h-9 rounded border bg-background px-3 text-sm" value={newItem.deadline} onChange={e => setNewItem({...newItem,deadline:e.target.value})} />
+              <select className="h-9 rounded border bg-background px-3 text-sm" value={newItem.client_id} onChange={e => setNewItem({...newItem,client_id:e.target.value})}><option value="">No client</option>{clients.map(c=><option key={c.id} value={c.id}>{c.client_code} — {c.company_name || c.legal_name}</option>)}</select>
+              <textarea required className="col-span-2 rounded border bg-background px-3 py-2 text-sm" placeholder="Action required" value={newItem.action_required} onChange={e => setNewItem({...newItem,action_required:e.target.value})} />
+              <select className="h-9 rounded border bg-background px-3 text-sm" value={newItem.assignee_id} onChange={e => setNewItem({...newItem,assignee_id:e.target.value})}><option value="">Unassigned</option>{users.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}</select>
+              <input className="h-9 rounded border bg-background px-3 text-sm" placeholder="Initial note (optional)" value={newItem.note} onChange={e => setNewItem({...newItem,note:e.target.value})} />
+            </div>
+            <div className="flex justify-end gap-2"><Button type="button" variant="outline" onClick={() => setShowCreate(false)}>Cancel</Button><Button disabled={busy} type="submit">{busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Create</Button></div>
+          </form>
+        </div>}
+        {error && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error} <button className="ml-2 underline" onClick={() => load()}>Retry</button></div>}
         {/* Alert summary */}
         <div className="grid grid-cols-4 gap-4">
           {COMPLIANCE_KPI_DEFS.map((kpi) => {
@@ -246,6 +297,10 @@ export default function Compliance() {
               {f}
             </button>
           ))}
+          <div className="relative ml-auto"><Search className="absolute left-2.5 top-2 h-4 w-4 text-muted-foreground"/><input className="h-8 w-52 rounded border bg-background pl-8 pr-2 text-xs" placeholder="Code, client, case, action" value={search} onChange={e=>setSearch(e.target.value)} /></div>
+          <select className="h-8 max-w-56 rounded border bg-background px-2 text-xs" value={clientId} onChange={e=>setClientId(e.target.value)}><option value="">All clients</option>{clients.map(c=><option key={c.id} value={c.id}>{c.client_code} — {c.company_name || c.legal_name}</option>)}</select>
+          <input aria-label="Deadline from" type="date" className="h-8 rounded border bg-background px-2 text-xs" value={fromDate} onChange={e=>setFromDate(e.target.value)} />
+          <input aria-label="Deadline to" type="date" className="h-8 rounded border bg-background px-2 text-xs" value={toDate} onChange={e=>setToDate(e.target.value)} />
         </div>
 
         {/* Table */}
@@ -305,7 +360,7 @@ export default function Compliance() {
                                   defaultValue="" disabled={busy}
                                   onChange={(e) => { assignAttorney(item, e.target.value); e.target.value = ""; }}>
                                   <option value="" disabled>Assign attorney…</option>
-                                  {users.map((u) => <option key={u.id} value={u.name}>{u.name} ({u.role})</option>)}
+                                  {users.map((u) => <option key={u.id} value={u.id}>{u.name} ({u.role})</option>)}
                                 </select>
                                 <Button size="sm" variant="outline" className="h-7 text-xs border-green-200 text-green-600" disabled={busy}
                                   onClick={() => markResolved(item)}>Mark Resolved</Button>
@@ -335,6 +390,7 @@ export default function Compliance() {
                     </Fragment>
                   );
                 })}
+                {filtered.length === 0 && <tr><td colSpan={8} className="px-6 py-16 text-center"><Shield className="mx-auto mb-3 h-8 w-8 text-muted-foreground"/><div className="font-medium">No active compliance deadlines match these filters.</div><div className="mt-1 text-xs text-muted-foreground">Change the filters or add a manual obligation.</div></td></tr>}
               </tbody>
             </table>
           </CardContent>

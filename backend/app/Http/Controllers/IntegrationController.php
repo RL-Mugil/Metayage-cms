@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Integration;
+use App\Services\ZohoBooksService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -85,40 +86,70 @@ class IntegrationController extends Controller
         if ($deny = $this->writeGate($request)) return $deny;
 
         $integration = Integration::where('slug', $slug)->firstOrFail();
-        $validated = $request->validate(['api_key' => 'required|string|max:500']);
-
         $config = $integration->config ?? [];
-        $config['api_key'] = encrypt($validated['api_key']);
+
+        if ($slug === 'zoho') {
+            $validated = $request->validate([
+                'client_id'       => 'required|string|max:255',
+                'client_secret'   => 'required|string|max:255',
+                'refresh_token'   => 'required|string|max:500',
+                'organization_id' => 'required|string|max:50',
+                'region'          => 'nullable|string|max:5',
+            ]);
+
+            $config['client_id']       = $validated['client_id'];
+            $config['client_secret']   = encrypt($validated['client_secret']);
+            $config['refresh_token']   = encrypt($validated['refresh_token']);
+            $config['organization_id'] = $validated['organization_id'];
+            $config['region']          = $validated['region'] ?? 'in';
+            // Kept only so the generic `hasKey` flag on the integrations list still works.
+            $config['api_key'] = $config['refresh_token'];
+        } else {
+            $validated = $request->validate(['api_key' => 'required|string|max:500']);
+            $config['api_key'] = encrypt($validated['api_key']);
+        }
+
         $integration->config = $config;
         $integration->save();
 
         return response()->json(['ok' => true, 'message' => 'Integration credentials saved.']);
     }
 
-    /** Connectivity check: real for integrations with public endpoints, config-presence otherwise. */
+    /** Connectivity check: real (live API ping) for Zoho, config-presence otherwise. */
     public function test(Request $request, string $slug)
     {
         if ($deny = $this->writeGate($request)) return $deny;
 
         $integration = Integration::where('slug', $slug)->firstOrFail();
 
-        $hasKey = ! empty(($integration->config ?? [])['api_key'] ?? null);
-        $ok = $integration->connected && $hasKey;
+        if ($slug === 'zoho') {
+            try {
+                $ok = app(ZohoBooksService::class)->pingOrganization();
+                $message = $ok
+                    ? 'Connected to Zoho Books successfully.'
+                    : 'Zoho Books responded but the organization could not be verified.';
+            } catch (\Throwable $e) {
+                $ok = false;
+                $message = 'Zoho Books connection failed: ' . $e->getMessage();
+            }
+        } else {
+            $hasKey = ! empty(($integration->config ?? [])['api_key'] ?? null);
+            $ok = $integration->connected && $hasKey;
+            $message = $ok
+                ? 'Credentials are saved and the integration is enabled. Note: this confirms configuration only — live connectivity to the external service is not verified here.'
+                : 'Integration is not fully configured. Save an API key and enable the integration first.';
+        }
+
         $integration->last_sync = $ok ? now()->toIso8601String() : $integration->last_sync;
         $integration->save();
 
         DB::table('integration_logs')->insert([
             'slug' => $slug, 'event_type' => 'test',
             'status' => $ok ? 'ok' : 'fail',
-            'summary' => $ok ? 'Credentials present and connection enabled' : 'Not fully configured',
+            'summary' => $message,
             'payload' => null, 'created_at' => now(), 'updated_at' => now(),
         ]);
 
-        return response()->json([
-            'ok' => $ok,
-            'message' => $ok
-                ? 'Credentials are saved and the integration is enabled. Note: this confirms configuration only — live connectivity to the external service is not verified here.'
-                : 'Integration is not fully configured. Save an API key and enable the integration first.',
-        ]);
+        return response()->json(['ok' => $ok, 'message' => $message]);
     }
 }

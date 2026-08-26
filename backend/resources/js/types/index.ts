@@ -56,6 +56,7 @@ export interface Client {
   state?: string | null
   address?: string | null
   referred_by_code?: string | null
+  fee_entity_tier?: string | null
   status: ClientStatus
   portal_enabled: boolean
   account_manager_id?: number | null
@@ -347,6 +348,8 @@ export interface PatentInvoiceIn {
   // Financials
   patent_office_fees: number
   service_fees: number
+  discount_percentage?: number
+  discount_amount?: number
   other_expenses: number
   igst_amount: number
   cgst_amount: number
@@ -409,7 +412,7 @@ export interface AIResponse {
 // ── Dashboard ─────────────────────────────────────────────────────────────
 
 export interface DashboardMetrics {
-  metrics: Record<string, number>
+  metrics: Record<string, any>
   charts: {
     revenue_trend?: Array<{ month: string; revenue: number }>
     matter_types?: Array<{ type: string; count: number }>
