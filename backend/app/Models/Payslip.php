@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Payslip extends Model
 {
@@ -92,5 +93,11 @@ class Payslip extends Model
     public function releasedInRun(): BelongsTo
     {
         return $this->belongsTo(PayrollRun::class, 'released_in_run_id');
+    }
+
+    public function internalSignature(): HasOne
+    {
+        return $this->hasOne(InternalDocumentSignature::class, 'document_id')
+            ->where('document_type', 'payslip_monthly');
     }
 }

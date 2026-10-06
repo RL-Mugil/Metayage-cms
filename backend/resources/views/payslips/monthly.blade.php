@@ -99,7 +99,7 @@
     <tr class="net-row"><td>Net Pay</td><td class="amount">{{ number_format($netPayBeforeReimbursement, 2) }}</td></tr>
     @if ((float) $slip->reimbursements > 0)
       <tr><td>Reimbursements</td><td class="amount">{{ number_format((float) $slip->reimbursements, 2) }}</td></tr>
-      <tr class="net-row"><td>Credited to Bank Account</td><td class="amount">{{ number_format((float) $slip->net_pay, 2) }}</td></tr>
+      <tr class="net-row"><td>Credited to Bank Account</td><td class="amount">{{ number_format($creditedToBank, 2) }}</td></tr>
     @endif
   </table>
 
@@ -107,7 +107,17 @@
     <p>EMPLOYEE'S SIGNATURE: ____________________________</p>
     <p><strong>{{ strtoupper($employee->full_name) }}</strong> — {{ $employee->designation->title ?? '' }}</p>
     <p>For any enquiries: accounts@myipstrategy.com</p>
-    <p>Electronically Generated at {{ $generatedAt->format('h:i A') }} UTC on {{ $generatedAt->format('d M Y') }}, Hence does not require signature</p>
+    @if ($internalSignature && $internalSignature->signedBy)
+      <div style="margin-top:18px;margin-left:auto;width:245px;border:1px solid #39a96b;border-radius:6px;padding:8px;color:#146c3a;background:#f0fff5;text-align:right">
+        <div style="font-size:24px;font-weight:bold;color:#168447">✓</div>
+        <div style="font-size:10px;font-weight:bold">INTERNALLY SIGNED &amp; VERIFIED</div>
+        <div style="font-size:9px">Accounts: {{ $internalSignature->signedBy->name }}</div>
+        <div style="font-size:8px">{{ $internalSignature->signed_at?->format('d M Y H:i T') }} · {{ $internalSignature->verification_code }}</div>
+        <div style="font-size:8px">Internal approval signature — not a statutory DSC</div>
+      </div>
+    @else
+      <p>Internal Accounts signature pending. This document is not verified for employee release.</p>
+    @endif
   </div>
 
 </body>

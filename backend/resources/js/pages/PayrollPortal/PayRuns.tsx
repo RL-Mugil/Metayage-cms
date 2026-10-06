@@ -357,6 +357,7 @@ export default function PayrollPortalPayRuns() {
                                 {canEditSelectedRun && (
                                   <td className="px-3 py-2.5">
                                     <Button size="sm" variant="outline" className="h-6 text-[10px] mr-1" disabled={busy} onClick={() => { setEditSlip(s); setEditReimbursements(String(s.reimbursements || 0)); setEditHours(s.hours_logged_minutes == null ? "" : hoursFmt(s.hours_logged_minutes)); setEditTds(String((Number(s.tds || 0) / Math.max(1, Number(s.gross_salary || 0)) * 100).toFixed(2))); }}><Pencil className="h-3 w-3 mr-1" />Edit</Button>
+                                    {isFinalized && <Button size="sm" variant="outline" className="h-6 text-[10px] mr-1 text-green-700 border-green-300" disabled={busy} onClick={() => run(() => api.signInternalPayslip(s.id), "Payslip signed by Accounts.")}><BadgeCheck className="h-3 w-3 mr-1" />Sign</Button>}
                                     {s.employee_id && <button onClick={() => api.downloadSalaryCertificate(s.employee_id).catch((e) => flash(e.message))} className="inline-flex h-6 items-center rounded border border-border px-2 text-[10px]">Certificate</button>}
                                     {isDraft && (s.withheld ? (
                                       <Button size="sm" variant="outline" className="h-6 text-[10px]" disabled={busy} onClick={() => submitRevertWithhold(s)}>

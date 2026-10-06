@@ -1172,6 +1172,9 @@ export const api = {
   async updatePayslip(id: number | string, data: { lop_days?: number; tds?: number; health_insurance?: number; other_deductions?: number; reimbursements?: number; hours_logged?: string }): Promise<Payslip> {
     return this.request(`/payroll/payslips/${id}`, { method: 'PUT', body: JSON.stringify(data) })
   },
+  async signInternalPayslip(id: number | string): Promise<unknown> {
+    return this.request(`/payroll/payslips/${id}/internal-sign`, { method: 'POST' })
+  },
   async withholdPayslip(id: number | string, reason: string): Promise<Payslip> {
     return this.request(`/payroll/payslips/${id}/withhold`, { method: 'POST', body: JSON.stringify({ reason }) })
   },

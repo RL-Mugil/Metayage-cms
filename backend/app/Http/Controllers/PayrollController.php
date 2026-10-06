@@ -17,6 +17,7 @@ use App\Models\PayslipComponent;
 use App\Models\SalaryComponent;
 use App\Models\User;
 use App\Services\PayrollService;
+use App\Services\InternalDocumentSignatureService;
 use App\Services\TdsLiabilityService;
 use App\Support\Notifier;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -565,7 +566,7 @@ class PayrollController extends Controller
     /* ── Downloads ─────────────────────────────────────────────────────── */
 
     /** PDF bank advice for a run — withheld salaries excluded. */
-    public function downloadBankAdvice(Request $request, $id)
+    public function downloadBankAdvice(Request $request, $id, InternalDocumentSignatureService $signatures)
     {
         $user = $request->user();
         if (! in_array($user->role, self::VIEW_ROLES, true)) {
@@ -573,6 +574,23 @@ class PayrollController extends Controller
         }
 
         $run = PayrollRun::with(['payslips' => fn ($q) => $q->where('withheld', false)->orderBy('employee_name')])->findOrFail($id);
+
+        $signatureFacts = $run->payslips->map(fn ($slip) => [
+            'id' => $slip->id,
+            'updated_at' => optional($slip->updated_at)->toIso8601String(),
+            'employee_code' => $slip->employee_code,
+            'amount' => number_format((float) $slip->net_pay + (float) $slip->reimbursements, 2, '.', ''),
+        ])->values()->all();
+        $signature = $signatures->sign(
+            'bank_advice',
+            (int) $run->id,
+            $signatures->fingerprint('bank_advice', (int) $run->id, [
+                'run_updated_at' => optional($run->updated_at)->toIso8601String(),
+                'period' => optional($run->period)->toDateString(),
+                'rows' => $signatureFacts,
+            ]),
+            $user
+        )->load('signedBy:id,name,email,role');
 
         $rows = '';
         foreach ($run->payslips as $slip) {
@@ -586,7 +604,8 @@ class PayrollController extends Controller
             'ip_address' => $request->ip(), 'user_agent' => $request->userAgent(),
         ]);
 
-        $html = '<html><head><style>body{font-family:DejaVu Sans,sans-serif;color:#17233c}table{width:100%;border-collapse:collapse}th,td{padding:7px;border:1px solid #d9dee8;font-size:10px}h1{font-size:18px}</style></head><body><h1>Bank Advice — '.e(Carbon::parse($run->period)->format('F Y')).'</h1><table><thead><tr><th>Employee</th><th>Code</th><th>Account Number</th><th>IFSC</th><th>Amount</th></tr></thead><tbody>'.$rows.'</tbody></table></body></html>';
+        $signaturePanel = '<div style="margin-top:22px;margin-left:auto;width:260px;border:1px solid #39a96b;border-radius:6px;padding:9px;color:#146c3a;background:#f0fff5;text-align:right"><div style="font-size:26px;font-weight:bold;color:#168447">✓</div><div style="font-size:10px;font-weight:bold">INTERNALLY SIGNED &amp; VERIFIED</div><div style="font-size:9px">Exported by: '.e($signature->signedBy->name).'</div><div style="font-size:8px">'.e($signature->signed_at?->format('d M Y H:i T')).' · '.e($signature->verification_code).'</div><div style="font-size:8px">Internal approval signature — not a statutory DSC</div></div>';
+        $html = '<html><head><style>body{font-family:DejaVu Sans,sans-serif;color:#17233c}table{width:100%;border-collapse:collapse}th,td{padding:7px;border:1px solid #d9dee8;font-size:10px}h1{font-size:18px}</style></head><body><h1>Bank Advice — '.e(Carbon::parse($run->period)->format('F Y')).'</h1><table><thead><tr><th>Employee</th><th>Code</th><th>Account Number</th><th>IFSC</th><th>Amount</th></tr></thead><tbody>'.$rows.'</tbody></table>'.$signaturePanel.'</body></html>';
         return Pdf::loadHTML($html)->download('bank-advice-'.Carbon::parse($run->period)->format('Y-m').'.pdf');
     }
 
@@ -598,9 +617,16 @@ class PayrollController extends Controller
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
-        $run = PayrollRun::with(['payslips.components', 'payslips.employee.designation'])->findOrFail($id);
+        $run = PayrollRun::with(['payslips.components', 'payslips.employee.designation', 'payslips.internalSignature.signedBy'])->findOrFail($id);
         if (! in_array($run->status, ['Finalized', 'Paid'], true)) {
             return response()->json(['message' => 'TDS worksheets are only available once a run is finalized.'], 422);
+        }
+
+        foreach ($run->payslips as $slip) {
+            $fingerprint = $pdfController->monthlyFingerprint($slip, app(InternalDocumentSignatureService::class));
+            if (! app(InternalDocumentSignatureService::class)->verify($slip->internalSignature, $fingerprint)) {
+                return response()->json(['message' => "Payslip {$slip->employee_code} is awaiting Accounts internal signature."], 422);
+            }
         }
 
         $zipPath = storage_path('app/tmp/tds-worksheets-' . uniqid() . '.zip');

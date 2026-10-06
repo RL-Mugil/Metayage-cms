@@ -425,6 +425,7 @@ Route::middleware(['auth:sanctum', 'firm.context', 'throttle:120,1'])->group(fun
     Route::post('/payroll/lop-adjustments', [\App\Http\Controllers\PayrollController::class, 'createLopAdjustment']);
     Route::get('/payroll/my-slips', [\App\Http\Controllers\PayrollController::class, 'mySlips']);
     Route::get('/payroll/payslips/{id}/pdf', [\App\Http\Controllers\PayslipPdfController::class, 'monthly']);
+    Route::post('/payroll/payslips/{id}/internal-sign', [\App\Http\Controllers\PayslipPdfController::class, 'signMonthly']);
     Route::get('/payroll/employees/{employeeId}/yearly-pdf', [\App\Http\Controllers\PayslipPdfController::class, 'yearly']);
     Route::get('/payroll/employees/{employeeId}/salary-certificate', [\App\Http\Controllers\PayslipPdfController::class, 'salaryCertificate']);
     Route::get('/payroll/employees/{employeeId}/payslip-summary', [\App\Http\Controllers\PayslipPdfController::class, 'summary']);
