@@ -590,23 +590,20 @@ class PayrollController extends Controller
         }
 
         $validated = $request->validate([
-            'entries' => 'required|array|min:1',
-            'entries.*.payslip_id' => 'required|integer',
-            'entries.*.pin' => 'nullable|digits:4',
-            'entries.*.verified' => 'required|boolean',
+            'pin' => 'nullable|digits:4',
+            'verified' => 'required|boolean',
         ]);
         $run = PayrollRun::with(['payslips' => fn ($q) => $q->where('withheld', false), 'payslips.employee'])->findOrFail($id);
-        $slips = $run->payslips->keyBy('id');
+        $verified = (bool) $validated['verified'];
+        $signingEmployee = Employee::where('user_id', $user->id)->first();
+        if (! $signingEmployee) {
+            return response()->json(['message' => 'Your user account is not linked to an employee signature PIN.'], 422);
+        }
+        if ($verified && ! $signingEmployee->verifyInternalSignaturePin((string) ($validated['pin'] ?? ''))) {
+            return response()->json(['message' => 'The document PIN is incorrect.'], 422);
+        }
 
-        foreach ($validated['entries'] as $entry) {
-            $slip = $slips->get((int) $entry['payslip_id']);
-            if (! $slip) {
-                return response()->json(['message' => 'A submitted payslip does not belong to this payroll run.'], 422);
-            }
-            $verified = (bool) $entry['verified'];
-            if ($verified && ! $slip->employee->verifyInternalSignaturePin((string) ($entry['pin'] ?? ''))) {
-                return response()->json(['message' => "The PIN for {$slip->employee_name} is incorrect."], 422);
-            }
+        foreach ($run->payslips as $slip) {
             $signatures->sign(
                 'bank_advice_employee',
                 (int) $slip->id,
@@ -629,7 +626,7 @@ class PayrollController extends Controller
         AuditLog::create([
             'user_id' => $user->id, 'action' => 'sign_bank_advice_preview',
             'subject_type' => 'PayrollRun', 'subject_id' => $run->id,
-            'metadata' => ['entries' => count($validated['entries'])],
+            'metadata' => ['verified' => $verified, 'document_scope' => 'entire_bank_advice'],
             'ip_address' => $request->ip(), 'user_agent' => $request->userAgent(),
         ]);
 

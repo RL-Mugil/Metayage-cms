@@ -1172,8 +1172,8 @@ export const api = {
   async getBankAdvicePreview(runId: number | string): Promise<any> {
     return this.request(`/payroll/runs/${runId}/bank-advice/preview`)
   },
-  async signBankAdvice(runId: number | string, entries: Array<{ payslip_id: number; pin: string; verified: boolean }>): Promise<any> {
-    return this.request(`/payroll/runs/${runId}/bank-advice/sign`, { method: 'POST', body: JSON.stringify({ entries }) })
+  async signBankAdvice(runId: number | string, data: { pin: string; verified: boolean }): Promise<any> {
+    return this.request(`/payroll/runs/${runId}/bank-advice/sign`, { method: 'POST', body: JSON.stringify(data) })
   },
   tdsWorksheetsUrl(runId: number | string): string {
     return `/api/payroll/runs/${runId}/tds-worksheets`
