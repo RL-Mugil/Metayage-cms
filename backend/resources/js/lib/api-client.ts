@@ -839,6 +839,9 @@ export const api = {
   async updatePassword(data: { current_password: string; password: string; password_confirmation: string }): Promise<any> {
     return this.request('/settings/password', { method: 'PUT', body: JSON.stringify(data) })
   },
+  async resetInternalSignaturePin(pin: string): Promise<any> {
+    return this.request('/settings/internal-signature-pin', { method: 'PUT', body: JSON.stringify({ pin }) })
+  },
   async updateNotifications(data: Record<string, boolean>): Promise<any> {
     return this.request('/settings/notifications', { method: 'PUT', body: JSON.stringify(data) })
   },
@@ -1165,6 +1168,12 @@ export const api = {
   },
   bankAdviceUrl(runId: number | string): string {
     return `/api/payroll/runs/${runId}/bank-advice`
+  },
+  async getBankAdvicePreview(runId: number | string): Promise<any> {
+    return this.request(`/payroll/runs/${runId}/bank-advice/preview`)
+  },
+  async signBankAdvice(runId: number | string, entries: Array<{ payslip_id: number; pin: string; verified: boolean }>): Promise<any> {
+    return this.request(`/payroll/runs/${runId}/bank-advice/sign`, { method: 'POST', body: JSON.stringify({ entries }) })
   },
   tdsWorksheetsUrl(runId: number | string): string {
     return `/api/payroll/runs/${runId}/tds-worksheets`

@@ -48,6 +48,8 @@ export default function PayrollPortalPayRuns() {
   const [editHours, setEditHours] = useState("");
   const [editTds, setEditTds] = useState("");
   const [breakdownSlip, setBreakdownSlip] = useState<any | null>(null);
+  const [bankAdvicePreview, setBankAdvicePreview] = useState<any | null>(null);
+  const [bankAdviceBusy, setBankAdviceBusy] = useState(false);
 
   function loadRuns(selectId?: number) {
     api.getPayrollRuns()
@@ -90,6 +92,33 @@ export default function PayrollPortalPayRuns() {
   function flash(message: string) {
     setNotice(message);
     setTimeout(() => setNotice(""), 4000);
+  }
+
+  async function openBankAdvicePreview() {
+    if (!selectedRun) return;
+    setBankAdviceBusy(true);
+    try {
+      const data = await api.getBankAdvicePreview(selectedRun.id);
+      setBankAdvicePreview({ ...data, rows: (data.rows || []).map((row: any) => ({ ...row, pin: "", verified: Boolean(row.verified) })) });
+    } catch (e: any) {
+      flash(e.message || "Could not load Bank Advice preview.");
+    } finally {
+      setBankAdviceBusy(false);
+    }
+  }
+
+  async function confirmBankAdvice() {
+    if (!selectedRun || !bankAdvicePreview) return;
+    setBankAdviceBusy(true);
+    try {
+      await api.signBankAdvice(selectedRun.id, bankAdvicePreview.rows.map((row: any) => ({ payslip_id: row.payslip_id, pin: row.pin, verified: row.verified })));
+      setBankAdvicePreview(null);
+      await api.downloadPdf(api.bankAdviceUrl(selectedRun.id), `bank-advice-${selectedRun.id}.pdf`);
+    } catch (e: any) {
+      flash(e.message || "Bank Advice verification failed.");
+    } finally {
+      setBankAdviceBusy(false);
+    }
   }
 
   async function run<T>(action: () => Promise<T>, successMessage: string) {
@@ -270,7 +299,7 @@ export default function PayrollPortalPayRuns() {
                       )}
                       {(isFinalized || selectedRun.status === "Paid") && (
                         <>
-                          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => api.downloadPdf(api.bankAdviceUrl(selectedRun.id), `bank-advice-${selectedRun.id}.pdf`).catch((e) => flash(e.message))}><Download className="h-3 w-3 mr-1" />Bank Advice PDF</Button>
+                          <Button size="sm" variant="outline" className="h-7 text-xs" disabled={bankAdviceBusy} onClick={openBankAdvicePreview}><Download className="h-3 w-3 mr-1" />Bank Advice PDF</Button>
                           <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => api.downloadPdf(api.tdsWorksheetsUrl(selectedRun.id), `payslips-${selectedRun.id}.zip`).catch((e) => flash(e.message))}><FileDown className="h-3 w-3 mr-1" />Payslips ZIP</Button>
                         </>
                       )}
@@ -440,6 +469,15 @@ export default function PayrollPortalPayRuns() {
       )}
       {breakdownSlip && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"><div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-md p-6 m-4"><div className="flex items-center justify-between mb-4"><h2 className="font-display text-lg font-semibold">Deduction breakdown</h2><button onClick={() => setBreakdownSlip(null)}><X className="h-5 w-5 text-muted-foreground" /></button></div><div className="space-y-2 text-sm"><div className="flex justify-between"><span>Professional Tax</span><b>{fmt(breakdownSlip.professional_tax || 0)}</b></div><div className="flex justify-between"><span>TDS</span><b>{fmt(breakdownSlip.tds || 0)}</b></div><div className="flex justify-between"><span>Health insurance</span><b>{fmt(breakdownSlip.health_insurance || 0)}</b></div><div className="flex justify-between"><span>Other deductions</span><b>{fmt(breakdownSlip.other_deductions || 0)}</b></div><hr/><div className="flex justify-between font-semibold"><span>Total deductions</span><b>{fmt(breakdownSlip.total_deductions || 0)}</b></div></div></div></div>
+      )}
+      {bankAdvicePreview && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-6xl p-6 m-4 max-h-[90vh] overflow-auto">
+            <div className="flex items-center justify-between mb-4"><div><h2 className="font-display text-lg font-semibold">Bank Advice Preview — {bankAdvicePreview.period}</h2><p className="text-xs text-muted-foreground mt-1">Verify each employee with their 4-digit internal signature PIN. Unchecked rows will show a red cross.</p></div><button onClick={() => setBankAdvicePreview(null)}><X className="h-5 w-5 text-muted-foreground" /></button></div>
+            <div className="overflow-x-auto border border-border rounded-md"><table className="w-full text-xs"><thead className="bg-muted/40"><tr><th className="p-2 text-left">Employee</th><th className="p-2 text-left">Bank</th><th className="p-2 text-left">Account</th><th className="p-2 text-right">Hrs</th><th className="p-2 text-right">Net Pay</th><th className="p-2 text-right">Reimbursement</th><th className="p-2 text-right">Total</th><th className="p-2">PIN</th><th className="p-2">Verified</th></tr></thead><tbody>{bankAdvicePreview.rows.map((row: any, index: number) => <tr key={row.payslip_id} className="border-t border-border"><td className="p-2"><div className="font-medium">{row.employee_name}</div><div className="text-[10px] text-muted-foreground">{row.employee_code}</div></td><td className="p-2">{row.bank_name || "—"}</td><td className="p-2 font-mono">{row.account_number || "—"}</td><td className="p-2 text-right">{row.hours_logged_minutes == null ? "—" : `${Math.floor(row.hours_logged_minutes / 60)}:${String(row.hours_logged_minutes % 60).padStart(2, "0")}`}</td><td className="p-2 text-right">{fmt(row.net_pay)}</td><td className="p-2 text-right">{fmt(row.reimbursement)}</td><td className="p-2 text-right font-semibold">{fmt(row.total)}</td><td className="p-2"><input inputMode="numeric" maxLength={4} value={row.pin} disabled={row.verified} onChange={(e) => setBankAdvicePreview((current: any) => ({ ...current, rows: current.rows.map((item: any, i: number) => i === index ? { ...item, pin: e.target.value.replace(/\D/g, "").slice(0, 4) } : item) }))} className="w-16 h-7 rounded border border-border bg-background px-2 text-center tracking-widest" /></td><td className="p-2 text-center"><input type="checkbox" checked={row.verified} onChange={(e) => setBankAdvicePreview((current: any) => ({ ...current, rows: current.rows.map((item: any, i: number) => i === index ? { ...item, verified: e.target.checked } : item) }))} /></td></tr>)}</tbody></table></div>
+            <div className="flex justify-end gap-2 mt-5"><Button variant="outline" onClick={() => setBankAdvicePreview(null)}>Cancel</Button><Button className="bg-gold hover:bg-gold/90 text-black" disabled={bankAdviceBusy} onClick={confirmBankAdvice}>{bankAdviceBusy ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <BadgeCheck className="h-4 w-4 mr-2" />}Verify &amp; Sign &amp; Download</Button></div>
+          </div>
+        </div>
       )}
     </PayrollPortalLayout>
   );

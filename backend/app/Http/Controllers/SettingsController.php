@@ -171,6 +171,25 @@ class SettingsController extends Controller
         return response()->json(['ok' => true]);
     }
 
+    public function resetInternalSignaturePin(Request $request)
+    {
+        $validated = $request->validate(['pin' => ['required', 'digits:4']]);
+        $employee = Employee::where('user_id', $request->user()->id)->firstOrFail();
+        $employee->setInternalSignaturePin($validated['pin']);
+        $employee->save();
+
+        AuditLog::create([
+            'user_id' => $request->user()->id,
+            'action' => 'reset_internal_signature_pin',
+            'subject_type' => 'Employee',
+            'subject_id' => $employee->id,
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+        ]);
+
+        return response()->json(['ok' => true]);
+    }
+
     public function updateNotifications(Request $request)
     {
         $user = $request->user();

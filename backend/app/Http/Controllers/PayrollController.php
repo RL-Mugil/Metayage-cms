@@ -7,6 +7,7 @@ use App\Jobs\GeneratePayrollJob;
 use App\Models\AuditLog;
 use App\Models\Employee;
 use App\Models\ExpenseClaim;
+use App\Models\InternalDocumentSignature;
 use App\Models\LopAdjustment;
 use App\Models\PayrollRun;
 use App\Models\PayrollHour;
@@ -566,6 +567,104 @@ class PayrollController extends Controller
     /* ── Downloads ─────────────────────────────────────────────────────── */
 
     /** PDF bank advice for a run — withheld salaries excluded. */
+    public function bankAdvicePreview(Request $request, $id, InternalDocumentSignatureService $signatures)
+    {
+        if (! in_array($request->user()->role, self::VIEW_ROLES, true)) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        $run = PayrollRun::with(['payslips' => fn ($q) => $q->where('withheld', false)->orderBy('employee_name'), 'payslips.employee'])
+            ->findOrFail($id);
+
+        return response()->json([
+            'period' => Carbon::parse($run->period)->format('F Y'),
+            'rows' => $run->payslips->map(fn ($slip) => $this->bankAdviceRow($run, $slip, $signatures))->values(),
+        ]);
+    }
+
+    public function signBankAdvice(Request $request, $id, InternalDocumentSignatureService $signatures)
+    {
+        $user = $request->user();
+        if (! in_array($user->role, self::VIEW_ROLES, true)) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        $validated = $request->validate([
+            'entries' => 'required|array|min:1',
+            'entries.*.payslip_id' => 'required|integer',
+            'entries.*.pin' => 'nullable|digits:4',
+            'entries.*.verified' => 'required|boolean',
+        ]);
+        $run = PayrollRun::with(['payslips' => fn ($q) => $q->where('withheld', false), 'payslips.employee'])->findOrFail($id);
+        $slips = $run->payslips->keyBy('id');
+
+        foreach ($validated['entries'] as $entry) {
+            $slip = $slips->get((int) $entry['payslip_id']);
+            if (! $slip) {
+                return response()->json(['message' => 'A submitted payslip does not belong to this payroll run.'], 422);
+            }
+            $verified = (bool) $entry['verified'];
+            if ($verified && ! $slip->employee->verifyInternalSignaturePin((string) ($entry['pin'] ?? ''))) {
+                return response()->json(['message' => "The PIN for {$slip->employee_name} is incorrect."], 422);
+            }
+            $signatures->sign(
+                'bank_advice_employee',
+                (int) $slip->id,
+                $this->bankAdviceEmployeeFingerprint($run, $slip, $signatures),
+                $user,
+                $verified
+            );
+        }
+
+        $rows = '';
+        $allVerified = true;
+        foreach ($run->payslips as $slip) {
+            $row = $this->bankAdviceRow($run, $slip, $signatures);
+            $allVerified = $allVerified && $row['verified'];
+            $hours = $row['hours_logged_minutes'] === null ? '—' : sprintf('%d:%02d', intdiv((int) $row['hours_logged_minutes'], 60), (int) $row['hours_logged_minutes'] % 60);
+            $status = $row['verified'] ? '<span style="color:#159447;font-weight:bold">&#10003; Signature valid</span>' : '<span style="color:#c62828;font-weight:bold">&#10005; Not verified</span>';
+            $rows .= '<tr><td>'.e($row['employee_name']).'</td><td>'.e($row['employee_code']).'</td><td>'.e($row['bank_name'] ?? '').'</td><td>'.e($row['account_number'] ?? '').'</td><td>'.e($row['ifsc'] ?? '').'</td><td style="text-align:right">'.e($hours).'</td><td style="text-align:right">₹'.number_format($row['net_pay'], 2).'</td><td style="text-align:right">₹'.number_format($row['reimbursement'], 2).'</td><td style="text-align:right">₹'.number_format($row['total'], 2).'</td><td>'.$status.'</td></tr>';
+        }
+
+        AuditLog::create([
+            'user_id' => $user->id, 'action' => 'sign_bank_advice_preview',
+            'subject_type' => 'PayrollRun', 'subject_id' => $run->id,
+            'metadata' => ['entries' => count($validated['entries'])],
+            'ip_address' => $request->ip(), 'user_agent' => $request->userAgent(),
+        ]);
+
+        return response()->json(['message' => 'Bank Advice verification saved.']);
+    }
+
+    private function bankAdviceRow(PayrollRun $run, Payslip $slip, InternalDocumentSignatureService $signatures): array
+    {
+        $employee = $slip->employee;
+        $signature = InternalDocumentSignature::where('document_type', 'bank_advice_employee')
+            ->where('document_id', $slip->id)->first();
+        $verified = $signatures->verify($signature, $this->bankAdviceEmployeeFingerprint($run, $slip, $signatures));
+
+        return [
+            'payslip_id' => $slip->id, 'employee_id' => $employee->id,
+            'employee_name' => $slip->employee_name, 'employee_code' => $slip->employee_code,
+            'bank_name' => $employee->bank_name, 'account_number' => $employee->bank_account_number,
+            'ifsc' => $employee->bank_ifsc_code, 'hours_logged_minutes' => $slip->hours_logged_minutes,
+            'net_pay' => (float) $slip->net_pay, 'reimbursement' => (float) $slip->reimbursements,
+            'total' => round((float) $slip->net_pay + (float) $slip->reimbursements, 2),
+            'verified' => $verified,
+        ];
+    }
+
+    private function bankAdviceEmployeeFingerprint(PayrollRun $run, Payslip $slip, InternalDocumentSignatureService $signatures): string
+    {
+        return $signatures->fingerprint('bank_advice_employee', (int) $slip->id, [
+            'run_period' => optional($run->period)->toDateString(),
+            'slip_updated_at' => optional($slip->updated_at)->toIso8601String(),
+            'net_pay' => (string) $slip->net_pay,
+            'reimbursements' => (string) $slip->reimbursements,
+            'hours_logged_minutes' => $slip->hours_logged_minutes,
+        ]);
+    }
+
     public function downloadBankAdvice(Request $request, $id, InternalDocumentSignatureService $signatures)
     {
         $user = $request->user();
@@ -573,7 +672,14 @@ class PayrollController extends Controller
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
-        $run = PayrollRun::with(['payslips' => fn ($q) => $q->where('withheld', false)->orderBy('employee_name')])->findOrFail($id);
+        $run = PayrollRun::with(['payslips' => fn ($q) => $q->where('withheld', false)->orderBy('employee_name'), 'payslips.employee'])->findOrFail($id);
+
+        $employeeSignatureCount = InternalDocumentSignature::where('document_type', 'bank_advice_employee')
+            ->whereIn('document_id', $run->payslips->pluck('id'))
+            ->count();
+        if ($employeeSignatureCount !== $run->payslips->count()) {
+            return response()->json(['message' => 'Open the Bank Advice preview and confirm every employee row before downloading.'], 422);
+        }
 
         $signatureFacts = $run->payslips->map(fn ($slip) => [
             'id' => $slip->id,
@@ -598,6 +704,16 @@ class PayrollController extends Controller
             $rows .= '<tr><td>'.e($slip->employee_name).'</td><td>'.e($slip->employee_code).'</td><td>'.e($bank?->bank_account_number ?? '').'</td><td>'.e($bank?->bank_ifsc_code ?? '').'</td><td style="text-align:right">₹'.number_format((float) $slip->net_pay + (float) $slip->reimbursements, 2).'</td></tr>';
         }
 
+        $rows = '';
+        $allVerified = true;
+        foreach ($run->payslips as $slip) {
+            $row = $this->bankAdviceRow($run, $slip, $signatures);
+            $allVerified = $allVerified && $row['verified'];
+            $hours = $row['hours_logged_minutes'] === null ? '—' : sprintf('%d:%02d', intdiv((int) $row['hours_logged_minutes'], 60), (int) $row['hours_logged_minutes'] % 60);
+            $status = $row['verified'] ? '<span style="color:#159447;font-weight:bold">&#10003; Signature valid</span>' : '<span style="color:#c62828;font-weight:bold">&#10005; Not verified</span>';
+            $rows .= '<tr><td>'.e($row['employee_name']).'</td><td>'.e($row['employee_code']).'</td><td>'.e($row['bank_name'] ?? '').'</td><td>'.e($row['account_number'] ?? '').'</td><td>'.e($row['ifsc'] ?? '').'</td><td style="text-align:right">'.e($hours).'</td><td style="text-align:right">₹'.number_format($row['net_pay'], 2).'</td><td style="text-align:right">₹'.number_format($row['reimbursement'], 2).'</td><td style="text-align:right">₹'.number_format($row['total'], 2).'</td><td>'.$status.'</td></tr>';
+        }
+
         AuditLog::create([
             'user_id' => $user->id, 'action' => 'download_bank_advice',
             'subject_type' => 'PayrollRun', 'subject_id' => $run->id,
@@ -606,7 +722,12 @@ class PayrollController extends Controller
 
         $signaturePanel = '<div style="position:relative;margin-top:22px;margin-left:auto;width:275px;height:62px;border:1px dotted #777;padding:5px 56px 4px 7px;color:#222;background:#fff;text-align:left;font-family:DejaVu Sans,sans-serif"><div style="font-size:15px;line-height:17px">Signature valid</div><div style="font-size:12px;line-height:16px;white-space:nowrap">Digitally signed by <strong>'.e($signature->signedBy->name).'</strong></div><div style="font-size:10px;line-height:13px">Date: '.e($signature->signed_at?->format('d/m/Y h:i A')).' IST</div><div style="position:absolute;right:5px;top:1px;font-size:57px;line-height:58px;color:#159447;font-family:DejaVu Sans,sans-serif;transform:rotate(-8deg)">&#10003;</div></div>';
         $html = '<html><head><style>body{font-family:DejaVu Sans,sans-serif;color:#17233c}table{width:100%;border-collapse:collapse}th,td{padding:7px;border:1px solid #d9dee8;font-size:10px}h1{font-size:18px}</style></head><body><h1>Bank Advice — '.e(Carbon::parse($run->period)->format('F Y')).'</h1><table><thead><tr><th>Employee</th><th>Code</th><th>Account Number</th><th>IFSC</th><th>Amount</th></tr></thead><tbody>'.$rows.'</tbody></table>'.$signaturePanel.'</body></html>';
-        return Pdf::loadHTML($html)->download('bank-advice-'.Carbon::parse($run->period)->format('Y-m').'.pdf');
+        $check = $allVerified ? '&#10003;' : '&#10005;';
+        $statusLabel = $allVerified ? 'Signature valid' : 'Signature not verified';
+        $statusColor = $allVerified ? '#159447' : '#c62828';
+        $signaturePanel = '<div style="position:relative;margin-top:22px;margin-left:auto;width:275px;height:62px;border:1px dotted #777;padding:5px 56px 4px 7px;color:#222;background:#fff;text-align:left;font-family:DejaVu Sans,sans-serif"><div style="font-size:15px;line-height:17px">'.$statusLabel.'</div><div style="font-size:12px;line-height:16px;white-space:nowrap">Digitally signed by <strong>'.e($signature->signedBy->name).'</strong></div><div style="font-size:10px;line-height:13px">Date: '.e($signature->signed_at?->timezone('Asia/Kolkata')->format('d/m/Y h:i A')).' IST</div><div style="position:absolute;right:5px;top:1px;font-size:57px;line-height:58px;color:'.$statusColor.';font-family:DejaVu Sans,sans-serif;transform:rotate(-8deg)">'.$check.'</div></div>';
+        $html = '<html><head><style>body{font-family:DejaVu Sans,sans-serif;color:#17233c}table{width:100%;border-collapse:collapse}th,td{padding:6px;border:1px solid #d9dee8;font-size:8px}h1{font-size:18px}</style></head><body><h1>Bank Advice — '.e(Carbon::parse($run->period)->format('F Y')).'</h1><table><thead><tr><th>Employee</th><th>Code</th><th>Bank Name</th><th>Account Number</th><th>IFSC</th><th>Hrs Logged</th><th>Net Pay</th><th>Reimbursement</th><th>Total Paid</th><th>Verification</th></tr></thead><tbody>'.$rows.'</tbody></table>'.$signaturePanel.'</body></html>';
+        return Pdf::loadHTML($html)->setPaper('a4', 'landscape')->download('bank-advice-'.Carbon::parse($run->period)->format('Y-m').'.pdf');
     }
 
     /** Zipped per-employee monthly payslip PDFs — Zoho's "Download All TDS Worksheets". */

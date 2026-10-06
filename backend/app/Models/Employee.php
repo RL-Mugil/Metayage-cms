@@ -6,6 +6,7 @@ use App\Casts\EncryptedSafe;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\Hash;
 
 class Employee extends Model
 {
@@ -66,6 +67,7 @@ class Employee extends Model
         'shift',
         'biometric_id',
         'photo_path',
+        'internal_signature_pin_hash',
         'resume_path',
         'id_documents',
     ];
@@ -92,6 +94,26 @@ class Employee extends Model
         'professional_tax_exempt' => 'boolean',
         'exclude_from_payroll' => 'boolean',
     ];
+
+    protected $hidden = ['internal_signature_pin_hash'];
+
+    protected static function booted(): void
+    {
+        static::creating(function (Employee $employee) {
+            $employee->internal_signature_pin_hash ??= Hash::make('0000');
+        });
+    }
+
+    public function setInternalSignaturePin(string $pin): void
+    {
+        $this->internal_signature_pin_hash = Hash::make($pin);
+    }
+
+    public function verifyInternalSignaturePin(string $pin): bool
+    {
+        return $this->internal_signature_pin_hash !== null
+            && Hash::check($pin, $this->internal_signature_pin_hash);
+    }
 
     public function user(): BelongsTo
     {

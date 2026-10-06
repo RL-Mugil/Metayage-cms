@@ -599,6 +599,8 @@ export default function Settings() {
   const [theme, setTheme] = useState<"light" | "dark" | "system">(() => loadPrefs("myipstrategy.appearance", { theme: "dark" as const }).theme);
   const [accentColor, setAccentColor] = useState(() => loadPrefs("myipstrategy.appearance", { accent: "gold" }).accent);
   const [pwForm, setPwForm] = useState({ current: "", next: "", confirm: "" });
+  const [signaturePin, setSignaturePin] = useState("0000");
+  const [savingSignaturePin, setSavingSignaturePin] = useState(false);
   const [system, setSystem] = useState({ company: "My IP Law Firm", currency: "INR", fiscalMonth: "April", maxUploadMB: "50" });
 
   const isSuperAdmin = user?.role === "super_admin";
@@ -1170,6 +1172,20 @@ export default function Settings() {
     }
   };
 
+  const saveSignaturePin = async () => {
+    if (!/^\d{4}$/.test(signaturePin)) { setError("Signature PIN must contain exactly 4 digits."); return; }
+    setSavingSignaturePin(true);
+    setError("");
+    try {
+      await api.resetInternalSignaturePin(signaturePin);
+      flashSaved();
+    } catch (e: any) {
+      setError(e.message || "Failed to reset signature PIN.");
+    } finally {
+      setSavingSignaturePin(false);
+    }
+  };
+
   const saveNotifs = async () => {
     setSaving(true);
     setError("");
@@ -1388,6 +1404,17 @@ export default function Settings() {
                   {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Key className="h-4 w-4 mr-2" />}Update Password
                 </Button>
                 <p className="text-xs text-muted-foreground pt-1">Minimum 8 characters. You stay signed in after changing your password.</p>
+                <div className="mt-6 border-t border-border pt-5">
+                  <h3 className="font-display text-base font-semibold">Internal signature PIN</h3>
+                  <p className="text-xs text-muted-foreground mt-1 mb-3">Used to verify your employee row before Bank Advice is signed. Default PIN: 0000.</p>
+                  <div className="flex max-w-xs gap-2">
+                    <input inputMode="numeric" maxLength={4} value={signaturePin} onChange={(e) => setSignaturePin(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                      className="h-9 flex-1 rounded-md border border-border bg-background px-3 text-sm tracking-[0.35em] focus:outline-none focus:ring-1 focus:ring-gold" aria-label="Internal signature PIN" />
+                    <Button onClick={saveSignaturePin} disabled={savingSignaturePin || signaturePin.length !== 4} variant="outline" className="h-9">
+                      {savingSignaturePin && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}Reset PIN
+                    </Button>
+                  </div>
+                </div>
               </CardContent>
             </Card>
           )}

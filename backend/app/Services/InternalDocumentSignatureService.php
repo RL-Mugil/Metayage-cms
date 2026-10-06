@@ -23,7 +23,7 @@ class InternalDocumentSignatureService
         ], JSON_THROW_ON_ERROR));
     }
 
-    public function sign(string $documentType, int $documentId, string $fingerprint, User $signer): InternalDocumentSignature
+    public function sign(string $documentType, int $documentId, string $fingerprint, User $signer, bool $verified = true): InternalDocumentSignature
     {
         $signature = hash_hmac('sha256', implode('|', [$documentType, $documentId, $fingerprint, $signer->id]), config('app.key'));
 
@@ -34,6 +34,7 @@ class InternalDocumentSignatureService
                 'signer_role' => (string) $signer->role,
                 'document_fingerprint' => $fingerprint,
                 'signature' => $signature,
+                'verified' => $verified,
                 'verification_code' => strtoupper(Str::random(16)),
                 'signed_at' => now(),
             ]
@@ -43,6 +44,7 @@ class InternalDocumentSignatureService
     public function verify(?InternalDocumentSignature $signature, string $fingerprint): bool
     {
         return $signature !== null
+            && $signature->verified
             && hash_equals($signature->document_fingerprint, $fingerprint)
             && hash_equals(
                 $signature->signature,

@@ -277,6 +277,7 @@ Route::middleware(['auth:sanctum', 'firm.context', 'throttle:120,1'])->group(fun
     Route::get('/settings',               [\App\Http\Controllers\SettingsController::class, 'getSettings']);
     Route::put('/settings/profile',       [\App\Http\Controllers\SettingsController::class, 'updateProfile']);
     Route::put('/settings/password',      [\App\Http\Controllers\SettingsController::class, 'updatePassword']);
+    Route::put('/settings/internal-signature-pin', [\App\Http\Controllers\SettingsController::class, 'resetInternalSignaturePin']);
     Route::put('/settings/notifications', [\App\Http\Controllers\SettingsController::class, 'updateNotifications']);
     Route::put('/settings/system',         [\App\Http\Controllers\SettingsController::class, 'updateSystem']);
     Route::put('/settings/feature-flags', [\App\Http\Controllers\SettingsController::class, 'updateFeatureFlags']);
@@ -416,6 +417,8 @@ Route::middleware(['auth:sanctum', 'firm.context', 'throttle:120,1'])->group(fun
     Route::post('/payroll/runs/{id}/pay', [\App\Http\Controllers\PayrollController::class, 'markPaid']);
     Route::post('/payroll/runs/{id}/pay-selected', [\App\Http\Controllers\PayrollController::class, 'payslipsBulkPay']);
     Route::get('/payroll/runs/{id}/bank-advice', [\App\Http\Controllers\PayrollController::class, 'downloadBankAdvice']);
+    Route::get('/payroll/runs/{id}/bank-advice/preview', [\App\Http\Controllers\PayrollController::class, 'bankAdvicePreview']);
+    Route::post('/payroll/runs/{id}/bank-advice/sign', [\App\Http\Controllers\PayrollController::class, 'signBankAdvice']);
     Route::get('/payroll/runs/{id}/tds-worksheets', [\App\Http\Controllers\PayrollController::class, 'downloadTdsWorksheets']);
     Route::put('/payroll/payslips/{id}', [\App\Http\Controllers\PayrollController::class, 'updatePayslip']);
     Route::post('/payroll/payslips/{id}/withhold', [\App\Http\Controllers\PayrollController::class, 'withholdPayslip']);

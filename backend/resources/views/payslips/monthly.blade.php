@@ -111,7 +111,7 @@
       <div style="position:relative;margin-top:18px;margin-left:auto;width:275px;height:62px;border:1px dotted #777;padding:5px 56px 4px 7px;color:#222;background:#fff;text-align:left;font-family:DejaVu Sans,sans-serif">
         <div style="font-size:15px;line-height:17px">Signature valid</div>
         <div style="font-size:12px;line-height:16px;white-space:nowrap">Digitally signed by <strong>{{ $internalSignature->signedBy->name }}</strong></div>
-        <div style="font-size:10px;line-height:13px">Date: {{ $internalSignature->signed_at?->format('d/m/Y h:i A') }} IST</div>
+        <div style="font-size:10px;line-height:13px">Date: {{ $internalSignature->signed_at?->timezone('Asia/Kolkata')->format('d/m/Y h:i A') }} IST</div>
         <div style="position:absolute;right:5px;top:1px;font-size:57px;line-height:58px;color:#159447;font-family:DejaVu Sans,sans-serif;transform:rotate(-8deg)">&#10003;</div>
       </div>
     @else

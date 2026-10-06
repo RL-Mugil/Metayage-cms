@@ -9,10 +9,10 @@ class InternalDocumentSignature extends Model
 {
     protected $fillable = [
         'document_type', 'document_id', 'signed_by_id', 'signer_role',
-        'document_fingerprint', 'signature', 'verification_code', 'signed_at',
+        'document_fingerprint', 'signature', 'verified', 'verification_code', 'signed_at',
     ];
 
-    protected $casts = ['signed_at' => 'datetime'];
+    protected $casts = ['signed_at' => 'datetime', 'verified' => 'boolean'];
 
     protected $hidden = ['signature'];
 
