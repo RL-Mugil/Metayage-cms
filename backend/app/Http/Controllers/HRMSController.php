@@ -24,6 +24,13 @@ use Inertia\Inertia;
 
 class HRMSController extends Controller
 {
+    /** Salary/bank/statutory fields — visible and editable only to User::PAYROLL_ACCESS_ROLES. */
+    private const PAYROLL_SENSITIVE_FIELDS = [
+        'base_pay_monthly', 'hra_monthly', 'bank_account_number', 'bank_name', 'bank_ifsc_code',
+        'aadhaar_ssn_encrypted', 'pan_tax_id', 'uan_pf_number', 'esi_number', 'nps_number',
+        'professional_tax_exempt', 'exclude_from_payroll',
+    ];
+
     public function inertiaIndex(Request $request)      { return Inertia::render('HRMS/Index'); }
     public function inertiaEmployees(Request $request)  { return Inertia::render('HRMS/Employees'); }
     public function inertiaAttendance(Request $request) { return Inertia::render('HRMS/Attendance'); }
@@ -55,6 +62,12 @@ class HRMSController extends Controller
             $query->where('employment_status', $request->employment_status);
         }
 
+        // Used by HR Overview to show only people currently on the payroll —
+        // resigned/terminated staff stay visible on the full Employees list.
+        if ($request->boolean('active_only')) {
+            $query->whereNotIn('employment_status', Employee::INACTIVE_STATUSES);
+        }
+
         if ($request->filled('search')) {
             $s = str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $request->search);
             $query->where(function ($q) use ($s) {
@@ -66,9 +79,8 @@ class HRMSController extends Controller
 
         $result = PaginationHelper::paginate($query, $request);
 
-        $hideSensitive = ! in_array($user->role, ['super_admin', 'hr']);
-        $sensitiveFields = ['salary', 'bank_account_number', 'bank_name', 'bank_ifsc_code',
-                            'aadhaar_ssn_encrypted', 'pan_tax_id', 'uan_pf_number', 'esi_number'];
+        $hideSensitive = ! in_array($user->role, User::PAYROLL_ACCESS_ROLES, true);
+        $sensitiveFields = self::PAYROLL_SENSITIVE_FIELDS;
 
         // Today's attendance: pull once, key by employee_id.
         $today = Carbon::now('Asia/Kolkata')->toDateString();
@@ -109,6 +121,14 @@ class HRMSController extends Controller
     {
         $user = $request->user();
         $validated = $request->validated();
+
+        // HR may create employee records but never sets payroll-sensitive
+        // fields — silently dropped rather than rejecting the whole request.
+        if (! in_array($user->role, User::PAYROLL_ACCESS_ROLES, true)) {
+            foreach (self::PAYROLL_SENSITIVE_FIELDS as $field) {
+                unset($validated[$field]);
+            }
+        }
 
         // Resolve department by name if ID not provided.
         // Values come from a fixed dropdown, so store them exactly as given
@@ -157,15 +177,33 @@ class HRMSController extends Controller
                 'employee_code'    => $code,
                 'user_id'          => $newUser->id,
                 'full_name'        => $validated['full_name'],
+                'father_name'      => $validated['father_name'] ?? null,
                 'work_email'       => $validated['work_email'],
                 'phone'            => $validated['phone'] ?? null,
+                'mobile'           => $validated['mobile'] ?? null,
+                'gender'           => $validated['gender'] ?? null,
+                'differently_abled_type' => $validated['differently_abled_type'] ?? null,
+                'current_address'  => $validated['current_address'] ?? null,
+                'permanent_address' => $validated['permanent_address'] ?? null,
                 'department_id'    => $deptId,
                 'designation_id'   => $desigId,
                 'date_of_joining'  => $validated['date_of_joining'] ?? now()->toDateString(),
                 'employment_type'  => $validated['employment_type'] ?? 'Full-time',
                 'employment_status'=> $validated['employment_status'] ?? 'Active',
                 'work_location'    => $validated['work_location'] ?? 'Office',
-                'salary'           => $validated['salary'] ?? null,
+                'base_pay_monthly' => $validated['base_pay_monthly'] ?? null,
+                'hra_monthly'      => $validated['hra_monthly'] ?? null,
+                'professional_tax_exempt' => $validated['professional_tax_exempt'] ?? false,
+                'exclude_from_payroll' => $validated['exclude_from_payroll'] ?? false,
+                'date_of_birth'        => $validated['date_of_birth'] ?? null,
+                'aadhaar_ssn_encrypted' => $validated['aadhaar_ssn_encrypted'] ?? null,
+                'pan_tax_id'            => $validated['pan_tax_id'] ?? null,
+                'uan_pf_number'         => $validated['uan_pf_number'] ?? null,
+                'esi_number'            => $validated['esi_number'] ?? null,
+                'nps_number'            => $validated['nps_number'] ?? null,
+                'bank_account_number'   => $validated['bank_account_number'] ?? null,
+                'bank_name'             => $validated['bank_name'] ?? null,
+                'bank_ifsc_code'        => $validated['bank_ifsc_code'] ?? null,
             ]);
 
             LeaveBalance::create([
@@ -252,6 +290,15 @@ class HRMSController extends Controller
         $employee = Employee::findOrFail($id);
         $validated = $request->validated();
 
+        // HR may edit general employee records but never sees or sets
+        // payroll-sensitive fields — silently dropped rather than rejecting
+        // the whole request, so a mixed-field save from the UI still works.
+        if (! in_array($request->user()->role, User::PAYROLL_ACCESS_ROLES, true)) {
+            foreach (self::PAYROLL_SENSITIVE_FIELDS as $field) {
+                unset($validated[$field]);
+            }
+        }
+
         if (!isset($validated['department_id']) && !empty($validated['department_name'])) {
             $dept = Department::firstOrCreate(['name' => $validated['department_name']]);
             $validated['department_id'] = $dept->id;
@@ -272,6 +319,7 @@ class HRMSController extends Controller
             $employee->user->update(['email' => $validated['work_email']]);
         }
 
+        $previousStatus = $employee->employment_status;
         $employee->update($validated);
 
         // Sync user name
@@ -279,7 +327,57 @@ class HRMSController extends Controller
             $employee->user->update(['name' => $validated['full_name']]);
         }
 
+        // Keep portal login access in step with employment status: resigning
+        // or terminating someone locks them out; reinstating them unlocks it.
+        if (array_key_exists('employment_status', $validated) && $employee->user_id) {
+            $newStatus = $validated['employment_status'];
+            $wasInactive = in_array($previousStatus, Employee::INACTIVE_STATUSES, true);
+            $nowInactive = in_array($newStatus, Employee::INACTIVE_STATUSES, true);
+
+            if ($nowInactive && !$wasInactive) {
+                User::where('id', $employee->user_id)->update(['status' => 'Inactive']);
+            } elseif (!$nowInactive && $wasInactive) {
+                User::where('id', $employee->user_id)->update(['status' => 'Active']);
+            }
+        }
+
         return response()->json($employee->load(['department', 'designation', 'user:id,name,email,role,status,avatar_url']));
+    }
+
+    /**
+     * Enable/disable this employee's login access to the app (Zoho's "Portal
+     * Access" toggle) — maps onto the existing User.status gate already
+     * enforced at login (AuthController::login()). Distinct from the
+     * Resigned/Terminated → 'Inactive' auto-sync in updateEmployee(): this
+     * uses 'Suspended' so a deliberate access-disable survives independent
+     * of employment_status changes.
+     */
+    public function updatePortalAccess(Request $request, $id)
+    {
+        if (! in_array($request->user()->role, User::PAYROLL_ACCESS_ROLES, true)) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        $employee = Employee::findOrFail($id);
+        if (! $employee->user_id) {
+            return response()->json(['message' => 'This employee has no linked login account.'], 422);
+        }
+
+        $validated = $request->validate(['enabled' => 'required|boolean']);
+
+        $employee->user->update(['status' => $validated['enabled'] ? 'Active' : 'Suspended']);
+        if (! $validated['enabled']) {
+            $employee->user->tokens()->delete();
+        }
+
+        AuditLog::create([
+            'user_id' => $request->user()->id, 'action' => 'update_portal_access',
+            'subject_type' => 'Employee', 'subject_id' => $employee->id,
+            'metadata' => ['enabled' => $validated['enabled']],
+            'ip_address' => $request->ip(), 'user_agent' => $request->userAgent(),
+        ]);
+
+        return response()->json(['enabled' => $validated['enabled'], 'status' => $employee->user->status]);
     }
 
     public function deleteEmployee(Request $request, $id)

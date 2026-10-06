@@ -1,10 +1,13 @@
 import type {
   User, Client, ClientContact, Project, Task, Invoice, InvoiceItem,
-  Employee, Attendance, LeaveRequest, LeaveBalance, PayrollRun, Payslip,
+  Employee, Attendance, LeaveRequest, LeaveBalance, PayrollRun, Payslip, LopAdjustment,
+  SalaryComponent, ReimbursementType, ExpenseClaim,
   Notification, ReportResponse, AIResponse, DashboardMetrics,
-  PaginatedResponse, SearchResult, Quotation, AuditLog, PatentInvoiceIn,
+  PaginatedResponse, SearchResult, Quotation, AuditLog, PatentInvoiceIn, ProjectTab,
+  CodeRow, CodeRenameImpact, CodeRenameResult, CodeMergeAvailable, CodeMergeImpact, CodeMergeResult,
 } from '@/types'
 import type { MatterWorkspace, MatterWorkspaceResponse } from '@/types/matter-workspace'
+import type { ZohoQuotePreview } from '@/types/zoho'
 
 function getCsrfToken(): string {
   if (typeof document === 'undefined') return ''
@@ -12,7 +15,7 @@ function getCsrfToken(): string {
   return match ? decodeURIComponent(match[1]) : ''
 }
 
-export type { User, Client, Project, Task, Invoice, Employee, PaginatedResponse, SearchResult, Quotation, AuditLog, PatentInvoiceIn }
+export type { User, Client, Project, Task, Invoice, Employee, PaginatedResponse, SearchResult, Quotation, AuditLog, PatentInvoiceIn, ProjectTab, CodeRow, CodeRenameImpact, CodeRenameResult, CodeMergeAvailable, CodeMergeImpact, CodeMergeResult }
 
 export interface ReminderProfile {
   id: number
@@ -84,16 +87,27 @@ export interface ZohoBooksRecord {
 
 export interface ZohoClientSummary {
   outstanding_balance: number
+  opening_balance: number
+  total_receivables: number
+  opening_balances: Array<{ id: number; customer_name: string | null; balance_date: string | null; amount: number; balance: number; currency: string; source: string }>
   invoices: ZohoBooksRecord[]
   estimates: ZohoBooksRecord[]
 }
 
+export interface ZohoOpeningBalanceRow {
+  id: number; zoho_contact_id: string; client_id: number | null; customer_name: string | null; client_code: string | null;
+  balance_date: string | null; amount: number; balance: number; currency: string; source: string; synced_at: string | null;
+}
+
 export interface ZohoAllRow {
+  can_refresh: boolean
+  duplicate_number: boolean
   id: number
   type: 'invoice' | 'quote'
   number: string | null
   client: string | null
   client_code: string | null
+  project_id: number | null
   docket_number: string | null
   project_name: string | null
   date: string | null
@@ -103,8 +117,20 @@ export interface ZohoAllRow {
   balance: number | null
   currency: string
   url: string | null
-  match_source: 'uin' | 'docket' | null
+  match_source: 'uin' | 'docket' | 'manual' | 'export' | null
   synced_at: string | null
+}
+
+export interface FinancialAnalyticsSource {
+  invoice_count: number; quote_count: number; billed: number; collected: number; outstanding: number;
+  opening_balance: number; total_receivables: number;
+  collection_rate: number; overdue_count: number; converted_quote_count: number; conversion_rate: number;
+  monthly: Array<{ month: string; billed: number; collected: number }>;
+}
+export interface FinancialAnalytics {
+  currency: 'INR'; generated_at: string;
+  portal: FinancialAnalyticsSource; zoho: FinancialAnalyticsSource;
+  comparison: { portal_invoice_count: number; zoho_invoice_count: number; linked_zoho_invoice_count: number; unlinked_zoho_invoice_count: number; portal_billed: number; zoho_billed: number; billed_difference: number; portal_outstanding: number; zoho_outstanding: number; zoho_opening_balance: number; zoho_total_receivables: number; outstanding_difference: number };
 }
 
 export const api = {
@@ -124,7 +150,13 @@ export const api = {
     if (!response.ok) {
       if (response.status === 401) { window.location.href = '/login'; return null as unknown as T }
       const errData = await response.json().catch(() => ({}))
-      throw new Error((errData as { message?: string }).message || `Request failed: ${response.status}`)
+      // Laravel validation errors carry a generic "message" ("The given data was
+      // invalid.") plus a field-keyed "errors" map with the actual specific text —
+      // prefer the specific message when present so e.g. business-rule conflicts
+      // (duplicate tab codes, wrong current password, ...) are visible to the user.
+      const fieldErrors = (errData as { errors?: Record<string, string[]> }).errors
+      const firstFieldError = fieldErrors ? Object.values(fieldErrors)[0]?.[0] : undefined
+      throw new Error(firstFieldError || (errData as { message?: string }).message || `Request failed: ${response.status}`)
     }
     return response.json()
   },
@@ -147,13 +179,22 @@ export const api = {
   async getClientStats(): Promise<{ total: number; active: number; inactive: number; prospect: number; b2b: number; b2c: number; export: number; unregistered: number }> {
     return this.request('/clients/stats')
   },
-  async getProjectStats(roleFilter?: string): Promise<{ total: number; open: number; in_progress: number; on_hold: number; overdue: number }> {
-    const q = roleFilter && roleFilter !== 'all' ? `?role_filter=${roleFilter}` : ''
-    return this.request(`/projects/stats${q}`)
+  async getProjectStats(roleFilter?: string, tab?: string): Promise<{ total: number; open: number; in_progress: number; on_hold: number; overdue: number }> {
+    const params = new URLSearchParams()
+    if (roleFilter && roleFilter !== 'all') params.set('role_filter', roleFilter)
+    if (tab) params.set('tab', tab)
+    const q = params.toString()
+    return this.request(`/projects/stats${q ? `?${q}` : ''}`)
   },
   async getMatterWorkspace(projectId: number | string): Promise<MatterWorkspace> {
     const response = await this.request<MatterWorkspaceResponse>(`/projects/${projectId}/workspace`)
     return response.data
+  },
+  async verifyClientEntity(id: number | string): Promise<{
+    gstin?: { status: string; message: string; matches?: { name: string; address: string }; fetched?: { name: string | null; address: string | null } }
+    cin?: { status: string; message: string; matches?: { name: string; address: string }; fetched?: { name: string | null; address: string | null } }
+  }> {
+    return this.request(`/clients/${id}/verify-entity`, { method: 'POST' })
   },
   async getClients(params?: string | URLSearchParams): Promise<PaginatedResponse<Client>> {
     let query = '';
@@ -225,6 +266,14 @@ export const api = {
     const query = params ? '?' + params.toString() : ''
     return this.request(`/projects${query}`)
   },
+  // Unpaginated (capped at 20000), same filters as getProjectsPaged — for "export everything
+  // matching the current view" rather than just the visible page.
+  async getProjectsExport(params?: URLSearchParams): Promise<Project[]> {
+    const p = new URLSearchParams(params)
+    p.set('export', '1')
+    const res = await this.request<{ data: Project[] }>(`/projects?${p.toString()}`)
+    return res.data ?? []
+  },
   async getProject(id: number | string): Promise<Project> { return this.request(`/projects/${id}`) },
   async createProject(data: Partial<Project>): Promise<Project> {
     return this.request('/projects', { method: 'POST', body: JSON.stringify(data) })
@@ -257,6 +306,17 @@ export const api = {
   async recordDocketEvent(projectId: number | string, data: { event_type: string; event_date: string; notes?: string }): Promise<any> {
     return this.request(`/projects/${projectId}/docket/events`, { method: 'POST', body: JSON.stringify(data) })
   },
+  // Dedicated endpoint (not a plain docket event) — marks the renewal schedule Paid through
+  // the given year, anchors later years to the payment date, advances the renewal pipeline
+  // stages, and may auto-create the REN/RNF successor engagement on first use.
+  async recordRenewalPaid(projectId: number | string, data: { paid_through_year: number; paid_date: string; notes?: string }): Promise<any> {
+    return this.request(`/projects/${projectId}/docket/renewal-paid`, { method: 'POST', body: JSON.stringify(data) })
+  },
+  // A Grant/Refusal-order or stage-gated document upload prompt was skipped — tracks it as
+  // a Task + daily reminder + in-app notification until a matching Document is uploaded.
+  async requireDocument(projectId: number | string, data: { category: string; context_label: string }): Promise<{ ok: boolean }> {
+    return this.request(`/projects/${projectId}/require-document`, { method: 'POST', body: JSON.stringify(data) })
+  },
   async updateDocketEvent(eventId: number | string, data: { event_type: string; event_date: string; notes?: string | null }): Promise<any> {
     return this.request(`/docket/events/${eventId}`, { method: 'PUT', body: JSON.stringify(data) })
   },
@@ -286,7 +346,7 @@ export const api = {
     return this.request(`/projects/${projectId}/docket/renewals`, { method: 'POST', body: JSON.stringify(data) })
   },
   // Fields the IPO-style status view needs that nothing else auto-generates.
-  async updateApplicationStatusFields(projectId: number | string, data: { application_type?: string | null; fer_reply_date?: string | null; certificate_issue_date?: string | null; post_grant_journal_date?: string | null }): Promise<any> {
+  async updateApplicationStatusFields(projectId: number | string, data: { application_type?: string | null; fer_reply_date?: string | null; certificate_issue_date?: string | null; post_grant_journal_date?: string | null; grant_number?: string | null }): Promise<any> {
     return this.request(`/projects/${projectId}/docket/application`, { method: 'PATCH', body: JSON.stringify(data) })
   },
   // ── Renewal approve → invoice → proof → confirm loop (PatentInvoiceIn-backed) ──
@@ -305,6 +365,11 @@ export const api = {
   },
   async postRenewalStatusNote(invoiceId: number | string, note: string): Promise<any> {
     return this.request(`/pending-payments/${invoiceId}/status-note`, { method: 'POST', body: JSON.stringify({ status_note: note }) })
+  },
+  // Approves an auto-generated renewal quote (90-day-prior estimate) — marks it Accepted,
+  // does NOT create an invoice; staff raise the real invoice separately.
+  async approveRenewalQuote(invoiceId: number | string): Promise<any> {
+    return this.request(`/pending-payments/${invoiceId}/approve-quote`, { method: 'POST' })
   },
   // ── Inventor role (Phase 3) ──
   async getProjectInventors(projectId: number | string): Promise<any[]> {
@@ -345,8 +410,9 @@ export const api = {
   async getHRMSStats(): Promise<{ total: number; active: number; on_leave: number; departments: number }> {
     return this.request('/hrms/stats')
   },
-  async getEmployees(): Promise<Employee[]> {
-    const res = await this.request<PaginatedResponse<Employee> | Employee[]>('/hrms/employees')
+  async getEmployees(params?: Record<string, string | number | boolean>): Promise<Employee[]> {
+    const query = params ? '?' + new URLSearchParams(params as Record<string, string>).toString() : ''
+    const res = await this.request<PaginatedResponse<Employee> | Employee[]>(`/hrms/employees${query}`)
     return Array.isArray(res) ? res : ((res as PaginatedResponse<Employee>).data ?? [])
   },
   async getEmployeesPaged(params?: URLSearchParams): Promise<PaginatedResponse<Employee>> {
@@ -362,8 +428,35 @@ export const api = {
   async updateEmployee(id: number | string, data: Partial<Employee>): Promise<Employee> {
     return this.request(`/hrms/employees/${id}`, { method: 'PUT', body: JSON.stringify(data) })
   },
+  async verifyEmployeePan(id: number | string): Promise<{
+    status: string
+    name_on_record: string | null
+    dob_on_record?: string | null
+    message: string
+    matches?: { name: string; dob: string }
+    fetched?: { name: string | null; dob: string | null }
+  }> {
+    return this.request(`/employees/${id}/verify-pan`, { method: 'POST' })
+  },
+  async startDigiLockerConsent(id: number | string, documentType: 'AADHAAR' | 'PAN'): Promise<{ consent_url: string }> {
+    return this.request(`/employees/${id}/digilocker/consent`, { method: 'POST', body: JSON.stringify({ document_type: documentType }) })
+  },
+  async startMyDigiLockerConsent(): Promise<{ consent_url: string }> {
+    return this.request('/me/digilocker/consent', { method: 'POST', body: JSON.stringify({ document_type: 'AADHAAR' }) })
+  },
+  async getMyDigiLockerStatus(): Promise<{
+    has_employee_record: boolean
+    has_aadhaar?: boolean
+    aadhaar_verification_status?: string
+    fetched?: { name: string | null; dob: string | null; address: string | null }
+  }> {
+    return this.request('/me/digilocker/status')
+  },
   async deleteEmployee(id: number | string): Promise<{ message: string }> {
     return this.request(`/hrms/employees/${id}`, { method: 'DELETE' })
+  },
+  async updatePortalAccess(id: number | string, enabled: boolean): Promise<{ enabled: boolean; status: string }> {
+    return this.request(`/hrms/employees/${id}/portal-access`, { method: 'PUT', body: JSON.stringify({ enabled }) })
   },
   async resetEmployeeToday(id: number | string): Promise<{ message: string }> {
     return this.request(`/hrms/employees/${id}/reset-today`, { method: 'POST' })
@@ -408,6 +501,7 @@ export const api = {
   async getFinancialStats(): Promise<{ total_billed: number; total_received: number; total_outstanding: number; overdue_count: number; draft_count: number; paid_count: number }> {
     return this.request('/financial/stats')
   },
+  async getFinancialAnalytics(): Promise<FinancialAnalytics> { return this.request('/financial/analytics') },
   async getInvoices(params?: URLSearchParams): Promise<Invoice[]> {
     const query = params ? '?' + params.toString() : ''
     const res = await this.request<PaginatedResponse<Invoice> | Invoice[]>(`/financial/invoices${query}`)
@@ -551,8 +645,10 @@ export const api = {
   },
 
   // ── Documents ──
-  async getDocuments(): Promise<Record<string, unknown>[]> {
-    const res = await this.request<PaginatedResponse<Record<string, unknown>> | Record<string, unknown>[]>('/documents')
+  async getDocuments(params?: Record<string, string | number>): Promise<Record<string, unknown>[]> {
+    const entries = params ? Object.entries(params).map(([k, v]) => [k, String(v)] as [string, string]) : []
+    const query = entries.length ? '?' + new URLSearchParams(entries).toString() : ''
+    const res = await this.request<PaginatedResponse<Record<string, unknown>> | Record<string, unknown>[]>(`/documents${query}`)
     return Array.isArray(res) ? res : ((res as PaginatedResponse<Record<string, unknown>>).data ?? [])
   },
   async uploadDocument(file: File, folder?: string, clientId?: number | null, projectId?: number | null): Promise<Record<string, unknown>> {
@@ -755,6 +851,32 @@ export const api = {
   async updateDropdown(key: 'dropdown_service_codes' | 'dropdown_country_codes', items: { code: string; label: string }[]): Promise<any> {
     return this.request('/settings/dropdown', { method: 'PUT', body: JSON.stringify({ key, items }) })
   },
+  async getCodes(): Promise<{ service: CodeRow[]; country: CodeRow[] }> {
+    return this.request('/settings/codes')
+  },
+  async previewCodeRename(type: 'service' | 'country', oldCode: string, newCode: string): Promise<CodeRenameImpact | CodeMergeAvailable> {
+    return this.request('/settings/codes/rename-preview', {
+      method: 'POST', body: JSON.stringify({ type, old_code: oldCode, new_code: newCode }),
+    })
+  },
+  async executeCodeRename(type: 'service' | 'country', oldCode: string, newCode: string): Promise<CodeRenameResult> {
+    return this.request('/settings/codes/rename', {
+      method: 'PUT', body: JSON.stringify({ type, old_code: oldCode, new_code: newCode }),
+    })
+  },
+  async previewCodeMerge(type: 'service' | 'country', oldCode: string, newCode: string): Promise<CodeMergeImpact> {
+    return this.request('/settings/codes/merge-preview', {
+      method: 'POST', body: JSON.stringify({ type, old_code: oldCode, new_code: newCode }),
+    })
+  },
+  async executeCodeMerge(type: 'service' | 'country', oldCode: string, newCode: string): Promise<CodeMergeResult> {
+    return this.request('/settings/codes/merge', {
+      method: 'PUT', body: JSON.stringify({ type, old_code: oldCode, new_code: newCode }),
+    })
+  },
+  async updateProjectTabs(tabs: ProjectTab[]): Promise<{ ok: boolean; tabs: ProjectTab[] }> {
+    return this.request('/settings/project-tabs', { method: 'PUT', body: JSON.stringify({ tabs }) })
+  },
   async updateRenewalFeeRates(data: { government_fee: number; professional_fee: number; currency?: string }): Promise<any> {
     return this.request('/settings/renewal-fee-rates', { method: 'PUT', body: JSON.stringify(data) })
   },
@@ -901,6 +1023,12 @@ export const api = {
   async saveZohoConfig(data: { client_id: string; client_secret: string; refresh_token: string; organization_id: string; region?: string }): Promise<{ ok: boolean; message: string }> {
     return this.request('/integrations/zoho/config', { method: 'POST', body: JSON.stringify(data) })
   },
+  async saveRestVerifierConfig(slug: 'api_setu' | 'entitylocker', data: { client_id: string; client_secret: string; base_url: string; verify_path: string }): Promise<{ ok: boolean; message: string }> {
+    return this.request(`/integrations/${slug}/config`, { method: 'POST', body: JSON.stringify(data) })
+  },
+  async saveDigiLockerConfig(data: { client_id: string; client_secret: string; authorize_url: string; token_url: string; document_pull_url: string; redirect_uri: string }): Promise<{ ok: boolean; message: string }> {
+    return this.request('/integrations/digilocker/config', { method: 'POST', body: JSON.stringify(data) })
+  },
   async testIntegration(slug: string): Promise<{ ok: boolean; message: string }> {
     return this.request(`/integrations/${slug}/test`, { method: 'POST' })
   },
@@ -919,11 +1047,53 @@ export const api = {
   async zohoSyncNow(): Promise<{ ok: boolean; message: string }> {
     return this.request('/integrations/zoho/sync', { method: 'POST' })
   },
+  async zohoEmergencySync(): Promise<{ ok: boolean; message: string }> {
+    return this.request('/integrations/zoho/emergency-sync', { method: 'POST' })
+  },
+  async zohoConfigureAddon(limit: number): Promise<{ ok: boolean; limit: number }> {
+    return this.request('/integrations/zoho/addon-limit', { method: 'POST', body: JSON.stringify({ limit }) })
+  },
+  async zohoAddonSync(): Promise<{ ok: boolean; message: string }> {
+    return this.request('/integrations/zoho/addon-sync', { method: 'POST' })
+  },
+  async zohoRefreshRecord(id: number): Promise<{ ok: boolean; message: string }> {
+    return this.request(`/integrations/zoho/records/${id}/sync`, { method: 'POST' })
+  },
+  async zohoQuotePreview(kind: 'standard' | 'in', id: number, search: string, customerId: string): Promise<ZohoQuotePreview> {
+    const query = new URLSearchParams({ search })
+    if (customerId) query.set('customer_id', customerId)
+    return this.request(`/integrations/zoho/quotes/${kind}/${id}?${query}`)
+  },
+  async zohoSendQuote(kind: 'standard' | 'in', id: number, customerId: string, version: string): Promise<{ state: string; estimate_id: string; message: string }> {
+    return this.request(`/integrations/zoho/quotes/${kind}/${id}`, { method: 'POST', body: JSON.stringify({ customer_id: customerId, version, review_confirmed: true }) })
+  },
+  async zohoDeleteQuoteInZoho(kind: 'standard' | 'in', id: number): Promise<{ state: string; estimate_id: string; message: string }> {
+    return this.request(`/integrations/zoho/quotes/${kind}/${id}/delete-in-zoho`, { method: 'POST' })
+  },
+  async zohoSyncStatus(): Promise<{ budget: { used: number; limit: number; remaining: number; nightly_limit: number; evening_used: number; addon_limit: number; addon_used: number; pools: Record<'automatic' | 'manual_read' | 'write' | 'emergency' | 'addon', { used: number; limit: number; remaining: number }> }; pending: number; evening: { evening_eligible_date: string | null; pause_reason: string | null; completed_at: string | null } | null; deletions: { mode: string; configured: boolean; pending: number; failed: number; last_received_at: string | null }; last_run: { status: string; summary: string; created_at: string } | null }> {
+    return this.request('/integrations/zoho/sync-status')
+  },
+  async downloadZohoPdf(id: number): Promise<void> {
+    const response = await fetch(`/api/integrations/zoho/records/${id}/pdf`, { credentials: 'same-origin', headers: { Accept: 'application/pdf' } })
+    if (!response.ok) throw new Error('PDF is awaiting the nightly sync. Manual record refresh does not download PDFs.')
+    const url = URL.createObjectURL(await response.blob())
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `zoho-${id}.pdf`
+    link.click()
+    URL.revokeObjectURL(url)
+  },
   async getZohoMonthlyAnalytics(): Promise<{ month: string; total: number }[]> {
     return this.request('/integrations/zoho/analytics/monthly')
   },
   async getZohoAll(params?: URLSearchParams): Promise<PaginatedResponse<ZohoAllRow>> {
     return this.request(`/integrations/zoho/all${params ? `?${params}` : ''}`)
+  },
+  async getZohoOpeningBalances(params?: URLSearchParams): Promise<PaginatedResponse<ZohoOpeningBalanceRow>> {
+    return this.request(`/integrations/zoho/opening-balances${params ? `?${params}` : ''}`)
+  },
+  async linkZohoProject(id: number, project_id: number | null): Promise<any> {
+    return this.request(`/integrations/zoho/${id}/link-project`, { method: 'PUT', body: JSON.stringify({ project_id }) })
   },
 
   // ── Client Portal ──
@@ -969,24 +1139,409 @@ export const api = {
     return this.request('/payroll/runs')
   },
   async getPayrollRun(id: number | string): Promise<PayrollRun> { return this.request(`/payroll/runs/${id}`) },
-  async createPayrollRun(period: string): Promise<{ run: PayrollRun; message: string; skipped_employees?: string[] }> {
-    return this.request('/payroll/runs', { method: 'POST', body: JSON.stringify({ period }) })
+  async createPayrollRun(period: string, runType?: 'Regular' | 'OffCycle'): Promise<{ run: PayrollRun; message: string; skipped_employees?: string[] }> {
+    return this.request('/payroll/runs', { method: 'POST', body: JSON.stringify({ period, run_type: runType }) })
   },
   async deletePayrollRun(id: number | string): Promise<{ message: string }> {
     return this.request(`/payroll/runs/${id}`, { method: 'DELETE' })
   },
-  async finalizePayrollRun(id: number | string): Promise<PayrollRun> {
-    return this.request(`/payroll/runs/${id}/finalize`, { method: 'POST' })
+  async submitPayrollRunForApproval(id: number | string): Promise<PayrollRun> {
+    return this.request(`/payroll/runs/${id}/submit-for-approval`, { method: 'POST' })
+  },
+  async approvePayrollRun(id: number | string): Promise<PayrollRun> {
+    return this.request(`/payroll/runs/${id}/approve`, { method: 'POST' })
+  },
+  async rejectPayrollRun(id: number | string, reason: string): Promise<PayrollRun> {
+    return this.request(`/payroll/runs/${id}/reject`, { method: 'POST', body: JSON.stringify({ reason }) })
+  },
+  async recallPayrollRun(id: number | string): Promise<PayrollRun> {
+    return this.request(`/payroll/runs/${id}/recall`, { method: 'POST' })
   },
   async payPayrollRun(id: number | string): Promise<PayrollRun> {
     return this.request(`/payroll/runs/${id}/pay`, { method: 'POST' })
   },
-  async updatePayslip(id: number | string, data: { lop_days?: number; tds?: number }): Promise<Payslip> {
+  async payPayrollRunSelected(id: number | string, payslipIds: number[]): Promise<PayrollRun> {
+    return this.request(`/payroll/runs/${id}/pay-selected`, { method: 'POST', body: JSON.stringify({ payslip_ids: payslipIds }) })
+  },
+  bankAdviceUrl(runId: number | string): string {
+    return `/api/payroll/runs/${runId}/bank-advice`
+  },
+  tdsWorksheetsUrl(runId: number | string): string {
+    return `/api/payroll/runs/${runId}/tds-worksheets`
+  },
+  async updatePayslip(id: number | string, data: { lop_days?: number; tds?: number; health_insurance?: number; other_deductions?: number; reimbursements?: number; hours_logged?: string }): Promise<Payslip> {
     return this.request(`/payroll/payslips/${id}`, { method: 'PUT', body: JSON.stringify(data) })
+  },
+  async withholdPayslip(id: number | string, reason: string): Promise<Payslip> {
+    return this.request(`/payroll/payslips/${id}/withhold`, { method: 'POST', body: JSON.stringify({ reason }) })
+  },
+  async revertWithholdPayslip(id: number | string): Promise<Payslip> {
+    return this.request(`/payroll/payslips/${id}/revert-withhold`, { method: 'POST' })
+  },
+  async releaseWithheldSalary(employeeId: number | string, payrollRunId: number | string): Promise<Payslip> {
+    return this.request(`/payroll/employees/${employeeId}/release-withheld`, { method: 'POST', body: JSON.stringify({ payroll_run_id: payrollRunId }) })
+  },
+  async getLopAdjustments(): Promise<LopAdjustment[]> {
+    return this.request('/payroll/lop-adjustments')
+  },
+  async createLopAdjustment(data: { employee_id: number; adjustment_type: 'Reversal' | 'Correction'; days: number; period: string; reason?: string }): Promise<LopAdjustment> {
+    return this.request('/payroll/lop-adjustments', { method: 'POST', body: JSON.stringify(data) })
   },
   async getMyPayslips(): Promise<Payslip[]> {
     const res = await this.request<PaginatedResponse<Payslip> | Payslip[]>('/payroll/my-slips')
     return Array.isArray(res) ? res : ((res as PaginatedResponse<Payslip>).data ?? [])
+  },
+  payslipPdfUrl(id: number | string): string {
+    return `/api/payroll/payslips/${id}/pdf`
+  },
+  async downloadPdf(endpoint: string, filename: string): Promise<void> {
+    const response = await fetch(endpoint, { credentials: 'same-origin', headers: { Accept: 'application/pdf' } })
+    if (!response.ok) throw new Error(response.status === 401 ? 'Your session has expired. Please sign in again.' : 'Could not download the PDF.')
+    const blob = await response.blob(); const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = filename; link.click(); URL.revokeObjectURL(url)
+  },
+  yearlyPayslipPdfUrl(employeeId: number | string, fiscalYear?: number | string): string {
+    return `/api/payroll/employees/${employeeId}/yearly-pdf${fiscalYear ? `?fiscal_year=${fiscalYear}` : ''}`
+  },
+  /** `from`/`to` as "YYYY-MM" — covers quarterly, half-yearly, and any custom range (max 12 months). */
+  payslipSummaryUrl(employeeId: number | string, from: string, to: string): string {
+    return `/api/payroll/employees/${employeeId}/payslip-summary?from=${from}&to=${to}`
+  },
+  salaryCertificateUrl(employeeId: number | string): string {
+    return `/api/payroll/employees/${employeeId}/salary-certificate`
+  },
+  async downloadSalaryCertificate(employeeId: number | string): Promise<void> {
+    return this.downloadPdf(this.salaryCertificateUrl(employeeId), `salary-certificate-${employeeId}.pdf`)
+  },
+  async getPayrollPortalDashboard(): Promise<{
+    upcoming_run: { period: string; already_created: boolean }
+    latest_run: PayrollRun | null
+    employee_count: number
+    ytd: { gross: number; deductions: number; net: number; pf: number; esi: number; tds: number }
+    cost_trend: { period: string; gross: number; deductions: number; net: number }[]
+  }> {
+    return this.request('/payroll-portal/dashboard')
+  },
+  async getPendingReimbursements(): Promise<any[]> {
+    return this.request('/payroll-portal/approvals/reimbursements')
+  },
+  async getLoans(): Promise<any[]> {
+    return this.request('/loans')
+  },
+  async getMyLoans(): Promise<any[]> {
+    return this.request('/loans/mine')
+  },
+  async createLoan(data: { employee_id: number; principal_amount: number; monthly_installment: number; start_period: string; notes?: string }): Promise<any> {
+    return this.request('/loans', { method: 'POST', body: JSON.stringify(data) })
+  },
+  async closeLoan(id: number | string): Promise<any> {
+    return this.request(`/loans/${id}/close`, { method: 'POST' })
+  },
+  async requestLoan(data: { principal_amount: number; monthly_installment: number; reason?: string }): Promise<any> {
+    return this.request('/loans/request', { method: 'POST', body: JSON.stringify(data) })
+  },
+  async approveLoanRequest(id: number | string, data: { start_period: string; monthly_installment?: number }): Promise<any> {
+    return this.request(`/loans/${id}/approve-request`, { method: 'POST', body: JSON.stringify(data) })
+  },
+  async rejectLoanRequest(id: number | string): Promise<any> {
+    return this.request(`/loans/${id}/reject-request`, { method: 'POST' })
+  },
+  async getContractors(): Promise<any[]> {
+    return this.request('/contractors')
+  },
+  async createContractor(data: Record<string, unknown>): Promise<any> {
+    return this.request('/contractors', { method: 'POST', body: JSON.stringify(data) })
+  },
+  async updateContractor(id: number | string, data: Record<string, unknown>): Promise<any> {
+    return this.request(`/contractors/${id}`, { method: 'PUT', body: JSON.stringify(data) })
+  },
+  async deleteContractor(id: number | string): Promise<{ ok: boolean }> {
+    return this.request(`/contractors/${id}`, { method: 'DELETE' })
+  },
+  async recordContractorPayment(id: number | string, data: { invoice_number: string; invoice_date: string; amount: number; tds_deducted?: number; status?: 'Pending' | 'Paid' }): Promise<any> {
+    return this.request(`/contractors/${id}/payments`, { method: 'POST', body: JSON.stringify(data) })
+  },
+  async saveInvestmentDeclaration(data: {
+    financial_year: number
+    regime_choice: 'old' | 'new'
+    section_80c_amount?: number
+    section_80ccd1b_amount?: number
+    section_80d_amount?: number
+    section_80e_amount?: number
+    section_80g_amount?: number
+    section_80tta_amount?: number
+    hra_rent_paid?: number
+    housing_type?: 'rent' | 'self_occupied_loan'
+    home_loan_interest_declared?: number
+    other_income_declared?: number
+    previous_employer_salary?: number
+    lta_exemption_claimed?: number
+    section_80gg_amount?: number
+    section_80dd_amount?: number
+    section_80ddb_amount?: number
+    section_80ee_amount?: number
+    section_80eea_amount?: number
+    section_80gga_amount?: number
+    section_80ggc_amount?: number
+  }): Promise<any> {
+    return this.request('/investment-declarations', { method: 'POST', body: JSON.stringify(data) })
+  },
+  async submitInvestmentDeclaration(id: number | string): Promise<any> {
+    return this.request(`/investment-declarations/${id}/submit`, { method: 'POST' })
+  },
+  async getMyInvestmentDeclarations(): Promise<any[]> {
+    return this.request('/investment-declarations/mine')
+  },
+  async getPendingInvestmentDeclarations(): Promise<any[]> {
+    return this.request('/investment-declarations/pending')
+  },
+  async getInvestmentDeclarationsForEmployee(employeeId: number | string): Promise<any[]> {
+    return this.request(`/investment-declarations/employee/${employeeId}`)
+  },
+  async saveInvestmentDeclarationForEmployee(employeeId: number | string, data: {
+    financial_year: number
+    regime_choice: 'old' | 'new'
+    section_80c_amount?: number
+    section_80ccd1b_amount?: number
+    section_80d_amount?: number
+    section_80e_amount?: number
+    section_80g_amount?: number
+    section_80tta_amount?: number
+    hra_rent_paid?: number
+    housing_type?: 'rent' | 'self_occupied_loan'
+    home_loan_interest_declared?: number
+    other_income_declared?: number
+    previous_employer_salary?: number
+    lta_exemption_claimed?: number
+    section_80gg_amount?: number
+    section_80dd_amount?: number
+    section_80ddb_amount?: number
+    section_80ee_amount?: number
+    section_80eea_amount?: number
+    section_80gga_amount?: number
+    section_80ggc_amount?: number
+  }): Promise<any> {
+    return this.request(`/investment-declarations/employee/${employeeId}`, { method: 'POST', body: JSON.stringify(data) })
+  },
+
+  // ── Proof of Investments (separate, document-backed review phase) ──
+  async getPoiWindow(financialYear: number | string): Promise<{ financial_year: number; deadline_at: string; effective_payroll_month: string } | null> {
+    return this.request(`/poi-windows/${financialYear}`)
+  },
+  async getPoiWindows(): Promise<any[]> {
+    return this.request('/poi-windows')
+  },
+  async savePoiWindow(data: { financial_year: number; deadline_at: string; effective_payroll_month: string }): Promise<any> {
+    return this.request('/poi-windows', { method: 'POST', body: JSON.stringify(data) })
+  },
+  async getMyProofOfInvestment(financialYear: number | string): Promise<any> {
+    return this.request(`/proof-of-investments/mine/${financialYear}`)
+  },
+  async uploadPoiDocument(financialYear: number | string, section: string, file: File): Promise<any> {
+    const formData = new FormData()
+    formData.append('file', file)
+    const response = await fetch(`/api/proof-of-investments/mine/${financialYear}/documents/${section}`, {
+      method: 'POST',
+      headers: { 'X-XSRF-TOKEN': getCsrfToken(), Accept: 'application/json' },
+      credentials: 'same-origin',
+      body: formData,
+    })
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}))
+      throw new Error((err as { message?: string }).message || 'Upload failed')
+    }
+    return response.json()
+  },
+  async deletePoiDocument(documentId: number | string): Promise<{ ok: boolean }> {
+    return this.request(`/proof-of-investments/documents/${documentId}`, { method: 'DELETE' })
+  },
+  poiDocumentDownloadUrl(documentId: number | string): string {
+    return `/api/proof-of-investments/documents/${documentId}/download`
+  },
+  async getPendingProofOfInvestments(financialYear: number | string): Promise<any[]> {
+    return this.request(`/proof-of-investments/pending/${financialYear}`)
+  },
+  async getProofOfInvestmentsForEmployee(employeeId: number | string): Promise<any[]> {
+    return this.request(`/proof-of-investments/employee/${employeeId}`)
+  },
+  async setPoiApprovedAmounts(id: number | string, data: {
+    approved_section_80c_amount?: number; approved_section_80ccd1b_amount?: number; approved_section_80d_amount?: number
+    approved_section_80e_amount?: number; approved_section_80g_amount?: number; approved_section_80tta_amount?: number
+    approved_hra_rent_paid?: number; approved_home_loan_interest_amount?: number; approved_other_income_amount?: number
+    approved_previous_employer_salary?: number
+    approved_lta_exemption_claimed?: number; approved_section_80gg_amount?: number; approved_section_80dd_amount?: number
+    approved_section_80ddb_amount?: number; approved_section_80ee_amount?: number; approved_section_80eea_amount?: number
+    approved_section_80gga_amount?: number; approved_section_80ggc_amount?: number
+    approved_other_deductions_json?: Record<string, number>; rejection_reasons_json?: Record<string, string>
+  }): Promise<any> {
+    return this.request(`/proof-of-investments/${id}`, { method: 'PUT', body: JSON.stringify(data) })
+  },
+  async considerPoiForIt(id: number | string): Promise<any> {
+    return this.request(`/proof-of-investments/${id}/consider-for-it`, { method: 'POST' })
+  },
+  async approveAllAndConsiderPoi(financialYear: number | string): Promise<{ considered_count: number }> {
+    return this.request(`/proof-of-investments/${financialYear}/approve-all-and-consider`, { method: 'POST' })
+  },
+  async submitInvestmentDeclarationForEmployee(employeeId: number | string, id: number | string): Promise<any> {
+    return this.request(`/investment-declarations/employee/${employeeId}/${id}/submit`, { method: 'POST' })
+  },
+  async getEmployeePayslips(employeeId: number | string, fiscalYear?: number | string): Promise<any[]> {
+    return this.request(`/payroll/employees/${employeeId}/payslips${fiscalYear ? `?fiscal_year=${fiscalYear}` : ''}`)
+  },
+  async getSalaryRevisions(): Promise<any[]> {
+    return this.request('/salary-revisions')
+  },
+  async getPendingSalaryRevisions(): Promise<any[]> {
+    return this.request('/salary-revisions/pending')
+  },
+  async proposeSalaryRevision(data: { employee_id: number; new_base_pay: number; new_hra?: number; effective_period: string; reason?: string }): Promise<any> {
+    return this.request('/salary-revisions', { method: 'POST', body: JSON.stringify(data) })
+  },
+  async getForm16Documents(financialYear: number | string): Promise<any[]> {
+    return this.request(`/form16/${financialYear}`)
+  },
+  async uploadForm16PartAZip(financialYear: number | string, zip: File): Promise<{ matched: any[]; unmatched: string[] }> {
+    const formData = new FormData()
+    formData.append('zip', zip)
+    const response = await fetch(`/api/form16/${financialYear}/upload-part-a`, {
+      method: 'POST',
+      headers: { 'X-XSRF-TOKEN': getCsrfToken(), Accept: 'application/json' },
+      credentials: 'same-origin',
+      body: formData,
+    })
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}))
+      throw new Error((err as { message?: string }).message || 'Upload failed')
+    }
+    return response.json()
+  },
+  form16DownloadUrl(employeeId: number | string, financialYear: number | string): string {
+    return `/api/form16/${employeeId}/${financialYear}/download`
+  },
+  async requestForm16(financialYear: number | string): Promise<any> {
+    return this.request(`/form16/${financialYear}/request`, { method: 'POST' })
+  },
+  async generateForm16(employeeId: number | string, financialYear: number | string): Promise<any> {
+    return this.request(`/form16/${employeeId}/${financialYear}/generate`, { method: 'POST' })
+  },
+  async publishForm16(employeeId: number | string, financialYear: number | string): Promise<any> {
+    return this.request(`/form16/${employeeId}/${financialYear}/publish`, { method: 'POST' })
+  },
+  async publishAllForm16(financialYear: number | string): Promise<{ published_count: number }> {
+    return this.request(`/form16/${financialYear}/publish-all`, { method: 'POST' })
+  },
+  form24QExportUrl(financialYear: number | string): string {
+    return `/api/form16/${financialYear}/export-24q`
+  },
+
+  // ── Taxes & Forms: TDS Liabilities, Challans, Form 24Q ──
+  async getTdsLiabilities(params?: Record<string, string | number>): Promise<any[]> {
+    const qs = params ? `?${new URLSearchParams(params as Record<string, string>).toString()}` : ''
+    return this.request(`/tds-liabilities${qs}`)
+  },
+  async getChallans(params?: Record<string, string | number>): Promise<any[]> {
+    const qs = params ? `?${new URLSearchParams(params as Record<string, string>).toString()}` : ''
+    return this.request(`/challans${qs}`)
+  },
+  async recordChallan(data: {
+    bsr_code: string; payment_date: string; serial_number: string; amount: number
+    interest_amount?: number; penalty_amount?: number; financial_year: number; quarter?: number; notes?: string
+  }): Promise<any> {
+    return this.request('/challans', { method: 'POST', body: JSON.stringify(data) })
+  },
+  async associateChallan(id: number | string, allocations: { tds_liability_id: number; amount: number }[]): Promise<any> {
+    return this.request(`/challans/${id}/associate`, { method: 'POST', body: JSON.stringify({ allocations }) })
+  },
+  async dissociateChallanAllocation(allocationId: number | string): Promise<{ ok: boolean }> {
+    return this.request(`/challan-allocations/${allocationId}`, { method: 'DELETE' })
+  },
+  async getForm24QExceptions(financialYear: number | string, quarter: number | string): Promise<{ employee_code: string; employee_name: string; issue: string }[]> {
+    return this.request(`/form-24q/${financialYear}/${quarter}/exceptions`)
+  },
+  form24QDownloadUrl(financialYear: number | string, quarter: number | string): string {
+    return `/api/form-24q/${financialYear}/${quarter}/export`
+  },
+
+  async getTaxSlabConfigs(): Promise<any[]> {
+    return this.request('/tax-slab-configs')
+  },
+  async createTaxSlabConfig(data: Record<string, unknown>): Promise<any> {
+    return this.request('/tax-slab-configs', { method: 'POST', body: JSON.stringify(data) })
+  },
+  async updateTaxSlabConfig(id: number | string, data: Record<string, unknown>): Promise<any> {
+    return this.request(`/tax-slab-configs/${id}`, { method: 'PUT', body: JSON.stringify(data) })
+  },
+  async updatePayrollSettings(data: {
+    pt_nil_threshold: number
+    pt_monthly_amount: number
+    pt_february_amount: number
+    pf_enabled?: boolean
+    esi_enabled?: boolean
+    company_name?: string
+    company_address?: string
+    company_logo_url?: string
+    company_tan?: string
+    pay_day?: number
+    signatory_name?: string
+    signatory_designation?: string
+  }): Promise<{ ok: boolean }> {
+    return this.request('/settings/payroll', { method: 'PUT', body: JSON.stringify(data) })
+  },
+
+  // ── Salary components (admin-configured template) ──
+  async getSalaryComponents(): Promise<SalaryComponent[]> { return this.request('/salary-components') },
+  async createSalaryComponent(data: Partial<SalaryComponent>): Promise<SalaryComponent> {
+    return this.request('/salary-components', { method: 'POST', body: JSON.stringify(data) })
+  },
+  async updateSalaryComponent(id: number | string, data: Partial<SalaryComponent>): Promise<SalaryComponent> {
+    return this.request(`/salary-components/${id}`, { method: 'PUT', body: JSON.stringify(data) })
+  },
+  async deleteSalaryComponent(id: number | string): Promise<{ ok: boolean }> {
+    return this.request(`/salary-components/${id}`, { method: 'DELETE' })
+  },
+  async reorderSalaryComponents(ids: number[]): Promise<SalaryComponent[]> {
+    return this.request('/salary-components/reorder', { method: 'POST', body: JSON.stringify({ ids }) })
+  },
+
+  // ── Reimbursements ──
+  async getReimbursementTypes(includeInactive = false): Promise<ReimbursementType[]> {
+    const q = includeInactive ? '?include_inactive=1' : ''
+    return this.request(`/reimbursement-types${q}`)
+  },
+  async createReimbursementType(data: Partial<ReimbursementType>): Promise<ReimbursementType> {
+    return this.request('/reimbursement-types', { method: 'POST', body: JSON.stringify(data) })
+  },
+  async updateReimbursementType(id: number | string, data: Partial<ReimbursementType>): Promise<ReimbursementType> {
+    return this.request(`/reimbursement-types/${id}`, { method: 'PUT', body: JSON.stringify(data) })
+  },
+  async deleteReimbursementType(id: number | string): Promise<{ ok: boolean }> {
+    return this.request(`/reimbursement-types/${id}`, { method: 'DELETE' })
+  },
+  async submitReimbursement(data: {
+    reimbursement_type_id: number; amount: number; claim_date: string; description?: string; receipt: File;
+  }): Promise<ExpenseClaim> {
+    const formData = new FormData()
+    formData.append('reimbursement_type_id', String(data.reimbursement_type_id))
+    formData.append('amount', String(data.amount))
+    formData.append('claim_date', data.claim_date)
+    if (data.description) formData.append('description', data.description)
+    formData.append('receipt', data.receipt)
+    const response = await fetch('/api/reimbursements', {
+      method: 'POST',
+      headers: { 'X-XSRF-TOKEN': getCsrfToken(), Accept: 'application/json' },
+      credentials: 'same-origin',
+      body: formData,
+    })
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}))
+      throw new Error((err as { message?: string }).message || 'Submission failed')
+    }
+    return response.json()
+  },
+  async getMyReimbursements(params?: URLSearchParams): Promise<PaginatedResponse<ExpenseClaim>> {
+    return this.request(`/reimbursements/mine${params ? `?${params}` : ''}`)
+  },
+  reimbursementReceiptUrl(id: number | string): string {
+    return `/api/reimbursements/${id}/receipt`
   },
   async getLifecycleStats(roleFilter?: string): Promise<Record<string, number>> {
     const q = roleFilter && roleFilter !== 'all' ? `?role_filter=${roleFilter}` : ''
@@ -1057,8 +1612,14 @@ export const api = {
   async deleteMyPortalUser(userId: number): Promise<{ ok: boolean }> {
     return this.request(`/my-portal/users/${userId}`, { method: 'DELETE' })
   },
-  async createApproval(data: { client_id?: number; approver_id?: number; title: string; description?: string; kind?: 'budget' | 'technical' }): Promise<any> {
+  async createApproval(data: { client_id?: number; approver_id?: number; title: string; description?: string; kind?: 'budget' | 'technical'; project_id?: number; document_ids?: number[] }): Promise<any> {
     return this.request('/approvals', { method: 'POST', body: JSON.stringify(data) })
+  },
+  async updateApproval(id: number | string, data: { client_id?: number; approver_id?: number; title: string; description?: string; kind?: 'budget' | 'technical'; project_id?: number; document_ids?: number[] }): Promise<any> {
+    return this.request(`/approvals/${id}`, { method: 'PUT', body: JSON.stringify(data) })
+  },
+  async cancelApproval(id: number | string): Promise<{ ok: boolean }> {
+    return this.request(`/approvals/${id}/cancel`, { method: 'POST' })
   },
 
   // Performance goals

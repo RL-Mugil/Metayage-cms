@@ -39,6 +39,11 @@ class UpdateProjectRequest extends FormRequest
             'target_filing_date'    => 'nullable|date',
             'hard_deadline'         => 'nullable|date',
             'status'                => 'nullable|string|max:50',
+            // The actual date the status event occurred (Granted/Refused/Abandoned) — not a
+            // Project column, purely a transient control value ProjectController::update()
+            // reads then discards before mass-assignment, so the auto-recorded docket event
+            // uses the real date instead of silently defaulting to now().
+            'status_event_date'     => 'nullable|date',
             'idf_received_date'     => 'nullable|date',
             'advance_payment_date'  => 'nullable|date',
             'partial_payment_date'  => 'nullable|date',
@@ -53,6 +58,7 @@ class UpdateProjectRequest extends FormRequest
             'fer_reply_date'           => 'nullable|date',
             'certificate_issue_date'   => 'nullable|date',
             'post_grant_journal_date'  => 'nullable|date',
+            'grant_number'             => 'nullable|string|max:100',
         ];
     }
 }

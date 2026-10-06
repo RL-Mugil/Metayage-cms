@@ -1,19 +1,37 @@
-import { Head, useForm, Link } from "@inertiajs/react";
+import { Head, useForm, Link, usePage } from "@inertiajs/react";
+import { useEffect } from "react";
 import { Lock, Mail, Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { useTurnstile } from "@/hooks/use-turnstile";
 
 export default function Login() {
+  const { props } = usePage() as any;
+  const turnstileSiteKey: string | null = props.turnstileSiteKey ?? null;
+  const turnstile = useTurnstile(turnstileSiteKey);
+
   const { data, setData, post, processing, errors } = useForm({
     email: "",
     password: "",
     remember: false,
+    "cf-turnstile-response": "",
   });
+
+  useEffect(() => {
+    setData("cf-turnstile-response", turnstile.token);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [turnstile.token]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    post("/login");
+    post("/login", {
+      // A Turnstile token is single-use — a failed submit (wrong password, etc.) needs a
+      // fresh one before the next attempt can pass server-side verification.
+      onError: () => turnstile.reset(),
+    });
   };
+
+  const captchaPending = !turnstile.solved;
 
   return (
     <>
@@ -74,12 +92,18 @@ export default function Login() {
                 </div>
               </div>
 
+              {turnstileSiteKey && (
+                <div className="flex justify-center pt-1">
+                  <div ref={turnstile.containerRef} />
+                </div>
+              )}
+
               <Button
                 type="submit"
-                disabled={processing}
+                disabled={processing || captchaPending}
                 className="w-full bg-gradient-to-r from-primary to-gold text-primary-foreground font-medium py-6 rounded-lg transition-transform active:scale-[0.98]"
               >
-                {processing ? <Loader2 className="h-4 w-4 animate-spin" /> : "Sign In to Workspace"}
+                {processing ? <Loader2 className="h-4 w-4 animate-spin" /> : captchaPending ? "Verifying…" : "Sign In to Workspace"}
               </Button>
             </form>
           </div>

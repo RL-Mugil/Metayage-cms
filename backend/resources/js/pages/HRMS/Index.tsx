@@ -26,7 +26,7 @@ function HrmsKpiModal({ kpi, onClose }: { kpi: HrmsKpiDef; onClose: () => void }
   const fetchPage = useCallback(async (pg: number, q: string) => {
     setLoading(true);
     try {
-      const params = new URLSearchParams({ per_page: String(PER_PAGE), page: String(pg) });
+      const params = new URLSearchParams({ per_page: String(PER_PAGE), page: String(pg), active_only: "1" });
       if (kpi.statusFilter) params.set("employment_status", kpi.statusFilter);
       if (q) params.set("search", q);
       const res: any = await api.getEmployeesPaged(params);
@@ -141,7 +141,10 @@ export default function HRMSIndex() {
   const [resetting, setResetting] = useState<number | null>(null);
 
   const loadEmployees = useCallback(() => {
-    return api.getEmployees().then((data) => {
+    // HR Overview tracks who's in/out/on leave today — resigned and
+    // terminated staff have nothing to clock in for, so they're excluded here
+    // even though they still show up on the full Employees list.
+    return api.getEmployees({ active_only: true }).then((data) => {
       setEmployees(Array.isArray(data) ? data : []);
     });
   }, []);

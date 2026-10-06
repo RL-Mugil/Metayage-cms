@@ -22,6 +22,8 @@ class StoreTaskRequest extends FormRequest
             'priority'    => 'required|string',
             'due_date'    => 'nullable|date',
             'billable'    => 'boolean',
+            'document_ids'   => 'nullable|array',
+            'document_ids.*' => 'integer|exists:documents,id',
         ];
     }
 }

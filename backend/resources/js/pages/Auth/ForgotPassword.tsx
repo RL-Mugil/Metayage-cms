@@ -1,17 +1,32 @@
 import { Head, useForm, usePage, Link } from "@inertiajs/react";
+import { useEffect } from "react";
 import { Mail, Loader2, ArrowLeft } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { useTurnstile } from "@/hooks/use-turnstile";
 
 export default function ForgotPassword() {
   const { props } = usePage() as any;
   const status = props.flash?.success;
-  const { data, setData, post, processing, errors } = useForm({ email: "" });
+  const turnstileSiteKey: string | null = props.turnstileSiteKey ?? null;
+  const turnstile = useTurnstile(turnstileSiteKey);
+
+  const { data, setData, post, processing, errors } = useForm({
+    email: "",
+    "cf-turnstile-response": "",
+  });
+
+  useEffect(() => {
+    setData("cf-turnstile-response", turnstile.token);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [turnstile.token]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    post("/forgot-password");
+    post("/forgot-password", { onError: () => turnstile.reset() });
   };
+
+  const captchaPending = !turnstile.solved;
 
   return (
     <>
@@ -57,12 +72,19 @@ export default function ForgotPassword() {
                   />
                 </div>
               </div>
+
+              {turnstileSiteKey && (
+                <div className="flex justify-center pt-1">
+                  <div ref={turnstile.containerRef} />
+                </div>
+              )}
+
               <Button
                 type="submit"
-                disabled={processing}
+                disabled={processing || captchaPending}
                 className="w-full bg-gradient-to-r from-primary to-gold text-primary-foreground font-medium py-6 rounded-lg transition-transform active:scale-[0.98]"
               >
-                {processing ? <Loader2 className="h-4 w-4 animate-spin" /> : "Send Reset Link"}
+                {processing ? <Loader2 className="h-4 w-4 animate-spin" /> : captchaPending ? "Verifying…" : "Send Reset Link"}
               </Button>
             </form>
 

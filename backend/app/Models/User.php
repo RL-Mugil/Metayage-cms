@@ -65,6 +65,23 @@ class User extends Authenticatable
     public const STAFF_ROLES = ['super_admin', 'partner', 'manager', 'hr', 'finance', 'associate', 'paralegal', 'galvanizer'];
     public const LEAVE_APPROVER_ROLES = ['super_admin', 'partner', 'hr'];
 
+    /**
+     * Full access to salary figures, payslips, payroll runs, loans, tax
+     * declarations, Form 16, and reimbursement approvals — "director"
+     * (partner), "accountant" (finance), and system admin only. HR manages
+     * employee records generally but does NOT see or edit payroll/salary
+     * data; a regular employee never sees another employee's payroll data
+     * at all (self-service endpoints are scoped to their own records).
+     */
+    public const PAYROLL_ACCESS_ROLES = ['super_admin', 'partner', 'finance'];
+
+    /** User IDs to notify whenever an employee submits a payroll/accounts
+     *  request (reimbursement, loan, Form 16, investment declaration). */
+    public static function payrollAccessUserIds(): array
+    {
+        return static::whereIn('role', self::PAYROLL_ACCESS_ROLES)->pluck('id')->all();
+    }
+
     public function isClientRole(): bool
     {
         return in_array($this->role, self::CLIENT_ROLES, true);

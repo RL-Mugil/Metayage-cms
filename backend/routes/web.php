@@ -75,12 +75,33 @@ Route::middleware(['auth', 'firm.context'])->group(function () {
     Route::get('/hrms/performance', fn () => Inertia::render('HRMS/Performance'))->name('hrms.performance');
     Route::get('/hrms/recruitment', fn () => Inertia::render('HRMS/Recruitment'))->name('hrms.recruitment');
     Route::get('/hrms/offboarding', fn () => Inertia::render('HRMS/Offboarding'))->name('hrms.offboarding');
+
+    // Payroll Portal — Zoho-style shell, opened from the sidebar in a new tab.
+    // Reads/writes the same payroll data as the main app (see PayrollPortalController).
+    Route::get('/payroll-portal', fn () => Inertia::render('PayrollPortal/Dashboard'))->name('payroll-portal.dashboard');
+    Route::get('/payroll-portal/employees', fn () => Inertia::render('PayrollPortal/Employees'))->name('payroll-portal.employees');
+    Route::get('/payroll-portal/employees/{id}', fn ($id) => Inertia::render('PayrollPortal/EmployeeDetail', ['employeeId' => (int) $id]))->name('payroll-portal.employees.show');
+    Route::get('/payroll-portal/contractors', fn () => Inertia::render('PayrollPortal/Contractors'))->name('payroll-portal.contractors');
+    Route::get('/payroll-portal/pay-runs', fn () => Inertia::render('PayrollPortal/PayRuns'))->name('payroll-portal.pay-runs');
+    Route::get('/payroll-portal/approvals/reimbursements', fn () => Inertia::render('PayrollPortal/ApprovalsReimbursements'))->name('payroll-portal.approvals.reimbursements');
+    Route::get('/payroll-portal/approvals/proof-of-investments', fn () => Inertia::render('PayrollPortal/ApprovalsProofOfInvestments'))->name('payroll-portal.approvals.proof-of-investments');
+    Route::get('/payroll-portal/approvals/salary-revisions', fn () => Inertia::render('PayrollPortal/ApprovalsSalaryRevisions'))->name('payroll-portal.approvals.salary-revisions');
+    Route::get('/payroll-portal/taxes/tds-liabilities', fn () => Inertia::render('PayrollPortal/TaxesTdsLiabilities'))->name('payroll-portal.taxes.tds-liabilities');
+    Route::get('/payroll-portal/taxes/challans', fn () => Inertia::render('PayrollPortal/TaxesChallans'))->name('payroll-portal.taxes.challans');
+    Route::get('/payroll-portal/taxes/form-24q', fn () => Inertia::render('PayrollPortal/TaxesForm24Q'))->name('payroll-portal.taxes.form-24q');
+    Route::get('/payroll-portal/form-16', fn () => Inertia::render('PayrollPortal/Form16'))->name('payroll-portal.form-16');
+    Route::get('/payroll-portal/loans', fn () => Inertia::render('PayrollPortal/Loans'))->name('payroll-portal.loans');
 });
 
 // Google Calendar OAuth callback — auth middleware included, session already present
 Route::get('/integrations/google/callback', [GoogleCalendarController::class, 'callback'])
     ->middleware(['auth', 'firm.context'])
     ->name('gcal.callback');
+
+// DigiLocker consent callback — same pattern as the Google Calendar callback above
+Route::get('/digilocker/callback', [\App\Http\Controllers\DigiLockerConsentController::class, 'callback'])
+    ->middleware(['auth', 'firm.context'])
+    ->name('digilocker.callback');
 
 // Horizon dashboard (admin only)
 Route::middleware(['auth', 'firm.context'])->group(function () {

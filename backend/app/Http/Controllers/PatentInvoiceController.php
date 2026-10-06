@@ -341,6 +341,9 @@ class PatentInvoiceController extends Controller
         if ($record->status === 'Cancelled') abort(422, 'Cannot convert a cancelled quotation.');
 
         $invoice = DB::transaction(function () use ($record, $user) {
+            $record = PatentInvoiceIn::whereKey($record->id)->lockForUpdate()->firstOrFail();
+            abort_if(\App\Models\ZohoQuoteExport::where('source_type', 'in')->where('source_id', $record->id)->where('state', '!=', 'rejected')->exists(), 422,
+                'This quote is handled in Zoho Books. The accountant must create the invoice there.');
             $record->update(['status' => 'Accepted']);
 
             $data = $record->toArray();

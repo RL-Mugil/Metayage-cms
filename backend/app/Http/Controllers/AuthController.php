@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\AuditLog;
 use App\Models\User;
+use App\Services\TurnstileVerificationService;
 use App\Support\RolePermissions;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -17,12 +18,18 @@ class AuthController extends Controller
         return Inertia::render('Auth/Login');
     }
 
-    public function login(Request $request)
+    public function login(Request $request, TurnstileVerificationService $turnstile)
     {
         $credentials = $request->validate([
             'email'    => 'required|email',
             'password' => 'required',
         ]);
+
+        if (! $turnstile->verify($request)) {
+            throw ValidationException::withMessages([
+                'email' => ['We could not verify you\'re not a robot. Please try again.'],
+            ]);
+        }
 
         if (! Auth::attempt($credentials, $request->boolean('remember'))) {
             throw ValidationException::withMessages([

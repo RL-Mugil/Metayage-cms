@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Document extends Model
@@ -58,5 +59,16 @@ class Document extends Model
     public function versions(): HasMany
     {
         return $this->hasMany(DocumentVersion::class);
+    }
+
+    /** Tasks/approvals this document has been attached to (inverse of the pivots on those models). */
+    public function tasks(): BelongsToMany
+    {
+        return $this->belongsToMany(Task::class, 'document_task');
+    }
+
+    public function approvals(): BelongsToMany
+    {
+        return $this->belongsToMany(Approval::class, 'approval_documents');
     }
 }

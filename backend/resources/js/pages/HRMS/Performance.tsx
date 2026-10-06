@@ -304,31 +304,37 @@ export default function HRMSPerformance() {
                     <h3 className="text-sm font-semibold">Add Goal</h3>
                     <button onClick={() => setShowAddGoal(false)}><X className="h-4 w-4 text-muted-foreground" /></button>
                   </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="col-span-2">
-                      <label className="block text-xs text-muted-foreground mb-1">Title *</label>
-                      <input value={newGoal.title} onChange={(e) => setNewGoal((p) => ({ ...p, title: e.target.value }))}
-                        placeholder="e.g. Complete 5 patent filings"
-                        className="w-full h-8 rounded border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+                  <section>
+                    <h3 className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-2 flex items-center gap-1.5">
+                      <span className="w-4 h-4 rounded-full bg-gold text-black flex items-center justify-center text-[9px] font-bold">1</span>
+                      Goal Details
+                    </h3>
+                    <div className="grid grid-cols-4 gap-2">
+                      <div className="col-span-2">
+                        <div className="text-[10px] text-muted-foreground mb-0.5">Title *</div>
+                        <input value={newGoal.title} onChange={(e) => setNewGoal((p) => ({ ...p, title: e.target.value }))}
+                          placeholder="e.g. Complete 5 patent filings"
+                          className="w-full h-8 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
+                      </div>
+                      <div>
+                        <div className="text-[10px] text-muted-foreground mb-0.5">Category</div>
+                        <input value={newGoal.category} onChange={(e) => setNewGoal((p) => ({ ...p, category: e.target.value }))}
+                          placeholder="e.g. Technical"
+                          className="w-full h-8 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
+                      </div>
+                      <div>
+                        <div className="text-[10px] text-muted-foreground mb-0.5">Target Date</div>
+                        <input type="date" value={newGoal.target_date} onChange={(e) => setNewGoal((p) => ({ ...p, target_date: e.target.value }))}
+                          className="w-full h-8 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
+                      </div>
+                      <div className="col-span-4">
+                        <div className="text-[10px] text-muted-foreground mb-0.5">Description</div>
+                        <textarea value={newGoal.description} onChange={(e) => setNewGoal((p) => ({ ...p, description: e.target.value }))}
+                          rows={2} placeholder="Optional details..."
+                          className="w-full rounded border border-border bg-background px-2 py-1.5 text-xs resize-none focus:outline-none focus:ring-1 focus:ring-gold" />
+                      </div>
                     </div>
-                    <div>
-                      <label className="block text-xs text-muted-foreground mb-1">Category</label>
-                      <input value={newGoal.category} onChange={(e) => setNewGoal((p) => ({ ...p, category: e.target.value }))}
-                        placeholder="e.g. Technical"
-                        className="w-full h-8 rounded border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-muted-foreground mb-1">Target Date</label>
-                      <input type="date" value={newGoal.target_date} onChange={(e) => setNewGoal((p) => ({ ...p, target_date: e.target.value }))}
-                        className="w-full h-8 rounded border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
-                    </div>
-                    <div className="col-span-2">
-                      <label className="block text-xs text-muted-foreground mb-1">Description</label>
-                      <textarea value={newGoal.description} onChange={(e) => setNewGoal((p) => ({ ...p, description: e.target.value }))}
-                        rows={2} placeholder="Optional details..."
-                        className="w-full rounded border border-border bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-gold" />
-                    </div>
-                  </div>
+                  </section>
                   <div className="flex gap-2">
                     <Button size="sm" className="bg-gold hover:bg-gold/90 text-black" disabled={!newGoal.title.trim() || goalSaving} onClick={addGoal}>
                       {goalSaving ? <><Loader2 className="h-3 w-3 mr-1 animate-spin" />Saving…</> : "Add Goal"}

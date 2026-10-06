@@ -151,7 +151,7 @@ class AIQueryService
                 }
             }
 
-            $piiColumns = ['salary', 'aadhaar_ssn_encrypted', 'pan_tax_id', 'bank_account_number', 'bank_ifsc_code', 'personal_email'];
+            $piiColumns = ['base_pay_monthly', 'hra_monthly', 'aadhaar_ssn_encrypted', 'pan_tax_id', 'bank_account_number', 'bank_ifsc_code', 'personal_email'];
             foreach ($piiColumns as $column) {
                 if (preg_match('/\b' . preg_quote($column, '/') . '\b/i', $sql)) {
                     throw new \RuntimeException("Access to sensitive column ({$column}) is not permitted for your role.");
@@ -228,7 +228,7 @@ You support two modes:
 Security rules when writing SQL:
 - Only SELECT statements.
 - Never expose users.password.
-- Never expose employees.salary to unauthorized roles.
+- Never expose employees.base_pay_monthly or employees.hra_monthly to unauthorized roles.
 
 Database schema:
 {$this->schemaContext()}

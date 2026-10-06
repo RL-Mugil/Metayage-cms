@@ -11,12 +11,15 @@ import { fmtDate } from "@/lib/date-utils";
 
 interface PendingPaymentRow {
   id: number;
+  type: string;
+  status: string;
   invoice_uin: string;
   docket_number: string;
   invoice_date: string;
   invoice_amount: string | number;
   currency: string;
   payment_status: string;
+  remarks?: string | null;
   status_note?: string | null;
   status_note_at?: string | null;
   project?: { id: number; docket_number: string; project_name: string } | null;
@@ -45,6 +48,7 @@ export default function PendingPayments() {
   const [error, setError] = useState("");
   const [uploadingId, setUploadingId] = useState<number | null>(null);
   const [confirmingId, setConfirmingId] = useState<number | null>(null);
+  const [approvingId, setApprovingId] = useState<number | null>(null);
   const [noteDraft, setNoteDraft] = useState<Record<number, string>>({});
   const [savingNoteId, setSavingNoteId] = useState<number | null>(null);
   const fileInputRefs = useRef<Record<number, HTMLInputElement | null>>({});
@@ -81,6 +85,18 @@ export default function PendingPayments() {
       setError(e?.message || "Failed to confirm receipt.");
     } finally {
       setConfirmingId(null);
+    }
+  }
+
+  async function handleApproveQuote(row: PendingPaymentRow) {
+    setApprovingId(row.id);
+    try {
+      await api.approveRenewalQuote(row.id);
+      load();
+    } catch (e: any) {
+      setError(e?.message || "Failed to approve quote.");
+    } finally {
+      setApprovingId(null);
     }
   }
 
@@ -128,13 +144,20 @@ export default function PendingPayments() {
                     <div>
                       <div className="flex items-center gap-2">
                         <span className="font-mono text-xs font-semibold text-gold">{row.invoice_uin}</span>
-                        <Badge variant={paymentStatusVariant(row.payment_status)}>{row.payment_status}</Badge>
+                        {row.type === "quote" ? (
+                          <Badge variant="outline">Estimate{row.status === "Accepted" ? " · Approved" : ""}</Badge>
+                        ) : (
+                          <Badge variant={paymentStatusVariant(row.payment_status)}>{row.payment_status}</Badge>
+                        )}
                       </div>
                       <div className="mt-1 text-sm font-medium">{row.project?.project_name ?? row.docket_number}</div>
                       {isStaff && row.client && (
                         <div className="text-xs text-muted-foreground">{row.client.company_name ?? row.client.legal_name}</div>
                       )}
                       <div className="mt-1 text-xs text-muted-foreground font-mono">{row.docket_number} · {fmtDate(row.invoice_date)}</div>
+                      {row.type === "quote" && (
+                        <div className="mt-1 text-xs text-amber-600">Estimate only — subject to change. Not a final invoice.</div>
+                      )}
                     </div>
                     <div className="text-right">
                       <div className="font-display text-xl font-semibold">{formatMoney(row.invoice_amount, row.currency)}</div>
@@ -159,7 +182,16 @@ export default function PendingPayments() {
                       </Button>
                     )}
 
-                    {isClient && row.payment_status !== "Confirmed" && (
+                    {isClient && row.type === "quote" && row.status !== "Accepted" && row.status !== "Cancelled" && (
+                      <Button size="sm" className="h-8 text-xs bg-gold hover:bg-gold/90 text-black"
+                        disabled={approvingId === row.id}
+                        onClick={() => handleApproveQuote(row)}>
+                        {approvingId === row.id ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <CheckCircle2 className="h-3 w-3 mr-1" />}
+                        Approve Estimate
+                      </Button>
+                    )}
+
+                    {isClient && row.type !== "quote" && row.payment_status !== "Confirmed" && (
                       <>
                         <input
                           type="file"
@@ -176,7 +208,7 @@ export default function PendingPayments() {
                       </>
                     )}
 
-                    {isStaff && row.payment_status === "Proof Submitted" && (
+                    {isStaff && row.type !== "quote" && row.payment_status === "Proof Submitted" && (
                       <Button size="sm" className="h-8 text-xs bg-gold hover:bg-gold/90 text-black"
                         disabled={confirmingId === row.id}
                         onClick={() => handleConfirm(row)}>

@@ -2,9 +2,10 @@
 
 return [
     /*
-     * Professional Tax: flat monthly amount (Karnataka/Maharashtra slab for gross > ₹15,001).
-     * Set PAYROLL_PT_MONTHLY in .env to override (e.g. 0 for states with no PT).
-     * Full state-dependent slabs require adding employees.work_state; this is a v1 simplification.
+     * Professional Tax seed default only. The live, editable value lives in the
+     * `system_settings` table (key `payroll_pt_monthly`, managed via Settings →
+     * Payroll) — PayrollService::currentProfessionalTax() reads that directly and
+     * only falls back to this env value if that row is somehow missing.
      */
     'pt_monthly' => (float) env('PAYROLL_PT_MONTHLY', 200.0),
 ];

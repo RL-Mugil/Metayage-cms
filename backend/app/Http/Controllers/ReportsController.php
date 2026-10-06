@@ -35,6 +35,10 @@ class ReportsController extends Controller
         'deadline-forecast' => ['super_admin', 'partner', 'manager', 'galvanizer'],
         'payment-collection' => ['super_admin', 'partner', 'manager', 'finance', 'galvanizer'],
         'zoho-summary' => ['super_admin', 'partner', 'manager', 'finance', 'galvanizer'],
+        // Payroll/salary data — director (partner), accountant (finance), and
+        // system admin only. See User::PAYROLL_ACCESS_ROLES.
+        'payroll-cost-summary' => \App\Models\User::PAYROLL_ACCESS_ROLES,
+        'tds-pf-esi-summary' => \App\Models\User::PAYROLL_ACCESS_ROLES,
     ];
 
     private const REPORT_NAMES = [
@@ -49,6 +53,8 @@ class ReportsController extends Controller
         'deadline-forecast' => 'Deadline Forecast',
         'payment-collection' => 'Payment Collection',
         'zoho-summary' => 'Zoho Books Summary',
+        'payroll-cost-summary' => 'Payroll Cost Summary',
+        'tds-pf-esi-summary' => 'TDS / PF / ESI Summary',
     ];
 
     public function getData(Request $request): JsonResponse
@@ -188,7 +194,7 @@ class ReportsController extends Controller
             'client-portfolio' => $this->clientPortfolio($user, $perPage, $page, $from, $to, $clientCode),
             'matter-status' => $this->matterStatus($user, $perPage, $page, $from, $to, $clientCode),
             'financial-summary' => $this->financialSummary($user, $perPage, $page, $from, $to, $clientCode),
-            'hrms' => $this->hrmsReport($perPage, $page, $from, $to),
+            'hrms' => $this->hrmsReport($user, $perPage, $page, $from, $to),
             'ip-deadline' => $this->ipDeadline($user, $perPage, $page, $from, $to, $clientCode),
             'productivity' => $this->productivity($user, $perPage, $page, $from, $to),
             'tracker-workload' => $this->trackerWorkload($user, $perPage, $page, $from, $to),
@@ -196,6 +202,8 @@ class ReportsController extends Controller
             'deadline-forecast' => $this->deadlineForecast($user, $perPage, $page, $from, $to, $clientCode),
             'payment-collection' => $this->paymentCollection($user, $perPage, $page, $from, $to, $clientCode),
             'zoho-summary' => $this->zohoSummary($user, $perPage, $page, $from, $to, $clientCode),
+            'payroll-cost-summary' => $this->payrollCostSummary($perPage, $page, $from, $to),
+            'tds-pf-esi-summary' => $this->tdsPfEsiSummary($perPage, $page, $from, $to),
             default => [
                 'type' => $type,
                 'rows' => [],
@@ -256,6 +264,8 @@ class ReportsController extends Controller
             'entity_type' => $client->entity_type,
             'primary_jurisdiction' => $client->primary_jurisdiction,
             'gst_type' => $client->gst_type,
+            'gstin_verification_status' => $client->gstin ? ($client->gstin_verification_status ?? 'Unverified') : null,
+            'cin_verification_status' => $client->cin_number ? ($client->cin_verification_status ?? 'Unverified') : null,
             'status' => $client->status,
             'projects_count' => $client->projects_count,
             'active_projects_count' => $client->active_projects_count,
@@ -363,8 +373,14 @@ class ReportsController extends Controller
         return $this->paginatedResponse('zoho-summary', $rows, $paginator, $perPage);
     }
 
-    private function hrmsReport(int $perPage, int $page, ?Carbon $from, ?Carbon $to): array
+    private function hrmsReport($user, int $perPage, int $page, ?Carbon $from, ?Carbon $to): array
     {
+        // This report mixes HR data (attendance/leave — HR's domain) with a
+        // payroll figure (latest_net_pay). Strip the payroll columns for
+        // anyone outside User::PAYROLL_ACCESS_ROLES rather than blocking the
+        // whole report, so HR keeps attendance/leave visibility.
+        $canSeePayroll = in_array($user->role, \App\Models\User::PAYROLL_ACCESS_ROLES, true);
+
         $query = Employee::with('department', 'designation', 'user');
         $paginator = $query->paginate($perPage, ['*'], 'page', $page);
         $employeeIds = $paginator->getCollection()->pluck('id')->all();
@@ -406,12 +422,12 @@ class ReportsController extends Controller
             ->unique('employee_id')
             ->keyBy('employee_id');
 
-        $rows = $paginator->getCollection()->map(function ($employee) use ($attendance, $leave, $payroll) {
+        $rows = $paginator->getCollection()->map(function ($employee) use ($attendance, $leave, $payroll, $canSeePayroll) {
             $attendanceRow = $attendance->get($employee->id);
             $leaveRow = $leave->get($employee->id);
             $payrollRow = $payroll->get($employee->id);
 
-            return [
+            $row = [
                 'employee_code' => $employee->employee_code,
                 'full_name' => $employee->full_name,
                 'department' => $employee->department?->name,
@@ -421,14 +437,71 @@ class ReportsController extends Controller
                 'half_days' => (int) ($attendanceRow->half_days ?? 0),
                 'absent_days' => (int) ($attendanceRow->absent_days ?? 0),
                 'approved_leave_days' => (float) ($leaveRow->approved_leave_days ?? 0),
-                'latest_payroll_period' => $payrollRow->period ?? null,
-                'latest_payroll_status' => $payrollRow->status ?? null,
-                'latest_net_pay' => $payrollRow->net_pay ?? null,
-                'lop_days' => $payrollRow->lop_days ?? null,
             ];
+
+            if ($canSeePayroll) {
+                $row['latest_payroll_period'] = $payrollRow->period ?? null;
+                $row['latest_payroll_status'] = $payrollRow->status ?? null;
+                $row['latest_net_pay'] = $payrollRow->net_pay ?? null;
+                $row['lop_days'] = $payrollRow->lop_days ?? null;
+            }
+
+            return $row;
         });
 
         return $this->paginatedResponse('hrms', $rows, $paginator, $perPage);
+    }
+
+    private function payrollCostSummary(int $perPage, int $page, ?Carbon $from, ?Carbon $to): array
+    {
+        $query = \App\Models\PayrollRun::query()->orderByDesc('period');
+        $this->applyDateRange($query, 'period', $from, $to);
+        $paginator = $query->paginate($perPage, ['*'], 'page', $page);
+
+        $rows = $paginator->getCollection()->map(fn ($run) => [
+            'period' => $run->period,
+            'status' => $run->status,
+            'employee_count' => $run->employee_count,
+            'gross_total' => (float) $run->gross_total,
+            'deductions_total' => (float) $run->deductions_total,
+            'net_total' => (float) $run->net_total,
+        ]);
+
+        return $this->paginatedResponse('payroll-cost-summary', $rows, $paginator, $perPage);
+    }
+
+    private function tdsPfEsiSummary(int $perPage, int $page, ?Carbon $from, ?Carbon $to): array
+    {
+        $query = DB::table('payslips as ps')
+            ->join('payroll_runs as pr', 'pr.id', '=', 'ps.payroll_run_id')
+            ->selectRaw('
+                pr.id as payroll_run_id,
+                pr.period,
+                pr.status,
+                COUNT(ps.id) as employee_count,
+                COALESCE(SUM(ps.tds), 0) as total_tds,
+                COALESCE(SUM(ps.pf_employee), 0) as total_pf,
+                COALESCE(SUM(ps.esi_employee), 0) as total_esi,
+                COALESCE(SUM(ps.professional_tax), 0) as total_professional_tax,
+                COALESCE(SUM(ps.educational_cess), 0) as total_educational_cess
+            ')
+            ->groupBy('pr.id', 'pr.period', 'pr.status')
+            ->orderByDesc('pr.period');
+        $this->applyDateRange($query, 'pr.period', $from, $to);
+
+        $all = collect($query->get());
+        $rows = $all->map(fn ($row) => [
+            'period' => $row->period,
+            'status' => $row->status,
+            'employee_count' => (int) $row->employee_count,
+            'total_tds' => (float) $row->total_tds,
+            'total_pf' => (float) $row->total_pf,
+            'total_esi' => (float) $row->total_esi,
+            'total_professional_tax' => (float) $row->total_professional_tax,
+            'total_educational_cess' => (float) $row->total_educational_cess,
+        ]);
+
+        return $this->collectionPaginatedResponse('tds-pf-esi-summary', $rows, $perPage, $page);
     }
 
     private function ipDeadline($user, int $perPage, int $page, ?Carbon $from, ?Carbon $to, ?string $clientCode): array

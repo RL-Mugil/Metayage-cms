@@ -104,6 +104,42 @@ class IntegrationController extends Controller
             $config['region']          = $validated['region'] ?? 'in';
             // Kept only so the generic `hasKey` flag on the integrations list still works.
             $config['api_key'] = $config['refresh_token'];
+        } elseif ($slug === 'api_setu' || $slug === 'entitylocker') {
+            // PAN Verification and EntityLocker share the same shape: a simple
+            // REST endpoint. base_url/verify_path are kept configurable rather
+            // than hardcoded — the exact URL is issued per-consumer once API
+            // Setu approves the registration, and isn't publicly documented.
+            $validated = $request->validate([
+                'client_id'     => 'required|string|max:255',
+                'client_secret' => 'required|string|max:500',
+                'base_url'      => 'required|url|max:500',
+                'verify_path'   => 'required|string|max:255',
+            ]);
+
+            $config['client_id']     = $validated['client_id'];
+            $config['client_secret'] = encrypt($validated['client_secret']);
+            $config['base_url']      = rtrim($validated['base_url'], '/');
+            $config['verify_path']   = '/' . ltrim($validated['verify_path'], '/');
+            $config['api_key']       = $config['client_secret'];
+        } elseif ($slug === 'digilocker') {
+            // Three-legged OAuth2 consent flow — every endpoint is configurable
+            // for the same reason as above (per-consumer, approval-issued URLs).
+            $validated = $request->validate([
+                'client_id'          => 'required|string|max:255',
+                'client_secret'      => 'required|string|max:500',
+                'authorize_url'      => 'required|url|max:500',
+                'token_url'          => 'required|url|max:500',
+                'document_pull_url'  => 'required|url|max:500',
+                'redirect_uri'       => 'required|url|max:500',
+            ]);
+
+            $config['client_id']         = $validated['client_id'];
+            $config['client_secret']     = encrypt($validated['client_secret']);
+            $config['authorize_url']     = $validated['authorize_url'];
+            $config['token_url']         = $validated['token_url'];
+            $config['document_pull_url'] = $validated['document_pull_url'];
+            $config['redirect_uri']      = $validated['redirect_uri'];
+            $config['api_key']           = $config['client_secret'];
         } else {
             $validated = $request->validate(['api_key' => 'required|string|max:500']);
             $config['api_key'] = encrypt($validated['api_key']);

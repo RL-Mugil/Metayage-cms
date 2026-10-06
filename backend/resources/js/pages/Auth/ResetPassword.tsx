@@ -1,7 +1,9 @@
-import { Head, useForm } from "@inertiajs/react";
+import { Head, useForm, usePage } from "@inertiajs/react";
+import { useEffect } from "react";
 import { Lock, Mail, Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { useTurnstile } from "@/hooks/use-turnstile";
 
 interface Props {
   token: string;
@@ -9,17 +11,29 @@ interface Props {
 }
 
 export default function ResetPassword({ token, email }: Props) {
+  const { props } = usePage() as any;
+  const turnstileSiteKey: string | null = props.turnstileSiteKey ?? null;
+  const turnstile = useTurnstile(turnstileSiteKey);
+
   const { data, setData, post, processing, errors } = useForm({
     token,
     email,
     password: "",
     password_confirmation: "",
+    "cf-turnstile-response": "",
   });
+
+  useEffect(() => {
+    setData("cf-turnstile-response", turnstile.token);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [turnstile.token]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    post("/reset-password");
+    post("/reset-password", { onError: () => turnstile.reset() });
   };
+
+  const captchaPending = !turnstile.solved;
 
   return (
     <>
@@ -92,12 +106,18 @@ export default function ResetPassword({ token, email }: Props) {
                 </div>
               </div>
 
+              {turnstileSiteKey && (
+                <div className="flex justify-center pt-1">
+                  <div ref={turnstile.containerRef} />
+                </div>
+              )}
+
               <Button
                 type="submit"
-                disabled={processing}
+                disabled={processing || captchaPending}
                 className="w-full bg-gradient-to-r from-primary to-gold text-primary-foreground font-medium py-6 rounded-lg transition-transform active:scale-[0.98]"
               >
-                {processing ? <Loader2 className="h-4 w-4 animate-spin" /> : "Reset Password"}
+                {processing ? <Loader2 className="h-4 w-4 animate-spin" /> : captchaPending ? "Verifying…" : "Reset Password"}
               </Button>
             </form>
           </div>

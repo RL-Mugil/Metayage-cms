@@ -19,7 +19,13 @@ class DocumentPolicy
 
     public function view(User $user, Document $document): bool
     {
-        if ($user->isClientRole()) return $document->client?->isVisibleToUser($user) === true;
+        if ($user->isClientRole()) {
+            // Owned either directly (client_id) or via a case-level upload on one of
+            // their own projects (project_id set, client_id left null) — see
+            // DocumentController::clientOwnsDocument() for the matching controller-side check.
+            if ($document->client?->isVisibleToUser($user) === true) return true;
+            return $document->project?->client?->isVisibleToUser($user) === true;
+        }
         if (in_array($user->role, ['super_admin', 'partner'], true)) return true;
 
         if ($user->isGalvanizer()) {

@@ -10,7 +10,7 @@ import { api } from "@/lib/api-client";
 
 const DEPTS = ["Legal", "Operations", "HR", "Finance", "Engineering", "Business Development", "Administration"];
 const ROLES = ["Director", "HR", "Patent Attorney", "Patent Analyst", "Patent Engineer", "Finance Manager", "Paralegal", "Consultant", "System Admin"];
-const LOCATIONS = ["Remote", "Coimbatore", "Chennai", "Bengaluru", "Hyderabad", "Pollachi"];
+const LOCATIONS = ["Office", "Remote", "Coimbatore", "Chennai", "Bengaluru", "Hyderabad", "Pollachi"];
 const inputCls = "w-full h-9 rounded-md border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold";
 
 function getInitials(name: string) {
@@ -183,7 +183,10 @@ export default function Team() {
 
   useEffect(() => {
     Promise.all([
-      api.getEmployees(),
+      // Team Workspace is a directory of who's currently on the team — resigned,
+      // terminated, suspended, on-leave, etc. employees don't belong here (they
+      // still show up on the full HRMS Employees list, just not this one).
+      api.getEmployees({ employment_status: "Active" }),
       api.getEmployeeWorkload().catch(() => [] as WorkloadEntry[]),
     ]).then(([emps, wl]) => {
       setEmployees(emps);
@@ -340,40 +343,60 @@ export default function Team() {
 
       {showAddModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm overflow-y-auto py-8">
-          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-lg p-6 m-4">
-            <div className="flex items-center justify-between mb-4">
+          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-2xl m-4">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-border">
               <h2 className="font-display text-lg font-semibold">Add Employee</h2>
               <button onClick={() => setShowAddModal(false)}><X className="h-5 w-5 text-muted-foreground" /></button>
             </div>
-            {saveError && <div className="rounded-md bg-destructive/15 border border-destructive/30 p-3 text-xs text-destructive mb-3">{saveError}</div>}
-            <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-3">
-                <div><label className="block text-xs text-muted-foreground mb-1">Full Name *</label>
-                  <input value={addForm.full_name} onChange={e => setAddForm(p => ({ ...p, full_name: e.target.value }))} placeholder="Priya Sharma" className={inputCls} /></div>
-                <div><label className="block text-xs text-muted-foreground mb-1">Work Email *</label>
-                  <input type="email" value={addForm.work_email} onChange={e => setAddForm(p => ({ ...p, work_email: e.target.value }))} placeholder="priya@firm.com" className={inputCls} /></div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div><label className="block text-xs text-muted-foreground mb-1">Department</label>
-                  <select value={addForm.department_name} onChange={e => setAddForm(p => ({ ...p, department_name: e.target.value }))} className={inputCls}>
-                    <option value="">Select</option>{DEPTS.map(d => <option key={d}>{d}</option>)}</select></div>
-                <div><label className="block text-xs text-muted-foreground mb-1">Role / Designation</label>
-                  <select value={addForm.designation_title} onChange={e => setAddForm(p => ({ ...p, designation_title: e.target.value }))} className={inputCls}>
-                    <option value="">Select</option>{ROLES.map(r => <option key={r}>{r}</option>)}</select></div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div><label className="block text-xs text-muted-foreground mb-1">Location</label>
-                  <select value={addForm.work_location} onChange={e => setAddForm(p => ({ ...p, work_location: e.target.value }))} className={inputCls}>
-                    {LOCATIONS.map(l => <option key={l}>{l}</option>)}</select></div>
-                <div><label className="block text-xs text-muted-foreground mb-1">Date of Joining</label>
-                  <input type="date" value={addForm.date_of_joining} onChange={e => setAddForm(p => ({ ...p, date_of_joining: e.target.value }))} className={inputCls} /></div>
-              </div>
+            <div className="px-6 py-4 space-y-3">
+              {saveError && <div className="rounded-md bg-destructive/15 border border-destructive/30 p-3 text-xs text-destructive">{saveError}</div>}
+              <section>
+                <h3 className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-2 flex items-center gap-1.5">
+                  <span className="w-4 h-4 rounded-full bg-gold text-black flex items-center justify-center text-[9px] font-bold">1</span>
+                  Employee Details
+                </h3>
+                <div className="grid grid-cols-4 gap-2">
+                  <div className="col-span-2">
+                    <div className="text-[10px] text-muted-foreground mb-0.5">Full Name<span className="text-destructive ml-0.5">*</span></div>
+                    <input value={addForm.full_name} onChange={e => setAddForm(p => ({ ...p, full_name: e.target.value }))} placeholder="Priya Sharma"
+                      className="w-full h-8 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
+                  </div>
+                  <div className="col-span-2">
+                    <div className="text-[10px] text-muted-foreground mb-0.5">Work Email<span className="text-destructive ml-0.5">*</span></div>
+                    <input type="email" value={addForm.work_email} onChange={e => setAddForm(p => ({ ...p, work_email: e.target.value }))} placeholder="priya@firm.com"
+                      className="w-full h-8 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
+                  </div>
+                  <div>
+                    <div className="text-[10px] text-muted-foreground mb-0.5">Department</div>
+                    <select value={addForm.department_name} onChange={e => setAddForm(p => ({ ...p, department_name: e.target.value }))}
+                      className="w-full h-8 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold">
+                      <option value="">Select</option>{DEPTS.map(d => <option key={d}>{d}</option>)}</select>
+                  </div>
+                  <div>
+                    <div className="text-[10px] text-muted-foreground mb-0.5">Role / Designation</div>
+                    <select value={addForm.designation_title} onChange={e => setAddForm(p => ({ ...p, designation_title: e.target.value }))}
+                      className="w-full h-8 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold">
+                      <option value="">Select</option>{ROLES.map(r => <option key={r}>{r}</option>)}</select>
+                  </div>
+                  <div>
+                    <div className="text-[10px] text-muted-foreground mb-0.5">Location</div>
+                    <select value={addForm.work_location} onChange={e => setAddForm(p => ({ ...p, work_location: e.target.value }))}
+                      className="w-full h-8 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold">
+                      {LOCATIONS.map(l => <option key={l}>{l}</option>)}</select>
+                  </div>
+                  <div>
+                    <div className="text-[10px] text-muted-foreground mb-0.5">Date of Joining</div>
+                    <input type="date" value={addForm.date_of_joining} onChange={e => setAddForm(p => ({ ...p, date_of_joining: e.target.value }))}
+                      className="w-full h-8 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
+                  </div>
+                </div>
+              </section>
             </div>
-            <div className="flex gap-2 mt-5">
-              <Button className="bg-gold hover:bg-gold/90 text-black flex-1" onClick={handleAddEmployee} disabled={saving}>
+            <div className="flex gap-2 px-6 py-4 border-t border-border justify-end">
+              <Button variant="outline" onClick={() => setShowAddModal(false)}>Cancel</Button>
+              <Button className="bg-gold hover:bg-gold/90 text-black min-w-[120px]" onClick={handleAddEmployee} disabled={saving}>
                 {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}Add Employee
               </Button>
-              <Button variant="outline" onClick={() => setShowAddModal(false)}>Cancel</Button>
             </div>
           </div>
         </div>

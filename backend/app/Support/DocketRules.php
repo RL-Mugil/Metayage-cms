@@ -48,6 +48,12 @@ class DocketRules
         'refused'           => 'Application Refused',
         'renewal_missed'    => 'Renewal Fee Missed (Patent Lapsed)',
         'opposition_notice' => 'Pre-Grant Opposition Notice Received',
+        // Staff-side shortcut for recording a renewal/maintenance fee payment directly —
+        // additional to (not a replacement for) the client-portal approve/invoice/pay loop
+        // (see RenewalActionController). Handled by its own dedicated endpoint
+        // (DocketController::storeRenewalPaid()), not the generic deadline-rule engine —
+        // deliberately absent from DEADLINE_TRIGGER_TYPES below.
+        'renewal_fee_paid'  => 'Renewal/Maintenance Fees Paid',
     ];
 
     /** Events that must never be accepted without an active, approved rule. */
@@ -182,6 +188,16 @@ class DocketRules
     }
 
     /**
+     * Event types that represent a one-time terminal legal fact — a case can only
+     * genuinely be granted, or refused, once. Recording one again (e.g. correcting
+     * a date that was auto-set to today because the real date wasn't supplied —
+     * see ProjectController::syncApplicationLegalStatus()) must update the existing
+     * event in place, never pile up a duplicate event with its own duplicate set
+     * of generated deadlines.
+     */
+    private const SINGLE_INSTANCE_TYPES = ['granted', 'refused'];
+
+    /**
      * Record an event and generate its statutory deadlines. Returns the event.
      */
     public static function recordEvent(
@@ -193,18 +209,36 @@ class DocketRules
         ?int $userId = null
     ): DocketEvent {
         $app = $applicationId ? PatentApplication::find($applicationId) : null;
-
-        $event = DocketEvent::create([
-            'project_id'            => $projectId,
-            'ip_record_id'          => $projectId ? \App\Models\Project::find($projectId)?->ip_record_id : null,
-            'patent_application_id' => $applicationId,
-            'event_type'            => $eventType,
-            'event_date'            => $eventDate,
-            'notes'                 => $notes,
-            'created_by'            => $userId,
-        ]);
-
         $project = $projectId ? \App\Models\Project::find($projectId) : null;
+
+        $existing = ($app && in_array($eventType, self::SINGLE_INSTANCE_TYPES, true))
+            ? DocketEvent::where('patent_application_id', $app->id)->where('event_type', $eventType)->first()
+            : null;
+
+        if ($existing) {
+            $existing->update([
+                'project_id'   => $projectId ?? $existing->project_id,
+                'ip_record_id' => $projectId ? $project?->ip_record_id : $existing->ip_record_id,
+                'event_date'   => $eventDate,
+                'notes'        => $notes ?? $existing->notes,
+                'created_by'   => $userId ?? $existing->created_by,
+            ]);
+            $event = $existing;
+            // Correcting the date invalidates deadlines computed from the old one —
+            // same delete-then-regenerate pattern DocketController::updateEvent() uses.
+            $event->deadlines()->delete();
+        } else {
+            $event = DocketEvent::create([
+                'project_id'            => $projectId,
+                'ip_record_id'          => $project?->ip_record_id,
+                'patent_application_id' => $applicationId,
+                'event_type'            => $eventType,
+                'event_date'            => $eventDate,
+                'notes'                 => $notes,
+                'created_by'            => $userId,
+            ]);
+        }
+
         self::generateDeadlines($event, $project, $app);
 
         // Event side-effects on the application's legal status
@@ -235,6 +269,18 @@ class DocketRules
             }
             if ($eventType === 'granted') {
                 self::generateRenewalSchedule($app, $eventDate);
+            }
+        }
+
+        // Recording Granted/Refused directly in the docket event log (not via the
+        // project status dropdown) must also flip the project's own status badge to
+        // match — the two are two doors into the same fact, and must stay in sync
+        // both ways. Only touches $project itself, never sibling engagements sharing
+        // the same PatentApplication (same scoping rule as StageAdvancementService).
+        if ($project && in_array($eventType, self::SINGLE_INSTANCE_TYPES, true)) {
+            $mappedStatus = $eventType === 'granted' ? 'Granted' : 'Refused';
+            if ($project->status !== $mappedStatus) {
+                $project->update(['status' => $mappedStatus]);
             }
         }
 
@@ -305,5 +351,41 @@ class DocketRules
                 $row->update(['due_date' => $due]);
             }
         }
+    }
+
+    /**
+     * The ProjectStage list for a REN/RNF engagement — "Not renewed" plus one "Renewed
+     * till Nth year" entry per renewal year (3-20), replacing the old fixed 5-stage list.
+     * Used to seed a REN/RNF project's stages (ProjectController::stagesForServiceCode())
+     * and by the renewal-paid docketing action to know which stage name a given year maps
+     * to — single source of truth for both, kept in sync with the frontend's
+     * STAGES_BY_SERVICE['RNF']/['REN'] copy.
+     */
+    public static function renewalStageNames(): array
+    {
+        $stages = ['Not renewed'];
+        for ($year = 3; $year <= 20; $year++) {
+            $stages[] = self::renewalStageName($year);
+        }
+        return $stages;
+    }
+
+    /** "Renewed till 3rd year" / "4th" / ... / "20th" — ordinal suffix per standard English rules. */
+    public static function renewalStageName(int $year): string
+    {
+        return "Renewed till {$year}" . self::ordinalSuffix($year) . " year";
+    }
+
+    private static function ordinalSuffix(int $n): string
+    {
+        if ($n % 100 >= 11 && $n % 100 <= 13) {
+            return 'th';
+        }
+        return match ($n % 10) {
+            1 => 'st',
+            2 => 'nd',
+            3 => 'rd',
+            default => 'th',
+        };
     }
 }

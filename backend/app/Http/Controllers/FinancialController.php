@@ -131,6 +131,12 @@ class FinancialController extends Controller
         return response()->json($stats);
     }
 
+    public function analytics(Request $request, \App\Services\FinancialAnalyticsService $analytics)
+    {
+        $this->authorize('viewAny', \App\Models\Invoice::class);
+        return response()->json($analytics->build($request->user()));
+    }
+
     public function invoices(Request $request)
     {
         $user = $request->user();
@@ -530,6 +536,9 @@ class FinancialController extends Controller
         $totalAmount = $subtotal + $taxAmount;
 
         $invoice = DB::transaction(function () use ($quotation, $client, $subtotal, $taxAmount, $taxRate, $taxDetails, $totalAmount, $user, $request) {
+            Quotation::whereKey($quotation->id)->lockForUpdate()->firstOrFail();
+            abort_if(\App\Models\ZohoQuoteExport::where('source_type', 'standard')->where('source_id', $quotation->id)->where('state', '!=', 'rejected')->exists(), 422,
+                'This quote is handled in Zoho Books. The accountant must create the invoice there.');
             $code = $this->nextCode('INV', 'invoice_code', Invoice::class);
             $this->lockLedgerOwner((int) $quotation->client_id);
 

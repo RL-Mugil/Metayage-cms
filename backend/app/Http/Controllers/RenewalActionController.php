@@ -12,7 +12,9 @@ use App\Models\FeeRateCard;
 use App\Models\PatentInvoiceIn;
 use App\Models\Project;
 use App\Models\RenewalSchedule;
+use App\Models\User;
 use App\Services\PatentInvoiceUinService;
+use App\Support\Notifier;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -227,6 +229,124 @@ class RenewalActionController extends Controller
         return response()->json($result->load('project:id,docket_number,project_name'), 201);
     }
 
+    /**
+     * Auto-generates a renewal QUOTE 90 days before a RenewalSchedule row's due date (see
+     * SendDeadlineRemindersCommand::scanRenewals()) — an estimate only, explicitly marked
+     * subject to change, never an invoice. Idempotent: returns null (no-op) if this renewal
+     * year already has a linked PatentInvoiceIn. The client approves it via approveQuote()
+     * below; staff still raise the real, final invoice manually via the existing
+     * PatentInvoiceController::convert() quote->invoice action — this method never does that.
+     */
+    public function autoCreateQuote(RenewalSchedule $renewal): ?PatentInvoiceIn
+    {
+        if ($renewal->patent_invoice_in_id) {
+            return null;
+        }
+
+        $application = $renewal->application;
+        $client = $application?->client;
+        if (! $application || ! $client) {
+            return null;
+        }
+        $project = $application->projects->first();
+
+        $totals = $this->renewalTotals($application->jurisdiction, $client->fee_entity_tier, collect([$renewal->renewal_year]));
+        $docketForUin = $project?->docket_number ?? $application->application_number ?? "APP{$application->id}";
+
+        return DB::transaction(function () use ($application, $project, $client, $renewal, $totals, $docketForUin) {
+            $quote = PatentInvoiceIn::create([
+                'type'                 => 'quote',
+                'status'               => 'Sent',
+                'payment_status'       => 'Pending',
+                'project_id'           => $project?->id,
+                'client_id'            => $client->id,
+                'created_by_id'        => null, // system-generated
+                'docket_number'        => $project?->docket_number ?? $docketForUin,
+                'invoice_uin'          => app(PatentInvoiceUinService::class)->next($docketForUin, 'quote'),
+                'invoice_date'         => now()->toDateString(),
+                'invention_title'      => $project?->invention_title ?: $application->title,
+                'service_code'         => $project?->service_code,
+                'client_name'          => $client->company_name ?? $client->legal_name,
+                'patent_office_application_number' => $application->application_number,
+                'patent_office_fees'   => $totals['government_fee'],
+                'service_fees'         => $totals['professional_fee'],
+                'other_expenses'       => 0,
+                'igst_amount'          => 0,
+                'cgst_amount'          => 0,
+                'sgst_amount'          => 0,
+                'invoice_amount'       => $totals['government_fee'] + $totals['professional_fee'],
+                'net_revenue'          => $totals['professional_fee'],
+                'currency'             => $totals['currency'],
+                'remarks'              => "Auto-generated estimate for renewal year {$renewal->renewal_year} — subject to change based on government fees and internal company policy. Not a final invoice; staff will raise the actual invoice separately.",
+            ]);
+
+            $renewal->update(['patent_invoice_in_id' => $quote->id]);
+
+            AuditLog::create([
+                'user_id'      => null,
+                'action'       => 'auto_create_renewal_quote',
+                'subject_type' => 'PatentInvoiceIn',
+                'subject_id'   => $quote->id,
+                'metadata'     => ['renewal_id' => $renewal->id, 'renewal_year' => $renewal->renewal_year, 'amount' => $quote->invoice_amount],
+                'ip_address'   => null,
+                'user_agent'   => 'system:reminders:send-deadlines',
+            ]);
+
+            return $quote;
+        });
+    }
+
+    /**
+     * Client approves an auto-generated renewal quote — marks it Accepted (the same status
+     * staff's quote-conversion action uses) but does NOT create an invoice itself; the
+     * auto-quote is only ever an estimate. Notifies the case's assigned team plus every
+     * super_admin/partner/director/paralegal that staff can now raise the final invoice.
+     */
+    public function approveQuote(Request $request, $invoiceId)
+    {
+        $user = $request->user();
+        if (! in_array($user->role, ['client', 'client_admin', 'client_finance'], true)) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        $client = $request->attributes->get('portal_client') ?? Client::forUser($user);
+        if (! $client) {
+            return response()->json(['message' => 'No client record linked to your account.'], 404);
+        }
+
+        $quote = PatentInvoiceIn::where('client_id', $client->id)->where('type', 'quote')->findOrFail($invoiceId);
+        if ($quote->status === 'Cancelled') {
+            return response()->json(['message' => 'This quote has been cancelled.'], 422);
+        }
+
+        $quote->update(['status' => 'Accepted']);
+
+        AuditLog::create([
+            'user_id' => $user->id, 'action' => 'client_approve_renewal_quote',
+            'subject_type' => 'PatentInvoiceIn', 'subject_id' => $quote->id,
+            'metadata' => ['docket_number' => $quote->docket_number, 'invoice_uin' => $quote->invoice_uin],
+            'ip_address' => $request->ip(), 'user_agent' => $request->userAgent(),
+        ]);
+
+        $project = $quote->project_id ? Project::find($quote->project_id) : null;
+        $recipientIds = collect([
+            $project?->assigned_partner_id, $project?->assigned_manager_id,
+            $project?->secondary_manager_id, $project?->patent_engineer_id,
+        ])->merge(User::whereIn('role', ['super_admin', 'partner', 'director', 'paralegal'])->pluck('id'))
+          ->filter()->unique();
+
+        Notifier::push(
+            $recipientIds,
+            'renewal',
+            "Client approved renewal quote: {$quote->docket_number}",
+            ($client->company_name ?? $client->legal_name ?? 'Client') . " approved the renewal quote {$quote->invoice_uin} for {$quote->docket_number}. Raise the final invoice when ready.",
+            '/financial',
+            ['invoice_id' => $quote->id, 'project_id' => $project?->id],
+        );
+
+        return response()->json($quote->fresh());
+    }
+
     /** Client uploads a payment proof document (already uploaded via POST /documents) against a pending renewal invoice. */
     public function submitProof(Request $request, $invoiceId)
     {
@@ -352,6 +472,12 @@ class RenewalActionController extends Controller
 
         if ($request->filled('payment_status')) {
             $query->where('payment_status', $request->get('payment_status'));
+        } else {
+            // payment_status is set to 'Pending' at creation and never nulled — every row ever
+            // created matches the whereNotNull() above, including already-Confirmed (paid)
+            // ones. Default this "Pending Payments" list to actually excluding Confirmed; an
+            // explicit ?payment_status=X above still overrides this (e.g. to look up history).
+            $query->where('payment_status', '!=', 'Confirmed');
         }
 
         return response()->json($query->paginate(min((int) $request->get('per_page', 50), 200)));

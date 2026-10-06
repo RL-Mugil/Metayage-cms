@@ -67,6 +67,8 @@ const REPORT_TEMPLATES: ReportTemplate[] = [
   { id: "deadline-forecast", name: "Deadline Forecast", description: "Upcoming delivery deadlines in the next 60 days by default", icon: Clock, color: "text-amber-400", roles: ["super_admin", "partner", "manager", "galvanizer"] },
   { id: "payment-collection", name: "Payment Collection", description: "Paid / Partial / Pending breakdown per client from tracker", icon: TrendingUp, color: "text-green-400", roles: ["super_admin", "partner", "manager", "finance", "galvanizer"] },
   { id: "zoho-summary", name: "Zoho Books Summary", description: "Synced Zoho invoices and estimates with balances and case matches", icon: Wallet, color: "text-teal-400", roles: ["super_admin", "partner", "manager", "finance", "galvanizer"] },
+  { id: "payroll-cost-summary", name: "Payroll Cost Summary", description: "Gross, deductions, and net totals per payroll run", icon: Wallet, color: "text-gold", roles: ["super_admin", "partner", "finance"] },
+  { id: "tds-pf-esi-summary", name: "TDS / PF / ESI Summary", description: "Statutory withholding totals per payroll run", icon: TrendingUp, color: "text-purple-400", roles: ["super_admin", "partner", "finance"] },
 ];
 
 const CLIENT_FILTER_REPORTS = new Set([
@@ -81,7 +83,7 @@ const CLIENT_FILTER_REPORTS = new Set([
 ]);
 
 const SAMPLE_COLUMNS: Record<string, string[]> = {
-  "client-portfolio": ["client_code", "company_name", "entity_type", "primary_jurisdiction", "gst_type", "status", "projects_count", "active_projects_count", "total_billed", "total_received", "total_outstanding", "account_manager"],
+  "client-portfolio": ["client_code", "company_name", "entity_type", "primary_jurisdiction", "gst_type", "gstin_verification_status", "cin_verification_status", "status", "projects_count", "active_projects_count", "total_billed", "total_received", "total_outstanding", "account_manager"],
   "matter-status": ["project_code", "client_code", "application_number", "project_name", "client", "project_type", "status", "urgency", "current_stage", "hard_deadline", "manager"],
   "financial-summary": ["invoice_code", "client_code", "project_code", "application_number", "client", "issue_date", "due_date", "total_amount", "amount_received", "balance_due", "status", "currency"],
   hrms: ["employee_code", "full_name", "department", "designation", "employment_status", "present_days", "half_days", "absent_days", "approved_leave_days", "latest_payroll_period", "latest_payroll_status", "latest_net_pay", "lop_days"],
@@ -92,6 +94,8 @@ const SAMPLE_COLUMNS: Record<string, string[]> = {
   "deadline-forecast": ["Docket #", "Client Code", "Case Code", "Title", "Application Number", "Client", "Record Type", "PCM", "Due Date", "Days Left", "Status", "% Complete", "Payment"],
   "payment-collection": ["Client", "Total Cases", "Paid", "Partial", "Pending", "Not Set"],
   "zoho-summary": ["number", "type", "client_code", "project_code", "application_number", "client", "docket_number", "date", "status", "total", "balance", "currency", "synced_at"],
+  "payroll-cost-summary": ["period", "status", "employee_count", "gross_total", "deductions_total", "net_total"],
+  "tds-pf-esi-summary": ["period", "status", "employee_count", "total_tds", "total_pf", "total_esi", "total_professional_tax", "total_educational_cess"],
 };
 
 const PROTECTED_COLUMNS = new Set([

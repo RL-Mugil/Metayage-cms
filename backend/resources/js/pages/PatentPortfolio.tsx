@@ -1,7 +1,6 @@
 import { Head, Link, usePage } from "@inertiajs/react";
 import { useEffect, useState, useMemo } from "react";
 import { AnalystRoleFilter, useAnalystRoleFilter } from "@/components/analyst-role-filter";
-import { PieChart, Pie, Cell, Tooltip as ReTooltip } from "recharts";
 import {
   Loader2, RefreshCw, ChevronDown, MapPin, FileText, Calendar,
   AlertCircle, CreditCard, X, Search, ChevronUp, ExternalLink, ArrowUpDown,
@@ -12,121 +11,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api-client";
 import { ProjectDetailPanel } from "@/components/project-detail-panel";
-
-const OFFICE_LABELS: Record<string, string> = {
-  IN: "India", US: "USA", JP: "Japan", EP: "EP", KR: "Korea",
-  WO: "PCT/WIPO", AU: "Australia", CN: "China", DE: "Germany",
-};
-const OFFICE_COLORS: Record<string, string> = {
-  IN: "#1e3a5f", US: "#4a9fd4", JP: "#7ec8e3", EP: "#e05c3a", KR: "#6b7280",
-  WO: "#8b5cf6", AU: "#f59e0b", CN: "#ef4444", DE: "#10b981",
-};
-const FALLBACK_COLORS = ["#1e3a5f", "#4a9fd4", "#7ec8e3", "#e05c3a", "#6b7280", "#8b5cf6"];
-
-function ol(code: string) { return OFFICE_LABELS[code] ?? code; }
-function oc(code: string, idx = 0) { return OFFICE_COLORS[code] ?? FALLBACK_COLORS[idx % FALLBACK_COLORS.length]; }
+import { DonutChart, StatusBar, officeLabel as ol, officeColor as oc } from "@/components/portfolio-charts";
 
 const PAGE_SIZE = 10;
-
-// ── Interactive Donut ────────────────────────────────────────────────────────
-function DonutChart({
-  data, total, label, activeCode, onSelect,
-}: {
-  data: { code: string; name: string; value: number; color: string }[];
-  total: number;
-  label: string;
-  activeCode: string | null;
-  onSelect: (code: string | null) => void;
-}) {
-  const display = data.map(d => ({
-    ...d,
-    opacity: activeCode && activeCode !== d.code ? 0.35 : 1,
-  }));
-
-  return (
-    <div className="flex flex-col items-center gap-2">
-      <div className="font-medium text-sm text-foreground">{label}</div>
-      <div className="relative cursor-pointer">
-        <PieChart width={190} height={190}>
-          <Pie
-            data={display}
-            cx={95} cy={95}
-            innerRadius={54} outerRadius={82}
-            dataKey="value"
-            strokeWidth={activeCode ? 2 : 1}
-            stroke="transparent"
-            onClick={(entry: any) => onSelect(activeCode === entry.code ? null : entry.code)}
-          >
-            {display.map((d, i) => (
-              <Cell
-                key={i}
-                fill={d.color}
-                opacity={d.opacity}
-                stroke={activeCode === d.code ? "#fff" : "transparent"}
-                strokeWidth={activeCode === d.code ? 2 : 0}
-                style={{ cursor: "pointer", transition: "opacity 0.2s" }}
-              />
-            ))}
-          </Pie>
-          <ReTooltip
-            formatter={(v: number, _: string, props: any) => {
-              const pct = total > 0 ? ((v / total) * 100).toFixed(1) : "0";
-              return [`${v} (${pct}%)`, props.payload?.name ?? ""];
-            }}
-            contentStyle={{ background: "var(--background)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 12 }}
-          />
-        </PieChart>
-        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-          <span className="font-display text-3xl font-bold text-foreground">
-            {activeCode ? (data.find(d => d.code === activeCode)?.value ?? 0) : total}
-          </span>
-          {activeCode && <span className="text-[10px] text-muted-foreground mt-0.5">{ol(activeCode)}</span>}
-        </div>
-      </div>
-      <div className="flex flex-wrap justify-center gap-x-3 gap-y-1">
-        {data.map(d => (
-          <button
-            key={d.code}
-            onClick={() => onSelect(activeCode === d.code ? null : d.code)}
-            className={`flex items-center gap-1 text-xs transition-opacity ${activeCode && activeCode !== d.code ? "opacity-40" : "opacity-100"}`}
-          >
-            <span className="inline-block h-2 w-2 rounded-full" style={{ background: d.color }} />
-            <span className={activeCode === d.code ? "font-semibold text-foreground" : "text-muted-foreground"}>
-              {d.name}
-            </span>
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// ── Interactive Bar ──────────────────────────────────────────────────────────
-function StatusBar({
-  name, count, max, active, onClick,
-}: {
-  name: string; count: number; max: number; active: boolean; onClick: () => void;
-}) {
-  const pct = Math.max(6, (count / max) * 100);
-  return (
-    <button
-      onClick={onClick}
-      className={`flex items-center gap-3 w-full group rounded-md px-1 py-0.5 transition-colors ${active ? "bg-gold/10" : "hover:bg-muted/30"}`}
-    >
-      <span className={`text-xs w-40 shrink-0 text-right truncate ${active ? "text-foreground font-medium" : "text-muted-foreground"}`}>
-        {name}
-      </span>
-      <div className="flex-1 h-6 bg-muted rounded-sm overflow-hidden">
-        <div
-          className="h-full rounded-sm flex items-center px-2 transition-all duration-300"
-          style={{ width: `${pct}%`, background: active ? "#e8a020" : "#4a9fd4" }}
-        >
-          <span className="text-[10px] font-semibold text-white">{count}</span>
-        </div>
-      </div>
-    </button>
-  );
-}
 
 // ── Sort header ──────────────────────────────────────────────────────────────
 function SortTh({
@@ -165,6 +52,7 @@ export default function PatentPortfolio() {
   // Filters
   const [activeOffice, setActiveOffice]   = useState<string | null>(null);
   const [activeStatus, setActiveStatus]   = useState<string | null>(null);
+  const [activeStage, setActiveStage]     = useState<string | null>(null);
   const [actionSearch, setActionSearch]   = useState("");
   const [sortCol, setSortCol]     = useState<"docket_number" | "filing_date" | "status">("docket_number");
   const [sortDir, setSortDir]     = useState<"asc" | "desc">("asc");
@@ -180,6 +68,7 @@ export default function PatentPortfolio() {
     setLoading(true);
     setActiveOffice(null);
     setActiveStatus(null);
+    setActiveStage(null);
     setPage(1);
     api.getPatentPortfolioStats(clientId ?? null, effectiveRf(rf))
       .then(setData).catch(() => {}).finally(() => setLoading(false));
@@ -220,18 +109,33 @@ export default function PatentPortfolio() {
     setPage(1);
   }
 
-  // Derived chart data
-  const grantedData = useMemo(() => data
-    ? Object.entries(data.granted_by_office as Record<string, number>).map(([code, count], i) => ({
+  function toggleStage(name: string) {
+    setActiveStage(prev => prev === name ? null : name);
+    setPage(1);
+  }
+
+  // Derived chart data — four mutually-exclusive donuts by status bucket (one entry per
+  // unique case, from the backend's case-level dedup), so their totals always sum to
+  // total_unique_cases: Granted, Active (Open/In Progress/On Hold), Refused/Abandoned,
+  // Closed/Completed.
+  const officeSeries = (key: string) => (data
+    ? Object.entries((data[key] ?? {}) as Record<string, number>).map(([code, count], i) => ({
         code, name: ol(code), value: Number(count), color: oc(code, i),
-      })) : [], [data]);
+      })) : []);
+
+  const grantedData = useMemo(() => officeSeries("granted_by_office"), [data]);
   const grantedTotal = grantedData.reduce((s, d) => s + d.value, 0);
 
-  const pendingData = useMemo(() => data
-    ? Object.entries(data.pending_by_office as Record<string, number>).map(([code, count], i) => ({
-        code, name: ol(code), value: Number(count), color: oc(code, i),
-      })) : [], [data]);
-  const pendingTotal = pendingData.reduce((s, d) => s + d.value, 0);
+  const activeData = useMemo(() => officeSeries("active_by_office"), [data]);
+  const activeTotal = activeData.reduce((s, d) => s + d.value, 0);
+
+  const refusedData = useMemo(() => officeSeries("refused_by_office"), [data]);
+  const refusedTotal = refusedData.reduce((s, d) => s + d.value, 0);
+
+  const closedData = useMemo(() => officeSeries("closed_by_office"), [data]);
+  const closedTotal = closedData.reduce((s, d) => s + d.value, 0);
+
+  const chartsTotal = grantedTotal + activeTotal + refusedTotal + closedTotal;
 
   const stageData = useMemo(() => data
     ? (data.pending_by_stage as any[]).map((s: any) => ({ name: s.stage_name, count: Number(s.count) }))
@@ -244,6 +148,7 @@ export default function PatentPortfolio() {
     let rows = actionRows;
     if (activeOffice)  rows = rows.filter((r: any) => r.patent_office_code === activeOffice);
     if (activeStatus)  rows = rows.filter((r: any) => r.status === activeStatus);
+    if (activeStage)   rows = rows.filter((r: any) => r.current_stage === activeStage);
     if (actionSearch)  {
       const q = actionSearch.toLowerCase();
       rows = rows.filter((r: any) =>
@@ -260,7 +165,7 @@ export default function PatentPortfolio() {
       return sortDir === "asc" ? (av < bv ? -1 : av > bv ? 1 : 0) : (av > bv ? -1 : av < bv ? 1 : 0);
     });
     return rows;
-  }, [actionRows, activeOffice, activeStatus, actionSearch, sortCol, sortDir]);
+  }, [actionRows, activeOffice, activeStatus, activeStage, actionSearch, sortCol, sortDir]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
@@ -276,7 +181,7 @@ export default function PatentPortfolio() {
     ? (data?.clients as any[])?.find((c: any) => c.id === selectedClientId)?.company_name ?? "All Clients"
     : "All Clients";
 
-  const hasFilters = activeOffice || activeStatus || actionSearch;
+  const hasFilters = activeOffice || activeStatus || activeStage || actionSearch;
 
   return (
     <AppLayout>
@@ -338,27 +243,53 @@ export default function PatentPortfolio() {
           </div>
         ) : (
           <>
-            {/* Row 1: Donuts + Renewals + Payments */}
-            <div className="grid gap-4 lg:grid-cols-4">
-              <Card className="lg:col-span-2 border-border">
-                <CardContent className="pt-5 pb-4 flex flex-col sm:flex-row items-center justify-around gap-4">
-                  <DonutChart data={grantedData} total={grantedTotal} label="Granted Patents"
-                    activeCode={activeOffice} onSelect={toggleOffice} />
-                  <div className="w-px h-40 bg-border hidden sm:block" />
-                  <DonutChart data={pendingData} total={pendingTotal} label="Pending Patents"
+            {/* Row 1: Status donuts — Granted / Active / Refused-Abandoned / Closed-Completed,
+                one card each, aligned left-to-right in a single line. Each case (deduped by
+                client+invention+office) lands in exactly one chart, so the four totals always
+                sum to Total Cases. */}
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-muted-foreground">
+                Total Cases: <span className="font-semibold text-foreground">{data.total_unique_cases}</span>
+                <span className="mx-1.5 text-border">·</span>
+                Chart sum: <span className={`font-semibold ${chartsTotal === data.total_unique_cases ? "text-foreground" : "text-destructive"}`}>{chartsTotal}</span>
+              </span>
+              {activeOffice && (
+                <span className="flex items-center gap-1 rounded-full bg-gold/15 text-gold border border-gold/30 px-2 py-0.5 text-xs font-medium">
+                  <MapPin className="h-3 w-3" /> {ol(activeOffice)}
+                  <button onClick={() => setActiveOffice(null)}><X className="h-3 w-3 ml-0.5" /></button>
+                </span>
+              )}
+            </div>
+            <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
+              <Card className="border-border">
+                <CardContent className="pt-5 pb-4 flex items-center justify-center">
+                  <DonutChart data={grantedData} total={grantedTotal} label="Granted"
                     activeCode={activeOffice} onSelect={toggleOffice} />
                 </CardContent>
-                {activeOffice && (
-                  <div className="px-4 pb-3 flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground">Filtering by:</span>
-                    <span className="flex items-center gap-1 rounded-full bg-gold/15 text-gold border border-gold/30 px-2 py-0.5 text-xs font-medium">
-                      <MapPin className="h-3 w-3" /> {ol(activeOffice)}
-                      <button onClick={() => setActiveOffice(null)}><X className="h-3 w-3 ml-0.5" /></button>
-                    </span>
-                  </div>
-                )}
               </Card>
+              <Card className="border-border">
+                <CardContent className="pt-5 pb-4 flex items-center justify-center">
+                  <DonutChart data={activeData} total={activeTotal} label="Active"
+                    sublabel="Open · In Progress · On Hold"
+                    activeCode={activeOffice} onSelect={toggleOffice} />
+                </CardContent>
+              </Card>
+              <Card className="border-border">
+                <CardContent className="pt-5 pb-4 flex items-center justify-center">
+                  <DonutChart data={refusedData} total={refusedTotal} label="Refused / Abandoned"
+                    activeCode={activeOffice} onSelect={toggleOffice} />
+                </CardContent>
+              </Card>
+              <Card className="border-border">
+                <CardContent className="pt-5 pb-4 flex items-center justify-center">
+                  <DonutChart data={closedData} total={closedTotal} label="Closed / Completed"
+                    activeCode={activeOffice} onSelect={toggleOffice} />
+                </CardContent>
+              </Card>
+            </div>
 
+            {/* Row 2: Renewals + Payments */}
+            <div className="grid gap-4 lg:grid-cols-2">
               {/* Upcoming Renewals */}
               <Card className="border-border">
                 <CardHeader className="pb-2">
@@ -428,21 +359,22 @@ export default function PatentPortfolio() {
               </Card>
             </div>
 
-            {/* Row 2: Status bars + Action Required */}
+            {/* Row 3: Status bars + Action Required */}
             <div className="grid gap-4 lg:grid-cols-2">
-              {/* Pending by Status — clickable bars */}
+              {/* Pending by Stage — clickable bars (backed by pending_by_stage / stage_name,
+                  not project.status — filters Action Required via current_stage) */}
               <Card className="border-border">
                 <CardHeader className="pb-1">
                   <div className="flex items-center justify-between">
-                    <CardTitle className="font-display text-sm">Pending Patents by Status</CardTitle>
-                    {activeStatus && (
-                      <button onClick={() => setActiveStatus(null)}
+                    <CardTitle className="font-display text-sm">Pending Patents by Stage</CardTitle>
+                    {activeStage && (
+                      <button onClick={() => setActiveStage(null)}
                         className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
                         <X className="h-3 w-3" /> Clear
                       </button>
                     )}
                   </div>
-                  {activeStatus && (
+                  {activeStage && (
                     <p className="text-[10px] text-muted-foreground">Click again to clear filter</p>
                   )}
                 </CardHeader>
@@ -453,7 +385,7 @@ export default function PatentPortfolio() {
                     <div className="space-y-1.5">
                       {stageData.map((s: any) => (
                         <StatusBar key={s.name} name={s.name} count={s.count} max={maxStage}
-                          active={activeStatus === s.name} onClick={() => toggleStatus(s.name)} />
+                          active={activeStage === s.name} onClick={() => toggleStage(s.name)} />
                       ))}
                     </div>
                   )}
@@ -472,7 +404,7 @@ export default function PatentPortfolio() {
                       )}
                     </CardTitle>
                     {hasFilters && (
-                      <button onClick={() => { setActiveOffice(null); setActiveStatus(null); setActionSearch(""); setPage(1); }}
+                      <button onClick={() => { setActiveOffice(null); setActiveStatus(null); setActiveStage(null); setActionSearch(""); setPage(1); }}
                         className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1">
                         <X className="h-3 w-3" /> Clear all
                       </button>
@@ -491,6 +423,12 @@ export default function PatentPortfolio() {
                         <span className="flex items-center gap-1 rounded-full bg-blue-500/15 text-blue-400 border border-blue-500/30 px-2 py-0.5 text-[10px] font-medium">
                           {activeStatus}
                           <button onClick={() => setActiveStatus(null)}><X className="h-2.5 w-2.5" /></button>
+                        </span>
+                      )}
+                      {activeStage && (
+                        <span className="flex items-center gap-1 rounded-full bg-purple-500/15 text-purple-400 border border-purple-500/30 px-2 py-0.5 text-[10px] font-medium">
+                          {activeStage}
+                          <button onClick={() => setActiveStage(null)}><X className="h-2.5 w-2.5" /></button>
                         </span>
                       )}
                     </div>

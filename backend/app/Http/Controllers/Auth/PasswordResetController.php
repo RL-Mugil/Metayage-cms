@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Models\AuditLog;
+use App\Services\TurnstileVerificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Password;
@@ -19,9 +20,15 @@ class PasswordResetController extends Controller
         return Inertia::render('Auth/ForgotPassword');
     }
 
-    public function sendLink(Request $request)
+    public function sendLink(Request $request, TurnstileVerificationService $turnstile)
     {
         $request->validate(['email' => 'required|email']);
+
+        if (! $turnstile->verify($request)) {
+            throw ValidationException::withMessages([
+                'email' => ['We could not verify you\'re not a robot. Please try again.'],
+            ]);
+        }
 
         $status = Password::sendResetLink($request->only('email'));
 
@@ -45,13 +52,19 @@ class PasswordResetController extends Controller
         ]);
     }
 
-    public function reset(Request $request)
+    public function reset(Request $request, TurnstileVerificationService $turnstile)
     {
         $request->validate([
             'token'    => 'required',
             'email'    => 'required|email',
             'password' => ['required', 'confirmed', PasswordRule::min(8)->mixedCase()->symbols()],
         ]);
+
+        if (! $turnstile->verify($request)) {
+            throw ValidationException::withMessages([
+                'email' => ['We could not verify you\'re not a robot. Please try again.'],
+            ]);
+        }
 
         $status = Password::reset(
             $request->only('email', 'password', 'password_confirmation', 'token'),

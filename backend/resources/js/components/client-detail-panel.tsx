@@ -1,8 +1,17 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { X, Loader2 } from "lucide-react";
+import { usePage } from "@inertiajs/react";
+import { X, Loader2, ShieldCheck } from "lucide-react";
 import { api } from "@/lib/api-client";
 import { ProjectDetailPanel } from "@/components/project-detail-panel";
+
+const ENTITY_VERIFY_ROLES = ["super_admin", "partner", "manager", "galvanizer"];
+
+function verifyBadgeClass(status: string | undefined) {
+  if (status === "Verified") return "bg-green-100 text-green-700 border-green-200";
+  if (status === "Mismatch" || status === "Failed") return "bg-red-100 text-red-700 border-red-200";
+  return "bg-muted text-muted-foreground border-border";
+}
 
 function fmtDate(d: string | null | undefined): string {
   if (!d) return "—";
@@ -20,12 +29,16 @@ interface Props {
 type Tab = "cases" | "invoices" | "ledger";
 
 export function ClientDetailPanel({ clientId, onClose }: Props) {
+  const { props } = usePage() as any;
+  const canVerifyEntity = ENTITY_VERIFY_ROLES.includes(props.auth?.user?.role ?? "");
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<Tab>("cases");
   const [detailProjectId, setDetailProjectId] = useState<number | null>(null);
+  const [entityVerifying, setEntityVerifying] = useState(false);
+  const [entityVerifyMessage, setEntityVerifyMessage] = useState("");
 
-  useEffect(() => {
+  function load() {
     let cancelled = false;
     setLoading(true);
     setData(null);
@@ -35,7 +48,24 @@ export function ClientDetailPanel({ clientId, onClose }: Props) {
       if (!cancelled) setLoading(false);
     });
     return () => { cancelled = true; };
-  }, [clientId]);
+  }
+
+  useEffect(() => { const cleanup = load(); return cleanup; }, [clientId]);
+
+  async function verifyEntity() {
+    setEntityVerifying(true);
+    setEntityVerifyMessage("");
+    try {
+      const result = await api.verifyClientEntity(clientId);
+      const parts = [result.gstin?.message, result.cin?.message].filter(Boolean);
+      setEntityVerifyMessage(parts.join(" "));
+      load();
+    } catch (e: any) {
+      setEntityVerifyMessage(e.message || "Failed to verify.");
+    } finally {
+      setEntityVerifying(false);
+    }
+  }
 
   const client = data?.client;
 
@@ -54,12 +84,31 @@ export function ClientDetailPanel({ clientId, onClose }: Props) {
               {client?.legal_name ?? client?.company_name ?? ""}
             </h2>
             {client && (
-              <p className="text-xs text-muted-foreground mt-0.5">
+              <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1.5 flex-wrap">
                 {client.nationality}
                 {client.gst_type ? ` · ${client.gst_type}` : ""}
-                {client.gstin ? ` · ${client.gstin}` : ""}
+                {client.gstin && (
+                  <>
+                    {` · ${client.gstin}`}
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded border ${verifyBadgeClass(client.gstin_verification_status)}`}>
+                      {client.gstin_verification_status ?? "Unverified"}
+                    </span>
+                  </>
+                )}
+                {client.cin_number && (
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded border ${verifyBadgeClass(client.cin_verification_status)}`}>
+                    CIN: {client.cin_verification_status ?? "Unverified"}
+                  </span>
+                )}
+                {canVerifyEntity && (client.gstin || client.cin_number) && (
+                  <button onClick={verifyEntity} disabled={entityVerifying}
+                    className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border border-border hover:bg-muted/50 disabled:opacity-50">
+                    <ShieldCheck className="h-3 w-3" />{entityVerifying ? "Verifying…" : "Verify via EntityLocker"}
+                  </button>
+                )}
               </p>
             )}
+            {entityVerifyMessage && <p className="text-[11px] text-muted-foreground mt-1">{entityVerifyMessage}</p>}
           </div>
           <button onClick={onClose} className="p-1.5 rounded hover:bg-muted/50">
             <X className="h-4 w-4" />

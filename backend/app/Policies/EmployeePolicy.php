@@ -22,12 +22,12 @@ class EmployeePolicy
 
     public function create(User $user): bool
     {
-        return in_array($user->role, ['super_admin', 'hr']);
+        return in_array($user->role, ['super_admin', 'hr', 'partner', 'finance']);
     }
 
     public function update(User $user, Employee $employee): bool
     {
-        return in_array($user->role, ['super_admin', 'hr']);
+        return in_array($user->role, ['super_admin', 'hr', 'partner', 'finance']);
     }
 
     public function delete(User $user, Employee $employee): bool

@@ -1,6 +1,6 @@
 import { Head, Link } from "@inertiajs/react";
-import { useEffect, useState, useCallback } from "react";
-import { Briefcase, Users, Wallet, Clock, ArrowUpRight, TrendingUp, Loader2, Download, X, Search, ChevronLeft, ChevronRight, Archive, Landmark } from "lucide-react";
+import { useEffect, useState, useCallback, useMemo } from "react";
+import { Briefcase, Users, Wallet, Clock, ArrowUpRight, TrendingUp, Loader2, Download, X, Search, ChevronLeft, ChevronRight, Archive, Landmark, MapPin, GitBranch, PieChart as PieChartIcon } from "lucide-react";
 import AppLayout from "@/layouts/AppLayout";
 import { PageHeader } from "@/components/page-header";
 import { StatCard } from "@/components/stat-card";
@@ -16,6 +16,9 @@ import { ClientActionDashboard } from "@/pages/dashboard/ClientActionDashboard";
 import { ClientFinanceDashboard } from "@/pages/dashboard/ClientFinanceDashboard";
 import { InventorDashboard } from "@/pages/dashboard/InventorDashboard";
 import { ActionItem, ActionItemRow, RenewalApproveModal } from "@/components/action-item-row";
+import { DonutChart, StatusBar, JurisdictionStackedBar, officeLabel } from "@/components/portfolio-charts";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useMiniPager, MiniPager } from "@/components/mini-pager";
 
 function formatCurrency(val: number) {
   if (val >= 100000) return `₹ ${(val / 100000).toFixed(1)}L`;
@@ -147,6 +150,7 @@ function StaffDashboard() {
   const [projects, setProjects] = useState<any[]>([]);
   const [tasks, setTasks]       = useState<any[]>([]);
   const [invoices, setInvoices] = useState<any[]>([]);
+  const [portfolio, setPortfolio] = useState<any>(null);
   const [loading, setLoading]   = useState(true);
   const [drillKey, setDrillKey] = useState<DrillKey | null>(null);
   const [renewalItem, setRenewalItem] = useState<ActionItem | null>(null);
@@ -160,20 +164,69 @@ function StaffDashboard() {
       const rf = isAnalyst && roleFilter !== 'all' ? roleFilter : undefined;
       const projectParams = new URLSearchParams({ per_page: '500' });
       if (rf) projectParams.set('role_filter', rf);
-      const [m, p, t, i] = await Promise.all([
+      const [m, p, t, i, pf] = await Promise.all([
         api.getDashboardMetrics(rf).catch(() => ({ metrics: {} })),
         api.getProjectsPaged(projectParams).catch(() => []),
         api.getTasks().catch(() => []),
         api.getInvoices().catch(() => []),
+        api.getPatentPortfolioStats(null, rf).catch(() => null),
       ]);
       setMetrics((m as any)?.metrics ?? {});
       setProjects(Array.isArray(p) ? p : (p as any).data || []);
       setTasks(Array.isArray(t) ? t : (t as any).data || []);
       setInvoices(Array.isArray(i) ? i : (i as any).data || []);
+      setPortfolio(pf);
       setLoading(false);
     };
     load();
   }, [roleFilter]);
+
+  // IP Portfolio Analytics — derived entirely from the same case-level dedup the
+  // /patent-portfolio page uses, so the two stay consistent. Kept read-only here
+  // (no click-to-filter) since Dashboard has no drill-down table to filter.
+  const statusMix = useMemo(() => {
+    if (!portfolio) return { data: [], total: 0 };
+    const sum = (key: string) => Object.values((portfolio[key] ?? {}) as Record<string, number>).reduce((s: number, v) => s + Number(v), 0);
+    const data = [
+      { code: "granted", name: "Granted", value: sum("granted_by_office"), color: "#22c55e" },
+      { code: "active", name: "Active / Pending", value: sum("active_by_office"), color: "#f59e0b" },
+      { code: "refused", name: "Refused / Abandoned", value: sum("refused_by_office"), color: "#ef4444" },
+      { code: "closed", name: "Closed / Completed", value: sum("closed_by_office"), color: "#6b7280" },
+    ].filter(d => d.value > 0);
+    return { data, total: data.reduce((s, d) => s + d.value, 0) };
+  }, [portfolio]);
+
+  const jurisdictionRows = useMemo(() => {
+    if (!portfolio) return { rows: [], max: 0 };
+    const granted: Record<string, number> = portfolio.granted_by_office ?? {};
+    const active: Record<string, number> = portfolio.active_by_office ?? {};
+    const codes = new Set([...Object.keys(granted), ...Object.keys(active)]);
+    const rows = [...codes]
+      .map((code) => ({
+        code,
+        name: officeLabel(code),
+        granted: Number(granted[code] ?? 0),
+        pending: Number(active[code] ?? 0),
+      }))
+      .map(r => ({ ...r, total: r.granted + r.pending }))
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 8);
+    const max = rows.reduce((m, r) => Math.max(m, r.total), 0);
+    return { rows, max };
+  }, [portfolio]);
+
+  const stageData = useMemo(() => {
+    if (!portfolio) return { rows: [], max: 0 };
+    const rows = (portfolio.pending_by_stage as any[] ?? []).map((s: any) => ({ name: s.stage_name, count: Number(s.count) }));
+    const max = rows.reduce((m: number, r: any) => Math.max(m, r.count), 0);
+    return { rows, max };
+  }, [portfolio]);
+
+  // Paginated client-side (all three lists are already fully loaded above) so
+  // the dashboard doesn't grow taller as cases/tasks/action-items accumulate.
+  const actionItemsPager = useMiniPager<ActionItem>(metrics?.action_items ?? [], 5);
+  const casesPager = useMiniPager(projects, 5);
+  const tasksPager = useMiniPager(tasks, 5);
 
   const handleExport = () => {
     const rows = projects.map(p => ({
@@ -283,19 +336,21 @@ function StaffDashboard() {
   return (
     <AppLayout>
       <Head title="Dashboard" />
-      <PageHeader
-        eyebrow="Overview"
-        title={`Good morning, ${welcomeName}`}
-        description={`${metrics.active_matters} active · ${metrics.inactive_matters ?? 0} inactive · ${metrics.clients} clients · WIP ${formatCurrency(metrics.wip_balance)}`}
-        actions={
-          <>
-            <AnalystRoleFilter value={roleFilter} onChange={setRoleFilter} />
-            <Button variant="outline" onClick={handleExport}><Download className="h-4 w-4 mr-2" />Export CSV</Button>
-          </>
-        }
-      />
+      {/* Viewport-locked shell: header + tab strip stay fixed, each tab scrolls its
+          own content independently instead of the whole page scrolling. */}
+      <div className="flex h-[calc(100vh-3.5rem)] flex-col overflow-hidden">
+        <PageHeader
+          eyebrow="Overview"
+          title={`Good morning, ${welcomeName}`}
+          description={`${metrics.active_matters} active · ${metrics.inactive_matters ?? 0} inactive · ${metrics.clients} clients · WIP ${formatCurrency(metrics.wip_balance)}`}
+          actions={
+            <>
+              <AnalystRoleFilter value={roleFilter} onChange={setRoleFilter} />
+              <Button variant="outline" onClick={handleExport}><Download className="h-4 w-4 mr-2" />Export CSV</Button>
+            </>
+          }
+        />
 
-      <div className="px-8 py-6 space-y-6">
         {drillKey && (
           <DashboardDrillModal config={DRILL_CONFIGS[drillKey]} onClose={() => setDrillKey(null)} />
         )}
@@ -310,6 +365,14 @@ function StaffDashboard() {
           />
         )}
 
+        <Tabs defaultValue="overview" className="flex flex-1 flex-col overflow-hidden">
+          <TabsList className="mx-8 mt-4 w-fit shrink-0">
+            <TabsTrigger value="overview">Overview</TabsTrigger>
+            <TabsTrigger value="portfolio">IP Portfolio</TabsTrigger>
+            <TabsTrigger value="financial">Financial</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="overview" className="mt-0 flex-1 overflow-y-auto px-8 py-6 space-y-6">
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-6">
           <StatCard
             label="Active Cases"
@@ -348,10 +411,18 @@ function StaffDashboard() {
               </p>
             </CardHeader>
             <CardContent className="space-y-2">
-              {(metrics.action_items as ActionItem[]).slice(0, 8).map((item) => (
+              {actionItemsPager.pageItems.map((item) => (
                 <ActionItemRow key={item.id} item={item} onRenewClick={setRenewalItem} showOwnerBadge />
               ))}
             </CardContent>
+            <MiniPager
+              page={actionItemsPager.page}
+              totalPages={actionItemsPager.totalPages}
+              pageSize={actionItemsPager.pageSize}
+              total={actionItemsPager.total}
+              onPageChange={actionItemsPager.setPage}
+              onPageSizeChange={actionItemsPager.setPageSize}
+            />
           </Card>
         )}
 
@@ -378,7 +449,7 @@ function StaffDashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {projects.slice(0, 5).map((p) => {
+                  {casesPager.pageItems.map((p) => {
                     const activeStage = p.stages?.find((s: any) => s.status === "In Progress")?.stage_name || "Invention Disclosure";
                     return (
                       <tr key={p.id} className="border-t border-border hover:bg-muted/30">
@@ -399,6 +470,14 @@ function StaffDashboard() {
                 </tbody>
               </table>
             </CardContent>
+            <MiniPager
+              page={casesPager.page}
+              totalPages={casesPager.totalPages}
+              pageSize={casesPager.pageSize}
+              total={casesPager.total}
+              onPageChange={casesPager.setPage}
+              onPageSizeChange={casesPager.setPageSize}
+            />
           </Card>
 
           <Card className="border-border">
@@ -407,7 +486,7 @@ function StaffDashboard() {
               <p className="text-xs text-muted-foreground mt-1">{tasks.length} open tasks</p>
             </CardHeader>
             <CardContent className="space-y-3">
-              {tasks.slice(0, 5).map((t) => (
+              {tasksPager.pageItems.map((t) => (
                 <div key={t.id} className="flex items-start gap-3 rounded-md border border-border p-3 hover:bg-muted/30">
                   <div className="mt-1 h-2 w-2 rounded-full bg-gold flex-shrink-0" />
                   <div className="flex-1 min-w-0">
@@ -422,9 +501,90 @@ function StaffDashboard() {
               ))}
               {tasks.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">No open tasks</p>}
             </CardContent>
+            <MiniPager
+              page={tasksPager.page}
+              totalPages={tasksPager.totalPages}
+              pageSize={tasksPager.pageSize}
+              total={tasksPager.total}
+              onPageChange={tasksPager.setPage}
+              onPageSizeChange={tasksPager.setPageSize}
+            />
           </Card>
         </div>
+          </TabsContent>
 
+          <TabsContent value="portfolio" className="mt-0 flex-1 overflow-y-auto px-8 py-6 space-y-6">
+            {portfolio && statusMix.total > 0 ? (
+              <section>
+                <div className="mb-3 flex items-center justify-between">
+                  <div>
+                    <h2 className="text-sm font-semibold flex items-center gap-2"><PieChartIcon className="h-4 w-4 text-gold" /> IP Portfolio Analytics</h2>
+                    <p className="mt-1 text-xs text-muted-foreground">Patent case mix, jurisdiction spread, and prosecution pipeline across the firm</p>
+                  </div>
+                  <Link href="/patent-portfolio" className="text-xs font-medium text-gold hover:underline flex items-center gap-1">
+                    View full portfolio <ArrowUpRight className="h-3 w-3" />
+                  </Link>
+                </div>
+                <div className="grid gap-4 lg:grid-cols-3">
+                  <Card className="border-border">
+                    <CardHeader className="pb-1">
+                      <CardTitle className="font-display text-sm">Case Status Mix</CardTitle>
+                      <p className="text-xs text-muted-foreground">{statusMix.total} unique patent cases, deduped by invention &amp; office</p>
+                    </CardHeader>
+                    <CardContent className="flex items-center justify-center pt-2">
+                      <DonutChart data={statusMix.data} total={statusMix.total} label="All Cases" activeCode={null} onSelect={() => {}} />
+                    </CardContent>
+                  </Card>
+
+                  <Card className="border-border">
+                    <CardHeader className="pb-1">
+                      <CardTitle className="font-display text-sm flex items-center gap-2"><MapPin className="h-4 w-4 text-gold" /> Where The Patents Are</CardTitle>
+                      <p className="text-xs text-muted-foreground">Granted vs. pending records by jurisdiction</p>
+                    </CardHeader>
+                    <CardContent className="pt-2">
+                      {jurisdictionRows.rows.length === 0 ? (
+                        <p className="text-xs text-muted-foreground py-6 text-center">No jurisdiction data yet.</p>
+                      ) : (
+                        <>
+                          <div className="space-y-2">
+                            {jurisdictionRows.rows.map((r) => (
+                              <JurisdictionStackedBar key={r.code} name={r.name} granted={r.granted} pending={r.pending} max={jurisdictionRows.max} />
+                            ))}
+                          </div>
+                          <div className="flex items-center gap-3 mt-3 text-[10px] text-muted-foreground">
+                            <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full" style={{ background: "#22c55e" }} />Granted</span>
+                            <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full" style={{ background: "#f59e0b" }} />Pending</span>
+                          </div>
+                        </>
+                      )}
+                    </CardContent>
+                  </Card>
+
+                  <Card className="border-border">
+                    <CardHeader className="pb-1">
+                      <CardTitle className="font-display text-sm flex items-center gap-2"><GitBranch className="h-4 w-4 text-gold" /> Prosecution Pipeline</CardTitle>
+                      <p className="text-xs text-muted-foreground">Pending patents by current lifecycle stage</p>
+                    </CardHeader>
+                    <CardContent className="pt-2">
+                      {stageData.rows.length === 0 ? (
+                        <p className="text-xs text-muted-foreground py-6 text-center">No pending patents.</p>
+                      ) : (
+                        <div className="space-y-1.5">
+                          {stageData.rows.map((s) => (
+                            <StatusBar key={s.name} name={s.name} count={s.count} max={stageData.max} active={false} onClick={() => {}} />
+                          ))}
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                </div>
+              </section>
+            ) : (
+              <p className="text-sm text-muted-foreground text-center py-12">No patent portfolio data available for your scope yet.</p>
+            )}
+          </TabsContent>
+
+          <TabsContent value="financial" className="mt-0 flex-1 overflow-y-auto px-8 py-6 space-y-6">
         <div className="grid gap-6 lg:grid-cols-3">
           <Card className="border-border">
             <CardHeader>
@@ -466,6 +626,8 @@ function StaffDashboard() {
             </CardContent>
           </Card>
         </div>
+          </TabsContent>
+        </Tabs>
       </div>
     </AppLayout>
   );

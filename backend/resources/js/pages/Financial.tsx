@@ -8,8 +8,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { api, downloadCSV } from "@/lib/api-client";
-import type { Quotation, PatentInvoiceIn } from "@/lib/api-client";
+import type { Quotation, PatentInvoiceIn, ZohoOpeningBalanceRow } from "@/lib/api-client";
 import { ZohoBooksPanel } from "@/components/zoho-books-panel";
+import { ZohoRecordSync, ZohoSyncStatus } from "@/components/zoho-sync-controls";
+import { ZohoQuoteExport } from "@/components/zoho-quote-export";
+import { ProjectCombobox } from "@/components/project-combobox";
 import { statusColor } from "@/lib/utils";
 import { fmtDate } from "@/lib/date-utils";
 
@@ -261,6 +264,7 @@ export default function Financial() {
   const { props: pageProps } = usePage() as any;
   const role = pageProps.auth?.user?.role;
   const isClientUser = ["client", "client_admin", "client_finance"].includes(role);
+  const canLinkZohoProject = ["super_admin", "manager", "galvanizer"].includes(role);
 
   // Tab
   const [activeTab, setActiveTab] = useState("india");
@@ -299,15 +303,17 @@ export default function Financial() {
   const [quotForm, setQuotForm] = useState({ client_id: "", project_id: "", valid_until: "", fee_structure: "Fixed Fee" as const, estimated_hours: "", estimated_disbursements: "", buffer_percentage: "", total_amount: "", currency: "INR" });
   const [quotSaving, setQuotSaving] = useState(false);
   const [quotError, setQuotError] = useState("");
-  const [converting, setConverting] = useState<number | null>(null);
 
   // ── Indian Patent Invoices state ─────────────────────────────────────────────
   const isInternal = !["client", "client_admin", "associate", "paralegal"].includes(role);
+  const INDIA_PER_PAGE = 25;
   const [indiaRecords, setIndiaRecords]     = useState<PatentInvoiceIn[]>([]);
   const [indiaLoading, setIndiaLoading]     = useState(false);
   const [indiaSearch, setIndiaSearch]       = useState("");
   const [indiaTypeFilter, setIndiaType]     = useState<"all" | "invoice" | "quote">("all");
   const [indiaStatusFilter, setIndiaStatus] = useState("all");
+  const [indiaPage, setIndiaPage]           = useState(1);
+  const [indiaTotal, setIndiaTotal]         = useState(0);
   const [indiaSelectedIds, setIndiaSelIds]  = useState<Set<number>>(new Set());
   const [indiaBatching, setIndiaBatching]   = useState(false);
   const [showIndiaModal, setShowIndiaModal] = useState(false);
@@ -315,26 +321,56 @@ export default function Financial() {
   const [indiaSaving, setIndiaSaving]       = useState(false);
   const [indiaErr, setIndiaErr]             = useState("");
   const [zohoStatusMap, setZohoStatusMap]   = useState<Record<string, { status: string | null; balance: number | null; total: number; url: string | null }>>({});
+  const [indiaLinkedZoho, setIndiaLinkedZoho] = useState<import("@/lib/api-client").ZohoAllRow[]>([]);
 
   // ── Zoho Books tab (all synced invoices/quotes across every case) ───────────
+  const ZOHO_PER_PAGE = 25;
   const [zohoAllRows, setZohoAllRows]     = useState<import("@/lib/api-client").ZohoAllRow[]>([]);
   const [zohoAllLoading, setZohoAllLoading] = useState(false);
   const [zohoAllSearch, setZohoAllSearch] = useState("");
   const [zohoAllType, setZohoAllType]     = useState<"all" | "invoice" | "quote">("all");
+  const [zohoLinkFilter, setZohoLinkFilter] = useState<"all" | "linked" | "unlinked">("all");
+  const [zohoPage, setZohoPage]           = useState(1);
+  const [zohoTotal, setZohoTotal]         = useState(0);
+  const [zohoOpeningBalances, setZohoOpeningBalances] = useState<ZohoOpeningBalanceRow[]>([]);
+  const [zohoOpeningTotal, setZohoOpeningTotal] = useState(0);
+  const [linkingZohoId, setLinkingZohoId] = useState<number | null>(null);
+  const [linkingSaving, setLinkingSaving] = useState(false);
 
-  function loadZohoAll(overrides: { type?: string; search?: string } = {}) {
+  function loadZohoAll(overrides: { type?: string; linked?: string; search?: string; page?: number } = {}) {
     setZohoAllLoading(true);
     const type = overrides.type ?? zohoAllType;
     const search = overrides.search ?? zohoAllSearch;
-    const params = new URLSearchParams({ per_page: "200" });
+    const linked = overrides.linked ?? zohoLinkFilter;
+    const page = overrides.page ?? zohoPage;
+    const params = new URLSearchParams({ per_page: String(ZOHO_PER_PAGE), page: String(page) });
     if (type !== "all") params.set("type", type);
+    if (linked !== "all") params.set("linked", linked);
     if (search.trim()) params.set("search", search.trim());
-    api.getZohoAll(params).then(res => setZohoAllRows(res.data ?? [])).catch(() => setZohoAllRows([])).finally(() => setZohoAllLoading(false));
+    api.getZohoAll(params).then(res => {
+      setZohoAllRows(res.data ?? []);
+      setZohoTotal(res.total ?? 0);
+      setZohoPage(res.current_page ?? page);
+    }).catch(() => { setZohoAllRows([]); setZohoTotal(0); }).finally(() => setZohoAllLoading(false));
+  }
+
+  async function handleLinkZohoProject(id: number, projectId: string) {
+    setLinkingSaving(true);
+    try {
+      await api.linkZohoProject(id, projectId ? parseInt(projectId, 10) : null);
+      setLinkingZohoId(null);
+      loadZohoAll();
+    } catch (e: any) { alert(e.message || "Failed to link project."); }
+    finally { setLinkingSaving(false); }
   }
 
   useEffect(() => {
     if (activeTab !== "zoho") return;
-    loadZohoAll();
+    loadZohoAll({ page: 1 });
+    api.getZohoOpeningBalances(new URLSearchParams({ per_page: "500" })).then(res => {
+      setZohoOpeningBalances(res.data ?? []);
+      setZohoOpeningTotal((res.data ?? []).reduce((sum, row) => sum + row.balance, 0));
+    }).catch(() => { setZohoOpeningBalances([]); setZohoOpeningTotal(0); });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
 
@@ -572,20 +608,28 @@ export default function Financial() {
 
   useEffect(() => {
     if (activeTab !== "india") return;
-    loadIndia();
+    loadIndia({ page: 1 });
+    if (isInternal) {
+      api.getZohoAll(new URLSearchParams({ linked: "linked", per_page: "500" }))
+        .then(res => setIndiaLinkedZoho(res.data ?? []))
+        .catch(() => setIndiaLinkedZoho([]));
+    }
   }, [activeTab]);
 
-  function loadIndia(overrides: { type?: string; status?: string } = {}) {
+  function loadIndia(overrides: { type?: string; status?: string; page?: number } = {}) {
     setIndiaLoading(true);
     const type   = overrides.type   ?? indiaTypeFilter;
     const status = overrides.status ?? indiaStatusFilter;
-    const params = new URLSearchParams({ per_page: "200" });
+    const page   = overrides.page   ?? indiaPage;
+    const params = new URLSearchParams({ per_page: String(INDIA_PER_PAGE), page: String(page) });
     if (type !== "all")   params.set("type",   type);
     if (status !== "all") params.set("status", status);
     if (indiaSearch.trim()) params.set("search", indiaSearch.trim());
     api.getPatentInvoicesIn(params).then(res => {
       const records = res.data ?? [];
       setIndiaRecords(records);
+      setIndiaTotal(res.total ?? 0);
+      setIndiaPage(res.current_page ?? page);
       setIndiaSelIds(new Set());
       const uins = records.map(r => r.invoice_uin || r.docket_number).filter(Boolean) as string[];
       if (isInternal && uins.length > 0) {
@@ -617,14 +661,6 @@ export default function Financial() {
     } catch (e: any) { alert(e.message || "Failed to cancel."); }
   }
 
-  async function convertIndia(id: number) {
-    if (!confirm("Convert this quotation to an invoice?")) return;
-    try {
-      const inv = await api.convertPatentQuoteToInvoice(id);
-      setIndiaRecords(prev => [inv, ...prev.map(r => r.id === id ? { ...r, status: "Accepted" as any } : r)]);
-    } catch (e: any) { alert(e.message || "Conversion failed."); }
-  }
-
   async function handleBatchIndia(action: string) {
     if (indiaSelectedIds.size === 0) return;
     setIndiaBatching(true);
@@ -635,19 +671,47 @@ export default function Financial() {
     finally { setIndiaBatching(false); }
   }
 
-  function exportIndiaCSV(selected = false) {
-    const rows = (selected && indiaSelectedIds.size > 0 ? indiaRecords.filter(r => indiaSelectedIds.has(r.id)) : indiaRecords)
-      .map(r => ({
-        Type: r.type, UIN: r.invoice_uin ?? r.docket_number, Status: r.status,
-        "Invoice Date": r.invoice_date ?? "", Client: r.client_name ?? "",
-        "PO Fees": r.patent_office_fees, "Service Fees": r.service_fees,
-        IGST: r.igst_amount, CGST: r.cgst_amount, SGST: r.sgst_amount,
-        "Other Exp": r.other_expenses, "Invoice Amount": r.invoice_amount,
-        ...(isInternal ? { "Net Revenue": r.net_revenue } : {}),
-        Remarks: r.remarks ?? "",
-      }));
-    downloadCSV(`india-patents-${new Date().toISOString().slice(0, 10)}.csv`, rows);
-    if (selected) setIndiaSelIds(new Set());
+  const [indiaExporting, setIndiaExporting] = useState(false);
+
+  const toIndiaCsvRow = (r: PatentInvoiceIn) => ({
+    Type: r.type, UIN: r.invoice_uin ?? r.docket_number, Status: r.status,
+    "Invoice Date": r.invoice_date ?? "", Client: r.client_name ?? "",
+    "PO Fees": r.patent_office_fees, "Service Fees": r.service_fees,
+    IGST: r.igst_amount, CGST: r.cgst_amount, SGST: r.sgst_amount,
+    "Other Exp": r.other_expenses, "Invoice Amount": r.invoice_amount,
+    ...(isInternal ? { "Net Revenue": r.net_revenue } : {}),
+    Remarks: r.remarks ?? "",
+  });
+
+  async function exportIndiaCSV(selected = false) {
+    if (selected) {
+      const rows = indiaRecords.filter(r => indiaSelectedIds.has(r.id)).map(toIndiaCsvRow);
+      downloadCSV(`india-patents-${new Date().toISOString().slice(0, 10)}.csv`, rows);
+      setIndiaSelIds(new Set());
+      return;
+    }
+
+    // Full export ignores the current page — pull every row matching the active
+    // filters (not just the 25 currently on screen) so the CSV isn't silently truncated.
+    setIndiaExporting(true);
+    try {
+      const all: PatentInvoiceIn[] = [];
+      let page = 1;
+      let lastPage = 1;
+      do {
+        const params = new URLSearchParams({ per_page: "200", page: String(page) });
+        if (indiaTypeFilter !== "all") params.set("type", indiaTypeFilter);
+        if (indiaStatusFilter !== "all") params.set("status", indiaStatusFilter);
+        if (indiaSearch.trim()) params.set("search", indiaSearch.trim());
+        const res = await api.getPatentInvoicesIn(params);
+        all.push(...(res.data ?? []));
+        lastPage = res.last_page ?? 1;
+        page++;
+      } while (page <= lastPage);
+      downloadCSV(`india-patents-${new Date().toISOString().slice(0, 10)}.csv`, all.map(toIndiaCsvRow));
+    } finally {
+      setIndiaExporting(false);
+    }
   }
 
   const filtered = invoices.filter(i => filterStatus === "All" || i.status === filterStatus);
@@ -766,18 +830,6 @@ export default function Financial() {
     finally { setQuotSaving(false); }
   }
 
-  async function handleConvert(id: number) {
-    if (!confirm("Convert this quotation to an invoice?")) return;
-    setConverting(id);
-    try {
-      const inv = await api.convertQuotationToInvoice(id);
-      setInvoices(prev => [inv, ...prev]);
-      setQuotations(prev => prev.map(q => q.id === id ? { ...q, status: "Accepted" as const } : q));
-      setActiveTab("invoices");
-    } catch (e: any) { alert(e.message || "Conversion failed."); }
-    finally { setConverting(null); }
-  }
-
   async function handleDeleteQuotation(id: number) {
     if (!confirm("Cancel this quotation?")) return;
     try {
@@ -837,6 +889,7 @@ export default function Financial() {
       } else {
         const created = await api.createPatentInvoiceIn(payload);
         setIndiaRecords(prev => [created, ...prev]);
+        setIndiaTotal(t => t + 1);
       }
       setShowIndiaModal(false);
     } catch (e: any) { setIndiaErr(e.message || "Failed to save."); }
@@ -1330,11 +1383,8 @@ export default function Financial() {
                           </td>
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-2">
-                              {["Sent", "Accepted"].includes(q.status) && (
-                                <Button size="sm" variant="outline" className="h-7 text-xs text-green-500 border-green-500/30 hover:bg-green-500/10"
-                                  disabled={converting === q.id} onClick={() => handleConvert(q.id)}>
-                                  {converting === q.id ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}Convert to Invoice
-                                </Button>
+                              {["super_admin", "partner", "finance"].includes(role) && q.status !== "Cancelled" && (
+                                <ZohoQuoteExport kind="standard" id={q.id} />
                               )}
                               {q.status === "Draft" && (
                                 <Button size="sm" variant="outline" className="h-7 text-xs text-destructive border-destructive/30 hover:bg-destructive/10" onClick={() => handleDeleteQuotation(q.id)}>
@@ -1366,10 +1416,10 @@ export default function Financial() {
                   <input className="h-9 pl-9 pr-3 w-64 rounded-md border border-border bg-background text-sm focus:outline-none focus:ring-1 focus:ring-gold"
                     placeholder="Search UIN, client, title…" value={indiaSearch}
                     onChange={e => setIndiaSearch(e.target.value)}
-                    onKeyDown={e => e.key === "Enter" && loadIndia()} />
+                    onKeyDown={e => e.key === "Enter" && loadIndia({ page: 1 })} />
                 </div>
                 {(["all", "invoice", "quote"] as const).map(t => (
-                  <button key={t} onClick={() => { setIndiaType(t); loadIndia({ type: t }); }}
+                  <button key={t} onClick={() => { setIndiaType(t); loadIndia({ type: t, page: 1 }); }}
                     className={`px-3 py-1 rounded text-xs font-medium border transition-colors ${indiaTypeFilter === t ? "bg-gold text-black border-gold" : "border-border text-muted-foreground hover:text-foreground"}`}>
                     {t === "all" ? "All" : t === "invoice" ? "Invoices" : "Quotes"}
                   </button>
@@ -1384,14 +1434,18 @@ export default function Financial() {
                     Cancelled: "border-destructive text-destructive bg-destructive/10",
                   };
                   return (
-                    <button key={s} onClick={() => { setIndiaStatus(s); loadIndia({ status: s }); }}
+                    <button key={s} onClick={() => { setIndiaStatus(s); loadIndia({ status: s, page: 1 }); }}
                       className={`px-3 py-1 rounded text-xs font-medium border transition-colors ${indiaStatusFilter === s ? (s === "all" ? "bg-gold text-black border-gold" : colors[s]) : "border-border text-muted-foreground hover:text-foreground"}`}>
                       {s === "all" ? "All Status" : s}
                     </button>
                   );
                 })}
                 <div className="ml-auto flex gap-2">
-                  {!isClientUser && <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => exportIndiaCSV(false)}><Download className="h-3 w-3 mr-1" />Export CSV</Button>}
+                  {!isClientUser && (
+                    <Button size="sm" variant="outline" className="h-8 text-xs" disabled={indiaExporting} onClick={() => exportIndiaCSV(false)}>
+                      {indiaExporting ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Download className="h-3 w-3 mr-1" />}Export CSV
+                    </Button>
+                  )}
                   <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => loadIndia()}>
                     {indiaLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : "Refresh"}
                   </Button>
@@ -1540,9 +1594,8 @@ export default function Financial() {
                                       <Button size="sm" variant="ghost" className="h-6 px-1.5 text-[10px] text-green-400 hover:bg-green-500/10" title="Mark Accepted"
                                         onClick={() => changeIndiaStatus(r.id, "Accepted")}>Accept</Button>
                                     )}
-                                    {!isInv && ["Draft","Sent"].includes(r.status) && (
-                                      <Button size="sm" variant="ghost" className="h-6 px-1.5 text-[10px] text-violet-400 hover:bg-violet-500/10" title="Convert to Invoice"
-                                        onClick={() => convertIndia(r.id)}>→INV</Button>
+                                    {!isInv && r.status !== "Cancelled" && ["super_admin", "partner", "finance"].includes(role) && (
+                                      <ZohoQuoteExport kind="in" id={r.id} />
                                     )}
                                     {r.status !== "Cancelled" && (
                                       <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-destructive/60 hover:bg-destructive/10" title="Cancel"
@@ -1562,6 +1615,42 @@ export default function Financial() {
                           </td></tr>
                         )}
                       </tbody>
+                    </table>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+            {!indiaLoading && indiaTotal > 0 && (
+              <div className="flex items-center justify-between text-xs text-muted-foreground px-1">
+                <span>Showing {indiaRecords.length ? (indiaPage - 1) * INDIA_PER_PAGE + 1 : 0}–{(indiaPage - 1) * INDIA_PER_PAGE + indiaRecords.length} of {indiaTotal}</span>
+                <div className="flex items-center gap-1">
+                  <button onClick={() => loadIndia({ page: indiaPage - 1 })} disabled={indiaPage <= 1}
+                    className="p-1.5 rounded border border-border disabled:opacity-40 hover:bg-muted/40"><ChevronLeft className="h-3.5 w-3.5" /></button>
+                  <span className="px-2">Page {indiaPage} / {Math.max(1, Math.ceil(indiaTotal / INDIA_PER_PAGE))}</span>
+                  <button onClick={() => loadIndia({ page: indiaPage + 1 })} disabled={indiaPage >= Math.ceil(indiaTotal / INDIA_PER_PAGE)}
+                    className="p-1.5 rounded border border-border disabled:opacity-40 hover:bg-muted/40"><ChevronRight className="h-3.5 w-3.5" /></button>
+                </div>
+              </div>
+            )}
+
+            {isInternal && indiaLinkedZoho.length > 0 && (
+              <Card className="border-border">
+                <CardHeader className="py-3"><CardTitle className="font-display text-base">Linked Zoho Books records</CardTitle></CardHeader>
+                <CardContent className="p-0">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead className="bg-muted/40 text-[10px] uppercase tracking-wider text-muted-foreground">
+                        <tr><th className="px-3 py-2 text-left">Type</th><th className="px-3 py-2 text-left">UIN / Number</th><th className="px-3 py-2 text-left">Case</th><th className="px-3 py-2 text-left">Client</th><th className="px-3 py-2 text-left">Status</th><th className="px-3 py-2 text-right">Total</th><th className="px-3 py-2 text-right">Balance</th></tr>
+                      </thead>
+                      <tbody>{indiaLinkedZoho.map(record => <tr key={`${record.type}-${record.id}`} className="border-t border-border">
+                        <td className="px-3 py-2"><Badge variant="outline" className="text-[10px]">{record.type === "invoice" ? "INV" : "QUO"}</Badge></td>
+                        <td className="px-3 py-2 font-mono text-gold">{record.number || "—"}</td>
+                        <td className="px-3 py-2 font-mono">{record.docket_number || "—"}</td>
+                        <td className="px-3 py-2">{record.client || "—"}</td>
+                        <td className="px-3 py-2 capitalize">{record.status || "—"}</td>
+                        <td className="px-3 py-2 text-right font-mono">{fmt(record.total)}</td>
+                        <td className="px-3 py-2 text-right font-mono">{record.balance == null ? "—" : fmt(record.balance)}</td>
+                      </tr>)}</tbody>
                     </table>
                   </div>
                 </CardContent>
@@ -1612,12 +1701,26 @@ export default function Financial() {
                 <input className="h-9 pl-9 pr-3 w-64 rounded-md border border-border bg-background text-sm focus:outline-none focus:ring-1 focus:ring-gold"
                   placeholder="Search UIN, client, case…" value={zohoAllSearch}
                   onChange={e => setZohoAllSearch(e.target.value)}
-                  onKeyDown={e => e.key === "Enter" && loadZohoAll()} />
+                  onKeyDown={e => e.key === "Enter" && loadZohoAll({ page: 1 })} />
               </div>
               {(["all", "invoice", "quote"] as const).map(t => (
-                <button key={t} onClick={() => { setZohoAllType(t); loadZohoAll({ type: t }); }}
+                <button key={t} onClick={() => { setZohoAllType(t); loadZohoAll({ type: t, page: 1 }); }}
                   className={`px-3 py-1 rounded text-xs font-medium border transition-colors ${zohoAllType === t ? "bg-gold text-black border-gold" : "border-border text-muted-foreground hover:text-foreground"}`}>
                   {t === "all" ? "All" : t === "invoice" ? "Invoices" : "Quotes"}
+                </button>
+              ))}
+              <div className="h-4 w-px bg-border" />
+              {(["all", "linked", "unlinked"] as const).map(linked => (
+                <button key={linked} onClick={() => { setZohoLinkFilter(linked); loadZohoAll({ linked, page: 1 }); }}
+                  className={`px-3 py-1 rounded text-xs font-medium border transition-colors ${zohoLinkFilter === linked ? "bg-gold text-black border-gold" : "border-border text-muted-foreground hover:text-foreground"}`}>
+                  {linked === "all" ? "All links" : linked === "linked" ? "Linked cases" : "Unlinked"}
+                </button>
+              ))}
+              <div className="h-4 w-px bg-border" />
+              {([{ label: "Linked invoices", type: "invoice" as const }, { label: "Linked quotes", type: "quote" as const }]).map(option => (
+                <button key={option.type} onClick={() => { setZohoAllType(option.type); setZohoLinkFilter("linked"); loadZohoAll({ type: option.type, linked: "linked", page: 1 }); }}
+                  className="px-3 py-1 rounded text-xs font-medium border border-border text-muted-foreground hover:text-foreground">
+                  {option.label}
                 </button>
               ))}
               <Button size="sm" variant="outline" className="h-8 text-xs ml-auto" onClick={() => loadZohoAll()}>
@@ -1625,6 +1728,8 @@ export default function Financial() {
               </Button>
             </div>
 
+            {["super_admin", "partner", "finance", "manager", "galvanizer"].includes(role) && <ZohoSyncStatus />}
+            {zohoOpeningBalances.length > 0 && <Card className="border-amber-500/30"><CardHeader className="py-3"><CardTitle className="font-display text-base">Zoho opening balance receivables <span className="ml-2 text-amber-600">{fmt(zohoOpeningTotal)}</span></CardTitle><p className="text-xs text-muted-foreground">Customer opening balances are receivables, not invoices, and are included separately from invoice totals.</p></CardHeader><CardContent className="p-0"><div className="overflow-x-auto"><table className="w-full text-xs"><thead className="bg-muted/40 text-[10px] uppercase tracking-wider text-muted-foreground"><tr><th className="px-3 py-2.5 text-left">Customer</th><th className="px-3 py-2.5 text-left">Balance date</th><th className="px-3 py-2.5 text-right">Amount</th><th className="px-3 py-2.5 text-right">Balance</th></tr></thead><tbody>{zohoOpeningBalances.map(row => <tr key={row.id} className="border-t border-border"><td className="px-3 py-2">{row.customer_name || "?"}</td><td className="px-3 py-2 text-muted-foreground">{fmtDate(row.balance_date)}</td><td className="px-3 py-2 text-right font-mono">{fmt(row.amount)}</td><td className="px-3 py-2 text-right font-mono text-amber-600">{fmt(row.balance)}</td></tr>)}</tbody></table></div></CardContent></Card>}
             {zohoAllLoading ? (
               <div className="flex items-center justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-gold" /></div>
             ) : (
@@ -1653,8 +1758,34 @@ export default function Financial() {
                                 {r.type === "invoice" ? "INV" : "QUO"}
                               </span>
                             </td>
-                            <td className="px-3 py-2 font-mono text-gold font-semibold">{r.number || "—"}</td>
-                            <td className="px-3 py-2 font-mono text-muted-foreground">{r.docket_number || <span className="italic">unmatched</span>}</td>
+                            <td className="px-3 py-2 font-mono text-gold font-semibold">{r.number || "—"}{r.duplicate_number && <span className="block text-xs text-destructive">Duplicate number — review in Zoho</span>}</td>
+                            <td className="px-3 py-2 font-mono text-muted-foreground min-w-[220px]">
+                              {linkingZohoId === r.id ? (
+                                <div className="flex items-center gap-1">
+                                  <div className="w-56">
+                                    <ProjectCombobox
+                                      value={r.project_id ? String(r.project_id) : ""}
+                                      projects={projects}
+                                      onSelect={(pid) => handleLinkZohoProject(r.id, pid)}
+                                      placeholder="Search case to link…"
+                                    />
+                                  </div>
+                                  {linkingSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" /> : (
+                                    <button onClick={() => setLinkingZohoId(null)} className="text-muted-foreground hover:text-foreground"><X className="h-3.5 w-3.5" /></button>
+                                  )}
+                                </div>
+                              ) : !canLinkZohoProject ? (
+                                r.docket_number || <span className="italic">unmatched</span>
+                              ) : r.docket_number ? (
+                                <button onClick={() => setLinkingZohoId(r.id)} className="hover:underline decoration-dotted" title="Click to change the linked case">
+                                  {r.docket_number}
+                                </button>
+                              ) : (
+                                <button onClick={() => setLinkingZohoId(r.id)} className="italic text-amber-500 hover:text-amber-400 hover:underline decoration-dotted" title="Click to link this to a case">
+                                  unmatched — link to case
+                                </button>
+                              )}
+                            </td>
                             <td className="px-3 py-2">{r.client || "—"}</td>
                             <td className="px-3 py-2 text-muted-foreground">{fmtDate(r.date)}</td>
                             <td className="px-3 py-2"><Badge variant="outline" className="text-[10px] capitalize">{r.status || "—"}</Badge></td>
@@ -1662,6 +1793,7 @@ export default function Financial() {
                             <td className="px-3 py-2 text-right font-mono text-muted-foreground">{r.balance != null ? fmt(r.balance) : "—"}</td>
                             <td className="px-3 py-2 text-right">
                               {r.url && <a href={r.url} target="_blank" rel="noreferrer" className="text-muted-foreground hover:text-foreground text-xs">View</a>}
+                              {r.can_refresh && <ZohoRecordSync id={r.id} onSynced={() => loadZohoAll()} />}
                             </td>
                           </tr>
                         ))}
@@ -1675,6 +1807,18 @@ export default function Financial() {
                   </div>
                 </CardContent>
               </Card>
+            )}
+            {!zohoAllLoading && zohoTotal > 0 && (
+              <div className="flex items-center justify-between text-xs text-muted-foreground px-1">
+                <span>Showing {zohoAllRows.length ? (zohoPage - 1) * ZOHO_PER_PAGE + 1 : 0}–{(zohoPage - 1) * ZOHO_PER_PAGE + zohoAllRows.length} of {zohoTotal}</span>
+                <div className="flex items-center gap-1">
+                  <button onClick={() => loadZohoAll({ page: zohoPage - 1 })} disabled={zohoPage <= 1}
+                    className="p-1.5 rounded border border-border disabled:opacity-40 hover:bg-muted/40"><ChevronLeft className="h-3.5 w-3.5" /></button>
+                  <span className="px-2">Page {zohoPage} / {Math.max(1, Math.ceil(zohoTotal / ZOHO_PER_PAGE))}</span>
+                  <button onClick={() => loadZohoAll({ page: zohoPage + 1 })} disabled={zohoPage >= Math.ceil(zohoTotal / ZOHO_PER_PAGE)}
+                    className="p-1.5 rounded border border-border disabled:opacity-40 hover:bg-muted/40"><ChevronRight className="h-3.5 w-3.5" /></button>
+                </div>
+              </div>
             )}
           </>
         )}

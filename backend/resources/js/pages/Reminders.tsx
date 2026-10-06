@@ -287,57 +287,57 @@ export default function Reminders() {
               <CardTitle className="text-base">New Reminder</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <div className="space-y-1 md:col-span-2">
-                  <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Title</label>
+              <div className="grid grid-cols-4 gap-2">
+                <div className="col-span-2">
+                  <div className="text-[10px] text-muted-foreground mb-0.5">Title</div>
                   <input
-                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold/40"
+                    className="w-full h-8 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold"
                     placeholder="Reminder title..."
                     value={newReminder.title}
                     onChange={(e) => setNewReminder({ ...newReminder, title: e.target.value })}
                   />
                 </div>
-                <div className="space-y-1 md:col-span-2">
-                  <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Description</label>
+                <div className="col-span-2">
+                  <div className="text-[10px] text-muted-foreground mb-0.5">Description</div>
                   <input
-                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold/40"
+                    className="w-full h-8 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold"
                     placeholder="Optional description..."
                     value={newReminder.description}
                     onChange={(e) => setNewReminder({ ...newReminder, description: e.target.value })}
                   />
                 </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Date</label>
+                <div>
+                  <div className="text-[10px] text-muted-foreground mb-0.5">Date</div>
                   <input
                     type="date"
-                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold/40"
+                    className="w-full h-8 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold"
                     value={newReminder.dueDate}
                     onChange={(e) => setNewReminder({ ...newReminder, dueDate: e.target.value })}
                   />
                 </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Time (optional)</label>
+                <div>
+                  <div className="text-[10px] text-muted-foreground mb-0.5">Time (optional)</div>
                   <input
                     type="time"
-                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold/40"
+                    className="w-full h-8 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold"
                     value={newReminder.dueTime}
                     onChange={(e) => setNewReminder({ ...newReminder, dueTime: e.target.value })}
                   />
                 </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Category</label>
+                <div>
+                  <div className="text-[10px] text-muted-foreground mb-0.5">Category</div>
                   <select
-                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold/40"
+                    className="w-full h-8 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold"
                     value={newReminder.category}
                     onChange={(e) => setNewReminder({ ...newReminder, category: e.target.value as Category })}
                   >
                     {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Remind To</label>
+                <div>
+                  <div className="text-[10px] text-muted-foreground mb-0.5">Remind To</div>
                   <select
-                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold/40"
+                    className="w-full h-8 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold"
                     value={newReminder.remindTo}
                     onChange={(e) => setNewReminder({ ...newReminder, remindTo: e.target.value })}
                   >

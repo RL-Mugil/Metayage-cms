@@ -530,18 +530,25 @@ class ModuleActionsTest extends TestCase
 
     public function test_salary_is_encrypted_in_database(): void
     {
-        $user = $this->user('hr');
+        // Base Pay/HRA are payroll-sensitive — only PAYROLL_ACCESS_ROLES
+        // (super_admin/partner/finance) can actually set them; 'hr' would have
+        // the fields silently stripped (see HRMSController::PAYROLL_SENSITIVE_FIELDS).
+        $user = $this->user('super_admin');
         $emp = $this->employee('Test Employee', 'EMP005', $user);
 
         Sanctum::actingAs($user);
         $this->putJson('/api/hrms/employees/' . $emp->id, [
-            'salary' => 500000,
+            'base_pay_monthly' => 500000,
+            'hra_monthly' => 100000,
         ])->assertOk();
 
-        // Verify salary is encrypted at rest
-        $raw = \DB::table('employees')->where('id', $emp->id)->value('salary');
-        $this->assertNotNull($raw);
+        // Verify Base Pay and HRA are encrypted at rest
+        $rawBasePay = \DB::table('employees')->where('id', $emp->id)->value('base_pay_monthly');
+        $rawHra = \DB::table('employees')->where('id', $emp->id)->value('hra_monthly');
+        $this->assertNotNull($rawBasePay);
+        $this->assertNotNull($rawHra);
         // Encrypted values start with eyJ (base64 encoded JSON)
-        $this->assertStringStartsWith('eyJ', $raw);
+        $this->assertStringStartsWith('eyJ', $rawBasePay);
+        $this->assertStringStartsWith('eyJ', $rawHra);
     }
 }

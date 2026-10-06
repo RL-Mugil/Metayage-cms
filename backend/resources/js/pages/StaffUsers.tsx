@@ -180,50 +180,61 @@ export default function StaffUsers() {
       {/* Create / Edit modal */}
       {modal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-md p-6 m-4">
-            <div className="flex items-center justify-between mb-4">
+          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-xl m-4">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-border">
               <h2 className="font-display text-lg font-semibold">{modal.mode === "create" ? "Add Staff User" : "Edit Staff User"}</h2>
               <button onClick={() => setModal(null)}><X className="h-5 w-5 text-muted-foreground" /></button>
             </div>
-            {modalError && <p className="text-xs text-red-500 mb-3">{modalError}</p>}
-            <div className="space-y-3">
-              <div>
-                <label className="block text-xs text-muted-foreground mb-1">Full Name</label>
-                <input type="text" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} className={inputCls} />
-              </div>
-              <div>
-                <label className="block text-xs text-muted-foreground mb-1">Email</label>
-                <input type="email" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} className={inputCls} />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs text-muted-foreground mb-1">Role</label>
-                  <select value={form.role} onChange={e => setForm(p => ({ ...p, role: e.target.value }))} className={inputCls}>
-                    {STAFF_ROLES.map(r => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
-                  </select>
-                </div>
-                {modal.mode === "edit" && (
+            <div className="px-6 py-4 space-y-3">
+              {modalError && <p className="text-xs text-red-500">{modalError}</p>}
+              <section>
+                <h3 className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-2 flex items-center gap-1.5">
+                  <span className="w-4 h-4 rounded-full bg-gold text-black flex items-center justify-center text-[9px] font-bold">1</span>
+                  Account Details
+                </h3>
+                <div className="grid grid-cols-4 gap-2">
+                  <div className="col-span-2">
+                    <div className="text-[10px] text-muted-foreground mb-0.5">Full Name</div>
+                    <input type="text" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))}
+                      className="w-full h-8 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
+                  </div>
+                  <div className="col-span-2">
+                    <div className="text-[10px] text-muted-foreground mb-0.5">Email</div>
+                    <input type="email" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))}
+                      className="w-full h-8 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
+                  </div>
                   <div>
-                    <label className="block text-xs text-muted-foreground mb-1">Status</label>
-                    <select value={form.status} onChange={e => setForm(p => ({ ...p, status: e.target.value }))} className={inputCls}>
-                      <option>Active</option><option>Suspended</option><option>Inactive</option>
+                    <div className="text-[10px] text-muted-foreground mb-0.5">Role</div>
+                    <select value={form.role} onChange={e => setForm(p => ({ ...p, role: e.target.value }))}
+                      className="w-full h-8 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold">
+                      {STAFF_ROLES.map(r => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
                     </select>
                   </div>
-                )}
-              </div>
-              {modal.mode === "create" && (
-                <div>
-                  <label className="block text-xs text-muted-foreground mb-1">Set Password</label>
-                  <input type="text" value={form.password} onChange={e => setForm(p => ({ ...p, password: e.target.value }))}
-                    placeholder="Min. 6 characters" className={`${inputCls} font-mono`} />
+                  {modal.mode === "edit" && (
+                    <div>
+                      <div className="text-[10px] text-muted-foreground mb-0.5">Status</div>
+                      <select value={form.status} onChange={e => setForm(p => ({ ...p, status: e.target.value }))}
+                        className="w-full h-8 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold">
+                        <option>Active</option><option>Suspended</option><option>Inactive</option>
+                      </select>
+                    </div>
+                  )}
+                  {modal.mode === "create" && (
+                    <div className="col-span-2">
+                      <div className="text-[10px] text-muted-foreground mb-0.5">Set Password</div>
+                      <input type="text" value={form.password} onChange={e => setForm(p => ({ ...p, password: e.target.value }))}
+                        placeholder="Min. 6 characters"
+                        className="w-full h-8 rounded border border-border bg-background px-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-gold" />
+                    </div>
+                  )}
                 </div>
-              )}
+              </section>
             </div>
-            <div className="flex gap-2 mt-5">
-              <Button className="bg-gold hover:bg-gold/90 text-black flex-1" disabled={saving} onClick={save}>
+            <div className="flex gap-2 px-6 py-4 border-t border-border justify-end">
+              <Button variant="outline" onClick={() => setModal(null)}>Cancel</Button>
+              <Button className="bg-gold hover:bg-gold/90 text-black min-w-[120px]" disabled={saving} onClick={save}>
                 {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : modal.mode === "create" ? "Add User" : "Save Changes"}
               </Button>
-              <Button variant="outline" onClick={() => setModal(null)}>Cancel</Button>
             </div>
           </div>
         </div>

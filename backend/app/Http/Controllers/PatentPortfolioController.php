@@ -78,36 +78,62 @@ class PatentPortfolioController extends Controller
             ->when($clientId, fn($q) => $q->where('client_id', $clientId))
             ->when($analystIds !== null, fn($q) => $q->whereIn('id', $analystIds));
 
-        // Unique cases grouped by 9-char case_base (client+seq+office portion of docket_number)
-        $totalUniqueCases = (clone $base)
-            ->whereNotNull('docket_number')
-            ->selectRaw("LEFT(docket_number, 9) as case_base")
-            ->groupByRaw("LEFT(docket_number, 9)")
-            ->get()->count();
+        // Terminal statuses — no active workflow, excluded from pending KPIs. Split into the
+        // two flavors the portfolio charts distinguish: an explicit rejection/abandonment vs.
+        // a filing that closed out by running its course (e.g. a Provisional/PCT that already
+        // converted onward). Granted is terminal too but gets its own bucket/chart.
+        $refusedStatuses = ['Refused', 'Abandoned'];
+        $closedStatuses = ['Closed', 'Completed', 'Archived'];
+        $terminalStatuses = array_merge(['Granted'], $refusedStatuses, $closedStatuses);
 
-        // Terminal statuses — no active workflow, excluded from pending KPIs
-        $terminalStatuses = ['Granted', 'Refused', 'Abandoned', 'Closed', 'Completed'];
+        // A "case" is one invention in one office for one client — projects has this
+        // pre-normalized as (client_id, invention_number, patent_office_code); docket_number
+        // is just those fields concatenated plus a 3-char service_code suffix (FER/HRG/RNF/...),
+        // so multiple projects rows (one per service-stage engagement) can share a case.
+        // COALESCE guards legacy rows with a NULL invention_number (pre-dates that column) —
+        // each becomes its own singleton group instead of colliding with other NULL rows.
+        $caseGroups = (clone $base)
+            ->selectRaw(
+                "client_id,
+                 COALESCE(invention_number, CONCAT('_id_', id)) as case_key,
+                 patent_office_code,
+                 MAX(CASE WHEN status = 'Granted' OR patent_granted = true THEN 1 ELSE 0 END) as is_granted,
+                 MAX(CASE WHEN status NOT IN (" . implode(',', array_fill(0, count($terminalStatuses), '?')) . ") THEN 1 ELSE 0 END) as is_active,
+                 MAX(CASE WHEN status IN (" . implode(',', array_fill(0, count($refusedStatuses), '?')) . ") THEN 1 ELSE 0 END) as is_refused,
+                 MAX(CASE WHEN status IN (" . implode(',', array_fill(0, count($closedStatuses), '?')) . ") THEN 1 ELSE 0 END) as is_closed",
+                array_merge($terminalStatuses, $refusedStatuses, $closedStatuses)
+            )
+            ->groupBy('client_id', 'case_key', 'patent_office_code')
+            ->get();
 
-        $grantedUniqueCases = (clone $base)
-            ->where(fn ($q) => $q->where('status', 'Granted')->orWhere('patent_granted', true))
-            ->whereNotNull('docket_number')
-            ->selectRaw("LEFT(docket_number, 9) as case_base")
-            ->groupByRaw("LEFT(docket_number, 9)")
-            ->get()->count();
+        $totalUniqueCases = $caseGroups->count();
+        $grantedUniqueCases = $caseGroups->where('is_granted', 1)->count();
 
-        // Granted patents by office — driven by status column; patent_granted flag as fallback
-        $granted = (clone $base)
-            ->where(fn ($q) => $q->where('status', 'Granted')->orWhere('patent_granted', true))
-            ->selectRaw('patent_office_code, COUNT(*) as count')
-            ->groupBy('patent_office_code')
-            ->pluck('count', 'patent_office_code');
-
-        // Pending patents by office — exclude all terminal statuses
-        $pending = (clone $base)
-            ->whereNotIn('status', $terminalStatuses)
-            ->selectRaw('patent_office_code, COUNT(*) as count')
-            ->groupBy('patent_office_code')
-            ->pluck('count', 'patent_office_code');
+        // Four mutually-exclusive buckets per unique case, by office — every case lands in
+        // exactly one, in this priority order:
+        //   1. Granted   — any row Granted or patent_granted=true
+        //   2. Active    — any row Open/In Progress/On Hold (or any other non-terminal status)
+        //   3. Refused   — any row Refused/Abandoned (and none of the above)
+        //   4. Closed    — any row Closed/Completed (and none of the above)
+        // $terminalStatuses = {Granted} ∪ $refusedStatuses ∪ $closedStatuses, and "Active" is
+        // defined as "not terminal" — so these four categories are exhaustive by construction:
+        // granted + active + refused + closed always equals total_unique_cases, for any status
+        // values that exist now or get added later.
+        $granted = collect();
+        $active = collect();
+        $refused = collect();
+        $closed = collect();
+        foreach ($caseGroups as $row) {
+            if ($row->is_granted) {
+                $granted[$row->patent_office_code] = ($granted[$row->patent_office_code] ?? 0) + 1;
+            } elseif ($row->is_active) {
+                $active[$row->patent_office_code] = ($active[$row->patent_office_code] ?? 0) + 1;
+            } elseif ($row->is_refused) {
+                $refused[$row->patent_office_code] = ($refused[$row->patent_office_code] ?? 0) + 1;
+            } else {
+                $closed[$row->patent_office_code] = ($closed[$row->patent_office_code] ?? 0) + 1;
+            }
+        }
 
         // Pending by current lifecycle stage (In Progress stage_name on project_stages)
         $pendingByStage = DB::table('project_stages as ps')
@@ -135,10 +161,14 @@ class PatentPortfolioController extends Controller
             ->limit(5)
             ->get(['id', 'docket_number', 'project_name', 'hard_deadline', 'patent_office_code', 'client_id']);
 
-        // Pending invoices for the client(s)
+        // Pending invoices for the client(s) — oldest due date first (most overdue/urgent),
+        // undated invoices last, so a badly overdue invoice can't be silently pushed out of
+        // this 5-row widget by newer ones. Portable NULLS-LAST idiom (works on Postgres, which
+        // production runs, and MySQL).
         $invoicesQ = DB::table('invoices')
             ->whereIn('status', ['Sent', 'Overdue', 'Partially Paid', 'Viewed'])
-            ->orderBy('created_at', 'desc')
+            ->orderByRaw('due_date IS NULL')
+            ->orderBy('due_date')
             ->limit(5);
         if ($clientId) {
             $invoicesQ->where('client_id', $clientId);
@@ -160,8 +190,12 @@ class PatentPortfolioController extends Controller
         });
 
         // Action required: active (non-terminal) projects only. Derivation lives in
-        // ActionItemService, shared with the client dashboard's interactive feed.
-        $actionRequired = app(ActionItemService::class)->forBase($base, 100);
+        // ActionItemService, shared with the client dashboard's interactive feed. No SQL-level
+        // cap — this table is a full paginated/searchable widget on the frontend, not a short
+        // dashboard list, and forBase()'s ordering alone isn't a safe thing to LIMIT on top of
+        // without risking silently dropping legitimate items (see ActionItemService::forBase()
+        // and how every dashboard feed avoids capping before a full sort).
+        $actionRequired = app(ActionItemService::class)->forBase($base, null);
 
         // Client list for the selector.
         // - Clients / associates: hidden (they're locked to their own scope)
@@ -179,7 +213,9 @@ class PatentPortfolioController extends Controller
 
         return response()->json([
             'granted_by_office'   => $granted,
-            'pending_by_office'   => $pending,
+            'active_by_office'    => $active,
+            'refused_by_office'   => $refused,
+            'closed_by_office'    => $closed,
             'pending_by_stage'    => $pendingByStage,
             'upcoming_renewals'   => $renewals,
             'pending_invoices'    => $invoices,

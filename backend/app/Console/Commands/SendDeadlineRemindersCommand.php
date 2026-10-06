@@ -46,6 +46,7 @@ class SendDeadlineRemindersCommand extends Command
         $this->scanRenewals($today);
         $this->scanPaymentAnomalies($today);
         $this->scanAgingApprovals();
+        $this->scanRequiredDocuments($today);
 
         $this->info("Sent {$this->sent} deadline notifications / reminders.");
         return 0;
@@ -478,6 +479,11 @@ class SendDeadlineRemindersCommand extends Command
                 continue;
             }
 
+            // Auto-generating a renewal quote here (and notifying staff to review it) was
+            // disabled at the user's request — RenewalActionController::autoCreateQuote()
+            // is still there for a manual/future path, it's just no longer invoked from
+            // this scheduled scan. Staff raise quotes/invoices by hand from now on.
+
             $urgent = $days <= $leadDays;
             $title = $urgent
                 ? "Renewal payment window: {$label} (Y{$renewal->renewal_year}) — {$days}d left"
@@ -680,6 +686,44 @@ class SendDeadlineRemindersCommand extends Command
                 $todayStr,
                 'Follow-up',
                 self::APPROVAL_AGING_DAYS,
+            );
+        }
+    }
+
+    /**
+     * Daily nag for a skipped document upload prompt (Grant/Refusal Order on status change,
+     * or a stage-gated draft/forms requirement) — see RequiredDocumentService::ensure(),
+     * which is the only place these Tasks get created, and DocumentController::store(),
+     * which completes them once a matching Document is uploaded (so this scan simply stops
+     * finding them — no separate "resolved" bookkeeping needed here).
+     */
+    private function scanRequiredDocuments(Carbon $today): void
+    {
+        $tasks = Task::whereNotNull('tags')
+            ->where('status', '!=', 'Completed')
+            ->whereNotNull('tags->required_document_category')
+            ->with('project:id,docket_number,project_name')
+            ->get();
+
+        foreach ($tasks as $task) {
+            if (! $task->assignee_id || ! $task->project) continue;
+            $category = $task->tags['required_document_category'] ?? 'document';
+            $label = $task->tags['context_label'] ?? $category;
+            $docket = $task->project->docket_number ?? $task->project->project_name ?? "Case #{$task->project_id}";
+            $ageDays = (int) Carbon::parse($task->created_at)->diffInDays($today);
+
+            $this->remind(
+                (int) $task->assignee_id,
+                'document_required',
+                $ageDays > 0 ? "Document still needed ({$ageDays}d): {$docket}" : "Document upload needed: {$docket}",
+                "{$label} for {$docket} still needs a document upload.",
+                "/projects?open={$task->project_id}&upload_category=" . urlencode($category),
+                ['project_id' => $task->project_id, 'task_id' => $task->id, 'category' => $category],
+                "required-document:{$task->id}",
+                'daily',
+                null,
+                'Document Required',
+                1, // re-notify daily until the document is uploaded
             );
         }
     }

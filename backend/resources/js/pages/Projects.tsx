@@ -3,7 +3,7 @@ import { useEffect, useState, useMemo, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import {
   Plus, Search, Loader2, X, Download, Pencil, Trash2, AlertCircle,
-  ChevronDown, ChevronUp, ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown,
+  ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown,
   Upload, FileSpreadsheet, CheckCircle, FileText, Scroll,
   ExternalLink, Calendar, Clock, ReceiptText, BookOpen,
   ArrowUpCircle, Link2, GitMerge,
@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { api, downloadCSV } from "@/lib/api-client";
+import type { ProjectTab } from "@/types";
 import { statusColor } from "@/lib/utils";
 import { AnalystRoleFilter, useAnalystRoleFilter } from "@/components/analyst-role-filter";
 
@@ -278,6 +279,25 @@ const SERVICE_LABELS: Record<string, string> = {
   WDR: "WDR — Withdrawal",
 };
 
+// Mirrors DocketRules::renewalStageNames()/renewalStageName() on the backend — keep in sync.
+// "Not renewed" plus one "Renewed till Nth year" entry per renewal year (3-20). Used for both
+// the RNF and REN keys below since real project data uses "REN" while "RNF" is the code
+// dictionary's name for the same thing (see RenewalActionController's REN/RNF dual-lookup).
+function ordinalSuffix(n: number): string {
+  if (n % 100 >= 11 && n % 100 <= 13) return "th";
+  switch (n % 10) {
+    case 1: return "st";
+    case 2: return "nd";
+    case 3: return "rd";
+    default: return "th";
+  }
+}
+function renewalStageNames(): string[] {
+  const stages = ["Not renewed"];
+  for (let year = 3; year <= 20; year++) stages.push(`Renewed till ${year}${ordinalSuffix(year)} year`);
+  return stages;
+}
+
 const STAGES_BY_SERVICE: Record<string, string[]> = {
   PAS: [
     "Matter Created", "Inventor / Technology Disclosure Requested", "Disclosure Received",
@@ -452,10 +472,8 @@ const STAGES_BY_SERVICE: Record<string, string[]> = {
     "Renewal Schedule Set (Years 3–20)", "Form 27 Schedule Set (once every 3 financial years)",
     "Completed — Patent Active",
   ],
-  RNF: [
-    "Renewal Year Identified", "Renewal Fee Due Date Confirmed", "Renewal Decision Made by Client",
-    "Renewal Fee Paid", "Completed — Next Renewal Set",
-  ],
+  RNF: renewalStageNames(),
+  REN: renewalStageNames(),
   RPO: [
     "Patent Lapse Identified (renewal fee missed — S.53)",
     "Restoration Window Verified (18 months from lapse — S.60)",
@@ -507,6 +525,19 @@ const STAGES_BY_SERVICE: Record<string, string[]> = {
   ],
 };
 
+// Stage values that require a supporting document upload — regardless of service code,
+// since these exact names recur across many of the lists above. Matched by exact name for
+// the draft/claims/arguments stages, and by a "Forms" substring for the many
+// "Forms Prepared (Form 1, 2, 3 — ...)" variants (National Phase / Priority / Addition / etc).
+const STAGE_DOCUMENT_REQUIRED_EXACT = new Set([
+  "Claims Drafted", "Draft Completed", "Claims Amended / Arguments Drafted", "Arguments Prepared",
+]);
+function stageDocumentCategory(stageName: string): string | null {
+  if (STAGE_DOCUMENT_REQUIRED_EXACT.has(stageName)) return "Draft Document";
+  if (stageName.includes("Forms")) return "Forms";
+  return null;
+}
+
 const PIPELINE_STAGES_LEGACY = [
   "Invention Disclosure", "Patent Search", "Search Report", "Provisional or Complete Application",
   "Provisional Filing", "Patent Drafting", "Applicant/Inventor Review", "Filing with Patent Office",
@@ -536,26 +567,6 @@ const Lbl = ({ children, req }: { children: React.ReactNode; req?: boolean }) =>
     {children}{req && <span className="text-destructive ml-0.5">*</span>}
   </label>
 );
-
-// Section — resizable when expanded (drag bottom-right corner), portalled dropdowns never clipped
-function Section({ title, children, open: defaultOpen = true }: {
-  title: string; children: React.ReactNode; open?: boolean;
-}) {
-  const [expanded, setExpanded] = useState(defaultOpen);
-  return (
-    <div
-      className="border border-border rounded-lg"
-      style={expanded ? { resize: "vertical", overflow: "auto", minHeight: 80 } : undefined}
-    >
-      <button type="button" onClick={() => setExpanded(!expanded)}
-        className={`w-full flex items-center justify-between px-4 py-2.5 bg-muted/30 text-xs font-semibold uppercase tracking-wider text-muted-foreground hover:bg-muted/50 ${expanded ? "rounded-t-lg" : "rounded-lg"}`}>
-        {title}
-        {expanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-      </button>
-      {expanded && <div className="p-4 space-y-3">{children}</div>}
-    </div>
-  );
-}
 
 // Portal-based combobox — dropdown renders in document.body, never clipped
 function Combobox({ value, options, onSelect, placeholder }: {
@@ -806,7 +817,7 @@ const KPI_DEFS: KpiDef[] = [
   { label: "Closed",       key: "closed",      color: "text-muted-foreground", filterParams: { status: "Closed" } },
 ];
 
-function ProjectKpiModal({ kpi, onClose, onOpenDetail }: { kpi: KpiDef; onClose: () => void; onOpenDetail?: (id: number) => void }) {
+function ProjectKpiModal({ kpi, tab, onClose, onOpenDetail }: { kpi: KpiDef; tab?: string; onClose: () => void; onOpenDetail?: (id: number) => void }) {
   const [result, setResult]   = useState<{ data: any[]; total: number }>({ data: [], total: 0 });
   const [search, setSearch]   = useState("");
   const [loading, setLoading] = useState(false);
@@ -826,6 +837,7 @@ function ProjectKpiModal({ kpi, onClose, onOpenDetail }: { kpi: KpiDef; onClose:
           sort_dir: sd,
           ...kpi.filterParams,
         });
+        if (tab) params.set("tab", tab);
         if (q) params.set("search", q);
         const res: any = await api.getProjectsPaged(params);
         setResult({ data: Array.isArray(res) ? res : (res?.data ?? []), total: res?.total ?? 0 });
@@ -833,7 +845,7 @@ function ProjectKpiModal({ kpi, onClose, onOpenDetail }: { kpi: KpiDef; onClose:
         setLoading(false);
       }
     },
-    [kpi]
+    [kpi, tab]
   );
 
   useEffect(() => { fetchPage(1, "", "hard_deadline", "asc"); }, [fetchPage]);
@@ -970,6 +982,9 @@ export default function Projects() {
   const featLockCodeDropdown = sysCfg.feature_lock_code_dropdowns ?? true;
   const dynamicSvcCodes   = (sysCfg.dropdown_service_codes  ?? []) as {code:string;label:string}[];
   const dynamicCtyCodes   = (sysCfg.dropdown_country_codes  ?? []) as {code:string;label:string}[];
+  // Admin-configurable Projects-list tabs (see SettingsController::updateProjectTabs).
+  // "" (no key) means the implicit "All" view — nothing pre-selected.
+  const projectTabs = (sysCfg.project_tabs ?? []) as ProjectTab[];
   const [roleFilter, setRoleFilter] = useAnalystRoleFilter();
 
   const [projects, setProjects]  = useState<any[]>([]);
@@ -1002,9 +1017,15 @@ export default function Projects() {
   const [users, setUsers]        = useState<any[]>([]);
   const [loading, setLoading]    = useState(true);
   const [search, setSearch]      = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [filterStatus, setFilter] = useState("All");
+  // "" = the implicit "All" view (no tab pre-selected), otherwise a project_tabs key.
+  const [activeTab, setActiveTab] = useState("");
   const [page, setPage]           = useState(1);
   const [perPage, setPerPage]     = useState(25);
+  const [serverTotal, setServerTotal]       = useState(0);
+  const [serverLastPage, setServerLastPage] = useState(1);
+  const [exporting, setExporting] = useState(false);
   const [stats, setStats]         = useState<Record<string, number>>({ total: 0, open: 0, on_hold: 0, overdue: 0 });
   const [kpiModal, setKpiModal]   = useState<KpiDef | null>(null);
 
@@ -1017,6 +1038,7 @@ export default function Projects() {
 
   const [delTarget, setDelTarget] = useState<any>(null);
   const [deleting, setDeleting]  = useState(false);
+  const [delErr, setDelErr]      = useState("");
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [bulkAction, setBulkAction]   = useState("");
 
@@ -1043,6 +1065,30 @@ export default function Projects() {
   const [stageMenu, setStageMenu] = useState<{ projectId: number; stages: string[]; rect: DOMRect } | null>(null);
   const [statusMenu, setStatusMenu] = useState<{ projectId: number; rect: DOMRect } | null>(null);
   const [raiseModal, setRaiseModal] = useState<{ type: "invoice" | "quote"; project: any } | null>(null);
+  // For REN/RNF projects, picking "Renewed till Nth year" from the stage picker routes here
+  // instead of a plain updateProjectStage — it needs a real payment date and drives the
+  // renewal schedule (see DocketController::storeRenewalPaid).
+  const [renewalPaidPrompt, setRenewalPaidPrompt] = useState<{ projectId: number; year: number } | null>(null);
+  const [renewalPaidDate, setRenewalPaidDate] = useState("");
+  const [renewalPaidSaving, setRenewalPaidSaving] = useState(false);
+  const [renewalPaidErr, setRenewalPaidErr] = useState("");
+
+  // Setting status to Granted/Refused/Abandoned asks for the real event date first (today's
+  // date was previously assumed silently) — see ProjectController::update()'s
+  // status_event_date handling.
+  const [statusEventPrompt, setStatusEventPrompt] = useState<{ projectId: number; status: string; fullPayload?: any } | null>(null);
+  const [statusEventDate, setStatusEventDate] = useState("");
+  const [statusEventSaving, setStatusEventSaving] = useState(false);
+  const [statusEventErr, setStatusEventErr] = useState("");
+
+  // Generic "upload a required document, or skip and get tracked/reminded" prompt — used
+  // for the Grant/Refusal Order (after statusEventPrompt) and for stage-gated draft/forms
+  // documents (see STAGE_DOCUMENT_REQUIRED below). Skipping calls api.requireDocument(),
+  // which is what actually creates the Task + daily reminder (see RequiredDocumentService).
+  const [uploadPrompt, setUploadPrompt] = useState<{ projectId: number; category: string; contextLabel: string; accept: string } | null>(null);
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadSaving, setUploadSaving] = useState(false);
+  const [uploadErr, setUploadErr] = useState("");
 
   // ── Elevate / Link Predecessor modals ─────────────────────────────────────
   const [elevateModal, setElevateModal] = useState<{ project: any } | null>(null);
@@ -1075,37 +1121,70 @@ export default function Projects() {
   const canElevate     = !isClientUser;
   const canLinkPred    = !isClientUser;
 
+  // Reference data (clients/users, for name lookups and form dropdowns) doesn't depend on
+  // the tab/status/search/page filters below — load it separately so switching tabs or
+  // typing a search term doesn't re-fetch the full client/user lists on every keystroke.
+  const loadReferenceData = () => {
+    if (isClientUser) { setClients([]); setUsers([]); return; } // 403s for client users
+    Promise.all([api.getAllClients(), api.getUsers()])
+      .then(([c, u]) => { setClients(c as any[]); setUsers(u as any[]); })
+      .catch(() => {});
+  };
+  useEffect(() => { loadReferenceData(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Deep-link support (?open=<id>): fetch the target project directly rather than hoping
+  // it happens to be on whichever tab/page/filter combination loads first. A
+  // "document required" notification (RequiredDocumentService) links here with
+  // &upload_category=... too — that opens the upload prompt directly instead of the edit
+  // modal, since that's the actual thing the notification is asking for.
+  useEffect(() => {
+    const sp = new URLSearchParams(window.location.search);
+    const openId = sp.get("open");
+    const uploadCategory = sp.get("upload_category");
+    if (openId) {
+      if (uploadCategory) {
+        setUploadPrompt({ projectId: parseInt(openId, 10), category: uploadCategory, contextLabel: uploadCategory, accept: ".pdf,.vsd,.vsdx,.docx" });
+        setUploadFile(null);
+        setUploadErr("");
+      } else {
+        api.getProject(openId).then((proj) => { if (proj) openEdit(proj); }).catch(() => {});
+      }
+    }
+    sp.delete("open");
+    sp.delete("upload_category");
+    window.history.replaceState({}, "", window.location.pathname + (sp.toString() ? "?" + sp.toString() : ""));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Debounce free-text search so it doesn't fire a request per keystroke; resets to page 1
+  // whenever the settled search term actually changes the query.
+  useEffect(() => {
+    const t = setTimeout(() => { setDebouncedSearch(search); setPage(1); }, 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
   const loadProjects = (rf: string) => {
     setLoading(true);
     // Only apply role_filter for Patent Analysts; all other roles get unrestricted data.
     const rf_param = isAnalyst && rf !== 'all' ? rf : undefined;
-    api.getProjectStats(rf_param).then(setStats).catch(() => {});
-    const params = new URLSearchParams({ per_page: '5000' });
+    api.getProjectStats(rf_param, activeTab).then(setStats).catch(() => {});
+    const params = new URLSearchParams({ per_page: String(perPage), page: String(page) });
     if (rf_param) params.set('role_filter', rf_param);
-    // Client users get 403 on /api/users and /api/clients — skip those calls entirely.
-    const extraCalls = isClientUser
-      ? [Promise.resolve([] as any[]), Promise.resolve([] as any[])]
-      : [api.getAllClients(), api.getUsers()];
-    Promise.all([api.getProjectsPaged(params), ...extraCalls])
-      .then(([p, c, u]) => {
-        const list = Array.isArray(p) ? p : (p as any).data || [];
+    if (activeTab) params.set('tab', activeTab);
+    if (filterStatus !== 'All') params.set('status', filterStatus);
+    if (debouncedSearch) params.set('search', debouncedSearch);
+    api.getProjectsPaged(params)
+      .then((res) => {
+        const list = Array.isArray(res) ? res : (res as any).data || [];
         setProjects(list);
-        setClients(c as any[]);
-        setUsers(u as any[]);
-        const sp = new URLSearchParams(window.location.search);
-        const openId = sp.get("open");
-        if (openId) {
-          const target = list.find((proj: any) => String(proj.id) === openId);
-          if (target) openEdit(target);
-          sp.delete("open");
-          window.history.replaceState({}, "", window.location.pathname + (sp.toString() ? "?" + sp.toString() : ""));
-        }
+        setServerTotal(Array.isArray(res) ? list.length : ((res as any).total ?? list.length));
+        setServerLastPage(Array.isArray(res) ? 1 : ((res as any).last_page ?? 1));
       })
       .catch(() => {})
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { loadProjects(roleFilter); }, [roleFilter]);
+  useEffect(() => { loadProjects(roleFilter); }, [roleFilter, activeTab, filterStatus, page, perPage, debouncedSearch]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const sf = (f: keyof PF, v: string | boolean) => setForm((p) => ({ ...p, [f]: v }));
 
@@ -1142,25 +1221,10 @@ export default function Projects() {
     return `${cc}${seq}${form.patent_office_code.toUpperCase()}${form.service_code.toUpperCase()}`;
   }, [form.client_id, form.patent_office_code, form.service_code, clients, projects]);
 
-  const filtered = useMemo(() => {
-    setPage(1);
-    return projects.filter((p) => {
-      const q = search.toLowerCase();
-      if (q &&
-        !p.project_name?.toLowerCase().includes(q) &&
-        !p.docket_number?.toLowerCase().includes(q) &&
-        !p.project_code?.toLowerCase().includes(q) &&
-        !(p.client?.legal_name ?? p.client?.company_name ?? "").toLowerCase().includes(q) &&
-        !p.application_number?.toLowerCase().includes(q) &&
-        !((p as any).docket_trak_ref ?? "").toLowerCase().includes(q)) return false;
-      if (filterStatus !== "All" && p.status !== filterStatus) return false;
-      return true;
-    });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projects, search, filterStatus]);
-
-  const totalPages  = Math.max(1, Math.ceil(filtered.length / perPage));
-  const paginated   = filtered.slice((page - 1) * perPage, page * perPage);
+  // Tab/status/search/pagination are now all resolved server-side (see loadProjects) —
+  // `projects` is already exactly the current page for the current filters, and
+  // `serverTotal`/`serverLastPage` (set alongside it) back the pager UI below.
+  const totalPages = Math.max(1, serverLastPage);
 
   function openCreate() { setForm(BLANK); setEditProj(null); setSaveErr(""); setShowModal(true); }
 
@@ -1217,36 +1281,49 @@ export default function Projects() {
     if (!/^[A-Z0-9]{2}$/i.test(form.patent_office_code) || !/^[A-Z0-9]{3}$/i.test(form.service_code)) {
       setSaveErr("A 2-character patent office code and 3-character service code are required."); return;
     }
+    const canonicalCaseId = (form.project_code || form.docket_number).trim().toUpperCase();
+    const payload = {
+      ...form,
+      project_code:         canonicalCaseId || null,
+      docket_number:        canonicalCaseId || null,
+      client_id:            parseInt(form.client_id),
+      assigned_partner_id:  form.assigned_partner_id  ? parseInt(form.assigned_partner_id)  : null,
+      assigned_manager_id:  form.assigned_manager_id  ? parseInt(form.assigned_manager_id)  : null,
+      secondary_manager_id: form.secondary_manager_id ? parseInt(form.secondary_manager_id) : null,
+      patent_engineer_id:   form.patent_engineer_id   ? parseInt(form.patent_engineer_id)   : null,
+      project_type: form.case_type,
+      circle: form.circle || null,
+    };
+
+    // Granted/Refused/Abandoned need the real event date — same prompt the status
+    // badge dropdown already uses — instead of silently recording "now" as the
+    // event date (previously the only way this got asked was via that dropdown;
+    // toggling status here, e.g. via the "Patent Granted" checkbox, skipped it).
+    if (editProj && ["Granted", "Refused", "Abandoned"].includes(form.status) && form.status !== editProj.status) {
+      const { record_mode, project_code, docket_number, ...updatePayload } = payload;
+      setShowModal(false);
+      setStatusEventPrompt({ projectId: editProj.id, status: form.status, fullPayload: updatePayload });
+      setStatusEventDate(new Date().toISOString().slice(0, 10));
+      setStatusEventErr("");
+      return;
+    }
+
     setSaving(true); setSaveErr("");
     try {
-      const canonicalCaseId = (form.project_code || form.docket_number).trim().toUpperCase();
-      const payload = {
-        ...form,
-        project_code:         canonicalCaseId || null,
-        docket_number:        canonicalCaseId || null,
-        client_id:            parseInt(form.client_id),
-        assigned_partner_id:  form.assigned_partner_id  ? parseInt(form.assigned_partner_id)  : null,
-        assigned_manager_id:  form.assigned_manager_id  ? parseInt(form.assigned_manager_id)  : null,
-        secondary_manager_id: form.secondary_manager_id ? parseInt(form.secondary_manager_id) : null,
-        patent_engineer_id:   form.patent_engineer_id   ? parseInt(form.patent_engineer_id)   : null,
-        project_type: form.case_type,
-        circle: form.circle || null,
-      };
       if (editProj) {
         const { record_mode, project_code, docket_number, ...updatePayload } = payload;
         const updated = await api.updateProject(editProj.id, updatePayload as any);
-        setProjects((prev) => prev.map((p) => p.id === editProj.id
-          ? { ...p, ...updated, client: p.client } : p));
         const backfilled = (updated as any).application_number_backfilled as { id: number; docket_number: string }[] | undefined;
         if (backfilled && backfilled.length > 0) {
           setBackfillNotice(backfilled.map((b) => b.docket_number));
           setTimeout(() => setBackfillNotice(null), 8000);
         }
       } else {
-        const created = await api.createProject(payload as any);
-        const clientObj = clients.find((c) => c.id === parseInt(form.client_id));
-        setProjects((prev) => [{ ...created, client: clientObj ?? null }, ...prev]);
+        await api.createProject(payload as any);
       }
+      // Reload rather than patch local state — status/service_code may have changed, which
+      // can move this case out of the currently active tab or status filter.
+      loadProjects(roleFilter);
       setShowModal(false);
     } catch (e: any) { setSaveErr(e.message || "Failed to save case."); }
     finally { setSaving(false); }
@@ -1255,10 +1332,13 @@ export default function Projects() {
   async function handleDelete() {
     if (!delTarget) return;
     setDeleting(true);
+    setDelErr("");
     try {
       await api.deleteProject(delTarget.id);
       setProjects((prev) => prev.filter((p) => p.id !== delTarget.id));
       setDelTarget(null);
+    } catch (e: any) {
+      setDelErr(e.message || "Failed to delete case.");
     } finally { setDeleting(false); }
   }
 
@@ -1267,8 +1347,10 @@ export default function Projects() {
     setElevateSaving(true);
     setElevateErr("");
     try {
-      const res = await api.elevateProject(elevateModal.project.id, elevateToService, elevateNote || undefined);
-      setProjects((prev) => prev.map((p) => p.id === elevateModal.project.id ? { ...p, ...res.project } : p));
+      await api.elevateProject(elevateModal.project.id, elevateToService, elevateNote || undefined);
+      // Reload rather than patch local state — elevation creates a new successor project
+      // (possibly in a different tab) and typically changes the predecessor's status too.
+      loadProjects(roleFilter);
       setElevateModal(null);
       setElevateToService("");
       setElevateNote("");
@@ -1339,31 +1421,68 @@ export default function Projects() {
     p.stages?.find((s: any) => s.status === "In Progress")?.stage_name
     ?? p.stages?.[0]?.stage_name
     ?? "—";
+  // Display-only grant cascade: a predecessor/successor engagement (PRV/CPT/FER/... rows for
+  // the same real-world case) shows as Granted whenever the shared patent application is
+  // granted, even though its own `status` column keeps its true history (e.g. "Completed") —
+  // never mutated. See ProjectController::index()'s patentApplication eager-load.
+  const displayStatus = (p: any): string =>
+    p.status === "Granted" || p.patentApplication?.legal_status === "Granted" ? "Granted" : p.status;
+
+  // Compact, dense field style for the wide Add/Edit Case modal — same pattern
+  // as the Indian Patent Invoice/Quotation form in Financial.tsx and the
+  // Add/Edit Employee/Client modals. Scoped locally so the module-level
+  // ic/tc/Lbl/Section used by this file's other modals stay untouched.
+  const fInp = "w-full h-8 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold";
+  const fTa = "w-full rounded border border-border bg-background px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-gold resize-none";
+  const FLbl = ({ children, req }: { children: React.ReactNode; req?: boolean }) => (
+    <div className="text-[10px] text-muted-foreground mb-0.5">{children}{req && <span className="text-destructive ml-0.5">*</span>}</div>
+  );
+  const FSectionHeading = ({ n, children }: { n: number; children: React.ReactNode }) => (
+    <h3 className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-2 flex items-center gap-1.5">
+      <span className="w-4 h-4 rounded-full bg-gold text-black flex items-center justify-center text-[9px] font-bold">{n}</span>
+      {children}
+    </h3>
+  );
 
   return (
     <AppLayout>
       <Head title="Cases" />
       <PageHeader eyebrow="Practice" title="Cases"
-        description={`${projects.length} cases in portfolio`}
+        description={`${serverTotal} case${serverTotal === 1 ? "" : "s"}${activeTab || filterStatus !== "All" || debouncedSearch ? " matching current view" : " in portfolio"}`}
         actions={
           <>
             <AnalystRoleFilter value={roleFilter} onChange={(v) => { setRoleFilter(v); }} />
-            <Button variant="outline" onClick={() =>
-              downloadCSV(`cases-${new Date().toISOString().slice(0, 10)}.csv`,
-                filtered.map((p) => ({
-                  "Docket #":       p.docket_number ?? "",
-                  "Patent Title":   p.project_name,
-                  "Country":        p.patent_office_code ?? "",
-                  "Case Type":      p.case_type ?? p.project_type ?? "",
-                  "Filed":          fmtDate(p.filing_date),
-                  "Deadline":       fmtDate(p.hard_deadline),
-                  "Status":         p.status,
-                  "Workflow Stage": activeStage(p),
-                  "Client Manager": managerName(p),
-                  "Person Responsible": patentEngineerName(p),
-                }))
-              )}>
-              <Download className="h-4 w-4 mr-2" />Export CSV
+            <Button variant="outline" disabled={exporting} onClick={async () => {
+              setExporting(true);
+              try {
+                const rf_param = isAnalyst && roleFilter !== 'all' ? roleFilter : undefined;
+                const params = new URLSearchParams();
+                if (rf_param) params.set('role_filter', rf_param);
+                if (activeTab) params.set('tab', activeTab);
+                if (filterStatus !== 'All') params.set('status', filterStatus);
+                if (debouncedSearch) params.set('search', debouncedSearch);
+                // Reruns the current tab/status/search filters unpaginated server-side, so
+                // the export always covers every match, not just the visible page.
+                const rows = await api.getProjectsExport(params);
+                downloadCSV(`cases-${new Date().toISOString().slice(0, 10)}.csv`,
+                  rows.map((p: any) => ({
+                    "Docket #":       p.docket_number ?? "",
+                    "Patent Title":   p.project_name,
+                    "Country":        p.patent_office_code ?? "",
+                    "Case Type":      p.case_type ?? p.project_type ?? "",
+                    "Filed":          fmtDate(p.filing_date),
+                    "Deadline":       fmtDate(p.hard_deadline),
+                    "Status":         p.status,
+                    "Workflow Stage": activeStage(p),
+                    "Client Manager": managerName(p),
+                    "Person Responsible": patentEngineerName(p),
+                  }))
+                );
+              } catch (e: any) { alert(e.message ?? "Export failed."); }
+              finally { setExporting(false); }
+            }}>
+              {exporting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
+              Export CSV
             </Button>
             {canBulkImport && (
               <Button variant="outline" onClick={() => {
@@ -1859,7 +1978,7 @@ export default function Projects() {
       {/* ── Case Form Modal ─────────────────────────────────────────────────── */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-3xl max-h-[92vh] flex flex-col">
+          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-5xl max-h-[92vh] flex flex-col">
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-border flex-shrink-0">
               <div>
@@ -1879,7 +1998,7 @@ export default function Projects() {
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+            <div className="flex-1 overflow-y-auto px-6 py-4 space-y-5">
               {saveErr && (
                 <div className="flex items-center gap-2 p-3 rounded-md bg-destructive/10 border border-destructive/20 text-xs text-destructive">
                   <AlertCircle className="h-4 w-4 flex-shrink-0" />{saveErr}
@@ -1888,7 +2007,8 @@ export default function Projects() {
 
               {/* ── 1. Case Identification ───────────────────────────── */}
               {!editProj && (
-                <Section title="Record Type">
+                <section>
+                  <FSectionHeading n={1}>Record Type</FSectionHeading>
                   <div className={`grid gap-3 ${featLegacyCase ? "grid-cols-2" : "grid-cols-1"}`}>
                     {([
                       { key: "new",      label: "New Case",             hint: "Generate project code and UIN automatically.", always: true },
@@ -1910,40 +2030,43 @@ export default function Projects() {
                     ))}
                   </div>
                   {form.record_mode === "existing" && (
-                    <div>
-                      <Lbl req>Existing Case ID / UIN / Docket</Lbl>
-                      <input
-                        value={form.project_code || form.docket_number}
-                        onChange={(e) => {
-                          const value = e.target.value.toUpperCase();
-                          sf("project_code", value);
-                          sf("docket_number", value);
-                          const client = clients.find((item) => String(item.id) === form.client_id);
-                          const clientCode = client?.client_code?.toUpperCase() ?? "";
-                          if (clientCode && value.startsWith(clientCode) && value.length === clientCode.length + 8) {
-                            sf("patent_office_code", value.slice(clientCode.length + 3, clientCode.length + 5));
-                            sf("service_code", value.slice(-3));
-                          }
-                        }}
-                        className={ic}
-                        placeholder="e.g. A97M001INFER"
-                      />
+                    <div className="mt-3 grid grid-cols-4 gap-2">
+                      <div className="col-span-2">
+                        <FLbl req>Existing Case ID / UIN / Docket</FLbl>
+                        <input
+                          value={form.project_code || form.docket_number}
+                          onChange={(e) => {
+                            const value = e.target.value.toUpperCase();
+                            sf("project_code", value);
+                            sf("docket_number", value);
+                            const client = clients.find((item) => String(item.id) === form.client_id);
+                            const clientCode = client?.client_code?.toUpperCase() ?? "";
+                            if (clientCode && value.startsWith(clientCode) && value.length === clientCode.length + 8) {
+                              sf("patent_office_code", value.slice(clientCode.length + 3, clientCode.length + 5));
+                              sf("service_code", value.slice(-3));
+                            }
+                          }}
+                          className={fInp}
+                          placeholder="e.g. A97M001INFER"
+                        />
+                      </div>
                     </div>
                   )}
-                </Section>
+                </section>
               )}
 
-              <Section title="Case Identification">
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="col-span-2">
-                    <Lbl req>Patent Title / Case Name</Lbl>
+              <section>
+                <FSectionHeading n={editProj ? 1 : 2}>Case Identification</FSectionHeading>
+                <div className="grid grid-cols-4 gap-2">
+                  <div className="col-span-4">
+                    <FLbl req>Patent Title / Case Name</FLbl>
                     <input value={form.project_name}
                       onChange={(e) => sf("project_name", e.target.value)}
                       placeholder="e.g. Compact Lithium Cell with Enhanced Electrolyte"
-                      className={ic} />
+                      className={fInp} />
                   </div>
                   <div>
-                    <Lbl req>Client Code</Lbl>
+                    <FLbl req>Client Code</FLbl>
                     <Combobox
                       value={form.client_id}
                       options={clientOptions}
@@ -1956,20 +2079,20 @@ export default function Projects() {
                     />
                   </div>
                   <div>
-                    <Lbl>Case Type</Lbl>
-                    <select value={form.case_type} onChange={(e) => sf("case_type", e.target.value)} className={ic}>
+                    <FLbl>Case Type</FLbl>
+                    <select value={form.case_type} onChange={(e) => sf("case_type", e.target.value)} className={fInp}>
                       {CASE_TYPES.map((t) => <option key={t}>{t}</option>)}
                     </select>
                   </div>
                   <div>
-                    <Lbl>Circle</Lbl>
-                    <div className="flex gap-2 mt-0.5">
+                    <FLbl>Circle</FLbl>
+                    <div className="flex gap-2">
                       {["A", "B"].map((c) => (
                         <button
                           key={c}
                           type="button"
                           onClick={() => sf("circle", form.circle === c ? "" : c)}
-                          className={`flex-1 py-1.5 rounded-md text-sm font-semibold border transition-colors ${
+                          className={`flex-1 h-8 rounded text-xs font-semibold border transition-colors ${
                             form.circle === c
                               ? c === "A" ? "bg-blue-600 text-white border-blue-600" : "bg-violet-600 text-white border-violet-600"
                               : "border-border text-muted-foreground hover:bg-muted/40"
@@ -1981,33 +2104,34 @@ export default function Projects() {
                     </div>
                   </div>
                   <div>
-                    <Lbl>Application Number</Lbl>
+                    <FLbl>Application Number</FLbl>
                     <input value={form.application_number}
                       onChange={(e) => sf("application_number", e.target.value)}
                       placeholder="e.g. 202341001234"
-                      className={ic} />
+                      className={fInp} />
                   </div>
                   {editProj && (
                     <div>
-                      <Lbl>Status</Lbl>
+                      <FLbl>Status</FLbl>
                       <select value={form.status} onChange={(e) => {
                         const s = e.target.value;
                         sf("status", s);
                         if (s === "Granted") sf("patent_granted", true);
                         else if (form.patent_granted) sf("patent_granted", false);
-                      }} className={ic}>
+                      }} className={fInp}>
                         {(form.patent_office_code === "US" ? US_PATENT_STATUSES : STATUSES).map((s) => <option key={s}>{s}</option>)}
                       </select>
                     </div>
                   )}
                 </div>
-              </Section>
+              </section>
 
               {/* ── 2. IP Details ────────────────────────────────────── */}
-              <Section title="IP Details">
-                <div className="grid grid-cols-2 gap-3">
+              <section>
+                <FSectionHeading n={editProj ? 2 : 3}>IP Details</FSectionHeading>
+                <div className="grid grid-cols-4 gap-2">
                   <div>
-                    <Lbl req>Patent Office (Country)</Lbl>
+                    <FLbl req>Patent Office (Country)</FLbl>
                     <CodeCombobox
                       value={form.patent_office_code}
                       baseOptions={officeOptions}
@@ -2018,7 +2142,7 @@ export default function Projects() {
                     />
                   </div>
                   <div>
-                    <Lbl req>Service Code</Lbl>
+                    <FLbl req>Service Code</FLbl>
                     <CodeCombobox
                       value={form.service_code}
                       baseOptions={serviceOptions}
@@ -2029,106 +2153,116 @@ export default function Projects() {
                     />
                   </div>
                   <div>
-                    <Lbl>Inventor Name</Lbl>
+                    <FLbl>Inventor Name</FLbl>
                     <input value={form.invention_title}
                       onChange={(e) => sf("invention_title", e.target.value)}
                       placeholder="e.g. Rajesh Kumar, Priya Sharma"
-                      className={ic} />
+                      className={fInp} />
                   </div>
                   <div>
-                    <Lbl>Technology Field</Lbl>
+                    <FLbl>Technology Field</FLbl>
                     <input value={form.technology_field}
                       onChange={(e) => sf("technology_field", e.target.value)}
                       placeholder="e.g. Biotechnology, Semiconductors"
-                      className={ic} />
+                      className={fInp} />
                   </div>
                 </div>
-              </Section>
+              </section>
 
               {/* ── 3. Dates & Status ────────────────────────────────── */}
-              <Section title="Dates & Status">
-                <div className="grid grid-cols-3 gap-3">
+              <section>
+                <FSectionHeading n={editProj ? 3 : 4}>Dates &amp; Status</FSectionHeading>
+                <div className="grid grid-cols-4 gap-2">
+                  {/* Filing date, Target filing date, and the Patent Granted checkbox are
+                      edit-only — at creation time these facts aren't knowable yet. Filing
+                      date gets set later via a docketing event; grant status is set via the
+                      Status field's Granted/Refused/Abandoned flow (which also asks for the
+                      actual event date and order document — see the status-change handler). */}
+                  {editProj && (
+                    <>
+                      <div>
+                        <FLbl>Filing Date</FLbl>
+                        <input type="date" value={form.filing_date}
+                          onChange={(e) => sf("filing_date", e.target.value)} className={fInp} />
+                      </div>
+                      <div className="flex items-end pb-1">
+                        <label className="flex items-center gap-2 cursor-pointer select-none">
+                          <input type="checkbox" checked={form.patent_granted}
+                            onChange={(e) => {
+                              const checked = e.target.checked;
+                              sf("patent_granted", checked);
+                              if (checked && form.status !== "Granted") sf("status", "Granted");
+                              else if (!checked && form.status === "Granted") sf("status", "Open");
+                            }}
+                            className="h-4 w-4 rounded border-border accent-green-600" />
+                          <span className="text-xs font-medium text-foreground">Patent Granted</span>
+                        </label>
+                      </div>
+                      <div>
+                        <FLbl>Target Filing Date</FLbl>
+                        <input type="date" value={form.target_filing_date}
+                          onChange={(e) => sf("target_filing_date", e.target.value)} className={fInp} />
+                      </div>
+                    </>
+                  )}
                   <div>
-                    <Lbl>Filing Date</Lbl>
-                    <input type="date" value={form.filing_date}
-                      onChange={(e) => sf("filing_date", e.target.value)} className={ic} />
-                  </div>
-                  <div className="flex items-end pb-1">
-                    <label className="flex items-center gap-2 cursor-pointer select-none">
-                      <input type="checkbox" checked={form.patent_granted}
-                        onChange={(e) => {
-                          const checked = e.target.checked;
-                          sf("patent_granted", checked);
-                          if (checked && form.status !== "Granted") sf("status", "Granted");
-                          else if (!checked && form.status === "Granted") sf("status", "Open");
-                        }}
-                        className="h-4 w-4 rounded border-border accent-green-600" />
-                      <span className="text-xs font-medium text-foreground">Patent Granted</span>
-                    </label>
-                  </div>
-                  <div>
-                    <Lbl>Target Filing Date</Lbl>
-                    <input type="date" value={form.target_filing_date}
-                      onChange={(e) => sf("target_filing_date", e.target.value)} className={ic} />
-                  </div>
-                  <div>
-                    <Lbl>Hard Deadline</Lbl>
+                    <FLbl>Hard Deadline</FLbl>
                     <input type="date" value={form.hard_deadline}
-                      onChange={(e) => sf("hard_deadline", e.target.value)} className={ic} />
+                      onChange={(e) => sf("hard_deadline", e.target.value)} className={fInp} />
                   </div>
                   <div>
-                    <Lbl>Urgency</Lbl>
-                    <select value={form.urgency} onChange={(e) => sf("urgency", e.target.value)} className={ic}>
+                    <FLbl>Urgency</FLbl>
+                    <select value={form.urgency} onChange={(e) => sf("urgency", e.target.value)} className={fInp}>
                       {URGENCIES.map((u) => <option key={u}>{u}</option>)}
                     </select>
                   </div>
                   <div>
-                    <Lbl>IDF Received Date</Lbl>
+                    <FLbl>IDF Received Date</FLbl>
                     <input type="date" value={form.idf_received_date}
-                      onChange={(e) => sf("idf_received_date", e.target.value)} className={ic} />
+                      onChange={(e) => sf("idf_received_date", e.target.value)} className={fInp} />
                   </div>
                 </div>
-                <p className="mt-3 text-xs text-muted-foreground">
+                <p className="mt-2 text-[10px] text-muted-foreground">
                   Payment dates (advance, partial, full) are no longer entered here — they're derived from the actual
                   payment-made date recorded on the Invoice / Pending Payments tab.
                 </p>
-              </Section>
+              </section>
 
               {/* ── 3b. Application Status (IPO-style view) ─────────────── */}
-              <Section title="Application Status" open={!!editProj}>
-                {!editProj ? (
-                  <p className="text-xs text-muted-foreground">Available once the case is created and linked to an application number.</p>
-                ) : (
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="col-span-2">
-                      <Lbl>Application Type</Lbl>
+              {editProj && (
+                <section>
+                  <FSectionHeading n={4}>Application Status</FSectionHeading>
+                  <div className="grid grid-cols-4 gap-2">
+                    <div className="col-span-4">
+                      <FLbl>Application Type</FLbl>
                       <input value={form.application_type} onChange={(e) => sf("application_type", e.target.value)}
-                        placeholder="e.g. Ordinary Application, Convention Application, PCT National Phase…" className={ic} />
+                        placeholder="e.g. Ordinary Application, Convention Application, PCT National Phase…" className={fInp} />
                     </div>
                     <div>
-                      <Lbl>Reply to FER Date</Lbl>
+                      <FLbl>Reply to FER Date</FLbl>
                       <input type="date" value={form.fer_reply_date}
-                        onChange={(e) => sf("fer_reply_date", e.target.value)} className={ic} />
+                        onChange={(e) => sf("fer_reply_date", e.target.value)} className={fInp} />
                     </div>
                     <div>
-                      <Lbl>Date of Certificate Issue</Lbl>
+                      <FLbl>Date of Certificate Issue</FLbl>
                       <input type="date" value={form.certificate_issue_date}
-                        onChange={(e) => sf("certificate_issue_date", e.target.value)} className={ic} />
+                        onChange={(e) => sf("certificate_issue_date", e.target.value)} className={fInp} />
                     </div>
                     <div>
-                      <Lbl>Post Grant Journal Date</Lbl>
+                      <FLbl>Post Grant Journal Date</FLbl>
                       <input type="date" value={form.post_grant_journal_date}
-                        onChange={(e) => sf("post_grant_journal_date", e.target.value)} className={ic} />
+                        onChange={(e) => sf("post_grant_journal_date", e.target.value)} className={fInp} />
                     </div>
                   </div>
-                )}
-              </Section>
+                </section>
+              )}
 
               {/* ── 4. Team Assignment ───────────────────────────────── */}
-              <Section title="Team Assignment">
-                <div className="grid grid-cols-2 gap-3">
+              <section>
+                <FSectionHeading n={editProj ? 5 : 4}>Team Assignment</FSectionHeading>
+                <div className="grid grid-cols-4 gap-2">
                   <div>
-                    <Lbl>Attorney (Partner)</Lbl>
+                    <FLbl>Attorney (Partner)</FLbl>
                     <Combobox
                       value={form.assigned_partner_id}
                       options={staffOptions}
@@ -2137,7 +2271,7 @@ export default function Projects() {
                     />
                   </div>
                   <div>
-                    <Lbl>Client Manager</Lbl>
+                    <FLbl>Client Manager</FLbl>
                     <Combobox
                       value={form.assigned_manager_id}
                       options={staffOptions}
@@ -2146,7 +2280,7 @@ export default function Projects() {
                     />
                   </div>
                   <div>
-                    <Lbl>Secondary Client Manager</Lbl>
+                    <FLbl>Secondary Client Manager</FLbl>
                     <Combobox
                       value={form.secondary_manager_id}
                       options={staffOptions}
@@ -2155,7 +2289,7 @@ export default function Projects() {
                     />
                   </div>
                   <div>
-                    <Lbl>Patent Engineer</Lbl>
+                    <FLbl>Patent Engineer</FLbl>
                     <Combobox
                       value={form.patent_engineer_id}
                       options={staffOptions}
@@ -2164,17 +2298,18 @@ export default function Projects() {
                     />
                   </div>
                 </div>
-              </Section>
+              </section>
 
               {/* ── 5. Notes ─────────────────────────────────────────── */}
-              <Section title="Notes" open={false}>
+              <section>
+                <FSectionHeading n={editProj ? 6 : 5}>Notes</FSectionHeading>
                 <textarea
                   value={form.notes}
                   onChange={(e) => sf("notes", e.target.value)}
-                  rows={4} className={tc}
+                  rows={2} className={fTa}
                   placeholder="Internal notes, client instructions, special requirements…"
                 />
-              </Section>
+              </section>
             </div>
 
             <div className="flex gap-2 px-6 py-4 border-t border-border flex-shrink-0 justify-end">
@@ -2231,7 +2366,17 @@ export default function Projects() {
                     onMouseDown={async (e) => {
                       e.preventDefault();
                       const pid = stageMenu.projectId;
+                      const svc = (currentProject?.service_code ?? "").toUpperCase();
+                      const isRenewal = svc === "RNF" || svc === "REN";
+                      const yearMatch = isRenewal ? s.match(/^Renewed till (\d+)/) : null;
                       setStageMenu(null);
+                      if (isRenewal && yearMatch) {
+                        setRenewalPaidPrompt({ projectId: pid, year: parseInt(yearMatch[1], 10) });
+                        setRenewalPaidDate(new Date().toISOString().slice(0, 10));
+                        setRenewalPaidErr("");
+                        return;
+                      }
+                      if (isRenewal) return; // "Not renewed" — no backend action to revert a payment.
                       try { await api.updateProjectStage(pid, s); } catch {}
                       setProjects((prev) => prev.map((p) => {
                         if (p.id !== pid) return p;
@@ -2248,6 +2393,14 @@ export default function Projects() {
                           })),
                         };
                       }));
+                      // Draft/claims/arguments and "Forms" stages need a supporting document —
+                      // regardless of service code (see stageDocumentCategory).
+                      const docCategory = stageDocumentCategory(s);
+                      if (docCategory) {
+                        setUploadPrompt({ projectId: pid, category: docCategory, contextLabel: s, accept: ".pdf,.vsd,.vsdx,.docx" });
+                        setUploadFile(null);
+                        setUploadErr("");
+                      }
                     }}
                   >
                     {s}
@@ -2259,6 +2412,150 @@ export default function Projects() {
           </div>
         </>,
         document.body
+      )}
+
+      {/* ── Renewal Fee Paid Prompt ──────────────────────────────────────────
+          Picking "Renewed till Nth year" from the stage picker lands here — the
+          actual payment date matters (drives the renewal schedule + compliance
+          tracking), so it isn't inferred from "now" the way a plain stage pick is. */}
+      {renewalPaidPrompt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-sm p-6">
+            <h3 className="font-semibold font-display mb-1">Renewal Fee Paid</h3>
+            <p className="text-xs text-muted-foreground mb-4">
+              Mark renewed through year <span className="font-mono text-gold">{renewalPaidPrompt.year}</span>.
+            </p>
+            <label className="block text-xs font-medium text-muted-foreground mb-1">Payment date</label>
+            <input
+              type="date"
+              value={renewalPaidDate}
+              onChange={(e) => { setRenewalPaidDate(e.target.value); setRenewalPaidErr(""); }}
+              className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold"
+            />
+            {renewalPaidErr && <p className="text-xs text-destructive mt-2">{renewalPaidErr}</p>}
+            <div className="flex gap-2 justify-end mt-5">
+              <Button variant="outline" onClick={() => setRenewalPaidPrompt(null)} disabled={renewalPaidSaving}>Cancel</Button>
+              <Button onClick={async () => {
+                if (!renewalPaidDate) { setRenewalPaidErr("Enter a date."); return; }
+                setRenewalPaidSaving(true);
+                try {
+                  await api.recordRenewalPaid(renewalPaidPrompt.projectId, {
+                    paid_through_year: renewalPaidPrompt.year,
+                    paid_date: renewalPaidDate,
+                  });
+                  setRenewalPaidPrompt(null);
+                  // Reload rather than patch local state — this may auto-create a new
+                  // RNF/REN successor engagement, not just update the current row.
+                  loadProjects(roleFilter);
+                } catch (e: any) { setRenewalPaidErr(e.message || "Failed to record payment."); }
+                finally { setRenewalPaidSaving(false); }
+              }} disabled={renewalPaidSaving} className="bg-gold hover:bg-gold/90 text-black">
+                {renewalPaidSaving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}Confirm
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Status Event Date Prompt (Granted / Refused / Abandoned) ─────────
+          The real event date wasn't previously captured — status changes silently used
+          "now". For Granted/Refused, continuing here chains into the order-upload prompt. */}
+      {statusEventPrompt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-sm p-6">
+            <h3 className="font-semibold font-display mb-1">Case {statusEventPrompt.status}</h3>
+            <p className="text-xs text-muted-foreground mb-4">
+              When was this case {statusEventPrompt.status.toLowerCase()}?
+            </p>
+            <label className="block text-xs font-medium text-muted-foreground mb-1">Date</label>
+            <input
+              type="date"
+              value={statusEventDate}
+              onChange={(e) => { setStatusEventDate(e.target.value); setStatusEventErr(""); }}
+              className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold"
+            />
+            {statusEventErr && <p className="text-xs text-destructive mt-2">{statusEventErr}</p>}
+            <div className="flex gap-2 justify-end mt-5">
+              <Button variant="outline" disabled={statusEventSaving} onClick={() => {
+                // Came from the case edit form (fullPayload set) — reopen it with the
+                // in-progress edits intact rather than losing them.
+                if (statusEventPrompt.fullPayload) setShowModal(true);
+                setStatusEventPrompt(null);
+              }}>Cancel</Button>
+              <Button onClick={async () => {
+                if (!statusEventDate) { setStatusEventErr("Enter a date."); return; }
+                const { projectId, status, fullPayload } = statusEventPrompt;
+                setStatusEventSaving(true);
+                try {
+                  const updated = fullPayload
+                    ? await api.updateProject(projectId, { ...fullPayload, status, status_event_date: statusEventDate } as any)
+                    : await api.updateProject(projectId, { status, status_event_date: statusEventDate } as any);
+                  const backfilled = (updated as any)?.application_number_backfilled as { id: number; docket_number: string }[] | undefined;
+                  if (backfilled && backfilled.length > 0) {
+                    setBackfillNotice(backfilled.map((b) => b.docket_number));
+                    setTimeout(() => setBackfillNotice(null), 8000);
+                  }
+                  setStatusEventPrompt(null);
+                  loadProjects(roleFilter);
+                  if (status === "Granted" || status === "Refused") {
+                    setUploadPrompt({
+                      projectId,
+                      category: status === "Granted" ? "Grant Order" : "Refusal Order",
+                      contextLabel: `${status} Order`,
+                      accept: ".pdf",
+                    });
+                    setUploadFile(null);
+                    setUploadErr("");
+                  }
+                } catch (e: any) { setStatusEventErr(e.message || "Failed to save."); }
+                finally { setStatusEventSaving(false); }
+              }} disabled={statusEventSaving} className="bg-gold hover:bg-gold/90 text-black">
+                {statusEventSaving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}Continue
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Required Document Upload Prompt ───────────────────────────────────
+          Shared by the Grant/Refusal Order flow above and the stage-gated draft/forms
+          requirement (stageDocumentCategory). Skipping tracks it via requireDocument()
+          instead of silently dropping the requirement — see RequiredDocumentService. */}
+      {uploadPrompt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-sm p-6">
+            <h3 className="font-semibold font-display mb-1">Upload {uploadPrompt.contextLabel}</h3>
+            <p className="text-xs text-muted-foreground mb-4">
+              Attach the {uploadPrompt.contextLabel.toLowerCase()} document, or skip for now — you'll be reminded until it's uploaded.
+            </p>
+            <input
+              type="file"
+              accept={uploadPrompt.accept}
+              onChange={(e) => { setUploadFile(e.target.files?.[0] ?? null); setUploadErr(""); }}
+              className="w-full text-xs file:mr-3 file:h-8 file:rounded-md file:border file:border-border file:bg-muted file:px-3 file:text-xs file:font-medium"
+            />
+            {uploadErr && <p className="text-xs text-destructive mt-2">{uploadErr}</p>}
+            <div className="flex gap-2 justify-end mt-5">
+              <Button variant="outline" onClick={async () => {
+                const { projectId, category, contextLabel } = uploadPrompt;
+                setUploadSaving(true);
+                try { await api.requireDocument(projectId, { category, context_label: contextLabel }); } catch { /* best-effort */ }
+                setUploadPrompt(null); setUploadFile(null); setUploadSaving(false);
+              }} disabled={uploadSaving}>Skip for now</Button>
+              <Button onClick={async () => {
+                if (!uploadFile) { setUploadErr("Choose a file."); return; }
+                setUploadSaving(true);
+                try {
+                  await api.uploadDocument(uploadFile, uploadPrompt.category, undefined, uploadPrompt.projectId);
+                  setUploadPrompt(null); setUploadFile(null);
+                } catch (e: any) { setUploadErr(e.message || "Upload failed."); }
+                finally { setUploadSaving(false); }
+              }} disabled={uploadSaving} className="bg-gold hover:bg-gold/90 text-black">
+                {uploadSaving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}Upload
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* ── Status Picker Portal ───────────────────────────────────────────── */}
@@ -2293,13 +2590,26 @@ export default function Projects() {
                       e.preventDefault();
                       const pid = statusMenu.projectId;
                       setStatusMenu(null);
-                      const updates: any = { status: s };
-                      if (s === "Granted") updates.patent_granted = true;
-                      else updates.patent_granted = false;
-                      try { await api.updateProject(pid, updates); } catch {}
-                      setProjects((prev) => prev.map((p) => p.id === pid
-                        ? { ...p, status: s, patent_granted: s === "Granted" }
-                        : p));
+                      // Granted/Refused/Abandoned ask for the real event date (and, for
+                      // Granted/Refused, an order document) before saving — see the
+                      // statusEventPrompt modal.
+                      if (["Granted", "Refused", "Abandoned"].includes(s)) {
+                        setStatusEventPrompt({ projectId: pid, status: s });
+                        setStatusEventDate(new Date().toISOString().slice(0, 10));
+                        setStatusEventErr("");
+                        return;
+                      }
+                      // patent_granted is no longer guessed client-side — the backend is the
+                      // single source of truth for it (set true entering Granted, false
+                      // leaving it, untouched otherwise); read it back from the response.
+                      let updated: any = null;
+                      try { updated = await api.updateProject(pid, { status: s } as any); } catch {}
+                      // The new status may no longer match the active status filter — drop
+                      // the row from view in that case rather than leaving it visible stale.
+                      const stillMatches = filterStatus === "All" || s === filterStatus;
+                      setProjects((prev) => stillMatches
+                        ? prev.map((p) => p.id === pid ? { ...p, status: s, patent_granted: updated?.patent_granted ?? p.patent_granted } : p)
+                        : prev.filter((p) => p.id !== pid));
                     }}
                   >
                     {s}
@@ -2329,8 +2639,13 @@ export default function Projects() {
                 </p>
               </div>
             </div>
+            {delErr && (
+              <div className="mb-4 flex items-start gap-2 rounded-md bg-destructive/10 border border-destructive/30 px-3 py-2 text-sm text-destructive">
+                <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />{delErr}
+              </div>
+            )}
             <div className="flex gap-2 justify-end">
-              <Button variant="outline" onClick={() => setDelTarget(null)}>Cancel</Button>
+              <Button variant="outline" onClick={() => { setDelTarget(null); setDelErr(""); }}>Cancel</Button>
               <Button variant="destructive" onClick={handleDelete} disabled={deleting}>
                 {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Delete"}
               </Button>
@@ -2619,10 +2934,26 @@ export default function Projects() {
         ))}
       </div>
 
-      {kpiModal && <ProjectKpiModal kpi={kpiModal} onClose={() => setKpiModal(null)} onOpenDetail={openDetail} />}
+      {kpiModal && <ProjectKpiModal kpi={kpiModal} tab={activeTab} onClose={() => setKpiModal(null)} onOpenDetail={openDetail} />}
 
       {/* ── Table ─────────────────────────────────────────────────────────── */}
       <div className="px-8 py-6 space-y-4">
+        {/* Service-code tabs (admin-configurable — Settings → System → Project Tabs) */}
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <button onClick={() => { setActiveTab(""); setPage(1); }}
+            className={`px-3 h-8 text-xs rounded-md border transition-colors
+              ${activeTab === "" ? "bg-gold text-black border-gold font-semibold" : "border-border text-muted-foreground hover:text-foreground"}`}>
+            All
+          </button>
+          {projectTabs.map((t) => (
+            <button key={t.key} onClick={() => { setActiveTab(t.key); setPage(1); }}
+              className={`px-3 h-8 text-xs rounded-md border transition-colors
+                ${activeTab === t.key ? "bg-gold text-black border-gold font-semibold" : "border-border text-muted-foreground hover:text-foreground"}`}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+
         <div className="flex flex-wrap items-center gap-3">
           <div className="relative max-w-sm flex-1">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -2632,7 +2963,7 @@ export default function Projects() {
           </div>
           <div className="flex items-center gap-1.5 flex-wrap">
             {statuses.map((s) => (
-              <button key={s} onClick={() => setFilter(s)}
+              <button key={s} onClick={() => { setFilter(s); setPage(1); }}
                 className={`px-3 h-8 text-xs rounded-md border transition-colors
                   ${filterStatus === s ? "bg-gold text-black border-gold font-semibold" : "border-border text-muted-foreground hover:text-foreground"}`}>
                 {s}
@@ -2655,8 +2986,8 @@ export default function Projects() {
                       {!isClientUser && (
                         <th className="px-4 py-3 w-8">
                           <input type="checkbox" className="rounded border-border"
-                            checked={paginated.length > 0 && paginated.every(p => selectedIds.includes(p.id))}
-                            onChange={(e) => setSelectedIds(e.target.checked ? paginated.map(p => p.id) : [])} />
+                            checked={projects.length > 0 && projects.every(p => selectedIds.includes(p.id))}
+                            onChange={(e) => setSelectedIds(e.target.checked ? projects.map(p => p.id) : [])} />
                         </th>
                       )}
                       <th className="px-4 py-3 text-left">Case ID</th>
@@ -2673,7 +3004,7 @@ export default function Projects() {
                     </tr>
                   </thead>
                   <tbody>
-                    {paginated.map((p) => {
+                    {projects.map((p) => {
                       const stage = activeStage(p);
                       const isOverdue = p.hard_deadline && new Date(p.hard_deadline) < new Date();
                       return (
@@ -2734,8 +3065,8 @@ export default function Projects() {
                           </td>
                           <td className="px-4 py-3">
                             {isClientUser ? (
-                              <Badge variant={statusColor(p.status)} className="text-[10px] whitespace-nowrap">
-                                {p.status}
+                              <Badge variant={statusColor(displayStatus(p))} className="text-[10px] whitespace-nowrap">
+                                {displayStatus(p)}
                               </Badge>
                             ) : (
                               <button
@@ -2746,8 +3077,8 @@ export default function Projects() {
                                   setStatusMenu({ projectId: p.id, rect });
                                 }}
                               >
-                                <Badge variant={statusColor(p.status)} className="text-[10px] whitespace-nowrap cursor-pointer hover:opacity-80 transition-opacity">
-                                  {p.status}
+                                <Badge variant={statusColor(displayStatus(p))} className="text-[10px] whitespace-nowrap cursor-pointer hover:opacity-80 transition-opacity">
+                                  {displayStatus(p)}
                                 </Badge>
                               </button>
                             )}
@@ -2812,7 +3143,7 @@ export default function Projects() {
                                 </Button>
                                 <Button size="sm" variant="outline" title="Delete"
                                   className="h-7 w-7 p-0 text-destructive border-destructive/30 hover:bg-destructive/10"
-                                  onClick={() => setDelTarget(p)}>
+                                  onClick={() => { setDelErr(""); setDelTarget(p); }}>
                                   <Trash2 className="h-3 w-3" />
                                 </Button>
                               </div>
@@ -2821,19 +3152,21 @@ export default function Projects() {
                         </tr>
                       );
                     })}
-                    {paginated.length === 0 && (
+                    {projects.length === 0 && (
                       <tr>
                         <td colSpan={10} className="px-4 py-12 text-center text-muted-foreground">
-                          {projects.length === 0 ? "No cases yet. Create your first case above." : "No cases match your search."}
+                          {serverTotal === 0 && !activeTab && filterStatus === "All" && !debouncedSearch
+                            ? "No cases yet. Create your first case above."
+                            : "No cases match your search."}
                         </td>
                       </tr>
                     )}
                   </tbody>
                 </table>
                 {/* Pagination bar */}
-                {filtered.length > 0 && (
+                {serverTotal > 0 && (
                   <div className="flex items-center justify-between px-4 py-3 border-t border-border text-xs text-muted-foreground">
-                    <span>Showing {Math.min((page-1)*perPage+1, filtered.length)}–{Math.min(page*perPage, filtered.length)} of {filtered.length}</span>
+                    <span>Showing {Math.min((page-1)*perPage+1, serverTotal)}–{Math.min(page*perPage, serverTotal)} of {serverTotal}</span>
                     <div className="flex items-center gap-3">
                       <span>Rows per page:</span>
                       {[10,25,50].map(n=>(

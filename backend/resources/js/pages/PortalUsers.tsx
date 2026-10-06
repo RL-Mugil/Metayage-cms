@@ -88,13 +88,13 @@ export default function PortalUsers() {
       {/* Add user modal */}
       {showAdd && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-md p-6 m-4">
-            <div className="flex items-center justify-between mb-4">
+          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-xl m-4">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-border">
               <h2 className="font-display text-lg font-semibold">Add Portal User</h2>
               <button onClick={() => setShowAdd(false)}><X className="h-5 w-5 text-muted-foreground" /></button>
             </div>
             {created ? (
-              <div className="py-4 space-y-4">
+              <div className="px-6 py-4 space-y-4">
                 <div className="text-center">
                   <CheckCircle className="h-10 w-10 text-green-500 mx-auto mb-3" />
                   <div className="font-semibold">User Added!</div>
@@ -111,42 +111,50 @@ export default function PortalUsers() {
               </div>
             ) : (
               <>
-                {addError && <p className="text-xs text-red-500 mb-3">{addError}</p>}
-                <div className="space-y-3">
-                  <div>
-                    <label className="block text-xs text-muted-foreground mb-1">Full Name</label>
-                    <input type="text" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))}
-                      placeholder="Jane Smith"
-                      className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-muted-foreground mb-1">Work Email</label>
-                    <input type="email" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))}
-                      placeholder="jane@yourcompany.com"
-                      className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-muted-foreground mb-1">Set Password</label>
-                    <input type="text" value={form.password} onChange={e => setForm(p => ({ ...p, password: e.target.value }))}
-                      placeholder="Min. 6 characters — share it with them"
-                      className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-gold" />
-                    <p className="text-[10px] text-muted-foreground mt-1">They can change it later in Settings → Security.</p>
-                  </div>
-                  <div>
-                    <label className="block text-xs text-muted-foreground mb-1">Access</label>
-                    <select value={form.role} onChange={e => setForm(p => ({ ...p, role: e.target.value as "client" | "client_finance" }))}
-                      className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold">
-                      <option value="client">Full access — cases, deadlines, approvals, billing</option>
-                      <option value="client_finance">Finance only — billing and invoices</option>
-                    </select>
-                  </div>
+                <div className="px-6 py-4 space-y-3">
+                  {addError && <p className="text-xs text-red-500">{addError}</p>}
+                  <section>
+                    <h3 className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-2 flex items-center gap-1.5">
+                      <span className="w-4 h-4 rounded-full bg-gold text-black flex items-center justify-center text-[9px] font-bold">1</span>
+                      User Details
+                    </h3>
+                    <div className="grid grid-cols-4 gap-2">
+                      <div className="col-span-2">
+                        <div className="text-[10px] text-muted-foreground mb-0.5">Full Name</div>
+                        <input type="text" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))}
+                          placeholder="Jane Smith"
+                          className="w-full h-8 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
+                      </div>
+                      <div className="col-span-2">
+                        <div className="text-[10px] text-muted-foreground mb-0.5">Work Email</div>
+                        <input type="email" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))}
+                          placeholder="jane@yourcompany.com"
+                          className="w-full h-8 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
+                      </div>
+                      <div className="col-span-2">
+                        <div className="text-[10px] text-muted-foreground mb-0.5">Set Password</div>
+                        <input type="text" value={form.password} onChange={e => setForm(p => ({ ...p, password: e.target.value }))}
+                          placeholder="Min. 6 characters — share it with them"
+                          className="w-full h-8 rounded border border-border bg-background px-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-gold" />
+                        <p className="text-[10px] text-muted-foreground mt-1">They can change it later in Settings → Security.</p>
+                      </div>
+                      <div className="col-span-2">
+                        <div className="text-[10px] text-muted-foreground mb-0.5">Access</div>
+                        <select value={form.role} onChange={e => setForm(p => ({ ...p, role: e.target.value as "client" | "client_finance" }))}
+                          className="w-full h-8 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold">
+                          <option value="client">Full access — cases, deadlines, approvals, billing</option>
+                          <option value="client_finance">Finance only — billing and invoices</option>
+                        </select>
+                      </div>
+                    </div>
+                  </section>
                 </div>
-                <div className="flex gap-2 mt-5">
-                  <Button className="bg-gold hover:bg-gold/90 text-black flex-1"
+                <div className="flex gap-2 px-6 py-4 border-t border-border justify-end">
+                  <Button variant="outline" onClick={() => setShowAdd(false)}>Cancel</Button>
+                  <Button className="bg-gold hover:bg-gold/90 text-black min-w-[120px]"
                     disabled={!form.name.trim() || !form.email.trim() || form.password.length < 6 || saving} onClick={addUser}>
                     {saving ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Adding…</> : <>Add User</>}
                   </Button>
-                  <Button variant="outline" onClick={() => setShowAdd(false)}>Cancel</Button>
                 </div>
               </>
             )}

@@ -18,7 +18,7 @@ use Illuminate\Support\Collection;
  */
 class ActionItemService
 {
-    public const TERMINAL_STATUSES = ['Granted', 'Refused', 'Abandoned', 'Closed', 'Completed'];
+    public const TERMINAL_STATUSES = ['Granted', 'Refused', 'Abandoned', 'Closed', 'Completed', 'Archived'];
 
     /**
      * Action items for an already-scoped (client/analyst/circle/etc.) Project
@@ -31,8 +31,14 @@ class ActionItemService
     {
         $query = (clone $base)
             ->whereNotIn('status', self::TERMINAL_STATUSES)
-            ->with(['stages' => fn ($q) => $q->where('status', 'In Progress')])
-            ->orderByRaw("CASE WHEN urgency='Critical' THEN 1 WHEN urgency='High' THEN 2 ELSE 3 END");
+            ->with(['stages' => fn ($q) => $q->where('status', 'In Progress')->orderBy('sequence_order')])
+            // Urgency tier first, then a deterministic tiebreak (nearest deadline first,
+            // undated last, then id) — without this, rows within the same urgency tier
+            // come back in arbitrary DB order, which is unsafe to combine with a LIMIT.
+            ->orderByRaw("CASE WHEN urgency='Critical' THEN 1 WHEN urgency='High' THEN 2 ELSE 3 END")
+            ->orderByRaw('hard_deadline IS NULL')
+            ->orderBy('hard_deadline')
+            ->orderBy('id');
 
         if ($limit) {
             $query->limit($limit);
@@ -122,7 +128,10 @@ class ActionItemService
             in_array($svcCode, ['FER', 'SER', 'TER']) => 'Examination — response to office action required',
             in_array($svcCode, ['HRG']) => 'Hearing — preparation or response required',
             in_array($svcCode, ['GRT']) => 'Granted',
-            in_array($svcCode, ['RNF']) => 'Renewal due',
+            // Real project data uses 'REN'; 'RNF' is the code dictionary's name for the
+            // same thing (see RenewalActionController's REN/RNF dual-lookup) — both must
+            // be recognized or real renewal projects silently fall to the default arm.
+            in_array($svcCode, ['RNF', 'REN'], true) => 'Renewal due',
             default => 'Awaiting next action',
         };
 
@@ -132,8 +141,10 @@ class ActionItemService
         // false, silently dropping it from financeActionFeed()/the renewal-priority
         // sort and, via ownerFor()'s $isRenewal param, mis-attributing it to 'internal'
         // instead of 'client'. Mirrors the exact conditions that produce 'Renewal due'
-        // above (str_contains 'Renewal' / RNF service code).
-        $isRenewal = str_contains($stageName, 'Renewal') || in_array($svcCode, ['RNF'], true);
+        // above. Note: the renewal stage names themselves ("Not renewed", "Renewed till
+        // Nth year") no longer contain the word "Renewal", so the RNF/REN service-code
+        // check is now the only reliable signal here, not the str_contains fallback.
+        $isRenewal = str_contains($stageName, 'Renewal') || in_array($svcCode, ['RNF', 'REN'], true);
 
         return [
             'id' => $p->id,

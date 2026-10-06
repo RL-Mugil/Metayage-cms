@@ -28,5 +28,6 @@ Schedule::command('compliance:sync')->hourly()->withoutOverlapping()->onOneServe
 // completions.
 Schedule::command('google:sync-completions')->everyFifteenMinutes()->withoutOverlapping()->onOneServer();
 
-// Mirror Zoho Books invoices/estimates into the local read-only cache every 30 minutes
-Schedule::command('zoho:sync')->everyThirtyMinutes();
+// Morning allowance: 1,800 reads; reserve 100 manual reads and 100 quote writes until 23:00.
+Schedule::command('zoho:sync --scheduled')->dailyAt('03:00')->timezone('Asia/Kolkata')->withoutOverlapping(120)->onOneServer();
+Schedule::command('zoho:sync --evening')->cron('*/5 23 * * *')->timezone('Asia/Kolkata')->withoutOverlapping(65)->onOneServer();

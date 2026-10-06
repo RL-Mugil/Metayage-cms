@@ -168,11 +168,11 @@ export default function HRMSLeave() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <label className="text-xs text-muted-foreground font-semibold uppercase tracking-wide">Leave Type</label>
+              <form onSubmit={handleSubmit} className="max-w-5xl grid grid-cols-4 gap-2">
+                <div>
+                  <div className="text-[10px] text-muted-foreground mb-0.5">Leave Type</div>
                   <select
-                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gold"
+                    className="w-full h-8 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold"
                     value={form.leave_type}
                     onChange={(e) => setForm((f) => ({ ...f, leave_type: e.target.value }))}
                     required
@@ -180,45 +180,43 @@ export default function HRMSLeave() {
                     {LEAVE_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
                   </select>
                 </div>
-                <div />
-                <div className="space-y-1.5">
-                  <label className="text-xs text-muted-foreground font-semibold uppercase tracking-wide">From Date</label>
+                <div>
+                  <div className="text-[10px] text-muted-foreground mb-0.5">From Date</div>
                   <input
                     type="date"
-                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gold"
+                    className="w-full h-8 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold"
                     value={form.from_date}
                     onChange={(e) => setForm((f) => ({ ...f, from_date: e.target.value }))}
                     required
                   />
                 </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs text-muted-foreground font-semibold uppercase tracking-wide">To Date</label>
+                <div>
+                  <div className="text-[10px] text-muted-foreground mb-0.5">To Date</div>
                   <input
                     type="date"
-                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gold"
+                    className="w-full h-8 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold"
                     value={form.to_date}
                     onChange={(e) => setForm((f) => ({ ...f, to_date: e.target.value }))}
                     required
                   />
                 </div>
-                <div className="md:col-span-2 space-y-1.5">
-                  <label className="text-xs text-muted-foreground font-semibold uppercase tracking-wide">Reason</label>
+                {form.from_date && form.to_date && (
+                  <div className="flex items-end pb-1 text-[11px] text-muted-foreground">
+                    <span className="text-gold font-semibold mr-1">{countWorkingDays(form.from_date, form.to_date)}</span> working day(s)
+                  </div>
+                )}
+                <div className="col-span-4">
+                  <div className="text-[10px] text-muted-foreground mb-0.5">Reason</div>
                   <textarea
-                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gold resize-none"
-                    rows={3}
+                    className="w-full rounded border border-border bg-background px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-gold resize-none"
+                    rows={2}
                     value={form.reason}
                     onChange={(e) => setForm((f) => ({ ...f, reason: e.target.value }))}
                     placeholder="Brief reason for your leave request..."
                     required
                   />
                 </div>
-                {form.from_date && form.to_date && (
-                  <div className="md:col-span-2 text-xs text-muted-foreground">
-                    Duration: <span className="text-gold font-semibold">{countWorkingDays(form.from_date, form.to_date)} working day(s)</span>
-                    <span className="ml-1 text-muted-foreground/60">(weekends excluded)</span>
-                  </div>
-                )}
-                <div className="md:col-span-2 flex gap-2 justify-end pt-1">
+                <div className="col-span-4 flex gap-2 justify-end pt-1">
                   <Button type="button" variant="outline" onClick={() => setShowForm(false)}>Cancel</Button>
                   <Button type="submit" disabled={submitting}>
                     {submitting && <Loader2 className="h-4 w-4 animate-spin mr-2" />}

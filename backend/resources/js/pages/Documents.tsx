@@ -10,6 +10,7 @@ import {
   Download,
   Trash2,
   Loader2,
+  X,
 } from "lucide-react";
 import AppLayout from "@/layouts/AppLayout";
 import { PageHeader } from "@/components/page-header";
@@ -18,6 +19,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api-client";
+import { SearchCombobox } from "@/components/search-combobox";
 
 interface DocFile {
   name: string;
@@ -33,9 +35,15 @@ interface ClientOption {
   company_name?: string;
   legal_name?: string;
   client_code?: string;
+  entity_type?: string;
+  primary_jurisdiction?: string;
+  contact_name?: string;
+  contact_email?: string;
+  status?: string;
 }
 
 const FOLDERS = ["All Documents", "General", "Patents", "Trademarks", "Contracts", "Correspondence", "Invoices"];
+const UPLOAD_FOLDERS = ["General", "Patents", "Trademarks", "Contracts", "Correspondence", "Invoices", "Payment Proof", "Grant Order", "Refusal Order", "Draft Document", "Forms"];
 
 function fmtSize(bytes: number): string {
   if (bytes >= 1048576) return `${(bytes / 1048576).toFixed(1)} MB`;
@@ -77,14 +85,17 @@ export default function Documents() {
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [banner, setBanner] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // "Share with client" — internal users can tag an upload to a client
+  // Upload modal — internal users can tag an upload to a client via a searchable,
+  // scrollable combobox showing full client details; clients always upload to
+  // their own account (server enforces this regardless of what's sent).
   const [clients, setClients] = useState<ClientOption[]>([]);
-  const [shareClientId, setShareClientId] = useState<number | null>(null);
-  const [clientSearch, setClientSearch] = useState("");
-  const [clientDropdownOpen, setClientDropdownOpen] = useState(false);
-  const clientComboRef = useRef<HTMLDivElement>(null);
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [uploadClientId, setUploadClientId] = useState("");
+  const [uploadFolder, setUploadFolder] = useState("General");
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [uploadError, setUploadError] = useState("");
+  const modalFileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!isClientUser) {
@@ -94,33 +105,16 @@ export default function Documents() {
     }
   }, [isClientUser]);
 
-  useEffect(() => {
-    if (!clientDropdownOpen) return;
-    function onOutsideClick(e: MouseEvent) {
-      if (clientComboRef.current && !clientComboRef.current.contains(e.target as Node)) {
-        setClientDropdownOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", onOutsideClick);
-    return () => document.removeEventListener("mousedown", onOutsideClick);
-  }, [clientDropdownOpen]);
-
-  const filteredClients = clients.filter((c) => {
-    const q = clientSearch.toLowerCase();
-    return (
-      (c.company_name ?? c.legal_name ?? "").toLowerCase().includes(q) ||
-      (c.client_code ?? "").toLowerCase().includes(q)
-    );
-  }).slice(0, 60);
-
   function clientDisplayName(c: ClientOption) {
     return `${c.client_code ?? ""} — ${c.company_name ?? c.legal_name ?? ""}`.trim().replace(/^— /, "");
   }
 
-  function selectClient(c: ClientOption | null) {
-    setShareClientId(c ? c.id : null);
-    setClientSearch(c ? clientDisplayName(c) : "");
-    setClientDropdownOpen(false);
+  function openUploadModal() {
+    setPendingFile(null);
+    setUploadClientId("");
+    setUploadFolder(activeFolder === "All Documents" ? "General" : activeFolder);
+    setUploadError("");
+    setShowUploadModal(true);
   }
 
   function showBanner(kind: "ok" | "err", text: string) {
@@ -151,27 +145,35 @@ export default function Documents() {
   const ALLOWED_TYPES = new Set(["pdf","docx","doc","xlsx","xls","pptx","ppt","txt","csv","png","jpg","jpeg","gif","zip"]);
   const MAX_BYTES = 50 * 1024 * 1024; // 50 MB
 
-  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+  function pickFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
     const fileExt = file.name.split(".").pop()?.toLowerCase() ?? "";
     if (!ALLOWED_TYPES.has(fileExt)) {
-      showBanner("err", `File type .${fileExt} is not allowed. Supported: PDF, Word, Excel, PowerPoint, TXT, CSV, images, ZIP.`);
+      setUploadError(`File type .${fileExt} is not allowed. Supported: PDF, Word, Excel, PowerPoint, TXT, CSV, images, ZIP.`);
       return;
     }
     if (file.size > MAX_BYTES) {
-      showBanner("err", `File too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Maximum allowed size is 50 MB.`);
+      setUploadError(`File too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Maximum allowed size is 50 MB.`);
       return;
     }
+    setUploadError("");
+    setPendingFile(file);
+  }
+
+  async function submitUpload() {
+    if (!pendingFile) { setUploadError("Choose a file first."); return; }
     setUploading(true);
+    setUploadError("");
     try {
-      const folder = activeFolder === "All Documents" ? "General" : activeFolder;
-      const uploaded = await api.uploadDocument(file, folder, isClientUser ? null : shareClientId);
-      showBanner("ok", `Uploaded: ${uploaded.name}${shareClientId && !isClientUser ? " (shared with client)" : ""}`);
+      const clientId = !isClientUser && uploadClientId ? Number(uploadClientId) : null;
+      const uploaded = await api.uploadDocument(pendingFile, uploadFolder, clientId);
+      showBanner("ok", `Uploaded: ${uploaded.name}${clientId ? " (shared with client)" : ""}`);
+      setShowUploadModal(false);
       refresh();
     } catch (err: any) {
-      showBanner("err", err.message || "Upload failed");
+      setUploadError(err.message || "Upload failed");
     } finally {
       setUploading(false);
     }
@@ -205,73 +207,109 @@ export default function Documents() {
         description="IP specifications, filings, contracts, and correspondence"
         actions={
           <>
-            <input
-              ref={fileInputRef}
-              type="file"
-              className="hidden"
-              onChange={handleFileChange}
-              accept=".pdf,.docx,.doc,.xlsx,.xls,.pptx,.ppt,.txt,.csv,.png,.jpg,.jpeg,.gif,.zip"
-            />
             {!isClientUser && (
-              <div ref={clientComboRef} className="relative w-[220px]">
-                <input
-                  type="text"
-                  placeholder="Internal only"
-                  value={clientSearch}
-                  onChange={(e) => {
-                    setClientSearch(e.target.value);
-                    setClientDropdownOpen(true);
-                    if (!e.target.value) setShareClientId(null);
-                  }}
-                  onFocus={() => setClientDropdownOpen(true)}
-                  className="h-9 w-full rounded-md border border-border bg-background px-3 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-gold"
-                  title="Type client name or code to filter"
-                />
-                {shareClientId && (
-                  <button
-                    type="button"
-                    onClick={() => selectClient(null)}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground text-xs leading-none"
-                    title="Clear"
-                  >✕</button>
-                )}
-                {clientDropdownOpen && (
-                  <div className="absolute z-50 mt-1 w-full rounded-md border border-border bg-popover shadow-lg max-h-60 overflow-y-auto">
-                    <button
-                      type="button"
-                      onMouseDown={(e) => { e.preventDefault(); selectClient(null); }}
-                      className={`w-full px-3 py-2 text-left text-xs hover:bg-muted/60 ${!shareClientId ? "text-gold font-medium" : "text-muted-foreground"}`}
-                    >
-                      Internal only
-                    </button>
-                    {filteredClients.length === 0 && clientSearch && (
-                      <p className="px-3 py-2 text-xs text-muted-foreground">No clients match</p>
-                    )}
-                    {filteredClients.map((c) => (
-                      <button
-                        key={c.id}
-                        type="button"
-                        onMouseDown={(e) => { e.preventDefault(); selectClient(c); }}
-                        className={`w-full px-3 py-2 text-left text-xs hover:bg-muted/60 ${shareClientId === c.id ? "text-gold font-medium" : "text-foreground"}`}
-                      >
-                        <span className="font-mono text-[10px] text-muted-foreground mr-1">{c.client_code}</span>
-                        {c.company_name ?? c.legal_name}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-            {!isClientUser && (
-              <Button onClick={() => fileInputRef.current?.click()} disabled={uploading}>
-                {uploading
-                  ? <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  : <Upload className="h-4 w-4 mr-2" />} Upload File
+              <Button onClick={openUploadModal}>
+                <Upload className="h-4 w-4 mr-2" /> Upload File
               </Button>
             )}
           </>
         }
       />
+
+      {showUploadModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-2xl p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-display text-lg font-semibold">Upload File</h2>
+              <button onClick={() => setShowUploadModal(false)}><X className="h-5 w-5 text-muted-foreground" /></button>
+            </div>
+
+            {uploadError && (
+              <div className="rounded-md bg-destructive/15 border border-destructive/30 p-3 text-xs text-destructive mb-3">{uploadError}</div>
+            )}
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="col-span-2">
+                <label className="block text-xs text-muted-foreground mb-1">File *</label>
+                <input
+                  ref={modalFileInputRef}
+                  type="file"
+                  className="hidden"
+                  onChange={pickFile}
+                  accept=".pdf,.docx,.doc,.xlsx,.xls,.pptx,.ppt,.txt,.csv,.png,.jpg,.jpeg,.gif,.zip"
+                />
+                <button
+                  type="button"
+                  onClick={() => modalFileInputRef.current?.click()}
+                  className="w-full flex items-center gap-2 h-10 rounded-md border border-dashed border-border bg-background px-3 text-sm text-left hover:border-gold/50 hover:bg-muted/30 transition-colors"
+                >
+                  {pendingFile ? <FileIcon name={pendingFile.name} /> : <Upload className="h-4 w-4 text-muted-foreground flex-shrink-0" />}
+                  <span className={`truncate ${pendingFile ? "text-foreground" : "text-muted-foreground"}`}>
+                    {pendingFile ? pendingFile.name : "Choose a file…"}
+                  </span>
+                  {pendingFile && <span className="ml-auto text-xs text-muted-foreground flex-shrink-0">{fmtSize(pendingFile.size)}</span>}
+                </button>
+              </div>
+
+              <div className={isClientUser ? "col-span-2" : ""}>
+                <label className="block text-xs text-muted-foreground mb-1">Folder</label>
+                <select
+                  value={uploadFolder}
+                  onChange={(e) => setUploadFolder(e.target.value)}
+                  className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold"
+                >
+                  {UPLOAD_FOLDERS.map((f) => <option key={f} value={f}>{f}</option>)}
+                </select>
+              </div>
+
+              {isClientUser ? (
+                <p className="col-span-2 text-xs text-muted-foreground">This will be uploaded to your own account.</p>
+              ) : (
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1">Share with client (optional)</label>
+                  <SearchCombobox<ClientOption>
+                    value={uploadClientId}
+                    items={clients}
+                    onSelect={setUploadClientId}
+                    getId={(c) => c.id}
+                    filterItem={(c, q) =>
+                      (c.company_name ?? "").toLowerCase().includes(q) ||
+                      (c.legal_name ?? "").toLowerCase().includes(q) ||
+                      (c.client_code ?? "").toLowerCase().includes(q) ||
+                      (c.contact_name ?? "").toLowerCase().includes(q)
+                    }
+                    renderSelected={clientDisplayName}
+                    placeholder="Search client name or code… (leave blank for internal only)"
+                    renderOption={(c) => (
+                      <span className="flex flex-col gap-0.5 min-w-0">
+                        <span className="flex items-baseline gap-2">
+                          <span className="font-mono text-[10px] text-gold flex-shrink-0">{c.client_code}</span>
+                          <span className="truncate font-medium">{c.company_name ?? c.legal_name}</span>
+                          {c.status && c.status !== "Active" && (
+                            <Badge variant="outline" className="text-[9px] flex-shrink-0">{c.status}</Badge>
+                          )}
+                        </span>
+                        <span className="text-[11px] text-muted-foreground truncate">
+                          {[c.entity_type, c.primary_jurisdiction, c.contact_name].filter(Boolean).join(" · ") || "—"}
+                        </span>
+                      </span>
+                    )}
+                  />
+                  <p className="text-[11px] text-muted-foreground mt-1">Leave blank to keep this file internal-only.</p>
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-2 mt-5">
+              <Button className="flex-1" onClick={submitUpload} disabled={uploading || !pendingFile}>
+                {uploading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Upload className="h-4 w-4 mr-2" />}
+                {uploading ? "Uploading…" : "Upload"}
+              </Button>
+              <Button variant="outline" onClick={() => setShowUploadModal(false)}>Cancel</Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {banner && (
         <div className={`mx-8 mb-2 rounded-md border px-4 py-2 text-sm ${

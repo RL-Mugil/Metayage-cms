@@ -10,6 +10,7 @@ use App\Models\ZohoInvoice;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
+use Illuminate\Support\Facades\Storage;
 
 class SyncZohoBooksTest extends TestCase
 {
@@ -43,7 +44,7 @@ class SyncZohoBooksTest extends TestCase
             'docket_number' => '807M004INFFP', 'invoice_uin' => '807M004INFFP/1',
         ]);
 
-        Http::fake([
+        $this->fakeZoho([
             'https://accounts.zoho.in/oauth/v2/token' => Http::response(['access_token' => 'fake-token', 'expires_in' => 3600], 200),
             'https://www.zohoapis.in/books/v3/invoices*' => Http::response([
                 'invoices' => [[
@@ -77,7 +78,7 @@ class SyncZohoBooksTest extends TestCase
         $project = Project::create(['project_code' => '601M001IN27F', 'client_id' => $client->id, 'project_type' => 'Patent', 'project_name' => 'Another Invention', 'docket_number' => '601M001IN27F']);
         // No PatentInvoiceIn row at all — Zoho is the only place this quote was ever raised.
 
-        Http::fake([
+        $this->fakeZoho([
             'https://accounts.zoho.in/oauth/v2/token' => Http::response(['access_token' => 'fake-token', 'expires_in' => 3600], 200),
             'https://www.zohoapis.in/books/v3/invoices*' => Http::response(['invoices' => [], 'page_context' => ['has_more_page' => false]]),
             'https://www.zohoapis.in/books/v3/estimates*' => Http::response([
@@ -98,11 +99,11 @@ class SyncZohoBooksTest extends TestCase
         ]);
     }
 
-    public function test_sync_skips_records_with_no_matching_case(): void
+    public function test_sync_keeps_records_with_no_matching_case(): void
     {
         $this->configureZoho();
 
-        Http::fake([
+        $this->fakeZoho([
             'https://accounts.zoho.in/oauth/v2/token' => Http::response(['access_token' => 'fake-token', 'expires_in' => 3600], 200),
             'https://www.zohoapis.in/books/v3/invoices*' => Http::response([
                 'invoices' => [['invoice_id' => 'zid-x', 'invoice_number' => 'NOMATCH123', 'status' => 'paid', 'total' => 100, 'currency_code' => 'INR']],
@@ -112,7 +113,7 @@ class SyncZohoBooksTest extends TestCase
         ]);
 
         $this->artisan('zoho:sync')->assertExitCode(0);
-        $this->assertDatabaseCount('zoho_invoices', 0);
+        $this->assertDatabaseHas('zoho_invoices', ['zoho_id' => 'zid-x', 'project_id' => null]);
     }
 
     public function test_sync_skips_when_not_configured(): void
@@ -120,4 +121,33 @@ class SyncZohoBooksTest extends TestCase
         $this->artisan('zoho:sync')->assertExitCode(0);
         $this->assertDatabaseCount('zoho_invoices', 0);
     }
+    private function fakeZoho(array $responses): void
+    {
+        Storage::fake('local');
+        Http::fake(function ($request) use ($responses) {
+            if (str_contains($request->url(), '/oauth/')) {
+                return Http::response(['access_token' => 'fake-token']);
+            }
+            $path = parse_url($request->url(), PHP_URL_PATH);
+            $parts = explode('/', trim($path, '/'));
+            $resource = $parts[2];
+            $id = $parts[3] ?? null;
+            if (($request['accept'] ?? null) === 'pdf') {
+                return Http::response('%PDF-1.4 fake', 200, ['Content-Type' => 'application/pdf']);
+            }
+            $promise = $responses['https://www.zohoapis.in/books/v3/' . $resource . '*'] ?? null;
+            if (! $promise) {
+                return Http::response([$resource => [], 'page_context' => ['has_more_page' => false]]);
+            }
+            $response = $promise->wait();
+            $data = json_decode((string) $response->getBody(), true);
+            if (! $id) {
+                return Http::response($data);
+            }
+            [$idKey, $key] = \App\Services\ZohoBooksService::RESOURCES[$resource];
+            $record = collect($data[$resource])->firstWhere($idKey, $id);
+            return Http::response([$key => $record]);
+        });
+    }
+
 }

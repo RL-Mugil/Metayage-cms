@@ -50,6 +50,15 @@ return [
         'access_token' => env('EXPO_ACCESS_TOKEN'),
     ],
 
+    // Cloudflare Turnstile — bot check on the login form (AuthController::login()).
+    // site_key is public (shared to the frontend via HandleInertiaRequests); secret_key is
+    // server-only and must never reach the client. Both blank = Turnstile silently disabled
+    // (see AuthController::verifyTurnstile()) rather than locking out login in dev/local envs.
+    'turnstile' => [
+        'site_key'   => env('TURNSTILE_SITE_KEY'),
+        'secret_key' => env('TURNSTILE_SECRET_KEY'),
+    ],
+
     // Indian GST configuration. Override per-client/per-invoice when needed.
     'gst' => [
         'standard_rate'  => (float) env('GST_STANDARD_RATE', 18),  // % — most IP services

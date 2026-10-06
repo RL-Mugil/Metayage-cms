@@ -17,6 +17,81 @@ export interface User {
   permissions?: Record<string, string>
 }
 
+// Admin-configurable Projects-list tab (see SettingsController::updateProjectTabs).
+// The "others" tab (is_system: true) is the automatic catch-all for any service_code
+// not explicitly assigned to another tab — it always has an empty `codes` list.
+export interface ProjectTab {
+  key: string
+  label: string
+  codes: string[]
+  is_system: boolean
+}
+
+// Settings → Codes tab (see SettingsController::codesIndex/previewCodeRename/executeCodeRename).
+export interface CodeRow {
+  code: string
+  label: string
+  projects_count: number
+}
+
+export interface CodeTableCascadeCounts {
+  updated: number
+  skipped: number
+  skipped_ids: number[]
+}
+
+// Shared shape returned by both the preview (rename-preview, read-only) and the execute
+// (rename) endpoints — execute's response additionally has `ok: true` and persists the change.
+export interface CodeRenameImpact {
+  type: 'service' | 'country'
+  old_code: string
+  new_code: string
+  projects: { updated: number; irregular: number; irregular_ids: number[] }
+  fee_rate_cards: CodeTableCascadeCounts
+  service_transition_rules: CodeTableCascadeCounts
+  jurisdiction_lifecycle_templates: CodeTableCascadeCounts
+  jurisdiction_tables: Record<string, number>
+  project_tabs_hits: number
+}
+
+export interface CodeRenameResult extends CodeRenameImpact {
+  ok: true
+}
+
+// previewCodeRename() returns this instead of CodeRenameImpact when the target code already
+// exists as a separate, distinct catalog entry — signals the dialog to offer a merge instead.
+export interface CodeMergeAvailable {
+  merge_available: true
+  old_code: string
+  new_code: string
+  existing_label: string
+  existing_count: number
+}
+
+export interface CodeTableCascadeMergeCounts {
+  updated: number
+  discarded: number
+  discarded_ids: number[]
+}
+
+// Shared shape returned by both the merge preview (merge-preview, read-only) and the execute
+// (merge) endpoints — execute's response additionally has `ok: true` and persists the change.
+export interface CodeMergeImpact {
+  type: 'service' | 'country'
+  old_code: string
+  new_code: string
+  projects: { updated: number; irregular: number; irregular_ids: number[] }
+  fee_rate_cards: CodeTableCascadeMergeCounts
+  service_transition_rules: CodeTableCascadeMergeCounts
+  jurisdiction_lifecycle_templates: CodeTableCascadeMergeCounts
+  jurisdiction_tables: Record<string, number>
+  project_tabs_hits: number
+}
+
+export interface CodeMergeResult extends CodeMergeImpact {
+  ok: true
+}
+
 export interface PaginatedResponse<T> {
   data: T[]
   total: number
@@ -51,8 +126,16 @@ export interface Client {
   gst_type: GstType
   has_gstin: boolean
   gstin?: string | null
+  gstin_verification_status?: 'Unverified' | 'Verified' | 'Mismatch' | 'Failed'
+  gstin_verified_at?: string | null
+  gstin_verified_name?: string | null
+  gstin_verified_address?: string | null
   pan_number?: string | null
   cin_number?: string | null
+  cin_verification_status?: 'Unverified' | 'Verified' | 'Mismatch' | 'Failed'
+  cin_verified_at?: string | null
+  cin_verified_name?: string | null
+  cin_verified_address?: string | null
   state?: string | null
   address?: string | null
   referred_by_code?: string | null
@@ -189,7 +272,34 @@ export interface Employee {
   employment_status: EmploymentStatus
   work_location: string
   date_of_joining: string
-  salary?: number | null
+  base_pay_monthly?: number | null
+  hra_monthly?: number | null
+  professional_tax_exempt?: boolean
+  exclude_from_payroll?: boolean
+  date_of_birth?: string | null
+  father_name?: string | null
+  gender?: string | null
+  differently_abled_type?: string | null
+  mobile?: string | null
+  current_address?: string | null
+  permanent_address?: string | null
+  aadhaar_ssn_encrypted?: string | null
+  aadhaar_verification_status?: 'Unverified' | 'Verified' | 'NameMismatch' | 'Failed'
+  aadhaar_verified_at?: string | null
+  aadhaar_verified_name?: string | null
+  aadhaar_verified_dob?: string | null
+  aadhaar_verified_address?: string | null
+  pan_tax_id?: string | null
+  pan_verification_status?: 'Unverified' | 'Verified' | 'NameMismatch' | 'Failed'
+  pan_verified_at?: string | null
+  pan_verified_dob?: string | null
+  pan_verified_name?: string | null
+  uan_pf_number?: string | null
+  esi_number?: string | null
+  nps_number?: string | null
+  bank_account_number?: string | null
+  bank_name?: string | null
+  bank_ifsc_code?: string | null
   department?: Department
   designation?: Designation
   user?: Pick<User, 'id' | 'name' | 'email' | 'role' | 'status' | 'avatar_url'>
@@ -235,34 +345,138 @@ export interface LeaveBalance {
 
 // ── Payroll ───────────────────────────────────────────────────────────────
 
-export type PayrollRunStatus = 'Processing' | 'Draft' | 'Finalized' | 'Paid' | 'Failed'
+export type PayrollRunStatus = 'Processing' | 'Draft' | 'PendingApproval' | 'Finalized' | 'Rejected' | 'Paid' | 'Failed'
+export type PayrollRunType = 'Regular' | 'OffCycle'
+
+export type SalaryComponentCalcType = 'flat' | 'percentage' | 'remainder' | 'employee_field'
+export type SalaryComponentCategory = 'earning' | 'ctc_addon'
+
+/** Admin-configured salary structure template row — see Settings > Payroll. */
+export interface SalaryComponent {
+  id: number
+  name: string
+  code: string
+  calc_type: SalaryComponentCalcType
+  category: SalaryComponentCategory
+  value: number | null
+  percentage_of: string | null
+  sequence: number
+  active: boolean
+}
+
+/** Snapshot of one earning/CTC-addon line on a payslip, frozen at generation time. */
+export interface PayslipComponent {
+  id: number
+  payslip_id: number
+  code: string
+  name: string
+  calc_type: SalaryComponentCalcType
+  category: SalaryComponentCategory
+  value: number | null
+  percentage_of: string | null
+  sequence: number
+  amount: number
+}
 
 export interface Payslip {
   id: number
   payroll_run_id: number
   employee_id: number
+  employee_name: string
+  employee_code: string | null
+  designation: string | null
+  gross_salary: number
+  lop_days: number
+  lop_deduction: number
+  // basic/hra are real for any run generated after the salary component
+  // template existed — the full breakdown (incl. Variable Pay/CTC addons)
+  // lives in `components` below.
   basic: number
   hra: number
   special_allowance: number
-  gross_pay: number
   pf_employee: number
   esi_employee: number
   professional_tax: number
   tds: number
+  educational_cess: number
+  health_insurance: number
+  other_deductions: number
   total_deductions: number
   net_pay: number
-  lop_days: number
+  reimbursements: number
+  paid_at?: string | null
+  withheld: boolean
+  withhold_reason?: string | null
+  released_in_run_id?: number | null
+  withheld_release_amount: number
+  lop_adjustment_amount: number
+  components?: PayslipComponent[]
+  run?: Pick<PayrollRun, 'id' | 'period' | 'status'>
   employee?: Pick<Employee, 'id' | 'full_name' | 'employee_code'>
 }
 
 export interface PayrollRun {
   id: number
-  month: number
-  year: number
+  period: string
   status: PayrollRunStatus
-  run_by_id: number
+  run_type: PayrollRunType
+  employee_count: number
+  gross_total: number
+  deductions_total: number
+  net_total: number
+  processed_by_id?: number | null
+  finalized_at?: string | null
+  paid_at?: string | null
+  submitted_by_id?: number | null
+  submitted_at?: string | null
+  approved_by_id?: number | null
+  approved_at?: string | null
+  rejection_reason?: string | null
   payslips?: Payslip[]
   created_at: string
+}
+
+export type LopAdjustmentType = 'Reversal' | 'Correction'
+
+export interface LopAdjustment {
+  id: number
+  employee_id: number
+  payslip_id?: number | null
+  adjustment_type: LopAdjustmentType
+  days: number
+  period: string
+  reason?: string | null
+  applied_in_run_id?: number | null
+  status: 'Pending' | 'Applied'
+  employee?: { id: number; full_name: string; employee_code: string | null }
+  created_at: string
+}
+
+export interface ReimbursementType {
+  id: number
+  name: string
+  code: string
+  monthly_cap: number | null
+  active: boolean
+}
+
+export type ExpenseClaimStatus = 'Pending' | 'Approved' | 'Rejected' | 'Paid'
+
+export interface ExpenseClaim {
+  id: number
+  employee_id: number
+  reimbursement_type_id: number | null
+  category: string
+  amount: number
+  currency: string
+  claim_date: string
+  description: string | null
+  receipt_path: string | null
+  status: ExpenseClaimStatus
+  approved_by_id: number | null
+  payslip_id: number | null
+  reimbursement_type?: Pick<ReimbursementType, 'id' | 'name'>
+  payslip?: Pick<Payslip, 'id' | 'payroll_run_id'> & { run?: Pick<PayrollRun, 'id' | 'period' | 'status'> }
 }
 
 // ── Quotations ────────────────────────────────────────────────────────────

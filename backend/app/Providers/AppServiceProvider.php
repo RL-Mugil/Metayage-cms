@@ -40,11 +40,20 @@ class AppServiceProvider extends ServiceProvider
     {
         User::observe(UserObserver::class);
 
+        // Named limiters keep Zoho action limits separate from the general API counter.
+        RateLimiter::for('zoho-refresh', fn (Request $request) => Limit::perMinute(10)->by($request->user()->id));
+        RateLimiter::for('zoho-full-sync', fn (Request $request) => Limit::perHour(1)->by($request->user()->id));
+        RateLimiter::for('integration-test', fn (Request $request) => Limit::perMinute(5)->by($request->user()->id));
+        RateLimiter::for('zoho-read', fn (Request $request) => Limit::perMinute(30)->by($request->user()->id));
+        RateLimiter::for('zoho-write', fn (Request $request) => Limit::perMinute(5)->by($request->user()->id));
+
         Gate::policy(Client::class,   ClientPolicy::class);
         Gate::policy(ComplianceItem::class, ComplianceItemPolicy::class);
         Gate::policy(Project::class,  ProjectPolicy::class);
         Gate::policy(Task::class,     TaskPolicy::class);
         Gate::policy(Invoice::class,  InvoicePolicy::class);
+        Gate::policy(\App\Models\ZohoInvoice::class, \App\Policies\ZohoInvoicePolicy::class);
+        Gate::policy(\App\Models\ZohoQuoteExport::class, \App\Policies\ZohoQuoteExportPolicy::class);
         Gate::policy(IpRecord::class, IpRecordPolicy::class);
         Gate::policy(Reminder::class, ReminderPolicy::class);
         Gate::policy(Employee::class, EmployeePolicy::class);

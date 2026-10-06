@@ -8,8 +8,18 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 /** Local read-only mirror of Zoho Books invoices/estimates, refreshed by the zoho:sync command. */
 class ZohoInvoice extends Model
 {
+    use \Illuminate\Database\Eloquent\SoftDeletes;
+
+    protected static function booted(): void
+    {
+        static::addGlobalScope('organization', fn ($q) => $q->where('zoho_invoices.scope', app(\App\Services\ZohoBooksService::class)->scope()));
+        static::creating(function (self $record) {
+            $record->scope ??= app(\App\Services\ZohoBooksService::class)->scope();
+        });
+    }
+
     protected $fillable = [
-        'zoho_id', 'zoho_type', 'zoho_contact_id', 'client_id', 'project_id',
+        'scope', 'zoho_id', 'zoho_type', 'zoho_contact_id', 'client_id', 'project_id',
         'number', 'status', 'total', 'balance', 'currency', 'txn_date', 'due_date',
         'url', 'application_no', 'patent_office', 'match_source', 'synced_at',
     ];

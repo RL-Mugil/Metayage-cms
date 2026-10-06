@@ -1,508 +1,60 @@
-import { Head } from "@inertiajs/react";
-import { useEffect, useMemo, useState } from "react";
-import { TrendingUp, BarChart3, Loader2, AlertTriangle, CheckCircle2 } from "lucide-react";
-import AppLayout from "@/layouts/AppLayout";
-import { PageHeader } from "@/components/page-header";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { api } from "@/lib/api-client";
-import { statusColor } from "@/lib/utils";
-import {
-  BarChart,
-  Bar,
-  LineChart,
-  Line,
-  PieChart,
-  Pie,
-  Cell,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  Legend,
-} from "recharts";
+﻿import { Head } from '@inertiajs/react';
+import { useEffect, useMemo, useState } from 'react';
+import { AlertTriangle, CheckCircle2, Clock3, Loader2, Receipt, Target, X } from 'lucide-react';
+import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import AppLayout from '@/layouts/AppLayout';
+import { PageHeader } from '@/components/page-header';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { api, FinancialAnalytics, FinancialAnalyticsSource, ZohoAllRow } from '@/lib/api-client';
+import type { Invoice, Quotation } from '@/types';
 
-const PIE_COLORS = ["#C8971D", "#3b82f6", "#22c55e", "#a855f7"];
+type DetailRow = { id: string; type: string; number: string; client: string; caseName: string; date: string; status: string; total: number; balance: number | null; source: string; linked: boolean };
+type DetailKind = 'portal-invoices' | 'portal-quotes' | 'zoho-invoices' | 'zoho-quotes' | 'zoho-unlinked' | 'month';
+const money = (value: number) => `\u20B9${Math.round(value).toLocaleString('en-IN')}`;
+const text = (value: unknown) => value == null ? '' : String(value);
 
-function formatCurrency(value: number) {
-  if (value >= 100000) return `Rs ${ (value / 100000).toFixed(1) }L`;
-  return `Rs ${ value.toLocaleString() }`;
+function Metric({ label, value, note, icon: Icon, tone = 'text-gold', onClick }: { label: string; value: string; note: string; icon: typeof Receipt; tone?: string; onClick?: () => void }) {
+  const content = <CardContent className="p-5"><div className="flex items-start justify-between"><div><p className="text-xs uppercase tracking-wider text-muted-foreground">{label}</p><p className={`mt-1 text-2xl font-semibold ${tone}`}>{value}</p><p className="mt-1 text-xs text-muted-foreground">{note}</p></div><Icon className={`h-5 w-5 ${tone}`} /></div></CardContent>;
+  return onClick ? <button className="text-left transition hover:-translate-y-0.5 hover:shadow-md" onClick={onClick}><Card>{content}</Card></button> : <Card>{content}</Card>;
 }
 
-function monthKey(date: Date) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+function SourcePanel({ title, source, color, open }: { title: string; source: FinancialAnalyticsSource; color: string; open: (kind: DetailKind) => void }) {
+  const item = (label: string, value: string, kind: DetailKind, tone = '') => <button className="text-left hover:text-gold" onClick={() => open(kind)}><p className="text-xs text-muted-foreground">{label}</p><p className={`text-lg font-semibold ${tone}`}>{value}</p></button>;
+  return <Card><CardHeader><CardTitle className="font-display text-base">{title}</CardTitle><p className="text-xs text-muted-foreground">INR records from this source Â· click any value to inspect</p></CardHeader><CardContent className="grid grid-cols-2 gap-3 text-sm">{item('Invoices', `${source.invoice_count}`, title === 'Portal Finance' ? 'portal-invoices' : 'zoho-invoices')}{item('Quotes', `${source.quote_count}`, title === 'Portal Finance' ? 'portal-quotes' : 'zoho-quotes')}{item('Billed', money(source.billed), title === 'Portal Finance' ? 'portal-invoices' : 'zoho-invoices')}{item('Collected', money(source.collected), title === 'Portal Finance' ? 'portal-invoices' : 'zoho-invoices', 'text-emerald-600')}{item('Invoice outstanding', money(source.outstanding), title === 'Portal Finance' ? 'portal-invoices' : 'zoho-invoices', 'text-blue-600')}{item('Opening balances', money(source.opening_balance), title === 'Portal Finance' ? 'portal-invoices' : 'zoho-invoices', 'text-amber-600')}{item('Total receivables', money(source.total_receivables), title === 'Portal Finance' ? 'portal-invoices' : 'zoho-invoices', 'text-blue-600')}{item('Collection rate', `${source.collection_rate}%`, title === 'Portal Finance' ? 'portal-invoices' : 'zoho-invoices')}{item('Quote conversion', `${source.conversion_rate}%`, title === 'Portal Finance' ? 'portal-quotes' : 'zoho-quotes')}{item('Overdue invoices', `${source.overdue_count}`, title === 'Portal Finance' ? 'portal-invoices' : 'zoho-invoices', 'text-red-600')}<div className="col-span-2 mt-2 h-2 rounded-full bg-muted"><div className={`h-2 rounded-full ${color}`} style={{ width: `${Math.min(100, source.collection_rate)}%` }} /></div></CardContent></Card>;
 }
 
-function monthLabel(date: Date) {
-  return date.toLocaleString("en-IN", { month: "short" });
+function DetailScreen({ title, rows, loading, onClose, initialMonth }: { title: string; rows: DetailRow[]; loading: boolean; onClose: () => void; initialMonth?: string }) {
+  const [search, setSearch] = useState(''); const [status, setStatus] = useState('all'); const [source, setSource] = useState('all'); const [from, setFrom] = useState(''); const [to, setTo] = useState(''); const [page, setPage] = useState(1); const perPage = 15;
+  const statuses = useMemo(() => Array.from(new Set(rows.map(row => row.status).filter(Boolean))).sort(), [rows]);
+  const monthPrefix = useMemo(() => {
+    if (!initialMonth) return '';
+    const parsed = new Date(`${initialMonth} 1`);
+    return Number.isNaN(parsed.getTime()) ? '' : `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}`;
+  }, [initialMonth]);
+  const filtered = useMemo(() => rows.filter(row => (!search || `${row.number} ${row.client} ${row.caseName}`.toLowerCase().includes(search.toLowerCase())) && (status === 'all' || row.status === status) && (source === 'all' || row.source === source) && (!from || row.date >= from) && (!to || row.date <= to) && (!monthPrefix || row.date.startsWith(monthPrefix))), [rows, search, status, source, from, to, monthPrefix]);
+  const pageRows = filtered.slice((page - 1) * perPage, page * perPage); const pages = Math.max(1, Math.ceil(filtered.length / perPage));
+  return <div className="fixed inset-0 z-50 overflow-y-auto bg-background"><div className="mx-auto min-h-full w-full max-w-[1500px] px-6 py-5"><div className="flex items-center justify-between border-b pb-4"><div><p className="text-xs uppercase tracking-widest text-gold">Financial detail</p><h2 className="text-2xl font-semibold">{title}</h2><p className="text-xs text-muted-foreground">{filtered.length} matching records Â· local data only</p></div><button onClick={onClose} className="rounded-md border p-2 hover:bg-muted" aria-label="Close"><X className="h-5 w-5" /></button></div><div className="my-4 flex flex-wrap items-center gap-2"><input value={search} onChange={event => { setSearch(event.target.value); setPage(1); }} placeholder="Search number, client, or case" className="h-9 w-72 rounded-md border bg-background px-3 text-sm" /><select value={status} onChange={event => { setStatus(event.target.value); setPage(1); }} className="h-9 rounded-md border bg-background px-3 text-sm"><option value="all">All statuses</option>{statuses.map(value => <option key={value} value={value}>{value}</option>)}</select><select value={source} onChange={event => { setSource(event.target.value); setPage(1); }} className="h-9 rounded-md border bg-background px-3 text-sm"><option value="all">All sources</option><option value="Portal">Portal</option><option value="Zoho Books">Zoho Books</option></select><label className="text-xs text-muted-foreground">From <input type="date" value={from} onChange={event => setFrom(event.target.value)} className="ml-1 h-9 rounded-md border bg-background px-2" /></label><label className="text-xs text-muted-foreground">To <input type="date" value={to} onChange={event => setTo(event.target.value)} className="ml-1 h-9 rounded-md border bg-background px-2" /></label></div>{loading ? <div className="flex h-64 items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-gold" /></div> : <><div className="overflow-x-auto rounded-lg border"><table className="w-full text-sm"><thead className="bg-muted/40 text-left text-xs uppercase text-muted-foreground"><tr><th className="px-3 py-3">Type</th><th className="px-3 py-3">Number / UIN</th><th className="px-3 py-3">Client</th><th className="px-3 py-3">Case</th><th className="px-3 py-3">Date</th><th className="px-3 py-3">Source</th><th className="px-3 py-3">Status</th><th className="px-3 py-3 text-right">Total</th><th className="px-3 py-3 text-right">Balance</th></tr></thead><tbody>{pageRows.map(row => <tr key={row.id} className="border-t"><td className="px-3 py-3">{row.type}</td><td className="px-3 py-3 font-mono text-gold">{row.number || 'â€”'}</td><td className="px-3 py-3">{row.client || 'â€”'}</td><td className="px-3 py-3">{row.caseName || 'Unlinked'}</td><td className="px-3 py-3">{row.date || 'â€”'}</td><td className="px-3 py-3">{row.source}</td><td className="px-3 py-3">{row.status || 'â€”'}</td><td className="px-3 py-3 text-right">{money(row.total)}</td><td className="px-3 py-3 text-right">{row.balance == null ? 'â€”' : money(row.balance)}</td></tr>)}{pageRows.length === 0 && <tr><td colSpan={9} className="px-3 py-12 text-center text-muted-foreground">No records match these filters.</td></tr>}</tbody></table></div><div className="mt-4 flex items-center justify-between text-sm text-muted-foreground"><span>Showing {filtered.length ? (page - 1) * perPage + 1 : 0}â€“{Math.min(page * perPage, filtered.length)} of {filtered.length}</span><div className="flex gap-2"><button disabled={page <= 1} onClick={() => setPage(value => value - 1)} className="rounded border px-3 py-1 disabled:opacity-40">Previous</button><span className="px-2 py-1">Page {page} / {pages}</span><button disabled={page >= pages} onClick={() => setPage(value => value + 1)} className="rounded border px-3 py-1 disabled:opacity-40">Next</button></div></div></>}</div></div>;
 }
-
-function startOfWeek(date: Date) {
-  const value = new Date(date);
-  const day = value.getDay();
-  const diff = day === 0 ? -6 : 1 - day;
-  value.setDate(value.getDate() + diff);
-  value.setHours(0, 0, 0, 0);
-  return value;
-}
-
-function weekKey(date: Date) {
-  return startOfWeek(date).toISOString().slice(0, 10);
-}
-
-function weekLabel(date: Date) {
-  return `Wk ${date.toLocaleString("en-IN", { day: "2-digit", month: "short" })}`;
-}
-
-function KPICard({
-  label,
-  value,
-  delta,
-  icon: Icon,
-}: {
-  label: string;
-  value: string;
-  delta: string;
-  icon: React.ElementType;
-}) {
-  return (
-    <Card className="border-border">
-      <CardContent className="p-5">
-        <div className="flex items-start justify-between">
-          <div>
-            <p className="text-xs text-muted-foreground uppercase tracking-wider">{label}</p>
-            <p className="mt-1 text-2xl font-semibold font-display">{value}</p>
-            <p className="mt-1 text-xs text-muted-foreground">{delta}</p>
-          </div>
-          <div className="h-9 w-9 rounded-lg bg-gold/10 flex items-center justify-center">
-            <Icon className="h-5 w-5 text-gold" />
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-const CustomTooltip = ({ active, payload, label }: any) => {
-  if (!active || !payload || !payload.length) return null;
-
-  return (
-    <div className="rounded-lg border border-border bg-background px-3 py-2 text-xs shadow-lg">
-      <p className="font-medium mb-1">{label}</p>
-      {payload.map((entry: any) => (
-        <p key={entry.name} style={{ color: entry.color }}>
-          {entry.name}: {typeof entry.value === "number" && entry.name.toLowerCase().includes("revenue")
-            ? formatCurrency(entry.value)
-            : entry.value}
-        </p>
-      ))}
-    </div>
-  );
-};
-
-const PAYMENT_COLORS: Record<string, string> = {
-  Paid: "#22c55e",
-  Partial: "#f59e0b",
-  Pending: "#ef4444",
-  "Not Set": "#6b7280",
-};
 
 export default function Analytics() {
-  const [projects, setProjects] = useState<any[]>([]);
-  const [tasks, setTasks] = useState<any[]>([]);
-  const [invoices, setInvoices] = useState<any[]>([]);
-  const [clients, setClients] = useState<any[]>([]);
-  const [tracker, setTracker] = useState<any>(null);
-  const [zohoMonthly, setZohoMonthly] = useState<{ month: string; total: number }[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    // Each source is independent — roles without financial/tracker access
-    // (e.g. Patent Analyst) get 403s that must NOT blank the whole page.
-    Promise.all([
-      api.getProjects().catch(() => []),
-      api.getTasks().catch(() => []),
-      api.getInvoices().catch(() => []),
-      api.getClients().catch(() => []),
-      api.getTrackerAnalytics().catch(() => null),
-      api.getZohoMonthlyAnalytics().catch(() => []),
-    ])
-      .then(([p, t, i, c, tr, zm]) => {
-        setZohoMonthly(Array.isArray(zm) ? zm : []);
-        setProjects(Array.isArray(p) ? p : (p as any).data || []);
-        setTasks(Array.isArray(t) ? t : (t as any).data || []);
-        setInvoices(Array.isArray(i) ? i : (i as any).data || []);
-        setClients(Array.isArray(c) ? c : (c as any).data || []);
-        setTracker(tr);
-      })
-      .finally(() => setLoading(false));
-  }, []);
-
-  const now = new Date();
-  const activeMatters = projects.filter((p) => ["Open", "In Progress", "Active"].includes(p.status)).length;
-  const completedTasks = tasks.filter((t) => t.status === "Completed" || t.status === "Done").length;
-
-  const revenueMTD = invoices
-    .filter((invoice) => {
-      const rawDate = invoice.issue_date || invoice.invoice_date || invoice.created_at;
-      if (!rawDate) return false;
-      const date = new Date(rawDate);
-      return date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth();
-    })
-    .reduce((sum, invoice) => sum + Number(invoice.total_amount || 0), 0);
-
-  const monthlyRevenue = useMemo(() => {
-    const months: { key: string; month: string; revenue: number; zoho_collected: number }[] = [];
-    for (let i = 11; i >= 0; i -= 1) {
-      const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      months.push({ key: monthKey(date), month: monthLabel(date), revenue: 0, zoho_collected: 0 });
-    }
-
-    const byMonth = new Map(months.map((entry) => [entry.key, entry]));
-    invoices.forEach((invoice) => {
-      const rawDate = invoice.issue_date || invoice.invoice_date || invoice.created_at;
-      if (!rawDate) return;
-      const date = new Date(rawDate);
-      if (Number.isNaN(date.getTime())) return;
-      const bucket = byMonth.get(monthKey(date));
-      if (bucket) bucket.revenue += Number(invoice.total_amount || 0);
-    });
-    zohoMonthly.forEach((entry) => {
-      const bucket = byMonth.get(entry.month);
-      if (bucket) bucket.zoho_collected += Number(entry.total || 0);
-    });
-
-    return months;
-  }, [invoices, zohoMonthly, now]);
-
-  const matterDistribution = useMemo(() => {
-    const counts = { Patents: 0, Trademarks: 0, Copyrights: 0, Other: 0 };
-    projects.forEach((project) => {
-      const value = String(project.project_type || "").toLowerCase();
-      if (value.includes("patent")) counts.Patents += 1;
-      else if (value.includes("trademark")) counts.Trademarks += 1;
-      else if (value.includes("copyright")) counts.Copyrights += 1;
-      else counts.Other += 1;
-    });
-
-    return Object.entries(counts)
-      .map(([name, value]) => ({ name, value }))
-      .filter((entry) => entry.value > 0);
-  }, [projects]);
-
-  const taskVelocity = useMemo(() => {
-    const weeks: { key: string; week: string; created: number; completed: number }[] = [];
-    for (let i = 11; i >= 0; i -= 1) {
-      const date = startOfWeek(new Date(now.getFullYear(), now.getMonth(), now.getDate() - i * 7));
-      weeks.push({ key: weekKey(date), week: weekLabel(date), created: 0, completed: 0 });
-    }
-
-    const byWeek = new Map(weeks.map((entry) => [entry.key, entry]));
-    tasks.forEach((task) => {
-      const createdAt = task.created_at ? new Date(task.created_at) : null;
-      if (createdAt && !Number.isNaN(createdAt.getTime())) {
-        const createdBucket = byWeek.get(weekKey(createdAt));
-        if (createdBucket) createdBucket.created += 1;
-      }
-
-      if (task.status === "Completed" || task.status === "Done") {
-        const completedAt = task.updated_at ? new Date(task.updated_at) : null;
-        if (completedAt && !Number.isNaN(completedAt.getTime())) {
-          const completedBucket = byWeek.get(weekKey(completedAt));
-          if (completedBucket) completedBucket.completed += 1;
-        }
-      }
-    });
-
-    return weeks;
-  }, [tasks, now]);
-
-  const topClients = useMemo(() => {
-    const matterCountByClient = new Map<number, number>();
-    projects.forEach((project) => {
-      if (!project.client_id) return;
-      matterCountByClient.set(project.client_id, (matterCountByClient.get(project.client_id) || 0) + 1);
-    });
-
-    return [...clients]
-      .map((client) => ({ ...client, matterCount: matterCountByClient.get(client.id) || 0 }))
-      .sort((a, b) => b.matterCount - a.matterCount)
-      .slice(0, 10);
-  }, [clients, projects]);
-
-  if (loading) {
-    return (
-      <AppLayout>
-        <Head title="Analytics" />
-        <div className="flex h-screen items-center justify-center">
-          <div className="flex flex-col items-center gap-2">
-            <Loader2 className="h-8 w-8 animate-spin text-gold" />
-            <p className="text-sm text-muted-foreground">Loading analytics...</p>
-          </div>
-        </div>
-      </AppLayout>
-    );
-  }
-
-  return (
-    <AppLayout>
-      <Head title="Analytics" />
-      <PageHeader
-        eyebrow="Insight"
-        title="Analytics"
-        description="Revenue trends, case velocity, and KPIs across your IP practice"
-      />
-
-      <div className="px-8 py-6 space-y-6">
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <KPICard
-            label="Active Cases"
-            value={(tracker?.total_cases ?? activeMatters).toString()}
-            delta={`${projects.length} in projects system`}
-            icon={BarChart3}
-          />
-          <KPICard
-            label="Overdue Cases"
-            value={(tracker?.overdue ?? 0).toString()}
-            delta={`${tracker?.on_time_rate ?? 100}% on-time rate`}
-            icon={AlertTriangle}
-          />
-          <KPICard
-            label="Revenue MTD"
-            value={revenueMTD > 0 ? formatCurrency(revenueMTD) : "Rs 0"}
-            delta="Current month invoice totals"
-            icon={TrendingUp}
-          />
-          <KPICard
-            label="Tasks Completed"
-            value={completedTasks.toString()}
-            delta={`${tasks.length} tasks total`}
-            icon={CheckCircle2}
-          />
-        </div>
-
-        <div className="flex gap-6">
-          <Card className="border-border" style={{ flex: "0 0 60%" }}>
-            <CardHeader>
-              <CardTitle className="font-display text-base">Monthly Billing</CardTitle>
-              <p className="text-xs text-muted-foreground">Live invoice totals for the last 12 months</p>
-            </CardHeader>
-            <CardContent>
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={monthlyRevenue} margin={{ top: 4, right: 8, left: 8, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                  <XAxis dataKey="month" tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} />
-                  <YAxis tickFormatter={(value) => `Rs ${Math.round(value / 1000)}k`} tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} />
-                  <Tooltip content={<CustomTooltip />} />
-                  <Legend wrapperStyle={{ fontSize: 12 }} />
-                  <Bar dataKey="revenue" name="Revenue" fill="#C8971D" radius={[3, 3, 0, 0]} />
-                  <Bar dataKey="zoho_collected" name="Zoho Collected" fill="#3b82f6" radius={[3, 3, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-
-          <Card className="border-border flex-1">
-            <CardHeader>
-              <CardTitle className="font-display text-base">Case Distribution</CardTitle>
-              <p className="text-xs text-muted-foreground">By live project type mix</p>
-            </CardHeader>
-            <CardContent>
-              {matterDistribution.length === 0 ? (
-                <div className="flex h-[300px] items-center justify-center text-sm text-muted-foreground">
-                  No project data available
-                </div>
-              ) : (
-                <>
-                  <ResponsiveContainer width="100%" height={300}>
-                    <PieChart>
-                      <Pie
-                        data={matterDistribution}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={60}
-                        outerRadius={100}
-                        paddingAngle={3}
-                        dataKey="value"
-                        label={({ name, value }) => `${name}: ${value}`}
-                        labelLine={false}
-                      >
-                        {matterDistribution.map((_, index) => (
-                          <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
-                        ))}
-                      </Pie>
-                      <Tooltip formatter={(value: any) => [value, "Count"]} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                  <div className="flex flex-wrap justify-center gap-3 mt-2">
-                    {matterDistribution.map((item, index) => (
-                      <div key={item.name} className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                        <span className="h-2.5 w-2.5 rounded-full flex-shrink-0" style={{ background: PIE_COLORS[index % PIE_COLORS.length] }} />
-                        {item.name}
-                      </div>
-                    ))}
-                  </div>
-                </>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-
-        <Card className="border-border">
-          <CardHeader>
-            <CardTitle className="font-display text-base">Task Velocity</CardTitle>
-            <p className="text-xs text-muted-foreground">Tasks created versus tasks marked completed over the last 12 weeks</p>
-          </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={260}>
-              <LineChart data={taskVelocity} margin={{ top: 4, right: 8, left: 8, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                <XAxis dataKey="week" tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} />
-                <YAxis tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} />
-                <Tooltip content={<CustomTooltip />} />
-                <Legend wrapperStyle={{ fontSize: 12 }} />
-                <Line type="monotone" dataKey="completed" name="Completed" stroke="#C8971D" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
-                <Line type="monotone" dataKey="created" name="Created" stroke="#3b82f6" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} strokeDasharray="4 2" />
-              </LineChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-
-        {tracker && (
-          <div className="flex gap-6">
-            <Card className="border-border flex-1">
-              <CardHeader>
-                <CardTitle className="font-display text-base">Team Workload (Tracker)</CardTitle>
-                <p className="text-xs text-muted-foreground">Cases assigned per team member across PCM / SCM / PR roles</p>
-              </CardHeader>
-              <CardContent>
-                <ResponsiveContainer width="100%" height={260}>
-                  <BarChart data={(tracker.workload ?? []).slice(0, 10)} layout="vertical" margin={{ top: 4, right: 20, left: 60, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" horizontal={false} />
-                    <XAxis type="number" tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} />
-                    <YAxis type="category" dataKey="name" tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} width={56} />
-                    <Tooltip content={<CustomTooltip />} />
-                    <Legend wrapperStyle={{ fontSize: 11 }} />
-                    <Bar dataKey="PCM" name="PCM" stackId="a" fill="#C8971D" />
-                    <Bar dataKey="SCM" name="SCM" stackId="a" fill="#3b82f6" />
-                    <Bar dataKey="PR" name="PR" stackId="a" fill="#22c55e" radius={[0, 3, 3, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-
-            <Card className="border-border" style={{ flex: "0 0 280px" }}>
-              <CardHeader>
-                <CardTitle className="font-display text-base">Payment Status</CardTitle>
-                <p className="text-xs text-muted-foreground">Across all tracker cases</p>
-              </CardHeader>
-              <CardContent>
-                <ResponsiveContainer width="100%" height={200}>
-                  <PieChart>
-                    <Pie
-                      data={(tracker.payment ?? []).filter((item: any) => item.value > 0)}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={50}
-                      outerRadius={80}
-                      paddingAngle={3}
-                      dataKey="value"
-                      nameKey="label"
-                      label={({ label, value }) => `${label}: ${value}`}
-                      labelLine={false}
-                    >
-                      {(tracker.payment ?? []).map((item: any) => (
-                        <Cell key={item.label} fill={PAYMENT_COLORS[item.label] ?? "#6b7280"} />
-                      ))}
-                    </Pie>
-                    <Tooltip formatter={(value: any, name: any) => [value, name]} />
-                  </PieChart>
-                </ResponsiveContainer>
-                <div className="flex flex-wrap justify-center gap-3 mt-1">
-                  {(tracker.payment ?? []).filter((item: any) => item.value > 0).map((item: any) => (
-                    <div key={item.label} className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                      <span className="h-2.5 w-2.5 rounded-full" style={{ background: PAYMENT_COLORS[item.label] ?? "#6b7280" }} />
-                      {item.label} ({item.value})
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        )}
-
-        {tracker && (tracker.by_status ?? []).length > 0 && (
-          <Card className="border-border">
-            <CardHeader>
-              <CardTitle className="font-display text-base">Case Status Breakdown</CardTitle>
-              <p className="text-xs text-muted-foreground">Current workflow stages across all tracker cases</p>
-            </CardHeader>
-            <CardContent>
-              <ResponsiveContainer width="100%" height={Math.max(200, (tracker.by_status ?? []).length * 32)}>
-                <BarChart data={tracker.by_status ?? []} layout="vertical" margin={{ top: 4, right: 40, left: 160, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" horizontal={false} />
-                  <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} />
-                  <YAxis type="category" dataKey="status" tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} width={156} />
-                  <Tooltip />
-                  <Bar dataKey="count" name="Cases" fill="#C8971D" radius={[0, 3, 3, 0]}>
-                    {(tracker.by_status ?? []).map((_: any, index: number) => (
-                      <Cell key={index} fill={index % 2 === 0 ? "#C8971D" : "#b8860b"} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-        )}
-
-        <Card className="border-border">
-          <CardHeader>
-            <CardTitle className="font-display text-base">Top Clients by Case Count</CardTitle>
-            <p className="text-xs text-muted-foreground">Active relationships sorted by portfolio size</p>
-          </CardHeader>
-          <CardContent className="p-0">
-            {topClients.length === 0 ? (
-              <div className="flex items-center justify-center py-10 text-sm text-muted-foreground">
-                No client data available
-              </div>
-            ) : (
-              <table className="w-full text-sm">
-                <thead className="bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground">
-                  <tr>
-                    <th className="px-4 py-3 text-left">Client</th>
-                    <th className="px-4 py-3 text-left">Code</th>
-                    <th className="px-4 py-3 text-left">Industry</th>
-                    <th className="px-4 py-3 text-left">Status</th>
-                    <th className="px-4 py-3 text-left">Cases</th>
-                    <th className="px-4 py-3 text-left">GST Type</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {topClients.map((client) => (
-                    <tr key={client.id} className="border-t border-border hover:bg-muted/30">
-                      <td className="px-4 py-3 font-medium">{client.company_name || client.legal_name || "Untitled Client"}</td>
-                      <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{client.client_code}</td>
-                      <td className="px-4 py-3 text-muted-foreground">{client.industry || "—"}</td>
-                      <td className="px-4 py-3">
-                        <Badge variant={statusColor(client.status)}>{client.status}</Badge>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="inline-flex items-center justify-center h-6 min-w-6 rounded-full bg-gold/10 text-gold text-xs font-semibold px-2">
-                          {client.matterCount}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <Badge variant="outline">{client.gst_type || "—"}</Badge>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-    </AppLayout>
-  );
+  const [data, setData] = useState<FinancialAnalytics | null>(null); const [loading, setLoading] = useState(true); const [error, setError] = useState<string | null>(null); const [detail, setDetail] = useState<{ title: string; kind: DetailKind; month?: string } | null>(null); const [detailRows, setDetailRows] = useState<DetailRow[]>([]); const [detailLoading, setDetailLoading] = useState(false);
+  const load = () => { setLoading(true); setError(null); api.getFinancialAnalytics().then(setData).catch((e: Error) => setError(e.message)).finally(() => setLoading(false)); };
+  useEffect(() => { load(); }, []);
+  const openDetail = (kind: DetailKind, month?: string) => {
+    const titles: Record<DetailKind, string> = { 'portal-invoices': 'Portal invoices', 'portal-quotes': 'Portal quotations', 'zoho-invoices': 'Zoho Books invoices', 'zoho-quotes': 'Zoho Books quotations', 'zoho-unlinked': 'Unlinked Zoho invoices', month: `Monthly financial detail · ${month ?? ''}` };
+    setDetail({ kind, month, title: titles[kind] });
+    setDetailLoading(true);
+    const params = new URLSearchParams({ per_page: '500' });
+    const mapPortalInvoices = (rows: Invoice[]): DetailRow[] => rows.map(row => ({ id: `portal-invoice-${row.id}`, type: 'Invoice', number: row.invoice_code, client: row.client?.company_name ?? '', caseName: '', date: row.issue_date ?? '', status: row.status, total: Number(row.total_amount), balance: Number(row.balance_due), source: 'Portal', linked: Boolean(row.project_id) }));
+    const mapZoho = (rows: ZohoAllRow[]): DetailRow[] => rows.map(row => ({ id: `zoho-${row.type}-${row.id}`, type: row.type === 'invoice' ? 'Invoice' : 'Quote', number: row.number ?? '', client: row.client ?? '', caseName: row.docket_number ?? '', date: row.date ?? '', status: row.status ?? '', total: row.total, balance: row.balance, source: 'Zoho Books', linked: Boolean(row.project_id) }));
+    let request: Promise<DetailRow[]>;
+    if (kind === 'portal-invoices') request = api.getInvoicesPaged(params).then(result => mapPortalInvoices(result.data));
+    else if (kind === 'portal-quotes') request = api.getQuotations(params).then(result => result.data.map(row => ({ id: `portal-quote-${row.id}`, type: 'Quote', number: row.quote_code, client: row.client?.company_name ?? '', caseName: row.project?.project_name ?? row.project?.project_code ?? '', date: row.valid_until ?? '', status: row.status, total: Number(row.total_amount), balance: null, source: 'Portal', linked: Boolean(row.project_id) })));
+    else if (kind === 'month') request = Promise.all([api.getInvoicesPaged(params), api.getZohoAll(new URLSearchParams({ per_page: '500', type: 'invoice' }))]).then(([portal, zoho]) => [...mapPortalInvoices(portal.data), ...mapZoho(zoho.data)]);
+    else request = api.getZohoAll(new URLSearchParams({ per_page: '500', ...(kind === 'zoho-invoices' || kind === 'zoho-unlinked' ? { type: 'invoice' } : {}), ...(kind === 'zoho-quotes' ? { type: 'quote' } : {}), ...(kind === 'zoho-unlinked' ? { linked: 'unlinked' } : {}) })).then(result => mapZoho(result.data));
+    request.then(setDetailRows).catch(() => setDetailRows([])).finally(() => setDetailLoading(false));
+  };  if (loading) return <AppLayout><Head title="Financial Analytics" /><div className="flex h-[60vh] items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-gold" /></div></AppLayout>;
+  if (error || !data) return <AppLayout><Head title="Financial Analytics" /><div className="p-8 text-sm text-destructive">Unable to load financial analytics. {error}</div></AppLayout>;
+  const comparison = data.comparison; const chart = data.portal.monthly.map((row, index) => ({ ...row, zohoBilled: data.zoho.monthly[index]?.billed ?? 0, zohoCollected: data.zoho.monthly[index]?.collected ?? 0 }));
+  return <AppLayout><Head title="Financial Analytics" /><PageHeader eyebrow="Finance" title="Financial Analytics" description="INR billing, collections, conversion, and Portal versus Zoho reconciliation" actions={<button onClick={load} className="rounded-md border px-3 py-2 text-sm hover:bg-muted">Refresh</button>} /><div className="space-y-6 px-8 py-6"><div className="flex items-center gap-2 rounded-lg border border-gold/30 bg-gold/5 px-4 py-3 text-xs text-muted-foreground"><Target className="h-4 w-4 text-gold" />All figures are INR only. USD and other currencies will be added later. Detail screens use local portal and Zoho mirror data; no Zoho API calls are made.</div><div className="grid gap-4 md:grid-cols-2 lg:grid-cols-6"><Metric label="Combined billed" value={money(data.portal.billed + data.zoho.billed)} note="Click to inspect" icon={Receipt} onClick={() => openDetail('month')} /><Metric label="Combined collected" value={money(data.portal.collected + data.zoho.collected)} note="Click to inspect" icon={CheckCircle2} tone="text-emerald-600" onClick={() => openDetail('month')} /><Metric label="Combined outstanding" value={money(data.portal.outstanding + data.zoho.total_receivables)} note="Click to inspect" icon={Clock3} tone="text-blue-600" onClick={() => openDetail('month')} /><Metric label="Zoho invoices" value={`${data.zoho.invoice_count}`} note="Click to inspect" icon={Receipt} tone="text-blue-600" onClick={() => openDetail('zoho-invoices')} /><Metric label="Zoho quotes" value={`${data.zoho.quote_count}`} note="Click to inspect" icon={Receipt} tone="text-violet-600" onClick={() => openDetail('zoho-quotes')} /><Metric label="Unlinked Zoho invoices" value={`${comparison.unlinked_zoho_invoice_count}`} note="Click to inspect" icon={AlertTriangle} tone="text-amber-600" onClick={() => openDetail('zoho-unlinked')} /></div><div className="grid gap-6 lg:grid-cols-2"><SourcePanel title="Portal Finance" source={data.portal} color="bg-gold" open={openDetail} /><SourcePanel title="Zoho Books" source={data.zoho} color="bg-blue-500" open={openDetail} /></div><Card><CardHeader><CardTitle className="font-display text-base">Monthly billing and collections</CardTitle><p className="text-xs text-muted-foreground">Click a bar to open that monthâ€™s records</p></CardHeader><CardContent><ResponsiveContainer width="100%" height={320}><BarChart data={chart} onClick={event => { if (event && typeof event.activeLabel === 'string') openDetail('month', event.activeLabel); }}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="month" tick={{ fontSize: 11 }} /><YAxis tickFormatter={value => `â‚¹${Math.round(value / 1000)}k`} tick={{ fontSize: 11 }} /><Tooltip formatter={(value: number) => money(value)} /><Legend /><Bar dataKey="billed" name="Portal billed" fill="#C8971D" /><Bar dataKey="collected" name="Portal collected" fill="#22c55e" /><Bar dataKey="zohoBilled" name="Zoho billed" fill="#3b82f6" /><Bar dataKey="zohoCollected" name="Zoho collected" fill="#8b5cf6" /></BarChart></ResponsiveContainer></CardContent></Card><div className="grid gap-6 lg:grid-cols-2"><Card><CardHeader><CardTitle className="font-display text-base">Portal versus Zoho</CardTitle></CardHeader><CardContent className="space-y-3 text-sm"><button className="flex w-full justify-between hover:text-gold" onClick={() => openDetail('portal-invoices')}><span>Portal invoices</span><strong>{comparison.portal_invoice_count}</strong></button><button className="flex w-full justify-between hover:text-gold" onClick={() => openDetail('zoho-invoices')}><span>Zoho invoices</span><strong>{comparison.zoho_invoice_count}</strong></button><button className="flex w-full justify-between hover:text-gold" onClick={() => openDetail('zoho-invoices')}><span>Linked Zoho invoices</span><strong className="text-emerald-600">{comparison.linked_zoho_invoice_count}</strong></button><div className="flex justify-between"><span>Invoice value difference</span><strong className={comparison.billed_difference === 0 ? 'text-emerald-600' : 'text-amber-600'}>{money(comparison.billed_difference)}</strong></div><div className="flex justify-between"><span>Zoho opening balances</span><strong className="text-amber-600">{money(comparison.zoho_opening_balance)}</strong></div><div className="flex justify-between"><span>Outstanding difference</span><strong className={comparison.outstanding_difference === 0 ? 'text-emerald-600' : 'text-amber-600'}>{money(comparison.outstanding_difference)}</strong></div></CardContent></Card><Card><CardHeader><CardTitle className="font-display text-base">Conversion funnel</CardTitle></CardHeader><CardContent className="grid grid-cols-2 gap-4 text-sm"><button className="text-left hover:text-gold" onClick={() => openDetail('portal-quotes')}><p className="text-xs text-muted-foreground">Portal quotes accepted/converted</p><p className="mt-1 text-2xl font-semibold">{data.portal.converted_quote_count}</p><p className="text-xs">{data.portal.conversion_rate}% of portal quotes</p></button><button className="text-left hover:text-gold" onClick={() => openDetail('zoho-quotes')}><p className="text-xs text-muted-foreground">Zoho quotes with invoice prefix</p><p className="mt-1 text-2xl font-semibold">{data.zoho.converted_quote_count}</p><p className="text-xs">{data.zoho.conversion_rate}% of Zoho quotes</p></button></CardContent></Card></div><Card><CardHeader><CardTitle className="font-display text-base">Reconciliation exceptions</CardTitle></CardHeader><CardContent className="grid gap-3 text-sm md:grid-cols-3"><button className="rounded-md border p-3 text-left hover:border-gold" onClick={() => openDetail('zoho-unlinked')}><p className="text-xs text-muted-foreground">Zoho invoices needing case links</p><p className="mt-1 text-xl font-semibold text-amber-600">{comparison.unlinked_zoho_invoice_count}</p></button><div className="rounded-md border p-3"><p className="text-xs text-muted-foreground">Billed value difference</p><p className="mt-1 text-xl font-semibold">{money(comparison.billed_difference)}</p></div><div className="rounded-md border p-3"><p className="text-xs text-muted-foreground">Outstanding difference</p><p className="mt-1 text-xl font-semibold">{money(comparison.outstanding_difference)}</p></div></CardContent></Card></div>{detail && <DetailScreen title={detail.title} rows={detailRows} loading={detailLoading} onClose={() => setDetail(null)} initialMonth={detail.month} />}</AppLayout>;
 }

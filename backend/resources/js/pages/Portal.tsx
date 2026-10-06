@@ -388,13 +388,13 @@ export default function Portal() {
       {/* ── New Portal Modal ─────────────────────────────────────────────── */}
       {showNewPortal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-md p-6 m-4">
-            <div className="flex items-center justify-between mb-4">
+          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-xl m-4">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-border">
               <h2 className="font-display text-lg font-semibold">Create Client Portal</h2>
               <button onClick={() => setShowNewPortal(false)}><X className="h-5 w-5 text-muted-foreground" /></button>
             </div>
             {portalCreated ? (
-              <div className="py-4 space-y-4">
+              <div className="px-6 py-4 space-y-4">
                 <div className="text-center">
                   <CheckCircle className="h-10 w-10 text-green-500 mx-auto mb-3" />
                   <div className="font-semibold">Portal Account Created!</div>
@@ -415,89 +415,97 @@ export default function Portal() {
               </div>
             ) : (
               <>
-                <div className="space-y-3">
-                  {/* Client picker */}
-                  <div ref={dropdownRef}>
-                    <label className="block text-xs text-muted-foreground mb-1">Client</label>
-                    <div className="relative">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-                      <input
-                        type="text"
-                        placeholder="Search by name or client code…"
-                        value={selectedClient ? selectedClient.company_name : portalSearch}
-                        onFocus={() => { setShowDropdown(true); if (selectedClient) { setPortalSearch(""); setSelectedClient(null); } }}
-                        onChange={(e) => { setPortalSearch(e.target.value); setSelectedClient(null); setShowDropdown(true); }}
-                        className="w-full h-9 rounded-md border border-border bg-background pl-8 pr-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold"
-                      />
-                    </div>
-                    {showDropdown && (
-                      <div className="absolute z-50 mt-1 w-full max-w-sm rounded-md border border-border bg-background shadow-lg max-h-48 overflow-y-auto">
-                        {filteredDropdown.length === 0 ? (
-                          <div className="px-3 py-2 text-sm text-muted-foreground">No clients found</div>
-                        ) : filteredDropdown.map((c) => (
-                          <button key={c.id} className="w-full text-left px-3 py-2 text-sm hover:bg-muted/40 flex items-center gap-2"
-                            onClick={() => {
-                              setSelectedClient(c);
-                              setPortalSearch("");
-                              setShowDropdown(false);
-                              if (c.contact_email && !newPortalEmail) setNewPortalEmail(c.contact_email);
-                            }}>
-                            <span className="font-medium">{c.company_name}</span>
-                            <span className="text-xs text-muted-foreground ml-auto">{c.client_code}</span>
-                          </button>
-                        ))}
+                <div className="px-6 py-4 space-y-3">
+                  <section>
+                    <h3 className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-2 flex items-center gap-1.5">
+                      <span className="w-4 h-4 rounded-full bg-gold text-black flex items-center justify-center text-[9px] font-bold">1</span>
+                      Portal Details
+                    </h3>
+                    <div className="grid grid-cols-4 gap-2">
+                      {/* Client picker */}
+                      <div className="col-span-4 relative" ref={dropdownRef}>
+                        <div className="text-[10px] text-muted-foreground mb-0.5">Client</div>
+                        <div className="relative">
+                          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                          <input
+                            type="text"
+                            placeholder="Search by name or client code…"
+                            value={selectedClient ? selectedClient.company_name : portalSearch}
+                            onFocus={() => { setShowDropdown(true); if (selectedClient) { setPortalSearch(""); setSelectedClient(null); } }}
+                            onChange={(e) => { setPortalSearch(e.target.value); setSelectedClient(null); setShowDropdown(true); }}
+                            className="w-full h-8 rounded border border-border bg-background pl-7 pr-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold"
+                          />
+                        </div>
+                        {showDropdown && (
+                          <div className="absolute z-50 mt-1 w-full rounded-md border border-border bg-background shadow-lg max-h-48 overflow-y-auto">
+                            {filteredDropdown.length === 0 ? (
+                              <div className="px-3 py-2 text-sm text-muted-foreground">No clients found</div>
+                            ) : filteredDropdown.map((c) => (
+                              <button key={c.id} className="w-full text-left px-3 py-2 text-sm hover:bg-muted/40 flex items-center gap-2"
+                                onClick={() => {
+                                  setSelectedClient(c);
+                                  setPortalSearch("");
+                                  setShowDropdown(false);
+                                  if (c.contact_email && !newPortalEmail) setNewPortalEmail(c.contact_email);
+                                }}>
+                                <span className="font-medium">{c.company_name}</span>
+                                <span className="text-xs text-muted-foreground ml-auto">{c.client_code}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
                       </div>
-                    )}
-                  </div>
 
-                  {/* Admin name */}
-                  <div>
-                    <label className="block text-xs text-muted-foreground mb-1">Admin Name <span className="text-muted-foreground/60">(optional)</span></label>
-                    <input
-                      type="text"
-                      value={newPortalName}
-                      onChange={e => setNewPortalName(e.target.value)}
-                      placeholder="Primary contact's name"
-                      className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold"
-                    />
-                  </div>
+                      {/* Admin name */}
+                      <div className="col-span-2">
+                        <div className="text-[10px] text-muted-foreground mb-0.5">Admin Name <span className="text-muted-foreground/60">(optional)</span></div>
+                        <input
+                          type="text"
+                          value={newPortalName}
+                          onChange={e => setNewPortalName(e.target.value)}
+                          placeholder="Primary contact's name"
+                          className="w-full h-8 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold"
+                        />
+                      </div>
 
-                  {/* Email */}
-                  <div>
-                    <label className="block text-xs text-muted-foreground mb-1">Root Email <span className="text-muted-foreground/60">(portal admin)</span></label>
-                    <input
-                      type="email"
-                      value={newPortalEmail}
-                      onChange={e => setNewPortalEmail(e.target.value)}
-                      placeholder="admin@company.com"
-                      className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold"
-                    />
-                    <p className="text-[10px] text-muted-foreground mt-1">Additional users can be added from the company profile after creation.</p>
-                  </div>
+                      {/* Email */}
+                      <div className="col-span-2">
+                        <div className="text-[10px] text-muted-foreground mb-0.5">Root Email <span className="text-muted-foreground/60">(portal admin)</span></div>
+                        <input
+                          type="email"
+                          value={newPortalEmail}
+                          onChange={e => setNewPortalEmail(e.target.value)}
+                          placeholder="admin@company.com"
+                          className="w-full h-8 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold"
+                        />
+                        <p className="text-[10px] text-muted-foreground mt-1">Additional users can be added from the company profile after creation.</p>
+                      </div>
 
-                  {/* Password */}
-                  <div>
-                    <label className="block text-xs text-muted-foreground mb-1">Set Password</label>
-                    <input
-                      type="text"
-                      value={newPortalPw}
-                      onChange={e => setNewPortalPw(e.target.value)}
-                      placeholder="Min. 6 characters — share this with the client"
-                      className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-gold"
-                    />
-                    <p className="text-[10px] text-muted-foreground mt-1">The client can change it later in Settings → Security.</p>
-                  </div>
+                      {/* Password */}
+                      <div className="col-span-4">
+                        <div className="text-[10px] text-muted-foreground mb-0.5">Set Password</div>
+                        <input
+                          type="text"
+                          value={newPortalPw}
+                          onChange={e => setNewPortalPw(e.target.value)}
+                          placeholder="Min. 6 characters — share this with the client"
+                          className="w-full h-8 rounded border border-border bg-background px-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-gold"
+                        />
+                        <p className="text-[10px] text-muted-foreground mt-1">The client can change it later in Settings → Security.</p>
+                      </div>
+                    </div>
+                  </section>
 
                   {createError && <p className="text-xs text-red-500">{createError}</p>}
                 </div>
-                <div className="flex gap-2 mt-5">
+                <div className="flex gap-2 px-6 py-4 border-t border-border justify-end">
+                  <Button variant="outline" onClick={() => setShowNewPortal(false)}>Cancel</Button>
                   <Button
-                    className="bg-gold hover:bg-gold/90 text-black flex-1"
+                    className="bg-gold hover:bg-gold/90 text-black min-w-[130px]"
                     disabled={!selectedClient || !newPortalEmail.trim() || newPortalPw.length < 6 || saving}
                     onClick={createPortal}>
                     {saving ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Creating…</> : <>Create Portal</>}
                   </Button>
-                  <Button variant="outline" onClick={() => setShowNewPortal(false)}>Cancel</Button>
                 </div>
               </>
             )}

@@ -230,50 +230,54 @@ export default function HRMSRecruitment() {
 
         {showAddCandidate && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-            <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-md p-6 m-4">
+            <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-2xl p-6 m-4">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="font-display text-lg font-semibold">Add Candidate</h2>
                 <button onClick={() => setShowAddCandidate(false)}><X className="h-5 w-5 text-muted-foreground" /></button>
               </div>
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-xs text-muted-foreground mb-1">Job Role *</label>
-                  <select value={newCandidate.job_id} onChange={(e) => setNewCandidate((p) => ({ ...p, job_id: Number(e.target.value) }))}
-                    className="w-full h-8 rounded border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold">
-                    <option value={0}>Select a job…</option>
-                    {jobsList.filter((j) => j.status === "Active").map((j) => (
-                      <option key={j.id} value={j.id}>{j.title}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs text-muted-foreground mb-1">Candidate Name *</label>
-                  <input value={newCandidate.name} onChange={(e) => setNewCandidate((p) => ({ ...p, name: e.target.value }))}
-                    placeholder="Full name"
-                    className="w-full h-8 rounded border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs text-muted-foreground mb-1">Email</label>
+              <div>
+                <h3 className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-2 flex items-center gap-1.5">
+                  <span className="w-4 h-4 rounded-full bg-gold text-black flex items-center justify-center text-[9px] font-bold">1</span>
+                  Candidate Details
+                </h3>
+                <div className="grid grid-cols-4 gap-2">
+                  <div className="col-span-2">
+                    <div className="text-[10px] text-muted-foreground mb-0.5">Job Role *</div>
+                    <select value={newCandidate.job_id} onChange={(e) => setNewCandidate((p) => ({ ...p, job_id: Number(e.target.value) }))}
+                      className="w-full h-8 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold">
+                      <option value={0}>Select a job…</option>
+                      {jobsList.filter((j) => j.status === "Active").map((j) => (
+                        <option key={j.id} value={j.id}>{j.title}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="col-span-2">
+                    <div className="text-[10px] text-muted-foreground mb-0.5">Candidate Name *</div>
+                    <input value={newCandidate.name} onChange={(e) => setNewCandidate((p) => ({ ...p, name: e.target.value }))}
+                      placeholder="Full name"
+                      className="w-full h-8 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
+                  </div>
+                  <div className="col-span-2">
+                    <div className="text-[10px] text-muted-foreground mb-0.5">Email</div>
                     <input type="email" value={newCandidate.email} onChange={(e) => setNewCandidate((p) => ({ ...p, email: e.target.value }))}
                       placeholder="candidate@email.com"
-                      className="w-full h-8 rounded border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+                      className="w-full h-8 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
                   </div>
                   <div>
-                    <label className="block text-xs text-muted-foreground mb-1">Phone</label>
+                    <div className="text-[10px] text-muted-foreground mb-0.5">Phone</div>
                     <input value={newCandidate.phone} onChange={(e) => setNewCandidate((p) => ({ ...p, phone: e.target.value }))}
                       placeholder="+91 98765 43210"
-                      className="w-full h-8 rounded border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+                      className="w-full h-8 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
                   </div>
-                </div>
-                <div>
-                  <label className="block text-xs text-muted-foreground mb-1">Initial Stage</label>
-                  <select value={newCandidate.stage} onChange={(e) => setNewCandidate((p) => ({ ...p, stage: e.target.value }))}
-                    className="w-full h-8 rounded border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold">
-                    {["Applied", "Screening", "Interview", "Assessment", "Offer", "Hired", "Rejected"].map((s) => (
-                      <option key={s}>{s}</option>
-                    ))}
-                  </select>
+                  <div>
+                    <div className="text-[10px] text-muted-foreground mb-0.5">Initial Stage</div>
+                    <select value={newCandidate.stage} onChange={(e) => setNewCandidate((p) => ({ ...p, stage: e.target.value }))}
+                      className="w-full h-8 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold">
+                      {["Applied", "Screening", "Interview", "Assessment", "Offer", "Hired", "Rejected"].map((s) => (
+                        <option key={s}>{s}</option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
               </div>
               <div className="flex gap-2 mt-5">

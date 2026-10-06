@@ -28,7 +28,13 @@ class DocumentController extends Controller
         return $request->attributes->get('portal_client') ?? \App\Models\Client::forUser($user);
     }
 
-    public const FOLDERS = ['General', 'Patents', 'Trademarks', 'Contracts', 'Correspondence', 'Invoices', 'Payment Proof'];
+    public const FOLDERS = [
+        'General', 'Patents', 'Trademarks', 'Contracts', 'Correspondence', 'Invoices', 'Payment Proof',
+        // Auto-prompted categories: Grant/Refusal Order from the status-change popup
+        // (ProjectController::update()'s Granted/Refused flow), Draft Document/Forms from
+        // the stage-gated upload requirement (see the stage-document-required protocol).
+        'Grant Order', 'Refusal Order', 'Draft Document', 'Forms',
+    ];
 
     public function index(Request $request)
     {
@@ -48,8 +54,13 @@ class DocumentController extends Controller
         $query = Document::with('uploader:id,name')->orderBy('updated_at', 'desc');
 
         if ($user->isClientRole()) {
-            // Client portal: own docs only
-            $query->where('client_id', $client->id);
+            // Client portal: own docs only — either tagged directly (client_id) or
+            // uploaded at case level against one of their projects (project_id only,
+            // client_id left null). Both must count as "theirs".
+            $query->where(function ($q) use ($client) {
+                $q->where('client_id', $client->id)
+                  ->orWhereHas('project', fn ($p) => $p->where('client_id', $client->id));
+            });
         } elseif (in_array($user->role, ['super_admin', 'partner', 'paralegal', 'hr'])) {
             // These roles see everything — no filter needed
         } elseif ($user->role === 'associate') {
@@ -104,6 +115,13 @@ class DocumentController extends Controller
             $query->where('category', $folder);
         }
 
+        // "Existing documents already on this case" — for the Tasks/Approvals document
+        // picker. Applied on top of the role-scoped query above, never in place of it, so
+        // this can only narrow within what the user could already see, not expand it.
+        if ($request->filled('project_id')) {
+            $query->where('project_id', (int) $request->query('project_id'));
+        }
+
         $paginated = $query->paginate($perPage, ['*'], 'page', max(1, (int) $request->query('page', 1)));
 
         return response()->json([
@@ -137,7 +155,8 @@ class DocumentController extends Controller
         }
 
         $request->validate([
-            'file'       => 'required|file|max:51200|mimes:pdf,doc,docx,xls,xlsx,ppt,pptx,txt,csv,png,jpg,jpeg,gif,zip',
+            // vsd/vsdx added for Visio draft diagrams (drafting/claims stages can require them).
+            'file'       => 'required|file|max:51200|mimes:pdf,doc,docx,xls,xlsx,ppt,pptx,txt,csv,png,jpg,jpeg,gif,zip,vsd,vsdx',
             'folder'     => 'nullable|in:' . implode(',', self::FOLDERS),
             'project_id' => 'nullable|exists:projects,id',
             'client_id'  => 'nullable|exists:clients,id',
@@ -147,13 +166,21 @@ class DocumentController extends Controller
         if ($ownClient) {
             $request->merge(['client_id' => $ownClient->id, 'project_id' => null]);
         }
+        $project = null;
         if ($request->project_id) {
             $project = \App\Models\Project::findOrFail($request->project_id);
             $this->authorize('attachToProject', [Document::class, $project]);
         }
-        if ($request->client_id) {
+        if ($request->filled('client_id')) {
             $client = \App\Models\Client::findOrFail($request->client_id);
             $this->authorize('attachToClient', [Document::class, $client]);
+        } elseif ($project && $project->client_id) {
+            // Case-level upload with no client explicitly chosen — auto-tag it with
+            // the case's own client so it's visible in the client portal without a
+            // separate manual step (this is what was missing for 065M006INCPT etc.;
+            // no extra authorize() needed since attachToProject already covers it —
+            // this only completes metadata for a case they can already upload to).
+            $request->merge(['client_id' => $project->client_id]);
         }
 
         $file   = $request->file('file');
@@ -207,6 +234,11 @@ class DocumentController extends Controller
             return $doc;
         });
 
+        // A document landing in a category that a Grant/Refusal-order or stage-gated
+        // upload prompt was tracking (see RequiredDocumentService) resolves that tracking
+        // task automatically — no separate "mark as uploaded" step needed.
+        app(\App\Services\RequiredDocumentService::class)->resolve($request->project_id, $folder);
+
         return response()->json([
             'id'     => $document->id,
             'path'   => $path,
@@ -231,15 +263,13 @@ class DocumentController extends Controller
             return response()->json(['message' => 'Invalid path'], 422);
         }
 
-        $authorizedDocument = Document::where('storage_path', $path)->firstOrFail();
+        $authorizedDocument = Document::with('project')->where('storage_path', $path)->firstOrFail();
         $this->authorize('view', $authorizedDocument);
 
-        // Clients may only download documents tagged to their own client.
-        if ($user->isClientRole()) {
-            $doc = Document::where('storage_path', $path)->first();
-            if (! $doc || (int) $doc->client_id !== (int) $client->id) {
-                return response()->json(['message' => 'Forbidden'], 403);
-            }
+        // Clients may only download documents tagged to their own client — either
+        // directly (client_id) or via a case-level upload on one of their projects.
+        if ($user->isClientRole() && ! $this->clientOwnsDocument($client, $authorizedDocument)) {
+            return response()->json(['message' => 'Forbidden'], 403);
         }
 
         // Scope check: associates/paralegals may only download documents whose
@@ -294,14 +324,12 @@ class DocumentController extends Controller
             return response()->json(['message' => 'Invalid path'], 422);
         }
 
-        $doc = Document::where('storage_path', $path)->first();
+        $doc = Document::with('project')->where('storage_path', $path)->first();
         abort_unless($doc, 404);
         $this->authorize('view', $doc);
 
-        if ($user->isClientRole()) {
-            if (! $doc || (int) $doc->client_id !== (int) $client->id) {
-                return response()->json(['message' => 'Forbidden'], 403);
-            }
+        if ($user->isClientRole() && ! $this->clientOwnsDocument($client, $doc)) {
+            return response()->json(['message' => 'Forbidden'], 403);
         }
         if ($user->role === 'associate' && $doc && $doc->project_id) {
             $project = \App\Models\Project::find($doc->project_id);
@@ -383,6 +411,22 @@ class DocumentController extends Controller
         ]);
 
         return response()->json(['ok' => true]);
+    }
+
+    /**
+     * A client owns a document either directly (client_id tagged on upload) or
+     * because it was uploaded at case level against one of their own projects
+     * (project_id set, client_id left null) — both must count as "theirs".
+     */
+    private function clientOwnsDocument(\App\Models\Client $client, ?Document $doc): bool
+    {
+        if (! $doc) {
+            return false;
+        }
+        if ((int) $doc->client_id === (int) $client->id) {
+            return true;
+        }
+        return $doc->project && (int) $doc->project->client_id === (int) $client->id;
     }
 
     private function galvanizerCanAccessDocument($user, Document $doc): bool

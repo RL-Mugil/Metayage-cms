@@ -1,12 +1,14 @@
 import { Head, usePage, router } from "@inertiajs/react";
 import { useState, useEffect, useRef, useCallback } from "react";
-import { User, Bell, Shield, Palette, Settings as SettingsIcon, Key, Building, Loader2, Camera, Trash2, ZoomIn, ZoomOut, RotateCcw, Plus, X, Landmark, Check } from "lucide-react";
+import { createPortal } from "react-dom";
+import { User, Bell, Shield, Palette, Settings as SettingsIcon, Key, Building, Loader2, Camera, Trash2, ZoomIn, ZoomOut, RotateCcw, Plus, X, Landmark, Check, Hash, Pencil, ArrowRightLeft, LayoutGrid, Wallet, ChevronUp, ChevronDown } from "lucide-react";
 import AppLayout from "@/layouts/AppLayout";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api-client";
+import type { ProjectTab, CodeRow, CodeRenameImpact, CodeMergeAvailable, CodeMergeImpact } from "@/types";
 
 function loadPrefs<T>(key: string, fallback: T): T {
   if (typeof window === "undefined") return fallback;
@@ -26,7 +28,7 @@ const TIMEZONES = [
 
 const LANGUAGES = ["English", "Hindi", "Tamil", "Telugu"];
 
-type Tab = "profile" | "notifications" | "security" | "appearance" | "system" | "finance";
+type Tab = "profile" | "notifications" | "security" | "appearance" | "system" | "codes" | "projectTabs" | "finance" | "payroll";
 
 const tabs: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: "profile",       label: "Profile",       icon: User },
@@ -34,8 +36,51 @@ const tabs: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: "security",      label: "Security",      icon: Shield },
   { id: "appearance",    label: "Appearance",    icon: Palette },
   { id: "system",        label: "System",        icon: Building },
+  { id: "codes",         label: "Codes",         icon: Hash },
+  { id: "projectTabs",   label: "Project Tabs",  icon: LayoutGrid },
   { id: "finance",       label: "Finance",       icon: Landmark },
+  { id: "payroll",       label: "Payroll",       icon: Wallet },
 ];
+
+const BLANK_SALARY_COMPONENT = { name: "", code: "", calc_type: "flat", category: "earning", value: "", percentage_of: "" };
+const BLANK_REIMBURSEMENT_TYPE = { name: "", code: "", monthly_cap: "" };
+
+/**
+ * Mirrors PayrollService::computeComponents()'s math (employee_field / flat /
+ * percentage) purely client-side, for the admin preview below — no round-trip.
+ * Gross is now a derived total (the sum of earning rows), not an input, so an
+ * earning component can't be "a percentage of Gross" (only a ctc_addon row
+ * can, once the earning pass is done) — matches the backend's own rule in
+ * SalaryComponentValidator. "Remainder" always previews as ₹0 — there's
+ * nothing left for it to be the remainder of in the real structure.
+ * Must stay in sync with the PHP engine if the compute rules ever change.
+ */
+function computeComponentPreview(components: any[], basePay: number, hra: number): { name: string; amount: number }[] {
+  const active = [...components].filter((c) => c.active).sort((a, b) => a.sequence - b.sequence);
+  const amounts: Record<string, number> = {};
+  const rows: { name: string; amount: number }[] = [];
+  let grossSum = 0;
+
+  for (const c of active.filter((c) => (c.category || "earning") === "earning")) {
+    if (c.calc_type === "remainder") { rows.push({ name: c.name, amount: 0 }); continue; }
+    const base = c.calc_type === "flat" ? Number(c.value || 0)
+      : c.calc_type === "employee_field" ? (c.percentage_of === "hra_monthly" ? hra : basePay)
+      : (amounts[c.percentage_of] ?? 0) * (Number(c.value || 0) / 100);
+    const amount = Math.round(base * 100) / 100;
+    amounts[c.code] = amount;
+    grossSum += amount;
+    rows.push({ name: c.name, amount });
+  }
+
+  for (const c of active.filter((c) => c.category === "ctc_addon")) {
+    const of = c.percentage_of === "_GROSS_" ? grossSum : (amounts[c.percentage_of] ?? 0);
+    const amount = Math.round((c.calc_type === "flat" ? Number(c.value || 0) : of * (Number(c.value || 0) / 100)) * 100) / 100;
+    amounts[c.code] = amount;
+    rows.push({ name: c.name, amount });
+  }
+
+  return rows;
+}
 
 const FEE_JURISDICTIONS = ["IN", "US", "EP", "WO"] as const;
 const BLANK_FEE_ROW = {
@@ -65,10 +110,467 @@ function AvatarDisplay({ src, name, size = "lg" }: { src?: string | null; name: 
   );
 }
 
+/** One tabular Code editor (used for both Service Codes and Country Codes). Label edits and
+ *  add/delete are lightweight (whole-array replace via the parent's onSave). Changing the CODE
+ *  VALUE itself only happens through the "Rename" action, which routes to a separate
+ *  impact-preview + confirm flow (CodeRenameDialog) since that cascades into live data. */
+function CodeTable({
+  type, items, setItems, usage, newCode, setNewCode, newLabel, setNewLabel,
+  search, setSearch, addErr, setAddErr, saving, onSave, onRenameClick, canManage,
+}: {
+  type: "service" | "country";
+  items: { code: string; label: string }[];
+  setItems: (fn: (prev: { code: string; label: string }[]) => { code: string; label: string }[]) => void;
+  usage: CodeRow[];
+  newCode: string; setNewCode: (v: string) => void;
+  newLabel: string; setNewLabel: (v: string) => void;
+  search: string; setSearch: (v: string) => void;
+  addErr: string; setAddErr: (v: string) => void;
+  saving: boolean;
+  onSave: () => void;
+  onRenameClick: (code: string, label: string) => void;
+  canManage: boolean;
+}) {
+  const [editingCode, setEditingCode] = useState<string | null>(null);
+  const [editLabel, setEditLabel] = useState("");
+
+  const usageFor = (code: string) => usage.find((u) => u.code.toUpperCase() === code.toUpperCase())?.projects_count ?? 0;
+  const stripPrefix = (label: string) => label.replace(/^[A-Z0-9\-]+\s[–-]\s/, "");
+
+  const q = search.trim().toLowerCase();
+  const filtered = q ? items.filter((x) => x.code.toLowerCase().includes(q) || x.label.toLowerCase().includes(q)) : items;
+
+  return (
+    <Card className="border-border">
+      <CardHeader>
+        <CardTitle className="font-display">{type === "service" ? "Service Codes" : "Country / Patent Office Codes"}</CardTitle>
+        <p className="text-xs text-muted-foreground mt-1">
+          {type === "service"
+            ? "All codes listed here appear in the Service Code dropdown across the portal."
+            : "Codes listed here appear in the Patent Office dropdown when creating a case."} {items.length} total.
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="relative">
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search codes or descriptions…"
+            className="w-full h-8 rounded border border-border bg-background pl-3 pr-8 text-xs focus:outline-none focus:ring-1 focus:ring-gold"
+          />
+          {search && (
+            <button onClick={() => setSearch("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+              <X className="h-3 w-3" />
+            </button>
+          )}
+        </div>
+
+        <div className="overflow-x-auto rounded-md border border-border">
+          <table className="w-full text-xs">
+            <thead className="bg-muted/40 text-[10px] uppercase tracking-wider text-muted-foreground">
+              <tr>
+                <th className="px-3 py-2 text-left">Code</th>
+                <th className="px-3 py-2 text-left">Description</th>
+                <th className="px-3 py-2 text-right"># Projects</th>
+                {canManage && <th className="px-3 py-2 text-right">Actions</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.length === 0 && (
+                <tr><td colSpan={canManage ? 4 : 3} className="px-3 py-4 text-center text-muted-foreground italic">
+                  {q ? `No codes match "${search}".` : "No codes yet."}
+                </td></tr>
+              )}
+              {filtered.map((item) => {
+                const count = usageFor(item.code);
+                const isEditing = editingCode === item.code;
+                return (
+                  <tr key={item.code} className="border-t border-border">
+                    <td className="px-3 py-2 font-mono font-semibold text-gold align-top whitespace-nowrap">{item.code}</td>
+                    <td className="px-3 py-2 align-top">
+                      {isEditing ? (
+                        <div className="flex items-center gap-1">
+                          <input
+                            autoFocus
+                            value={editLabel}
+                            onChange={(e) => setEditLabel(e.target.value)}
+                            className="flex-1 h-7 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold"
+                          />
+                          <button className="text-green-600 hover:text-green-700" title="Save"
+                            onClick={() => {
+                              setItems((prev) => prev.map((x) => x.code === item.code ? { ...x, label: `${item.code} – ${editLabel.trim()}` } : x));
+                              setEditingCode(null);
+                            }}>
+                            <Check className="h-3.5 w-3.5" />
+                          </button>
+                          <button className="text-muted-foreground hover:text-destructive" title="Cancel" onClick={() => setEditingCode(null)}>
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      ) : (
+                        <span>{stripPrefix(item.label)}</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-right align-top">{count}</td>
+                    {canManage && (
+                      <td className="px-3 py-2 align-top">
+                        <div className="flex items-center justify-end gap-2">
+                          {!isEditing && (
+                            <button title="Edit description" className="text-muted-foreground hover:text-foreground"
+                              onClick={() => { setEditingCode(item.code); setEditLabel(stripPrefix(item.label)); }}>
+                              <Pencil className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                          <button title="Rename code (updates every project that uses it)" className="text-muted-foreground hover:text-foreground"
+                            onClick={() => onRenameClick(item.code, item.label)}>
+                            <ArrowRightLeft className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            title={count > 0 ? `Still used by ${count} project(s) — cannot delete` : "Delete"}
+                            disabled={count > 0}
+                            className={count > 0 ? "text-muted-foreground/40 cursor-not-allowed" : "text-muted-foreground hover:text-destructive"}
+                            onClick={() => { if (count === 0) setItems((prev) => prev.filter((x) => x.code !== item.code)); }}>
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    )}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        {canManage && (
+          <>
+            {/* Add new */}
+            <div className="border-t border-border pt-3 space-y-2">
+              <p className="text-xs font-medium text-muted-foreground">Add new code</p>
+              <div className="flex gap-2">
+                <input value={newCode}
+                  onChange={(e) => { setNewCode(e.target.value.toUpperCase()); setAddErr(""); }}
+                  placeholder={type === "service" ? "CODE" : "XX"} maxLength={type === "service" ? 10 : 4}
+                  className="w-24 h-8 rounded border border-border bg-background px-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-gold" />
+                <input value={newLabel} onChange={(e) => setNewLabel(e.target.value)}
+                  placeholder="Description"
+                  className="flex-1 h-8 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
+                <Button size="sm" variant="outline" className="h-8 px-3 shrink-0"
+                  onClick={() => {
+                    const code = newCode.trim().toUpperCase();
+                    const lbl = newLabel.trim();
+                    if (!code) { setAddErr("Enter a code."); return; }
+                    if (!lbl) { setAddErr("Enter a description."); return; }
+                    const dup = items.find((x) => x.code.toUpperCase() === code);
+                    if (dup) { setAddErr(`"${code}" already exists: "${dup.label}"`); return; }
+                    setItems((prev) => [...prev, { code, label: `${code} – ${lbl}` }]);
+                    setNewCode(""); setNewLabel(""); setAddErr("");
+                  }}>
+                  <Plus className="h-3 w-3" />
+                </Button>
+              </div>
+              {addErr && <p className="text-xs text-destructive">{addErr}</p>}
+            </div>
+
+            <Button size="sm" onClick={onSave} disabled={saving} className="bg-gold hover:bg-gold/90 text-black">
+              {saving ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : null}Save {type === "service" ? "Service" : "Country"} Codes
+            </Button>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/** Impact-preview + explicit-confirm flow for a cascading code rename — see CodeRenameService.
+ *  If the new code already exists as a separate catalog entry, previewCodeRename() signals
+ *  merge_available instead of erroring, and this dialog branches into the merge preview/confirm
+ *  flow (previewCodeMerge/executeCodeMerge) rather than dead-ending. */
+function CodeRenameDialog({ type, oldCode, oldLabel, onClose, onRenamed, onMerged }: {
+  type: "service" | "country";
+  oldCode: string;
+  oldLabel: string;
+  onClose: () => void;
+  onRenamed: (type: "service" | "country", oldCode: string, newCode: string) => void;
+  onMerged: (type: "service" | "country", oldCode: string, newCode: string) => void;
+}) {
+  const [newCode, setNewCode] = useState("");
+  const [step, setStep] = useState<"input" | "confirm" | "merge-ask" | "merge-confirm">("input");
+  const [impact, setImpact] = useState<CodeRenameImpact | null>(null);
+  const [mergeInfo, setMergeInfo] = useState<CodeMergeAvailable | null>(null);
+  const [mergeImpact, setMergeImpact] = useState<CodeMergeImpact | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState("");
+
+  async function handlePreview() {
+    const code = newCode.trim().toUpperCase();
+    if (!code) { setErr("Enter a new code."); return; }
+    setLoading(true); setErr("");
+    try {
+      const result = await api.previewCodeRename(type, oldCode, code);
+      if ("merge_available" in result) {
+        setMergeInfo(result);
+        setStep("merge-ask");
+      } else {
+        setImpact(result);
+        setStep("confirm");
+      }
+    } catch (e: any) { setErr(e.message || "Could not preview this rename."); }
+    finally { setLoading(false); }
+  }
+
+  async function handleConfirm() {
+    setLoading(true); setErr("");
+    try {
+      const result = await api.executeCodeRename(type, oldCode, newCode.trim().toUpperCase());
+      onRenamed(type, oldCode, result.new_code);
+    } catch (e: any) { setErr(e.message || "Rename failed."); }
+    finally { setLoading(false); }
+  }
+
+  async function handlePreviewMerge() {
+    if (!mergeInfo) return;
+    setLoading(true); setErr("");
+    try {
+      const result = await api.previewCodeMerge(type, oldCode, mergeInfo.new_code);
+      setMergeImpact(result);
+      setStep("merge-confirm");
+    } catch (e: any) { setErr(e.message || "Could not preview this merge."); }
+    finally { setLoading(false); }
+  }
+
+  async function handleConfirmMerge() {
+    if (!mergeInfo) return;
+    setLoading(true); setErr("");
+    try {
+      const result = await api.executeCodeMerge(type, oldCode, mergeInfo.new_code);
+      onMerged(type, oldCode, result.new_code);
+    } catch (e: any) { setErr(e.message || "Merge failed."); }
+    finally { setLoading(false); }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+      <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-md p-6">
+        <h3 className="font-semibold font-display mb-1">Rename Code</h3>
+        <p className="text-xs text-muted-foreground mb-4">
+          <span className="font-mono text-gold">{oldCode}</span> — {oldLabel.replace(/^[A-Z0-9\-]+\s[–-]\s/, "")}
+        </p>
+
+        {step === "input" && (
+          <>
+            <label className="block text-xs font-medium text-muted-foreground mb-1">New code (must be {oldCode.length} characters)</label>
+            <input
+              value={newCode}
+              onChange={(e) => { setNewCode(e.target.value.toUpperCase()); setErr(""); }}
+              placeholder={oldCode}
+              maxLength={20}
+              autoFocus
+              className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-gold"
+            />
+            {err && <p className="text-xs text-destructive mt-2">{err}</p>}
+            <div className="flex gap-2 justify-end mt-5">
+              <Button variant="outline" onClick={onClose} disabled={loading}>Cancel</Button>
+              <Button onClick={handlePreview} disabled={loading} className="bg-gold hover:bg-gold/90 text-black">
+                {loading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}Preview Impact
+              </Button>
+            </div>
+          </>
+        )}
+
+        {step === "confirm" && impact && (
+          <>
+            <div className="rounded-md border border-border bg-muted/30 p-3 text-sm space-y-1.5 mb-4">
+              <p>This will rename <span className="font-mono text-gold">{oldCode}</span> → <span className="font-mono text-gold">{impact.new_code}</span>:</p>
+              <ul className="text-xs text-muted-foreground space-y-1 mt-2">
+                <li>• {impact.projects.updated} case{impact.projects.updated === 1 ? "" : "s"} (docket number/UIN + service/office code)</li>
+                {impact.projects.irregular > 0 && (
+                  <li className="text-amber-600">
+                    • {impact.projects.irregular} case{impact.projects.irregular === 1 ? "" : "s"} with an irregular docket format — only the code field updates, docket text stays as-is (needs manual review)
+                  </li>
+                )}
+                <li>
+                  • {impact.fee_rate_cards.updated} fee rate card row{impact.fee_rate_cards.updated === 1 ? "" : "s"}
+                  {impact.fee_rate_cards.skipped > 0 ? ` (${impact.fee_rate_cards.skipped} skipped — conflicting existing entry)` : ""}
+                </li>
+                <li>
+                  • {impact.service_transition_rules.updated} workflow transition rule{impact.service_transition_rules.updated === 1 ? "" : "s"}
+                  {impact.service_transition_rules.skipped > 0 ? ` (${impact.service_transition_rules.skipped} skipped)` : ""}
+                </li>
+                <li>
+                  • {impact.jurisdiction_lifecycle_templates.updated} lifecycle template{impact.jurisdiction_lifecycle_templates.updated === 1 ? "" : "s"}
+                  {impact.jurisdiction_lifecycle_templates.skipped > 0 ? ` (${impact.jurisdiction_lifecycle_templates.skipped} skipped)` : ""}
+                </li>
+                {impact.project_tabs_hits > 0 && (
+                  <li>• {impact.project_tabs_hits} Project Tab mapping{impact.project_tabs_hits === 1 ? "" : "s"} updated</li>
+                )}
+                {Object.entries(impact.jurisdiction_tables).filter(([, n]) => n > 0).map(([table, n]) => (
+                  <li key={table}>• {n} {table.replace(/_/g, " ")} row{n === 1 ? "" : "s"}</li>
+                ))}
+              </ul>
+              <p className="text-xs text-muted-foreground pt-1">Invoices already issued are never changed.</p>
+            </div>
+            {err && <p className="text-xs text-destructive mb-3">{err}</p>}
+            <div className="flex gap-2 justify-end">
+              <Button variant="outline" onClick={() => setStep("input")} disabled={loading}>Back</Button>
+              <Button onClick={handleConfirm} disabled={loading} className="bg-destructive hover:bg-destructive/90 text-white">
+                {loading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}Confirm Rename
+              </Button>
+            </div>
+          </>
+        )}
+
+        {step === "merge-ask" && mergeInfo && (
+          <>
+            <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm space-y-1.5 mb-4">
+              <p>
+                <span className="font-mono text-gold">{mergeInfo.new_code}</span> already exists as a separate code
+                ({mergeInfo.existing_label.replace(/^[A-Z0-9\-]+\s[–-]\s/, "")}, used by {mergeInfo.existing_count} case{mergeInfo.existing_count === 1 ? "" : "s"}).
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Merge <span className="font-mono text-gold">{oldCode}</span> into <span className="font-mono text-gold">{mergeInfo.new_code}</span> instead?
+                This combines both codes' cases and configuration under <span className="font-mono">{mergeInfo.new_code}</span> and cannot be undone.
+              </p>
+            </div>
+            {err && <p className="text-xs text-destructive mb-3">{err}</p>}
+            <div className="flex gap-2 justify-end">
+              <Button variant="outline" onClick={onClose} disabled={loading}>Cancel</Button>
+              <Button onClick={handlePreviewMerge} disabled={loading} className="bg-gold hover:bg-gold/90 text-black">
+                {loading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}Continue — Preview Merge
+              </Button>
+            </div>
+          </>
+        )}
+
+        {step === "merge-confirm" && mergeImpact && (
+          <>
+            <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm space-y-1.5 mb-4">
+              <p>This will merge <span className="font-mono text-gold">{oldCode}</span> into <span className="font-mono text-gold">{mergeImpact.new_code}</span> and retire <span className="font-mono">{oldCode}</span>:</p>
+              <ul className="text-xs text-muted-foreground space-y-1 mt-2">
+                <li>• {mergeImpact.projects.updated} case{mergeImpact.projects.updated === 1 ? "" : "s"} reassigned (docket number/UIN + service/office code)</li>
+                {mergeImpact.projects.irregular > 0 && (
+                  <li className="text-amber-600">
+                    • {mergeImpact.projects.irregular} case{mergeImpact.projects.irregular === 1 ? "" : "s"} with an irregular docket format — only the code field updates, docket text stays as-is (needs manual review)
+                  </li>
+                )}
+                <li>
+                  • {mergeImpact.fee_rate_cards.updated} fee rate card row{mergeImpact.fee_rate_cards.updated === 1 ? "" : "s"} moved
+                  {mergeImpact.fee_rate_cards.discarded > 0 ? (
+                    <span className="text-destructive"> ({mergeImpact.fee_rate_cards.discarded} discarded — {mergeImpact.new_code} already had a rate for that combination)</span>
+                  ) : ""}
+                </li>
+                <li>
+                  • {mergeImpact.service_transition_rules.updated} workflow transition rule{mergeImpact.service_transition_rules.updated === 1 ? "" : "s"} moved
+                  {mergeImpact.service_transition_rules.discarded > 0 ? (
+                    <span className="text-destructive"> ({mergeImpact.service_transition_rules.discarded} discarded — conflicting existing rule)</span>
+                  ) : ""}
+                </li>
+                <li>
+                  • {mergeImpact.jurisdiction_lifecycle_templates.updated} lifecycle template{mergeImpact.jurisdiction_lifecycle_templates.updated === 1 ? "" : "s"} moved
+                  {mergeImpact.jurisdiction_lifecycle_templates.discarded > 0 ? (
+                    <span className="text-destructive"> ({mergeImpact.jurisdiction_lifecycle_templates.discarded} discarded — conflicting existing template)</span>
+                  ) : ""}
+                </li>
+                {mergeImpact.project_tabs_hits > 0 && (
+                  <li>• {mergeImpact.project_tabs_hits} Project Tab mapping{mergeImpact.project_tabs_hits === 1 ? "" : "s"} updated</li>
+                )}
+                {Object.entries(mergeImpact.jurisdiction_tables).filter(([, n]) => n > 0).map(([table, n]) => (
+                  <li key={table}>• {n} {table.replace(/_/g, " ")} row{n === 1 ? "" : "s"}</li>
+                ))}
+                <li>• <span className="font-mono">{oldCode}</span> is removed from the code list — {mergeImpact.new_code}'s existing label is kept</li>
+              </ul>
+              <p className="text-xs text-muted-foreground pt-1">Invoices already issued are never changed.</p>
+            </div>
+            {err && <p className="text-xs text-destructive mb-3">{err}</p>}
+            <div className="flex gap-2 justify-end">
+              <Button variant="outline" onClick={() => setStep("merge-ask")} disabled={loading}>Back</Button>
+              <Button onClick={handleConfirmMerge} disabled={loading} className="bg-destructive hover:bg-destructive/90 text-white">
+                {loading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}Confirm Merge
+              </Button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Searchable combobox for picking a service code to add to a Project Tab. `options` is
+ *  expected to already exclude codes assigned to any tab (this one included) — selecting
+ *  immediately assigns the code, no separate "Add" click needed. */
+function TabCodeCombobox({ options, onSelect, placeholder }: {
+  options: { code: string; label: string }[];
+  onSelect: (code: string) => void;
+  placeholder?: string;
+}) {
+  const [q, setQ] = useState("");
+  const [open, setOpen] = useState(false);
+  const [rect, setRect] = useState<DOMRect | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const filtered = options
+    .filter((o) => !q || o.code.toLowerCase().includes(q.toLowerCase()) || o.label.toLowerCase().includes(q.toLowerCase()))
+    .slice(0, 50);
+
+  useEffect(() => {
+    if (!open) return;
+    const update = () => { if (inputRef.current) setRect(inputRef.current.getBoundingClientRect()); };
+    window.addEventListener("scroll", update, true);
+    return () => window.removeEventListener("scroll", update, true);
+  }, [open]);
+
+  function handleFocus() {
+    if (inputRef.current) setRect(inputRef.current.getBoundingClientRect());
+    setOpen(true);
+  }
+
+  const dropdown = open && rect
+    ? createPortal(
+        <div
+          style={{ position: "fixed", top: rect.bottom + 2, left: rect.left, width: Math.max(rect.width, 220), zIndex: 9999 }}
+          className="bg-background border border-border rounded-md shadow-2xl max-h-56 overflow-y-auto"
+        >
+          {filtered.map((o) => (
+            <button key={o.code} type="button"
+              onMouseDown={(e) => { e.preventDefault(); onSelect(o.code); setQ(""); setOpen(false); }}
+              className="w-full text-left px-3 py-2 text-xs hover:bg-muted/40">
+              <span className="font-mono font-semibold text-gold">{o.code}</span>
+              <span className="text-muted-foreground ml-1.5">– {o.label.replace(/^[A-Z0-9\-]+\s[–-]\s/, "")}</span>
+            </button>
+          ))}
+          {filtered.length === 0 && (
+            <p className="px-3 py-2 text-xs text-muted-foreground">
+              {options.length === 0 ? "No codes available — all codes are already assigned to a tab." : "No matches."}
+            </p>
+          )}
+        </div>,
+        document.body
+      )
+    : null;
+
+  return (
+    <div className="relative flex-1">
+      <input
+        ref={inputRef}
+        value={q}
+        onFocus={handleFocus}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        onChange={(e) => { setQ(e.target.value); setOpen(true); }}
+        placeholder={placeholder}
+        className="w-full h-8 rounded border border-border bg-background px-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-gold"
+      />
+      {dropdown}
+    </div>
+  );
+}
+
 export default function Settings() {
   const { props } = usePage() as any;
   const user = props.auth?.user;
   const canManageSystem = ["super_admin", "partner"].includes(user?.role ?? "");
+  // Salary/payroll data — director (partner), accountant (finance), and
+  // system admin only. Mirrors App\Models\User::PAYROLL_ACCESS_ROLES.
+  const canManagePayroll = ["super_admin", "partner", "finance"].includes(user?.role ?? "");
   const [tab, setTab] = useState<Tab>("profile");
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
@@ -129,7 +631,23 @@ export default function Settings() {
   const [ctyAddErr, setCtyAddErr] = useState("");
   const [savingDropdown, setSavingDropdown] = useState<"service"|"country"|null>(null);
 
-  const visibleTabs = canManageSystem ? tabs : tabs.filter((item) => item.id !== "system" && item.id !== "finance");
+  // Live "# projects using this code" counts for the Codes tab table + delete/rename gating.
+  const [codeUsage, setCodeUsage] = useState<{ service: CodeRow[]; country: CodeRow[] }>({ service: [], country: [] });
+  const [renameDialog, setRenameDialog] = useState<{ type: "service" | "country"; code: string; label: string } | null>(null);
+  const [codesSubTab, setCodesSubTab] = useState<"service" | "country">("service");
+
+  // Projects-list tabs (Cases page segmentation by service code) — see updateProjectTabs.
+  const [projectTabs, setProjectTabs] = useState<ProjectTab[]>(sysSettings.project_tabs ?? []);
+  const [newTabLabel, setNewTabLabel] = useState("");
+  const [tabAddErr, setTabAddErr] = useState("");
+  const [savingTabs, setSavingTabs] = useState(false);
+
+  const visibleTabs = tabs.filter((item) => {
+    if (item.id === "system" || item.id === "finance" || item.id === "codes") return canManageSystem;
+    if (item.id === "projectTabs") return isSuperAdmin;
+    if (item.id === "payroll") return canManagePayroll;
+    return true;
+  });
 
   useEffect(() => {
     api.getSettings().then((data) => {
@@ -140,8 +658,10 @@ export default function Settings() {
   }, []);
 
   useEffect(() => {
-    if (!canManageSystem && (tab === "system" || tab === "finance")) setTab("profile");
-  }, [canManageSystem, tab]);
+    if (!canManageSystem && (tab === "system" || tab === "finance" || tab === "codes")) setTab("profile");
+    if (!isSuperAdmin && tab === "projectTabs") setTab("profile");
+    if (!canManagePayroll && tab === "payroll") setTab("profile");
+  }, [canManageSystem, isSuperAdmin, canManagePayroll, tab]);
 
   const [feeRows, setFeeRows] = useState<any[]>([]);
   const [feeLoading, setFeeLoading] = useState(false);
@@ -162,6 +682,275 @@ export default function Settings() {
   useEffect(() => {
     if (tab === "finance" && isSuperAdmin) loadFeeRows();
   }, [tab, isSuperAdmin, loadFeeRows]);
+
+  // ── Payroll tab: salary component template, reimbursement types, Professional Tax ──
+  const [components, setComponents] = useState<any[]>([]);
+  const [componentsLoading, setComponentsLoading] = useState(false);
+  const [componentEdits, setComponentEdits] = useState<Record<number, any>>({});
+  const [componentSavingId, setComponentSavingId] = useState<number | null>(null);
+  const [newComponent, setNewComponent] = useState({ ...BLANK_SALARY_COMPONENT });
+  const [newComponentErr, setNewComponentErr] = useState("");
+  const [componentErr, setComponentErr] = useState("");
+  const [previewBasePay, setPreviewBasePay] = useState("50000");
+  const [previewHra, setPreviewHra] = useState("10000");
+
+  const [reimbTypes, setReimbTypes] = useState<any[]>([]);
+  const [reimbTypesLoading, setReimbTypesLoading] = useState(false);
+  const [reimbTypeEdits, setReimbTypeEdits] = useState<Record<number, any>>({});
+  const [reimbTypeSavingId, setReimbTypeSavingId] = useState<number | null>(null);
+  const [newReimbType, setNewReimbType] = useState({ ...BLANK_REIMBURSEMENT_TYPE });
+  const [newReimbTypeErr, setNewReimbTypeErr] = useState("");
+
+  const [ptNilThreshold, setPtNilThreshold] = useState(String(sysSettings.payroll_pt_nil_threshold ?? 25000));
+  const [ptMonthlyAmount, setPtMonthlyAmount] = useState(String(sysSettings.payroll_pt_monthly_amount ?? 200));
+  const [ptFebruaryAmount, setPtFebruaryAmount] = useState(String(sysSettings.payroll_pt_february_amount ?? 300));
+  const [pfEnabled, setPfEnabled] = useState(sysSettings.payroll_pf_enabled ?? true);
+  const [esiEnabled, setEsiEnabled] = useState(sysSettings.payroll_esi_enabled ?? true);
+  const [savingPt, setSavingPt] = useState(false);
+
+  const [companyName, setCompanyName] = useState(String(sysSettings.payroll_company_name ?? ""));
+  const [companyAddress, setCompanyAddress] = useState(String(sysSettings.payroll_company_address ?? ""));
+  const [companyLogoUrl, setCompanyLogoUrl] = useState(String(sysSettings.payroll_company_logo_url ?? ""));
+  const [companyTan, setCompanyTan] = useState(String(sysSettings.payroll_company_tan ?? ""));
+  const [signatoryName, setSignatoryName] = useState(String(sysSettings.payroll_signatory_name ?? ""));
+  const [signatoryDesignation, setSignatoryDesignation] = useState(String(sysSettings.payroll_signatory_designation ?? ""));
+  const [savingLetterhead, setSavingLetterhead] = useState(false);
+
+  const [payDay, setPayDay] = useState(String(sysSettings.payroll_pay_day ?? 1));
+
+  const [taxSlabConfigs, setTaxSlabConfigs] = useState<any[]>([]);
+  const [taxSlabConfigsLoading, setTaxSlabConfigsLoading] = useState(false);
+  const [taxSlabEdits, setTaxSlabEdits] = useState<Record<number, any>>({});
+  const [taxSlabSavingId, setTaxSlabSavingId] = useState<number | null>(null);
+  const [taxSlabErr, setTaxSlabErr] = useState("");
+
+  const loadTaxSlabConfigs = useCallback(() => {
+    setTaxSlabConfigsLoading(true);
+    api.getTaxSlabConfigs()
+      .then((rows) => { setTaxSlabConfigs(rows); setTaxSlabEdits({}); })
+      .catch(() => setTaxSlabConfigs([]))
+      .finally(() => setTaxSlabConfigsLoading(false));
+  }, []);
+
+  function taxSlabField(row: any, key: string) {
+    return taxSlabEdits[row.id]?.[key] ?? row[key] ?? "";
+  }
+  function setTaxSlabField(row: any, key: string, value: any) {
+    setTaxSlabEdits((p) => ({ ...p, [row.id]: { ...(p[row.id] ?? {}), [key]: value } }));
+  }
+  async function saveTaxSlabRow(row: any) {
+    const edits = taxSlabEdits[row.id];
+    if (!edits) return;
+    setTaxSlabSavingId(row.id);
+    setTaxSlabErr("");
+    try {
+      const payload = { ...edits };
+      if (payload.slabs_json_text !== undefined) {
+        try { payload.slabs_json = JSON.parse(payload.slabs_json_text); }
+        catch { throw new Error("Slabs JSON is not valid — check the format."); }
+        delete payload.slabs_json_text;
+      }
+      const updated = await api.updateTaxSlabConfig(row.id, payload);
+      setTaxSlabConfigs((rs) => rs.map((r) => (r.id === row.id ? updated : r)));
+      setTaxSlabEdits((p) => { const n = { ...p }; delete n[row.id]; return n; });
+    } catch (e: any) { setTaxSlabErr(e?.message || "Failed to save tax slab config."); }
+    finally { setTaxSlabSavingId(null); }
+  }
+
+  const [poiWindows, setPoiWindows] = useState<any[]>([]);
+  const [poiWindowsLoading, setPoiWindowsLoading] = useState(false);
+  const [poiWindowForm, setPoiWindowForm] = useState({
+    financial_year: String(new Date().getMonth() + 1 >= 4 ? new Date().getFullYear() : new Date().getFullYear() - 1),
+    deadline_at: "", effective_payroll_month: "",
+  });
+  const [poiWindowSaving, setPoiWindowSaving] = useState(false);
+  const [poiWindowErr, setPoiWindowErr] = useState("");
+
+  const loadPoiWindows = useCallback(() => {
+    setPoiWindowsLoading(true);
+    api.getPoiWindows()
+      .then(setPoiWindows)
+      .catch(() => setPoiWindows([]))
+      .finally(() => setPoiWindowsLoading(false));
+  }, []);
+
+  async function savePoiWindowRow() {
+    setPoiWindowSaving(true);
+    setPoiWindowErr("");
+    try {
+      if (!poiWindowForm.deadline_at || !poiWindowForm.effective_payroll_month) {
+        throw new Error("Deadline and effective payroll month are both required.");
+      }
+      await api.savePoiWindow({
+        financial_year: parseInt(poiWindowForm.financial_year, 10),
+        deadline_at: poiWindowForm.deadline_at,
+        effective_payroll_month: poiWindowForm.effective_payroll_month,
+      });
+      loadPoiWindows();
+    } catch (e: any) {
+      setPoiWindowErr(e?.message || "Failed to save the window.");
+    } finally {
+      setPoiWindowSaving(false);
+    }
+  }
+
+  const loadComponents = useCallback(() => {
+    setComponentsLoading(true);
+    api.getSalaryComponents()
+      .then((rows) => { setComponents(rows); setComponentEdits({}); })
+      .catch(() => setComponents([]))
+      .finally(() => setComponentsLoading(false));
+  }, []);
+
+  const loadReimbTypes = useCallback(() => {
+    setReimbTypesLoading(true);
+    api.getReimbursementTypes(true)
+      .then((rows) => { setReimbTypes(rows); setReimbTypeEdits({}); })
+      .catch(() => setReimbTypes([]))
+      .finally(() => setReimbTypesLoading(false));
+  }, []);
+
+  useEffect(() => {
+    if (tab === "payroll" && canManagePayroll) { loadComponents(); loadReimbTypes(); loadTaxSlabConfigs(); loadPoiWindows(); }
+  }, [tab, canManagePayroll, loadComponents, loadReimbTypes, loadTaxSlabConfigs, loadPoiWindows]);
+
+  function componentField(row: any, key: string) {
+    return componentEdits[row.id]?.[key] ?? row[key] ?? "";
+  }
+  function setComponentField(row: any, key: string, value: any) {
+    setComponentEdits((p) => ({ ...p, [row.id]: { ...(p[row.id] ?? {}), [key]: value } }));
+  }
+  async function saveComponentRow(row: any) {
+    const edits = componentEdits[row.id];
+    if (!edits) return;
+    setComponentSavingId(row.id);
+    setComponentErr("");
+    try {
+      const payload = { ...edits };
+      if (payload.calc_type && payload.calc_type !== "percentage" && payload.calc_type !== "employee_field") payload.percentage_of = null;
+      const updated = await api.updateSalaryComponent(row.id, payload);
+      setComponents((rs) => rs.map((r) => (r.id === row.id ? updated : r)).sort((a, b) => a.sequence - b.sequence));
+      setComponentEdits((p) => { const n = { ...p }; delete n[row.id]; return n; });
+    } catch (e: any) { setComponentErr(e?.message || "Failed to save component."); }
+    finally { setComponentSavingId(null); }
+  }
+  async function deleteComponentRow(id: number) {
+    if (!confirm("Delete this salary component?")) return;
+    setComponentErr("");
+    try { await api.deleteSalaryComponent(id); setComponents((rs) => rs.filter((r) => r.id !== id)); }
+    catch (e: any) { setComponentErr(e?.message || "Failed to delete — it may still be referenced."); }
+  }
+  async function addComponentRow() {
+    if (!newComponent.name.trim() || !newComponent.code.trim()) { setNewComponentErr("Name and code are required."); return; }
+    setNewComponentErr("");
+    try {
+      const payload: any = {
+        ...newComponent,
+        value: (newComponent.calc_type === "remainder" || newComponent.calc_type === "employee_field") ? null : (newComponent.value === "" ? null : Number(newComponent.value)),
+        percentage_of: (newComponent.calc_type === "percentage" || newComponent.calc_type === "employee_field") ? (newComponent.percentage_of || null) : null,
+        sequence: components.length + 1,
+      };
+      const created = await api.createSalaryComponent(payload);
+      setComponents((rs) => [...rs, created]);
+      setNewComponent({ ...BLANK_SALARY_COMPONENT });
+    } catch (e: any) { setNewComponentErr(e?.message || "Failed to add component."); }
+  }
+  async function moveComponent(id: number, direction: -1 | 1) {
+    const idx = components.findIndex((c) => c.id === id);
+    const swapIdx = idx + direction;
+    if (idx < 0 || swapIdx < 0 || swapIdx >= components.length) return;
+    const reordered = [...components];
+    [reordered[idx], reordered[swapIdx]] = [reordered[swapIdx], reordered[idx]];
+    setComponents(reordered);
+    try { await api.reorderSalaryComponents(reordered.map((c) => c.id)); loadComponents(); }
+    catch { setComponentErr("Failed to reorder."); loadComponents(); }
+  }
+
+  function reimbTypeField(row: any, key: string) {
+    return reimbTypeEdits[row.id]?.[key] ?? row[key] ?? "";
+  }
+  function setReimbTypeField(row: any, key: string, value: any) {
+    setReimbTypeEdits((p) => ({ ...p, [row.id]: { ...(p[row.id] ?? {}), [key]: value } }));
+  }
+  async function saveReimbTypeRow(row: any) {
+    const edits = reimbTypeEdits[row.id];
+    if (!edits) return;
+    setReimbTypeSavingId(row.id);
+    try {
+      const payload = { ...edits };
+      if (payload.monthly_cap === "") payload.monthly_cap = null;
+      const updated = await api.updateReimbursementType(row.id, payload);
+      setReimbTypes((rs) => rs.map((r) => (r.id === row.id ? updated : r)));
+      setReimbTypeEdits((p) => { const n = { ...p }; delete n[row.id]; return n; });
+    } catch { setError("Failed to save reimbursement type."); }
+    finally { setReimbTypeSavingId(null); }
+  }
+  async function deleteReimbTypeRow(id: number) {
+    if (!confirm("Delete this reimbursement type?")) return;
+    try { await api.deleteReimbursementType(id); setReimbTypes((rs) => rs.filter((r) => r.id !== id)); }
+    catch (e: any) { setError(e?.message || "Failed to delete — it may have existing claims; try deactivating instead."); }
+  }
+  async function addReimbTypeRow() {
+    if (!newReimbType.name.trim() || !newReimbType.code.trim()) { setNewReimbTypeErr("Name and code are required."); return; }
+    setNewReimbTypeErr("");
+    try {
+      const payload: any = { ...newReimbType, monthly_cap: newReimbType.monthly_cap === "" ? null : Number(newReimbType.monthly_cap) };
+      const created = await api.createReimbursementType(payload);
+      setReimbTypes((rs) => [...rs, created]);
+      setNewReimbType({ ...BLANK_REIMBURSEMENT_TYPE });
+    } catch (e: any) { setNewReimbTypeErr(e?.message || "Failed to add type."); }
+  }
+
+  const loadCodeUsage = useCallback(() => {
+    if (!canManageSystem) return;
+    api.getCodes().then(setCodeUsage).catch(() => {});
+  }, [canManageSystem]);
+
+  useEffect(() => {
+    if (tab === "codes" && canManageSystem) loadCodeUsage();
+  }, [tab, canManageSystem, loadCodeUsage]);
+
+  async function saveDropdown(type: "service" | "country") {
+    setSavingDropdown(type);
+    try {
+      const key = type === "service" ? "dropdown_service_codes" : "dropdown_country_codes";
+      await api.updateDropdown(key, type === "service" ? svcCodes : ctyCodes);
+      flashSaved();
+      loadCodeUsage();
+    } catch (e: any) { setError(e.message || "Failed to save."); }
+    finally { setSavingDropdown(null); }
+  }
+
+  // After a cascading rename succeeds, patch the local code lists in place (rather than
+  // waiting on an Inertia prop reload) and refresh usage counts + Project Tabs mapping.
+  function handleCodeRenamed(type: "service" | "country", oldCode: string, newCode: string) {
+    if (type === "service") {
+      setSvcCodes((prev) => prev.map((x) => (x.code === oldCode ? { ...x, code: newCode } : x)));
+      setProjectTabs((prev) => prev.map((t) => ({
+        ...t,
+        codes: t.codes.map((c) => (c === oldCode ? newCode : c)),
+      })));
+    } else {
+      setCtyCodes((prev) => prev.map((x) => (x.code === oldCode ? { ...x, code: newCode } : x)));
+    }
+    setRenameDialog(null);
+    loadCodeUsage();
+  }
+
+  function handleCodeMerged(type: "service" | "country", oldCode: string, _newCode: string) {
+    // Unlike rename (which relabels the old entry in place), a merge retires the old code
+    // entirely — remove it locally, then re-pull authoritative state (project_tabs dedup,
+    // dropdown catalog) from the server rather than hand-reconciling every derived piece of
+    // local state, matching the router.reload({ only: [] }) pattern used elsewhere in this file.
+    if (type === "service") {
+      setSvcCodes((prev) => prev.filter((x) => x.code !== oldCode));
+    } else {
+      setCtyCodes((prev) => prev.filter((x) => x.code !== oldCode));
+    }
+    setRenameDialog(null);
+    loadCodeUsage();
+    router.reload({ only: [] });
+  }
 
   function feeField(row: any, key: string) {
     return feeEdits[row.id]?.[key] ?? row[key] ?? "";
@@ -758,188 +1547,170 @@ export default function Settings() {
                 </Card>
               )}
 
-              {/* Dropdown Managers — super_admin only */}
-              {isSuperAdmin && (
-                <>
-                  {/* Service Codes */}
-                  <Card className="border-border">
-                    <CardHeader>
-                      <CardTitle className="font-display">Service Codes</CardTitle>
-                      <p className="text-xs text-muted-foreground mt-1">All codes listed here appear in the Service Code dropdown across the portal. {svcCodes.length} total.</p>
-                    </CardHeader>
-                    <CardContent className="space-y-3">
-                      {/* Search */}
-                      <div className="relative">
-                        <input
-                          value={svcSearch}
-                          onChange={(e) => setSvcSearch(e.target.value)}
-                          placeholder="Search codes or descriptions…"
-                          className="w-full h-8 rounded border border-border bg-background pl-3 pr-8 text-xs focus:outline-none focus:ring-1 focus:ring-gold"
-                        />
-                        {svcSearch && (
-                          <button onClick={() => setSvcSearch("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
-                            <X className="h-3 w-3" />
-                          </button>
-                        )}
-                      </div>
+            </div>
+          )}
 
-                      {/* Chip list filtered by search */}
-                      {(() => {
-                        const q = svcSearch.trim().toLowerCase();
-                        const filtered = q
-                          ? svcCodes.filter((x) => x.code.toLowerCase().includes(q) || x.label.toLowerCase().includes(q))
-                          : svcCodes;
-                        return (
-                          <div className="flex flex-wrap gap-2 min-h-[40px] max-h-60 overflow-y-auto pr-1">
-                            {filtered.length === 0 && (
-                              <p className="text-xs text-muted-foreground italic py-2">
-                                {q ? `No codes match "${svcSearch}" — you can add it below.` : "No service codes yet."}
-                              </p>
-                            )}
-                            {filtered.map((item) => {
-                              const i = svcCodes.findIndex((x) => x.code === item.code);
-                              return (
-                                <span key={item.code} className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-muted text-xs font-mono">
-                                  <span className="font-semibold text-gold">{item.code}</span>
-                                  <span className="text-muted-foreground">– {item.label.replace(/^[A-Z\-]+ [–-] /, "")}</span>
-                                  <button onClick={() => { setSvcCodes(svcCodes.filter((_, j) => j !== i)); setSvcAddErr(""); }}
-                                    className="ml-1 text-muted-foreground hover:text-destructive"><X className="h-3 w-3" /></button>
-                                </span>
-                              );
-                            })}
-                          </div>
-                        );
-                      })()}
+          {tab === "codes" && canManageSystem && (
+            <div className="space-y-6">
+              {/* Service / Country sub-tabs — same underline-tab style as the Project Tracker's Circle A/B switcher */}
+              <div className="flex items-center gap-0 border-b border-border bg-background">
+                {(["service", "country"] as const).map((t) => (
+                  <button key={t} onClick={() => setCodesSubTab(t)}
+                    className={`px-6 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+                      codesSubTab === t ? "border-gold text-gold" : "border-transparent text-muted-foreground hover:text-foreground"
+                    }`}>
+                    {t === "service" ? "Service Codes" : "Country Codes"}
+                    <span className="ml-1.5 text-[10px] text-muted-foreground">({(t === "service" ? svcCodes : ctyCodes).length})</span>
+                  </button>
+                ))}
+              </div>
 
-                      {/* Add new */}
-                      <div className="border-t border-border pt-3 space-y-2">
-                        <p className="text-xs font-medium text-muted-foreground">Add new code</p>
-                        <div className="flex gap-2">
-                          <input value={newSvcCode}
-                            onChange={(e) => { setNewSvcCode(e.target.value.toUpperCase()); setSvcAddErr(""); }}
-                            placeholder="CODE" maxLength={10}
-                            className="w-24 h-8 rounded border border-border bg-background px-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-gold" />
-                          <input value={newSvcLabel} onChange={(e) => setNewSvcLabel(e.target.value)}
-                            placeholder="Description (e.g. Complete Patent Draft)"
-                            className="flex-1 h-8 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
-                          <Button size="sm" variant="outline" className="h-8 px-3 shrink-0"
-                            onClick={() => {
-                              const code = newSvcCode.trim().toUpperCase();
-                              const lbl  = newSvcLabel.trim();
-                              if (!code) { setSvcAddErr("Enter a code."); return; }
-                              if (!lbl)  { setSvcAddErr("Enter a description."); return; }
-                              const dup = svcCodes.find((x) => x.code.toUpperCase() === code);
-                              if (dup) { setSvcAddErr(`"${code}" already exists: "${dup.label}"`); return; }
-                              setSvcCodes([...svcCodes, { code, label: `${code} – ${lbl}` }]);
-                              setNewSvcCode(""); setNewSvcLabel(""); setSvcAddErr("");
-                              setSvcSearch(code); // jump to the newly added chip
-                            }}>
-                            <Plus className="h-3 w-3" />
-                          </Button>
-                        </div>
-                        {svcAddErr && <p className="text-xs text-destructive">{svcAddErr}</p>}
-                      </div>
-
-                      <Button size="sm" onClick={async () => {
-                        setSavingDropdown("service");
-                        try { await api.updateDropdown("dropdown_service_codes", svcCodes); flashSaved(); } catch { setError("Failed to save."); }
-                        finally { setSavingDropdown(null); }
-                      }} disabled={savingDropdown === "service"} className="bg-gold hover:bg-gold/90 text-black">
-                        {savingDropdown === "service" ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : null}Save Service Codes
-                      </Button>
-                    </CardContent>
-                  </Card>
-
-                  {/* Country / Patent Office Codes */}
-                  <Card className="border-border">
-                    <CardHeader>
-                      <CardTitle className="font-display">Country / Patent Office Codes</CardTitle>
-                      <p className="text-xs text-muted-foreground mt-1">Codes listed here appear in the Patent Office dropdown when creating a case. {ctyCodes.length} total.</p>
-                    </CardHeader>
-                    <CardContent className="space-y-3">
-                      {/* Search */}
-                      <div className="relative">
-                        <input
-                          value={ctySearch}
-                          onChange={(e) => setCtySearch(e.target.value)}
-                          placeholder="Search country codes…"
-                          className="w-full h-8 rounded border border-border bg-background pl-3 pr-8 text-xs focus:outline-none focus:ring-1 focus:ring-gold"
-                        />
-                        {ctySearch && (
-                          <button onClick={() => setCtySearch("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
-                            <X className="h-3 w-3" />
-                          </button>
-                        )}
-                      </div>
-
-                      {/* Chip list filtered by search */}
-                      {(() => {
-                        const q = ctySearch.trim().toLowerCase();
-                        const filtered = q
-                          ? ctyCodes.filter((x) => x.code.toLowerCase().includes(q) || x.label.toLowerCase().includes(q))
-                          : ctyCodes;
-                        return (
-                          <div className="flex flex-wrap gap-2 min-h-[40px] max-h-60 overflow-y-auto pr-1">
-                            {filtered.length === 0 && (
-                              <p className="text-xs text-muted-foreground italic py-2">
-                                {q ? `No codes match "${ctySearch}" — you can add it below.` : "No country codes yet."}
-                              </p>
-                            )}
-                            {filtered.map((item) => {
-                              const i = ctyCodes.findIndex((x) => x.code === item.code);
-                              return (
-                                <span key={item.code} className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-muted text-xs font-mono">
-                                  <span className="font-semibold text-gold">{item.code}</span>
-                                  <span className="text-muted-foreground">– {item.label.replace(/^[A-Z]+ [–-] /, "")}</span>
-                                  <button onClick={() => { setCtyCodes(ctyCodes.filter((_, j) => j !== i)); setCtyAddErr(""); }}
-                                    className="ml-1 text-muted-foreground hover:text-destructive"><X className="h-3 w-3" /></button>
-                                </span>
-                              );
-                            })}
-                          </div>
-                        );
-                      })()}
-
-                      {/* Add new */}
-                      <div className="border-t border-border pt-3 space-y-2">
-                        <p className="text-xs font-medium text-muted-foreground">Add new code</p>
-                        <div className="flex gap-2">
-                          <input value={newCtyCode}
-                            onChange={(e) => { setNewCtyCode(e.target.value.toUpperCase()); setCtyAddErr(""); }}
-                            placeholder="XX" maxLength={4}
-                            className="w-16 h-8 rounded border border-border bg-background px-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-gold" />
-                          <input value={newCtyLabel} onChange={(e) => setNewCtyLabel(e.target.value)}
-                            placeholder="Country / Office name"
-                            className="flex-1 h-8 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
-                          <Button size="sm" variant="outline" className="h-8 px-3 shrink-0"
-                            onClick={() => {
-                              const code = newCtyCode.trim().toUpperCase();
-                              const lbl  = newCtyLabel.trim();
-                              if (!code) { setCtyAddErr("Enter a code."); return; }
-                              if (!lbl)  { setCtyAddErr("Enter a description."); return; }
-                              const dup = ctyCodes.find((x) => x.code.toUpperCase() === code);
-                              if (dup) { setCtyAddErr(`"${code}" already exists: "${dup.label}"`); return; }
-                              setCtyCodes([...ctyCodes, { code, label: `${code} – ${lbl}` }]);
-                              setNewCtyCode(""); setNewCtyLabel(""); setCtyAddErr("");
-                              setCtySearch(code);
-                            }}>
-                            <Plus className="h-3 w-3" />
-                          </Button>
-                        </div>
-                        {ctyAddErr && <p className="text-xs text-destructive">{ctyAddErr}</p>}
-                      </div>
-
-                      <Button size="sm" onClick={async () => {
-                        setSavingDropdown("country");
-                        try { await api.updateDropdown("dropdown_country_codes", ctyCodes); flashSaved(); } catch { setError("Failed to save."); }
-                        finally { setSavingDropdown(null); }
-                      }} disabled={savingDropdown === "country"} className="bg-gold hover:bg-gold/90 text-black">
-                        {savingDropdown === "country" ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : null}Save Country Codes
-                      </Button>
-                    </CardContent>
-                  </Card>
-                </>
+              {codesSubTab === "service" ? (
+                <CodeTable
+                  type="service" items={svcCodes} setItems={setSvcCodes} usage={codeUsage.service}
+                  newCode={newSvcCode} setNewCode={setNewSvcCode} newLabel={newSvcLabel} setNewLabel={setNewSvcLabel}
+                  search={svcSearch} setSearch={setSvcSearch} addErr={svcAddErr} setAddErr={setSvcAddErr}
+                  saving={savingDropdown === "service"} onSave={() => saveDropdown("service")}
+                  onRenameClick={(code, label) => setRenameDialog({ type: "service", code, label })}
+                  canManage={isSuperAdmin}
+                />
+              ) : (
+                <CodeTable
+                  type="country" items={ctyCodes} setItems={setCtyCodes} usage={codeUsage.country}
+                  newCode={newCtyCode} setNewCode={setNewCtyCode} newLabel={newCtyLabel} setNewLabel={setNewCtyLabel}
+                  search={ctySearch} setSearch={setCtySearch} addErr={ctyAddErr} setAddErr={setCtyAddErr}
+                  saving={savingDropdown === "country"} onSave={() => saveDropdown("country")}
+                  onRenameClick={(code, label) => setRenameDialog({ type: "country", code, label })}
+                  canManage={isSuperAdmin}
+                />
               )}
+              {renameDialog && (
+                <CodeRenameDialog
+                  type={renameDialog.type}
+                  oldCode={renameDialog.code}
+                  oldLabel={renameDialog.label}
+                  onClose={() => setRenameDialog(null)}
+                  onRenamed={handleCodeRenamed}
+                  onMerged={handleCodeMerged}
+                />
+              )}
+            </div>
+          )}
+
+          {tab === "projectTabs" && isSuperAdmin && (
+            <div className="space-y-6">
+              {/* Project Tabs — segments the Cases (/projects) list by service code */}
+              <Card className="border-border">
+                <CardHeader>
+                  <CardTitle className="font-display">Project Tabs</CardTitle>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Splits the Cases list into tabs by service code. Each code can belong to at most one tab;
+                    anything not explicitly assigned falls into "Others" automatically.
+                  </p>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {tabAddErr && <p className="text-xs text-destructive">{tabAddErr}</p>}
+
+                  <div className="space-y-3">
+                    {(() => {
+                      // A code assigned to any tab (including this one) is dropped from every
+                      // combobox's options — structurally prevents assigning the same service
+                      // code to two tabs, rather than just erroring after the fact.
+                      const assignedElsewhere = new Set(projectTabs.flatMap((x) => x.codes));
+                      return projectTabs.map((t, ti) => (
+                      <div key={t.key} className="rounded-md border border-border p-3 space-y-2">
+                        <div className="flex items-center gap-2">
+                          <input
+                            value={t.label}
+                            onChange={(e) => setProjectTabs(projectTabs.map((x, i) => i === ti ? { ...x, label: e.target.value } : x))}
+                            className="flex-1 h-8 rounded border border-border bg-background px-2 text-sm font-medium focus:outline-none focus:ring-1 focus:ring-gold"
+                          />
+                          {t.is_system ? (
+                            <span className="text-[10px] uppercase tracking-wider text-muted-foreground px-2 py-1 rounded bg-muted shrink-0">System (auto)</span>
+                          ) : (
+                            <button
+                              onClick={() => setProjectTabs(projectTabs.filter((_, i) => i !== ti))}
+                              className="text-muted-foreground hover:text-destructive shrink-0" title="Delete tab">
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                        </div>
+
+                        {t.is_system ? (
+                          <p className="text-xs text-muted-foreground italic">
+                            Catches every case whose service code isn't assigned to another tab — codes can't be added here directly.
+                          </p>
+                        ) : (
+                          <>
+                            <div className="flex flex-wrap gap-2">
+                              {t.codes.length === 0 && <p className="text-xs text-muted-foreground italic">No codes assigned yet.</p>}
+                              {t.codes.map((code) => (
+                                <span key={code} className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-muted text-xs font-mono">
+                                  <span className="font-semibold text-gold">{code}</span>
+                                  <button
+                                    onClick={() => setProjectTabs(projectTabs.map((x, i) => i === ti ? { ...x, codes: x.codes.filter((c) => c !== code) } : x))}
+                                    className="ml-1 text-muted-foreground hover:text-destructive"><X className="h-3 w-3" /></button>
+                                </span>
+                              ))}
+                            </div>
+                            <div className="flex gap-2">
+                              <TabCodeCombobox
+                                options={svcCodes.filter((c) => !assignedElsewhere.has(c.code))}
+                                onSelect={(code) => {
+                                  setProjectTabs(projectTabs.map((x, i) => i === ti ? { ...x, codes: [...x.codes, code] } : x));
+                                  setTabAddErr("");
+                                }}
+                                placeholder="Search & add a service code…"
+                              />
+                            </div>
+                          </>
+                        )}
+                      </div>
+                      ));
+                    })()}
+                  </div>
+
+                  {/* Add new tab */}
+                  <div className="border-t border-border pt-3 space-y-2">
+                    <p className="text-xs font-medium text-muted-foreground">Add new tab</p>
+                    <div className="flex gap-2">
+                      <input
+                        value={newTabLabel}
+                        onChange={(e) => { setNewTabLabel(e.target.value); setTabAddErr(""); }}
+                        placeholder="Tab name (e.g. Renewals)"
+                        className="flex-1 h-8 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold"
+                      />
+                      <Button size="sm" variant="outline" className="h-8 px-3 shrink-0"
+                        onClick={() => {
+                          const label = newTabLabel.trim();
+                          if (!label) { setTabAddErr("Enter a tab name."); return; }
+                          const baseKey = label.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "tab";
+                          let key = baseKey, n = 2;
+                          while (projectTabs.some((x) => x.key === key)) key = `${baseKey}_${n++}`;
+                          // Keep the system "Others" tab last for a predictable, catch-all-at-the-end order.
+                          const withoutSystem = projectTabs.filter((x) => !x.is_system);
+                          const systemTabs = projectTabs.filter((x) => x.is_system);
+                          setProjectTabs([...withoutSystem, { key, label, codes: [], is_system: false }, ...systemTabs]);
+                          setNewTabLabel(""); setTabAddErr("");
+                        }}>
+                        <Plus className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  </div>
+
+                  <Button size="sm" onClick={async () => {
+                    setSavingTabs(true);
+                    try {
+                      const res = await api.updateProjectTabs(projectTabs);
+                      setProjectTabs(res.tabs);
+                      flashSaved();
+                    } catch (e: any) { setError(e.message || "Failed to save project tabs."); }
+                    finally { setSavingTabs(false); }
+                  }} disabled={savingTabs} className="bg-gold hover:bg-gold/90 text-black">
+                    {savingTabs ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : null}Save Project Tabs
+                  </Button>
+                </CardContent>
+              </Card>
             </div>
           )}
 
@@ -1044,6 +1815,479 @@ export default function Settings() {
                     {feeAddErr && <p className="text-xs text-destructive">{feeAddErr}</p>}
                     <Button size="sm" onClick={addFeeRow}><Plus className="h-3 w-3 mr-1" />Add Row</Button>
                   </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          {tab === "payroll" && canManagePayroll && (
+            <div className="space-y-6">
+              {/* Salary Component Template */}
+              <Card className="border-border">
+                <CardHeader>
+                  <CardTitle className="font-display">Salary Component Template</CardTitle>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Applied to every employee from their own declared Base Pay/HRA ("Employee Field" rows) plus
+                    whatever percentages/flat amounts you configure on top — replaces a hardcoded formula with one
+                    you control. Exactly one active row must keep the code <code className="font-mono">BASIC</code> (Provident
+                    Fund is computed from it, and every percentage ultimately chains back to it). Gross is simply
+                    the sum of the active Earning rows now, so an Earning row can no longer be "a percentage of
+                    Gross" — only a CTC Addon row can (NPS/Gratuity Provision, which never reduce Net Pay).
+                  </p>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {componentsLoading ? (
+                    <div className="flex justify-center py-10"><Loader2 className="h-5 w-5 animate-spin text-gold" /></div>
+                  ) : (
+                    <div className="overflow-x-auto rounded-md border border-border">
+                      <table className="w-full min-w-[760px] text-xs">
+                        <thead className="bg-muted/40 text-left text-muted-foreground">
+                          <tr>
+                            <th className="p-2">Order</th><th className="p-2">Name</th><th className="p-2">Code</th>
+                            <th className="p-2">Category</th><th className="p-2">Type</th><th className="p-2">Value</th><th className="p-2">% of</th>
+                            <th className="p-2">Active</th><th className="p-2"></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {components.map((row, idx) => {
+                            const dirty = !!componentEdits[row.id];
+                            const calcType = componentField(row, "calc_type");
+                            return (
+                              <tr key={row.id} className={`border-t border-border ${dirty ? "bg-gold/5" : ""}`}>
+                                <td className="p-1 whitespace-nowrap">
+                                  <button disabled={idx === 0} onClick={() => moveComponent(row.id, -1)} className="p-0.5 disabled:opacity-30 hover:text-gold"><ChevronUp className="h-3 w-3" /></button>
+                                  <button disabled={idx === components.length - 1} onClick={() => moveComponent(row.id, 1)} className="p-0.5 disabled:opacity-30 hover:text-gold"><ChevronDown className="h-3 w-3" /></button>
+                                </td>
+                                <td className="p-1"><input value={componentField(row, "name")} onChange={(e) => setComponentField(row, "name", e.target.value)} className="w-32 h-7 rounded border border-border bg-background px-1" /></td>
+                                <td className="p-1"><input value={componentField(row, "code")} onChange={(e) => setComponentField(row, "code", e.target.value.toUpperCase())} className="w-24 h-7 rounded border border-border bg-background px-1 font-mono" /></td>
+                                <td className="p-1">
+                                  <select value={componentField(row, "category") || "earning"} onChange={(e) => setComponentField(row, "category", e.target.value)} className="h-7 rounded border border-border bg-background px-1">
+                                    <option value="earning">Earning</option>
+                                    <option value="ctc_addon">CTC Addon</option>
+                                  </select>
+                                </td>
+                                <td className="p-1">
+                                  <select value={calcType} onChange={(e) => setComponentField(row, "calc_type", e.target.value)} className="h-7 rounded border border-border bg-background px-1">
+                                    <option value="employee_field">Employee Field</option>
+                                    <option value="flat">Flat ₹</option>
+                                    <option value="percentage">Percentage</option>
+                                    {componentField(row, "category") !== "ctc_addon" && <option value="remainder">Remainder</option>}
+                                  </select>
+                                </td>
+                                <td className="p-1">
+                                  {calcType !== "remainder" && calcType !== "employee_field" && (
+                                    <input value={componentField(row, "value") ?? ""} onChange={(e) => setComponentField(row, "value", e.target.value)} className="w-20 h-7 rounded border border-border bg-background px-1" />
+                                  )}
+                                </td>
+                                <td className="p-1">
+                                  {calcType === "percentage" && (
+                                    <select value={componentField(row, "percentage_of") ?? ""} onChange={(e) => setComponentField(row, "percentage_of", e.target.value)} className="h-7 rounded border border-border bg-background px-1">
+                                      <option value="">Select…</option>
+                                      {componentField(row, "category") === "ctc_addon" && <option value="_GROSS_">Gross</option>}
+                                      {components.filter((c) => c.id !== row.id && c.sequence < row.sequence).map((c) => (
+                                        <option key={c.code} value={c.code}>{c.name}</option>
+                                      ))}
+                                    </select>
+                                  )}
+                                  {calcType === "employee_field" && (
+                                    <select value={componentField(row, "percentage_of") ?? ""} onChange={(e) => setComponentField(row, "percentage_of", e.target.value)} className="h-7 rounded border border-border bg-background px-1">
+                                      <option value="">Select…</option>
+                                      <option value="base_pay_monthly">Base Pay</option>
+                                      <option value="hra_monthly">HRA</option>
+                                    </select>
+                                  )}
+                                </td>
+                                <td className="p-1 text-center"><Toggle checked={!!componentField(row, "active")} onChange={(v) => setComponentField(row, "active", v)} /></td>
+                                <td className="p-1 whitespace-nowrap">
+                                  {dirty && (
+                                    <button onClick={() => saveComponentRow(row)} disabled={componentSavingId === row.id} className="mr-1 rounded p-1 text-green-600 hover:bg-green-500/10">
+                                      {componentSavingId === row.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                                    </button>
+                                  )}
+                                  <button onClick={() => deleteComponentRow(row.id)} className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                          {components.length === 0 && (
+                            <tr><td colSpan={9} className="p-4 text-center text-muted-foreground">No components yet.</td></tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  {componentErr && <p className="text-xs text-destructive">{componentErr}</p>}
+
+                  <div className="rounded-md border border-border bg-muted/20 p-3 space-y-2">
+                    <p className="text-xs font-medium text-muted-foreground">Add a new component</p>
+                    <div className="grid grid-cols-6 gap-2">
+                      <input value={newComponent.name} onChange={(e) => setNewComponent((p) => ({ ...p, name: e.target.value }))} placeholder="Name" className="h-8 rounded border border-border bg-background px-2 text-xs" />
+                      <input value={newComponent.code} onChange={(e) => setNewComponent((p) => ({ ...p, code: e.target.value.toUpperCase() }))} placeholder="CODE" className="h-8 rounded border border-border bg-background px-2 text-xs font-mono" />
+                      <select value={newComponent.category} onChange={(e) => setNewComponent((p) => ({ ...p, category: e.target.value, calc_type: e.target.value === "ctc_addon" && p.calc_type === "remainder" ? "flat" : p.calc_type }))} className="h-8 rounded border border-border bg-background px-2 text-xs">
+                        <option value="earning">Earning</option>
+                        <option value="ctc_addon">CTC Addon</option>
+                      </select>
+                      <select value={newComponent.calc_type} onChange={(e) => setNewComponent((p) => ({ ...p, calc_type: e.target.value }))} className="h-8 rounded border border-border bg-background px-2 text-xs">
+                        <option value="employee_field">Employee Field</option>
+                        <option value="flat">Flat ₹</option>
+                        <option value="percentage">Percentage</option>
+                        {newComponent.category !== "ctc_addon" && <option value="remainder">Remainder</option>}
+                      </select>
+                      <input value={newComponent.value} onChange={(e) => setNewComponent((p) => ({ ...p, value: e.target.value }))} placeholder="Value" disabled={newComponent.calc_type === "remainder" || newComponent.calc_type === "employee_field"}
+                        className="h-8 rounded border border-border bg-background px-2 text-xs disabled:opacity-40" />
+                      {newComponent.calc_type === "percentage" ? (
+                        <select value={newComponent.percentage_of} onChange={(e) => setNewComponent((p) => ({ ...p, percentage_of: e.target.value }))} className="h-8 rounded border border-border bg-background px-2 text-xs">
+                          <option value="">% of…</option>
+                          {newComponent.category === "ctc_addon" && <option value="_GROSS_">Gross</option>}
+                          {components.map((c) => <option key={c.code} value={c.code}>{c.name}</option>)}
+                        </select>
+                      ) : newComponent.calc_type === "employee_field" ? (
+                        <select value={newComponent.percentage_of} onChange={(e) => setNewComponent((p) => ({ ...p, percentage_of: e.target.value }))} className="h-8 rounded border border-border bg-background px-2 text-xs">
+                          <option value="">Field…</option>
+                          <option value="base_pay_monthly">Base Pay</option>
+                          <option value="hra_monthly">HRA</option>
+                        </select>
+                      ) : <div />}
+                    </div>
+                    {newComponentErr && <p className="text-xs text-destructive">{newComponentErr}</p>}
+                    <Button size="sm" onClick={addComponentRow}><Plus className="h-3 w-3 mr-1" />Add Component</Button>
+                  </div>
+
+                  <div className="rounded-md border border-border bg-muted/10 p-3">
+                    <div className="flex items-center gap-2 mb-2 flex-wrap">
+                      <p className="text-xs font-medium text-muted-foreground">Preview for a sample Base Pay of ₹</p>
+                      <input type="number" value={previewBasePay} onChange={(e) => setPreviewBasePay(e.target.value)}
+                        className="w-28 h-7 rounded border border-border bg-background px-2 text-xs" />
+                      <p className="text-xs font-medium text-muted-foreground">and HRA of ₹</p>
+                      <input type="number" value={previewHra} onChange={(e) => setPreviewHra(e.target.value)}
+                        className="w-28 h-7 rounded border border-border bg-background px-2 text-xs" />
+                    </div>
+                    <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs">
+                      {computeComponentPreview(components, Number(previewBasePay) || 0, Number(previewHra) || 0).map((r) => (
+                        <span key={r.name}><span className="text-foreground font-medium">{r.name}:</span> ₹{r.amount.toLocaleString("en-IN")}</span>
+                      ))}
+                      {components.length === 0 && <span className="text-muted-foreground">No active components to preview.</span>}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Reimbursement Types */}
+              <Card className="border-border">
+                <CardHeader>
+                  <CardTitle className="font-display">Reimbursement Types</CardTitle>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Categories employees can submit claims against from the Payroll page — each optionally capped per calendar month.
+                  </p>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {reimbTypesLoading ? (
+                    <div className="flex justify-center py-10"><Loader2 className="h-5 w-5 animate-spin text-gold" /></div>
+                  ) : (
+                    <div className="overflow-x-auto rounded-md border border-border">
+                      <table className="w-full min-w-[520px] text-xs">
+                        <thead className="bg-muted/40 text-left text-muted-foreground">
+                          <tr>
+                            <th className="p-2">Name</th><th className="p-2">Code</th>
+                            <th className="p-2">Monthly Cap (₹)</th><th className="p-2">Active</th><th className="p-2"></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {reimbTypes.map((row) => {
+                            const dirty = !!reimbTypeEdits[row.id];
+                            return (
+                              <tr key={row.id} className={`border-t border-border ${dirty ? "bg-gold/5" : ""}`}>
+                                <td className="p-1"><input value={reimbTypeField(row, "name")} onChange={(e) => setReimbTypeField(row, "name", e.target.value)} className="w-36 h-7 rounded border border-border bg-background px-1" /></td>
+                                <td className="p-1"><input value={reimbTypeField(row, "code")} onChange={(e) => setReimbTypeField(row, "code", e.target.value.toUpperCase())} className="w-24 h-7 rounded border border-border bg-background px-1 font-mono" /></td>
+                                <td className="p-1"><input value={reimbTypeField(row, "monthly_cap") ?? ""} onChange={(e) => setReimbTypeField(row, "monthly_cap", e.target.value)} placeholder="No cap" className="w-24 h-7 rounded border border-border bg-background px-1" /></td>
+                                <td className="p-1 text-center"><Toggle checked={!!reimbTypeField(row, "active")} onChange={(v) => setReimbTypeField(row, "active", v)} /></td>
+                                <td className="p-1 whitespace-nowrap">
+                                  {dirty && (
+                                    <button onClick={() => saveReimbTypeRow(row)} disabled={reimbTypeSavingId === row.id} className="mr-1 rounded p-1 text-green-600 hover:bg-green-500/10">
+                                      {reimbTypeSavingId === row.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                                    </button>
+                                  )}
+                                  <button onClick={() => deleteReimbTypeRow(row.id)} className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                          {reimbTypes.length === 0 && (
+                            <tr><td colSpan={5} className="p-4 text-center text-muted-foreground">No reimbursement types yet.</td></tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  <div className="rounded-md border border-border bg-muted/20 p-3 space-y-2">
+                    <p className="text-xs font-medium text-muted-foreground">Add a new type</p>
+                    <div className="grid grid-cols-3 gap-2">
+                      <input value={newReimbType.name} onChange={(e) => setNewReimbType((p) => ({ ...p, name: e.target.value }))} placeholder="Name (e.g. Travel)" className="h-8 rounded border border-border bg-background px-2 text-xs" />
+                      <input value={newReimbType.code} onChange={(e) => setNewReimbType((p) => ({ ...p, code: e.target.value.toUpperCase() }))} placeholder="CODE" className="h-8 rounded border border-border bg-background px-2 text-xs font-mono" />
+                      <input value={newReimbType.monthly_cap} onChange={(e) => setNewReimbType((p) => ({ ...p, monthly_cap: e.target.value }))} placeholder="Monthly cap (optional)" className="h-8 rounded border border-border bg-background px-2 text-xs" />
+                    </div>
+                    {newReimbTypeErr && <p className="text-xs text-destructive">{newReimbTypeErr}</p>}
+                    <Button size="sm" onClick={addReimbTypeRow}><Plus className="h-3 w-3 mr-1" />Add Type</Button>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Statutory Deductions */}
+              <Card className="border-border">
+                <CardHeader>
+                  <CardTitle className="font-display">Statutory Deductions</CardTitle>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Professional Tax, PF, and ESI — editable here instead of requiring a code deploy. Disabling
+                    PF/ESI computes them as ₹0 on every future payslip rather than omitting the line. Professional
+                    Tax follows Karnataka law (this firm's legal entity/TAN/ROC registration is Karnataka/Bangalore,
+                    so this one slab applies to every employee regardless of where they physically work).
+                  </p>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-2xl">
+                    <div>
+                      <label className="block text-xs font-medium text-muted-foreground mb-1">PT Nil Threshold (₹ gross/month)</label>
+                      <input type="number" min={0} value={ptNilThreshold} onChange={(e) => setPtNilThreshold(e.target.value)}
+                        className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-muted-foreground mb-1">PT Amount (₹/month)</label>
+                      <input type="number" min={0} value={ptMonthlyAmount} onChange={(e) => setPtMonthlyAmount(e.target.value)}
+                        className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-muted-foreground mb-1">PT Amount in February (₹)</label>
+                      <input type="number" min={0} value={ptFebruaryAmount} onChange={(e) => setPtFebruaryAmount(e.target.value)}
+                        className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <Toggle checked={pfEnabled} onChange={setPfEnabled} />
+                    <span className="text-sm">Provident Fund (PF) enabled</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <Toggle checked={esiEnabled} onChange={setEsiEnabled} />
+                    <span className="text-sm">ESI enabled</span>
+                  </div>
+                  <div className="max-w-xs">
+                    <label className="block text-xs font-medium text-muted-foreground mb-1">Pay Day of Month</label>
+                    <input type="number" min={1} max={31} value={payDay} onChange={(e) => setPayDay(e.target.value)}
+                      className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+                  </div>
+                  <Button
+                    onClick={async () => {
+                      setSavingPt(true);
+                      try {
+                        await api.updatePayrollSettings({
+                          pt_nil_threshold: parseFloat(ptNilThreshold) || 0,
+                          pt_monthly_amount: parseFloat(ptMonthlyAmount) || 0,
+                          pt_february_amount: parseFloat(ptFebruaryAmount) || 0,
+                          pf_enabled: pfEnabled,
+                          esi_enabled: esiEnabled,
+                          pay_day: parseInt(payDay, 10) || 1,
+                        });
+                        flashSaved();
+                      }
+                      catch { setError("Failed to save statutory deductions."); }
+                      finally { setSavingPt(false); }
+                    }}
+                    disabled={savingPt}
+                    className="bg-gold hover:bg-gold/90 text-black"
+                  >
+                    {savingPt ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <SettingsIcon className="h-4 w-4 mr-2" />}Save Statutory Deductions
+                  </Button>
+                </CardContent>
+              </Card>
+
+              {/* Payslip Letterhead */}
+              <Card className="border-border">
+                <CardHeader>
+                  <CardTitle className="font-display">Payslip Letterhead</CardTitle>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Company name and address printed on every downloadable payslip PDF.
+                  </p>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <div className="text-[10px] text-muted-foreground mb-0.5">Company Name</div>
+                      <input value={companyName} onChange={(e) => setCompanyName(e.target.value)} placeholder="e.g. Metayage Private Limited"
+                        className="w-full h-8 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
+                    </div>
+                    <div>
+                      <div className="text-[10px] text-muted-foreground mb-0.5">Logo URL (optional)</div>
+                      <input value={companyLogoUrl} onChange={(e) => setCompanyLogoUrl(e.target.value)} placeholder="https://…"
+                        className="w-full h-8 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
+                    </div>
+                    <div className="col-span-2">
+                      <div className="text-[10px] text-muted-foreground mb-0.5">Registered Address</div>
+                      <textarea value={companyAddress} onChange={(e) => setCompanyAddress(e.target.value)} rows={2}
+                        className="w-full rounded border border-border bg-background px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
+                    </div>
+                    <div>
+                      <div className="text-[10px] text-muted-foreground mb-0.5">TAN (Tax Deduction Account Number)</div>
+                      <p className="text-[10px] text-muted-foreground mb-0.5">Printed on the Form 24Q header — required before filing.</p>
+                      <input value={companyTan} onChange={(e) => setCompanyTan(e.target.value.toUpperCase())} placeholder="e.g. BLRM12345N" maxLength={20}
+                        className="w-full h-8 rounded border border-border bg-background px-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-gold" />
+                    </div>
+                    <div>
+                      <div className="text-[10px] text-muted-foreground mb-0.5">Form 16 Signatory Name</div>
+                      <p className="text-[10px] text-muted-foreground mb-0.5">Printed in the Verification block of Form 16 Part B.</p>
+                      <input value={signatoryName} onChange={(e) => setSignatoryName(e.target.value)} placeholder="e.g. Rajesh Kumar"
+                        className="w-full h-8 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
+                    </div>
+                    <div>
+                      <div className="text-[10px] text-muted-foreground mb-0.5">Signatory Designation</div>
+                      <p className="text-[10px] text-muted-foreground mb-0.5">e.g. Director, HR Head</p>
+                      <input value={signatoryDesignation} onChange={(e) => setSignatoryDesignation(e.target.value)} placeholder="e.g. Director"
+                        className="w-full h-8 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
+                    </div>
+                  </div>
+                  <Button
+                    onClick={async () => {
+                      setSavingLetterhead(true);
+                      try {
+                        await api.updatePayrollSettings({
+                          pt_nil_threshold: parseFloat(ptNilThreshold) || 0,
+                          pt_monthly_amount: parseFloat(ptMonthlyAmount) || 0,
+                          pt_february_amount: parseFloat(ptFebruaryAmount) || 0,
+                          company_name: companyName,
+                          company_address: companyAddress,
+                          company_logo_url: companyLogoUrl,
+                          company_tan: companyTan,
+                          signatory_name: signatoryName,
+                          signatory_designation: signatoryDesignation,
+                        });
+                        flashSaved();
+                      }
+                      catch { setError("Failed to save letterhead."); }
+                      finally { setSavingLetterhead(false); }
+                    }}
+                    disabled={savingLetterhead}
+                    className="bg-gold hover:bg-gold/90 text-black"
+                  >
+                    {savingLetterhead ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <SettingsIcon className="h-4 w-4 mr-2" />}Save Letterhead
+                  </Button>
+                </CardContent>
+              </Card>
+
+              {/* Income Tax Slabs */}
+              <Card className="border-border">
+                <CardHeader>
+                  <CardTitle className="font-display">Income Tax Slabs</CardTitle>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Drives the annual tax computation behind Form 16 Part B. Admin-editable since slabs change every
+                    Union Budget — not hardcoded. Slabs JSON is an ordered list of <code className="font-mono">{"{upto, rate}"}</code> brackets; the last bracket's <code className="font-mono">upto</code> should be <code className="font-mono">null</code> for the unbounded top rate.
+                  </p>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {taxSlabConfigsLoading ? (
+                    <div className="flex justify-center py-10"><Loader2 className="h-5 w-5 animate-spin text-gold" /></div>
+                  ) : (
+                    <div className="space-y-4">
+                      {taxSlabConfigs.map((row) => {
+                        const dirty = !!taxSlabEdits[row.id];
+                        const slabsText = taxSlabEdits[row.id]?.slabs_json_text ?? JSON.stringify(row.slabs_json, null, 2);
+                        return (
+                          <div key={row.id} className={`rounded-md border border-border p-3 space-y-2 ${dirty ? "bg-gold/5" : ""}`}>
+                            <div className="flex items-center justify-between">
+                              <p className="text-xs font-semibold">FY {row.financial_year}-{String(row.financial_year + 1).slice(-2)} — {row.regime === "old" ? "Old Regime" : "New Regime"}</p>
+                              {dirty && (
+                                <button onClick={() => saveTaxSlabRow(row)} disabled={taxSlabSavingId === row.id} className="rounded p-1 text-green-600 hover:bg-green-500/10">
+                                  {taxSlabSavingId === row.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                                </button>
+                              )}
+                            </div>
+                            <div className="grid grid-cols-4 gap-2">
+                              <div>
+                                <label className="block text-[10px] text-muted-foreground mb-1">Standard Deduction</label>
+                                <input value={taxSlabField(row, "standard_deduction")} onChange={(e) => setTaxSlabField(row, "standard_deduction", e.target.value)} className="w-full h-7 rounded border border-border bg-background px-1 text-xs" />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] text-muted-foreground mb-1">87A Rebate Limit</label>
+                                <input value={taxSlabField(row, "rebate_87a_limit")} onChange={(e) => setTaxSlabField(row, "rebate_87a_limit", e.target.value)} className="w-full h-7 rounded border border-border bg-background px-1 text-xs" />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] text-muted-foreground mb-1">87A Rebate Amount</label>
+                                <input value={taxSlabField(row, "rebate_87a_amount")} onChange={(e) => setTaxSlabField(row, "rebate_87a_amount", e.target.value)} className="w-full h-7 rounded border border-border bg-background px-1 text-xs" />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] text-muted-foreground mb-1">Cess Rate (%)</label>
+                                <input value={taxSlabField(row, "cess_rate")} onChange={(e) => setTaxSlabField(row, "cess_rate", e.target.value)} className="w-full h-7 rounded border border-border bg-background px-1 text-xs" />
+                              </div>
+                            </div>
+                            <div>
+                              <label className="block text-[10px] text-muted-foreground mb-1">Slabs JSON</label>
+                              <textarea value={slabsText} rows={6} onChange={(e) => setTaxSlabField(row, "slabs_json_text", e.target.value)}
+                                className="w-full rounded border border-border bg-background px-2 py-1.5 text-xs font-mono" />
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {taxSlabConfigs.length === 0 && <p className="text-xs text-muted-foreground text-center py-4">No tax slab configurations yet.</p>}
+                    </div>
+                  )}
+                  {taxSlabErr && <p className="text-xs text-destructive">{taxSlabErr}</p>}
+                </CardContent>
+              </Card>
+
+              {/* Proof of Investments Window */}
+              <Card className="border-border">
+                <CardHeader>
+                  <CardTitle className="font-display">Proof of Investments Window</CardTitle>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Controls when employees can upload proof documents for their investment declaration (HRMS → Payroll → Proof of Investments). Without a window for a financial year, that tab tells employees it hasn't been configured yet.
+                  </p>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-4 gap-2 items-end">
+                    <div>
+                      <label className="block text-[10px] text-muted-foreground mb-1">Financial Year</label>
+                      <input value={poiWindowForm.financial_year} onChange={(e) => setPoiWindowForm((p) => ({ ...p, financial_year: e.target.value }))}
+                        className="w-full h-8 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold" placeholder="e.g. 2026" />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] text-muted-foreground mb-1">Deadline</label>
+                      <input type="date" value={poiWindowForm.deadline_at} onChange={(e) => setPoiWindowForm((p) => ({ ...p, deadline_at: e.target.value }))}
+                        className="w-full h-8 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] text-muted-foreground mb-1">Effective Payroll Month</label>
+                      <input type="date" value={poiWindowForm.effective_payroll_month} onChange={(e) => setPoiWindowForm((p) => ({ ...p, effective_payroll_month: e.target.value }))}
+                        className="w-full h-8 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
+                    </div>
+                    <Button size="sm" className="bg-gold hover:bg-gold/90 text-black" disabled={poiWindowSaving} onClick={savePoiWindowRow}>
+                      {poiWindowSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> : null}Save
+                    </Button>
+                  </div>
+                  {poiWindowErr && <p className="text-xs text-destructive">{poiWindowErr}</p>}
+
+                  {poiWindowsLoading ? (
+                    <div className="flex justify-center py-6"><Loader2 className="h-5 w-5 animate-spin text-gold" /></div>
+                  ) : poiWindows.length === 0 ? (
+                    <p className="text-xs text-muted-foreground text-center py-4">No windows configured yet.</p>
+                  ) : (
+                    <table className="w-full text-xs">
+                      <thead className="text-[11px] uppercase tracking-wider text-muted-foreground">
+                        <tr>
+                          <th className="text-left py-1.5">Financial Year</th>
+                          <th className="text-left py-1.5">Deadline</th>
+                          <th className="text-left py-1.5">Effective Payroll Month</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {poiWindows.map((w: any) => (
+                          <tr key={w.id} className="border-t border-border">
+                            <td className="py-1.5">FY {w.financial_year}-{String(w.financial_year + 1).slice(-2)}</td>
+                            <td className="py-1.5">{new Date(w.deadline_at).toLocaleDateString("en-IN")}</td>
+                            <td className="py-1.5">{new Date(w.effective_payroll_month).toLocaleDateString("en-IN", { month: "long", year: "numeric" })}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
                 </CardContent>
               </Card>
             </div>

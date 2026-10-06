@@ -243,7 +243,7 @@ export default function Bulk() {
             )}
 
             {step === 4 && (
-              <Card className="border-border max-w-md">
+              <Card className="border-border max-w-lg">
                 <CardHeader><CardTitle className="font-display">Confirm & Execute</CardTitle></CardHeader>
                 <CardContent className="space-y-4">
                   <div className="rounded-lg bg-muted/40 p-4 space-y-2 text-sm">

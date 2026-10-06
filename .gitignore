@@ -48,3 +48,23 @@ check_tools.py
 run_composer.py
 graphify-out/
 backend/.phpunit.result.cache
+
+# Local production-reconciliation exports and scratch scripts
+/.claude/
+/.269m-*.sql
+/.269m-*.json
+/.backup-stale.*
+/.budget.sql
+/.deleted.sql
+/.export-*.sql
+/.export-*.sh
+/.hard-delete-stale.*
+/.opening-check.*
+/.portal-*.csv
+/.reconcile.*
+/.snap.*
+/.status.sql
+/.tmp-*.sql
+/.verify-cleanup.*
+/.zoho-stale-invoices-backup.csv
+/Zoho-Portal-Reconciliation.xlsx

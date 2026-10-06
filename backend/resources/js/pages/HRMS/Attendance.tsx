@@ -468,46 +468,52 @@ function StaffTab() {
       {/* Modal */}
       {modal.open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-          <div className="bg-card border border-border rounded-xl shadow-2xl w-full max-w-md p-6 space-y-4">
+          <div className="bg-card border border-border rounded-xl shadow-2xl w-full max-w-3xl p-6 space-y-4">
             <h2 className="text-base font-semibold">{modal.mode === "create" ? "Add Attendance Record" : "Edit Attendance Record"}</h2>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="col-span-2">
-                <label className="text-xs text-muted-foreground">Employee</label>
-                <select value={form.employee_id} onChange={e => setForm(f => ({ ...f, employee_id: e.target.value }))} disabled={modal.mode === "edit"}
-                  className="mt-1 w-full h-9 rounded border border-border bg-background px-2 text-sm text-foreground">
-                  <option value="">— Select —</option>
-                  {employees.map((e: any) => <option key={e.id} value={e.id}>{e.user?.name ?? e.full_name} ({e.employee_code})</option>)}
-                </select>
+            <section>
+              <h3 className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-2 flex items-center gap-1.5">
+                <span className="w-4 h-4 rounded-full bg-gold text-black flex items-center justify-center text-[9px] font-bold">1</span>
+                Record Details
+              </h3>
+              <div className="grid grid-cols-4 gap-2">
+                <div className="col-span-2">
+                  <div className="text-[10px] text-muted-foreground mb-0.5">Employee</div>
+                  <select value={form.employee_id} onChange={e => setForm(f => ({ ...f, employee_id: e.target.value }))} disabled={modal.mode === "edit"}
+                    className="w-full h-8 rounded border border-border bg-background px-2 text-xs text-foreground">
+                    <option value="">— Select —</option>
+                    {employees.map((e: any) => <option key={e.id} value={e.id}>{e.user?.name ?? e.full_name} ({e.employee_code})</option>)}
+                  </select>
+                </div>
+                <div>
+                  <div className="text-[10px] text-muted-foreground mb-0.5">Date</div>
+                  <input type="date" value={form.attendance_date} onChange={e => setForm(f => ({ ...f, attendance_date: e.target.value }))}
+                    className="w-full h-8 rounded border border-border bg-background px-2 text-xs text-foreground" />
+                </div>
+                <div>
+                  <div className="text-[10px] text-muted-foreground mb-0.5">Status</div>
+                  <select value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}
+                    className="w-full h-8 rounded border border-border bg-background px-2 text-xs text-foreground">
+                    {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <div className="text-[10px] text-muted-foreground mb-0.5">Clock In</div>
+                  <input type="time" value={form.check_in} onChange={e => setForm(f => ({ ...f, check_in: e.target.value }))}
+                    className="w-full h-8 rounded border border-border bg-background px-2 text-xs text-foreground" />
+                </div>
+                <div>
+                  <div className="text-[10px] text-muted-foreground mb-0.5">Clock Out</div>
+                  <input type="time" value={form.check_out} onChange={e => setForm(f => ({ ...f, check_out: e.target.value }))}
+                    className="w-full h-8 rounded border border-border bg-background px-2 text-xs text-foreground" />
+                </div>
+                <div className="col-span-2">
+                  <div className="text-[10px] text-muted-foreground mb-0.5">Reason / Note</div>
+                  <input value={form.regularization_reason} onChange={e => setForm(f => ({ ...f, regularization_reason: e.target.value }))}
+                    placeholder="Regularization reason…"
+                    className="w-full h-8 rounded border border-border bg-background px-2 text-xs text-foreground" />
+                </div>
               </div>
-              <div>
-                <label className="text-xs text-muted-foreground">Date</label>
-                <input type="date" value={form.attendance_date} onChange={e => setForm(f => ({ ...f, attendance_date: e.target.value }))}
-                  className="mt-1 w-full h-9 rounded border border-border bg-background px-2 text-sm text-foreground" />
-              </div>
-              <div>
-                <label className="text-xs text-muted-foreground">Status</label>
-                <select value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}
-                  className="mt-1 w-full h-9 rounded border border-border bg-background px-2 text-sm text-foreground">
-                  {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="text-xs text-muted-foreground">Clock In</label>
-                <input type="time" value={form.check_in} onChange={e => setForm(f => ({ ...f, check_in: e.target.value }))}
-                  className="mt-1 w-full h-9 rounded border border-border bg-background px-2 text-sm text-foreground" />
-              </div>
-              <div>
-                <label className="text-xs text-muted-foreground">Clock Out</label>
-                <input type="time" value={form.check_out} onChange={e => setForm(f => ({ ...f, check_out: e.target.value }))}
-                  className="mt-1 w-full h-9 rounded border border-border bg-background px-2 text-sm text-foreground" />
-              </div>
-              <div className="col-span-2">
-                <label className="text-xs text-muted-foreground">Reason / Note</label>
-                <input value={form.regularization_reason} onChange={e => setForm(f => ({ ...f, regularization_reason: e.target.value }))}
-                  placeholder="Regularization reason…"
-                  className="mt-1 w-full h-9 rounded border border-border bg-background px-2 text-sm text-foreground" />
-              </div>
-            </div>
+            </section>
             {saveErr && <p className="text-xs text-red-500">{saveErr}</p>}
             <div className="flex justify-end gap-2">
               <Button variant="outline" size="sm" onClick={() => setModal({ open: false, mode: "create" })}>Cancel</Button>

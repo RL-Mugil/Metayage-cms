@@ -110,38 +110,43 @@ export default function HRMSOffboarding() {
         {showInitiate && (
           <Card className="border-gold/30 bg-gold/5">
             <CardHeader className="pb-3"><CardTitle className="font-display text-base">Initiate Offboarding</CardTitle></CardHeader>
-            <CardContent className="grid grid-cols-2 gap-4">
+            <CardContent>
+              <h3 className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-2 flex items-center gap-1.5">
+                <span className="w-4 h-4 rounded-full bg-gold text-black flex items-center justify-center text-[9px] font-bold">1</span>
+                Case Details
+              </h3>
+              <div className="grid grid-cols-4 gap-2">
               <div>
-                <label className="block text-xs text-muted-foreground mb-1">Employee</label>
+                <div className="text-[10px] text-muted-foreground mb-0.5">Employee</div>
                 <input value={form.employee} onChange={(e) => setForm((p) => ({ ...p, employee: e.target.value }))}
                   placeholder="Employee name"
-                  className="w-full h-8 rounded border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+                  className="w-full h-8 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
               </div>
               <div>
-                <label className="block text-xs text-muted-foreground mb-1">Last Working Day</label>
+                <div className="text-[10px] text-muted-foreground mb-0.5">Last Working Day</div>
                 <input type="date" value={form.last_day} onChange={(e) => setForm((p) => ({ ...p, last_day: e.target.value }))}
-                  className="w-full h-8 rounded border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+                  className="w-full h-8 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
               </div>
               <div>
-                <label className="block text-xs text-muted-foreground mb-1">Exit Type</label>
+                <div className="text-[10px] text-muted-foreground mb-0.5">Exit Type</div>
                 <select value={form.exit_type} onChange={(e) => setForm((p) => ({ ...p, exit_type: e.target.value }))}
-                  className="w-full h-8 rounded border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold">
+                  className="w-full h-8 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold">
                   {["Resignation", "Retirement", "Termination"].map((t) => <option key={t}>{t}</option>)}
                 </select>
               </div>
               <div>
-                <label className="block text-xs text-muted-foreground mb-1">Assigned HR</label>
+                <div className="text-[10px] text-muted-foreground mb-0.5">Assigned HR</div>
                 <input value={form.assigned_hr} onChange={(e) => setForm((p) => ({ ...p, assigned_hr: e.target.value }))}
                   placeholder="HR person handling"
-                  className="w-full h-8 rounded border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+                  className="w-full h-8 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
               </div>
               <div>
-                <label className="block text-xs text-muted-foreground mb-1">Department</label>
+                <div className="text-[10px] text-muted-foreground mb-0.5">Department</div>
                 <input value={form.dept} onChange={(e) => setForm((p) => ({ ...p, dept: e.target.value }))}
                   placeholder="e.g. Engineering"
-                  className="w-full h-8 rounded border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+                  className="w-full h-8 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
               </div>
-              <div className="col-span-2 space-y-2">
+              <div className="col-span-4 space-y-2 mt-1">
                 {(!form.employee.trim() || !form.last_day) && (
                   <p className="text-xs text-amber-500">
                     {!form.employee.trim() && !form.last_day ? "Employee name and last working day are required." : !form.employee.trim() ? "Employee name is required." : "Last working day is required."}
@@ -153,6 +158,7 @@ export default function HRMSOffboarding() {
                   </Button>
                   <Button size="sm" variant="outline" onClick={() => setShowInitiate(false)}>Cancel</Button>
                 </div>
+              </div>
               </div>
             </CardContent>
           </Card>

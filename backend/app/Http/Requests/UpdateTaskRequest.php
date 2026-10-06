@@ -28,6 +28,8 @@ class UpdateTaskRequest extends FormRequest
             'priority'     => 'sometimes|required|string',
             'due_date'     => 'nullable|date',
             'actual_hours' => 'nullable|numeric',
+            'document_ids'   => 'nullable|array',
+            'document_ids.*' => 'integer|exists:documents,id',
         ];
     }
 }

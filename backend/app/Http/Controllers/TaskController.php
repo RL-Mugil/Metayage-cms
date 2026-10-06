@@ -25,7 +25,7 @@ class TaskController extends Controller
     public function index(Request $request)
     {
         $user = $request->user();
-        $query = Task::with('project', 'assignee');
+        $query = Task::with('project', 'assignee', 'documents:id,file_name');
 
         if ($user->isClientRole()) {
             $client = $request->attributes->get('portal_client') ?? \App\Models\Client::forUser($user);
@@ -62,12 +62,19 @@ class TaskController extends Controller
             }
         }
 
+        $documentIds = $validated['document_ids'] ?? [];
+        unset($validated['document_ids']);
+
         $validated['assignee_id']   = $validated['assignee_id'] ?? $user->id;
         $validated['reviewer_id']   = $validated['reviewer_id'] ?? $user->id;
         $validated['assigned_by_id'] = $user->id;
         $validated['status'] = 'Pending';
 
         $task = Task::create($validated);
+        if ($documentIds) {
+            $task->documents()->sync($documentIds);
+        }
+        $task->load('documents:id,file_name');
 
         // In-app notification for the assignee (skip if assigning to self)
         if ($task->assignee_id && $task->assignee_id !== $user->id) {
@@ -113,7 +120,14 @@ class TaskController extends Controller
         $previousDue      = $task->due_date ? $task->due_date->toDateString() : null;
         $previousGTaskId  = $task->google_task_id;
 
+        $documentIdsProvided = array_key_exists('document_ids', $validated);
+        $documentIds = $validated['document_ids'] ?? [];
+        unset($validated['document_ids']);
+
         $task->update($validated);
+        if ($documentIdsProvided) {
+            $task->documents()->sync($documentIds);
+        }
 
         // Notify the new assignee when a task is reassigned to someone else.
         if (array_key_exists('assignee_id', $validated)
@@ -173,7 +187,7 @@ class TaskController extends Controller
         });
 
         Cache::increment('dashboard_v');
-        return response()->json($task);
+        return response()->json($task->load('documents:id,file_name'));
     }
 
     public function addTimeEntry(Request $request)

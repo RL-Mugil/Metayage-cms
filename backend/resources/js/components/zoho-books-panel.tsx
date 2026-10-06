@@ -77,7 +77,8 @@ export function ZohoBooksPanel({ title = "Zoho Books — Quotes & Invoices", fet
           <p className="text-xs text-muted-foreground py-2">{error}</p>
         ) : (
           <div className="space-y-4">
-            <div className="text-xs text-muted-foreground">Outstanding: <span className="font-semibold text-foreground">₹{(summary?.outstanding_balance ?? 0).toLocaleString()}</span></div>
+            <div className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-3"><div>Invoice outstanding: <span className="font-semibold text-foreground">₹{(summary?.outstanding_balance ?? 0).toLocaleString()}</span></div><div>Opening balances: <span className="font-semibold text-amber-600">₹{(summary?.opening_balance ?? 0).toLocaleString()}</span></div><div>Total receivables: <span className="font-semibold text-foreground">₹{(summary?.total_receivables ?? 0).toLocaleString()}</span></div></div>
+            {(summary?.opening_balances?.length ?? 0) > 0 && <div><h4 className="text-xs font-semibold text-muted-foreground mb-1.5">Opening balance receivables</h4><div className="overflow-x-auto"><table className="w-full text-xs"><thead className="text-muted-foreground uppercase tracking-wider"><tr className="text-left"><th className="py-1.5 pr-3">Customer</th><th className="py-1.5 pr-3">Date</th><th className="py-1.5 text-right">Balance</th></tr></thead><tbody>{summary?.opening_balances.map((row) => <tr key={row.id} className="border-t border-border"><td className="py-1.5 pr-3">{row.customer_name || '—'}</td><td className="py-1.5 pr-3">{row.balance_date || '—'}</td><td className="py-1.5 text-right">₹{row.balance.toLocaleString()}</td></tr>)}</tbody></table></div></div>}
             <div>
               <h4 className="text-xs font-semibold text-muted-foreground mb-1.5">Invoices</h4>
               <ZohoRecordsTable title="Invoices" records={summary?.invoices ?? []} />

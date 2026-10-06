@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Task extends Model
@@ -55,5 +56,13 @@ class Task extends Model
     public function timeEntries(): HasMany
     {
         return $this->hasMany(TimeEntry::class);
+    }
+
+    /** Documents attached to this task — either freshly uploaded or picked from
+     *  the tagged case's existing documents. Many-to-many so a document already
+     *  on this case can be selected for more than one task. */
+    public function documents(): BelongsToMany
+    {
+        return $this->belongsToMany(Document::class, 'document_task');
     }
 }

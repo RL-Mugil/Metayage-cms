@@ -167,6 +167,13 @@ export default function Integrations() {
   const [zohoFields, setZohoFields] = useState({ client_id: "", client_secret: "", refresh_token: "", organization_id: "", region: "in" });
   const [zohoSaving, setZohoSaving] = useState(false);
   const [zohoSyncing, setZohoSyncing] = useState(false);
+  const [restVerifierFields, setRestVerifierFields] = useState<Record<string, { client_id: string; client_secret: string; base_url: string; verify_path: string }>>({
+    api_setu: { client_id: "", client_secret: "", base_url: "", verify_path: "" },
+    entitylocker: { client_id: "", client_secret: "", base_url: "", verify_path: "" },
+  });
+  const [restVerifierSaving, setRestVerifierSaving] = useState<string | null>(null);
+  const [digiLockerFields, setDigiLockerFields] = useState({ client_id: "", client_secret: "", authorize_url: "", token_url: "", document_pull_url: "", redirect_uri: `${window.location.origin}/digilocker/callback` });
+  const [digiLockerSaving, setDigiLockerSaving] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [banner, setBanner] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const [logsOpen, setLogsOpen] = useState<string | null>(null);
@@ -264,6 +271,36 @@ export default function Integrations() {
       })
       .catch((error) => setBanner({ kind: "err", text: error instanceof Error ? error.message : "Failed to save Zoho Books credentials." }))
       .finally(() => setZohoSaving(false));
+  };
+
+  const saveRestVerifier = (slug: "api_setu" | "entitylocker") => {
+    const fields = restVerifierFields[slug];
+    if (!fields.client_id || !fields.client_secret || !fields.base_url || !fields.verify_path) return;
+    setRestVerifierSaving(slug);
+    api.saveRestVerifierConfig(slug, fields)
+      .then(() => {
+        setKeySaved((p) => ({ ...p, [slug]: true }));
+        setList((prev) => prev.map((item) => item.id === slug ? { ...item, hasKey: true } : item));
+        setBanner({ kind: "ok", text: "Credentials saved." });
+        setTimeout(() => setKeySaved((p) => ({ ...p, [slug]: false })), 3000);
+      })
+      .catch((error) => setBanner({ kind: "err", text: error instanceof Error ? error.message : "Failed to save credentials." }))
+      .finally(() => setRestVerifierSaving(null));
+  };
+
+  const saveDigiLocker = () => {
+    const { client_id, client_secret, authorize_url, token_url, document_pull_url, redirect_uri } = digiLockerFields;
+    if (!client_id || !client_secret || !authorize_url || !token_url || !document_pull_url || !redirect_uri) return;
+    setDigiLockerSaving(true);
+    api.saveDigiLockerConfig(digiLockerFields)
+      .then(() => {
+        setKeySaved((p) => ({ ...p, digilocker: true }));
+        setList((prev) => prev.map((item) => item.id === "digilocker" ? { ...item, hasKey: true } : item));
+        setBanner({ kind: "ok", text: "DigiLocker credentials saved." });
+        setTimeout(() => setKeySaved((p) => ({ ...p, digilocker: false })), 3000);
+      })
+      .catch((error) => setBanner({ kind: "err", text: error instanceof Error ? error.message : "Failed to save DigiLocker credentials." }))
+      .finally(() => setDigiLockerSaving(false));
   };
 
   const syncZohoNow = () => {
@@ -376,10 +413,11 @@ export default function Integrations() {
                     {intg.id === "zoho" ? (
                       <div className="space-y-2">
                         <label className="text-xs font-medium text-muted-foreground">
-                          Zoho Books credentials (read-only access) {intg.hasKey && <span className="text-green-600">(saved)</span>}
+                          Zoho Books credentials (read access and draft quote creation) {intg.hasKey && <span className="text-green-600">(saved)</span>}
                         </label>
                         <p className="text-[11px] text-muted-foreground">
                           From a Zoho API Console Self Client for org <code>924754718</code> (Metayage Private Ltd).
+                          {' '}Allow READ for invoices, estimates, contacts, customer payments, credit notes and settings, plus ZohoBooks.estimates.CREATE. Invoice write permission is not needed.
                         </p>
                         <input placeholder="Client ID" value={zohoFields.client_id}
                           onChange={(e) => setZohoFields((p) => ({ ...p, client_id: e.target.value }))}
@@ -405,6 +443,70 @@ export default function Integrations() {
                             onClick={saveZoho}>{zohoSaving ? <Loader2 className="h-3 w-3 animate-spin" /> : "Save"}</Button>
                         </div>
                         {keySaved.zoho && <span className="text-xs text-green-600">Credentials saved securely.</span>}
+                      </div>
+                    ) : intg.id === "api_setu" || intg.id === "entitylocker" ? (
+                      <div className="space-y-2">
+                        <label className="text-xs font-medium text-muted-foreground">
+                          {intg.id === "api_setu" ? "API Setu — PAN Verification" : "API Setu — EntityLocker"} credentials {intg.hasKey && <span className="text-green-600">(saved)</span>}
+                        </label>
+                        <p className="text-[11px] text-muted-foreground">
+                          From the approved API Setu consumer request (Client ID <code>com.metayage</code>). Base URL and verify path come from the approval documentation — not publicly standardized.
+                        </p>
+                        <input placeholder="Client ID" value={restVerifierFields[intg.id].client_id}
+                          onChange={(e) => setRestVerifierFields((p) => ({ ...p, [intg.id]: { ...p[intg.id], client_id: e.target.value } }))}
+                          className="w-full h-8 rounded border border-border bg-background px-3 text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
+                        <input type="password" placeholder="Client Secret" value={restVerifierFields[intg.id].client_secret}
+                          onChange={(e) => setRestVerifierFields((p) => ({ ...p, [intg.id]: { ...p[intg.id], client_secret: e.target.value } }))}
+                          className="w-full h-8 rounded border border-border bg-background px-3 text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
+                        <input placeholder="Base URL (e.g. https://api.apisetu.gov.in/...)" value={restVerifierFields[intg.id].base_url}
+                          onChange={(e) => setRestVerifierFields((p) => ({ ...p, [intg.id]: { ...p[intg.id], base_url: e.target.value } }))}
+                          className="w-full h-8 rounded border border-border bg-background px-3 text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
+                        <div className="flex items-center gap-2">
+                          <input placeholder="Verify Path (e.g. /pan/v1/verify)" value={restVerifierFields[intg.id].verify_path}
+                            onChange={(e) => setRestVerifierFields((p) => ({ ...p, [intg.id]: { ...p[intg.id], verify_path: e.target.value } }))}
+                            className="flex-1 h-8 rounded border border-border bg-background px-3 text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
+                          <Button size="sm" variant="outline" className="h-8 text-xs"
+                            disabled={restVerifierSaving === intg.id || !restVerifierFields[intg.id].client_id || !restVerifierFields[intg.id].client_secret || !restVerifierFields[intg.id].base_url || !restVerifierFields[intg.id].verify_path}
+                            onClick={() => saveRestVerifier(intg.id as "api_setu" | "entitylocker")}>
+                            {restVerifierSaving === intg.id ? <Loader2 className="h-3 w-3 animate-spin" /> : "Save"}
+                          </Button>
+                        </div>
+                        {keySaved[intg.id] && <span className="text-xs text-green-600">Credentials saved securely.</span>}
+                      </div>
+                    ) : intg.id === "digilocker" ? (
+                      <div className="space-y-2">
+                        <label className="text-xs font-medium text-muted-foreground">
+                          DigiLocker Requester credentials {intg.hasKey && <span className="text-green-600">(saved)</span>}
+                        </label>
+                        <p className="text-[11px] text-muted-foreground">
+                          From the approved DigiLocker Requester application (Client ID <code>com.metayage</code>). All four URLs come from the approval documentation.
+                        </p>
+                        <input placeholder="Client ID" value={digiLockerFields.client_id}
+                          onChange={(e) => setDigiLockerFields((p) => ({ ...p, client_id: e.target.value }))}
+                          className="w-full h-8 rounded border border-border bg-background px-3 text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
+                        <input type="password" placeholder="Client Secret" value={digiLockerFields.client_secret}
+                          onChange={(e) => setDigiLockerFields((p) => ({ ...p, client_secret: e.target.value }))}
+                          className="w-full h-8 rounded border border-border bg-background px-3 text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
+                        <input placeholder="Authorize URL" value={digiLockerFields.authorize_url}
+                          onChange={(e) => setDigiLockerFields((p) => ({ ...p, authorize_url: e.target.value }))}
+                          className="w-full h-8 rounded border border-border bg-background px-3 text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
+                        <input placeholder="Token URL" value={digiLockerFields.token_url}
+                          onChange={(e) => setDigiLockerFields((p) => ({ ...p, token_url: e.target.value }))}
+                          className="w-full h-8 rounded border border-border bg-background px-3 text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
+                        <input placeholder="Document Pull URL" value={digiLockerFields.document_pull_url}
+                          onChange={(e) => setDigiLockerFields((p) => ({ ...p, document_pull_url: e.target.value }))}
+                          className="w-full h-8 rounded border border-border bg-background px-3 text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
+                        <div className="flex items-center gap-2">
+                          <input readOnly value={digiLockerFields.redirect_uri}
+                            className="flex-1 h-8 rounded border border-border bg-muted/30 px-3 text-xs text-muted-foreground font-mono" />
+                          <Button size="sm" variant="outline" className="h-8 text-xs"
+                            disabled={digiLockerSaving || !digiLockerFields.client_id || !digiLockerFields.client_secret || !digiLockerFields.authorize_url || !digiLockerFields.token_url || !digiLockerFields.document_pull_url}
+                            onClick={saveDigiLocker}>
+                            {digiLockerSaving ? <Loader2 className="h-3 w-3 animate-spin" /> : "Save"}
+                          </Button>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground">Redirect URI above — register this exact URL with DigiLocker as the callback.</p>
+                        {keySaved.digilocker && <span className="text-xs text-green-600">Credentials saved securely.</span>}
                       </div>
                     ) : (
                       <div>

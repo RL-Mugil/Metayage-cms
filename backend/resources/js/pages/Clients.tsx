@@ -1,9 +1,9 @@
 import { Head, usePage } from "@inertiajs/react";
 import { useEffect, useState, useMemo, useCallback } from "react";
 import {
-  Plus, Search, LayoutGrid, List, Pencil, Trash2, X, ChevronDown, ChevronUp,
+  Plus, Search, LayoutGrid, List, Pencil, Trash2, X,
   Building2, User, AlertCircle, Globe, Loader2, Download, ChevronLeft, ChevronRight,
-  ArrowUpDown, ArrowUp, ArrowDown, Upload, FileSpreadsheet, Link, CheckCircle2,
+  ArrowUpDown, ArrowUp, ArrowDown, Upload, FileSpreadsheet, Link, CheckCircle2, ShieldCheck,
 } from "lucide-react";
 import AppLayout from "@/layouts/AppLayout";
 import { PageHeader } from "@/components/page-header";
@@ -50,6 +50,26 @@ const GST_META: Record<string,{label:string;color:string}> = {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+function verifyBadgeClass(status: string | undefined) {
+  if (status === "Verified") return "bg-green-100 text-green-700 border-green-200";
+  if (status === "Mismatch" || status === "Failed") return "bg-red-100 text-red-700 border-red-200";
+  return "bg-muted text-muted-foreground border-border";
+}
+
+/** One row of a government-verification pre-fill panel: shows the fetched
+ *  value next to a "Use this value" button when it differs from the form's
+ *  current value. Hidden entirely once the two already match. */
+function GovFieldRow({ label, current, fetched, onUse }: { label: string; current: string; fetched?: string | null; onUse: () => void }) {
+  if (!fetched) return null;
+  if (current.trim().toLowerCase() === fetched.trim().toLowerCase()) return null;
+  return (
+    <div className="flex items-center justify-between gap-2 text-[10px] py-0.5">
+      <span className="text-muted-foreground truncate">{label} on record: <span className="text-foreground">{fetched}</span></span>
+      <button type="button" onClick={onUse} className="shrink-0 text-gold hover:underline font-medium">Use this value</button>
+    </div>
+  );
+}
+
 function computeGstType(nationality: string, hasGstin: boolean, clientType: string): string {
   if (nationality.toLowerCase() !== "india") return "Export";
   if (hasGstin) return "B2B";
@@ -83,22 +103,6 @@ function nextClientCode(existing: any[], nationality: string): string {
 }
 
 // ── Sub-components ────────────────────────────────────────────────────────────
-
-function Section({ title, children, open: defaultOpen = true }: {
-  title: string; children: React.ReactNode; open?: boolean;
-}) {
-  const [expanded, setExpanded] = useState(defaultOpen);
-  return (
-    <div className="border border-border rounded-lg">
-      <button type="button" onClick={() => setExpanded(!expanded)}
-        className={`w-full flex items-center justify-between px-4 py-2.5 bg-muted/30 text-xs font-semibold uppercase tracking-wider text-muted-foreground hover:bg-muted/50 ${expanded ? "rounded-t-lg" : "rounded-lg"}`}>
-        {title}
-        {expanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-      </button>
-      {expanded && <div className="p-4 space-y-3">{children}</div>}
-    </div>
-  );
-}
 
 const Lbl = ({ children, req }: { children: React.ReactNode; req?: boolean }) => (
   <label className="block text-xs text-muted-foreground mb-1">
@@ -593,6 +597,53 @@ export default function Clients() {
   const [deleting, setDeleting] = useState(false);
   const [refQ, setRefQ]         = useState("");
   const [detailClientId, setDetailClientId] = useState<number | null>(null);
+  const [entityVerifying, setEntityVerifying] = useState(false);
+  const [entityVerifyMessage, setEntityVerifyMessage] = useState("");
+  const canVerifyEntity = ["super_admin", "partner", "manager", "galvanizer"].includes(pageProps.auth?.user?.role ?? "");
+
+  const [verifyingRowId, setVerifyingRowId] = useState<number | null>(null);
+  async function verifyEntityRow(c: any) {
+    setVerifyingRowId(c.id);
+    try {
+      const result = await api.verifyClientEntity(c.id);
+      setPaginatedResult((prev: any) => ({
+        ...prev,
+        data: prev.data.map((x: any) => x.id === c.id ? {
+          ...x,
+          gstin_verification_status: result.gstin?.status ?? x.gstin_verification_status,
+          cin_verification_status: result.cin?.status ?? x.cin_verification_status,
+        } : x),
+      }));
+    } catch (e: any) {
+      alert(e.message || "Failed to verify.");
+    } finally {
+      setVerifyingRowId(null);
+    }
+  }
+
+  async function verifyEntityInForm() {
+    if (!editC) return;
+    setEntityVerifying(true);
+    setEntityVerifyMessage("");
+    try {
+      const result = await api.verifyClientEntity(editC.id);
+      const parts = [result.gstin?.message, result.cin?.message].filter(Boolean);
+      setEntityVerifyMessage(parts.join(" "));
+      setEditC((prev: any) => ({
+        ...prev,
+        gstin_verification_status: result.gstin?.status ?? prev.gstin_verification_status,
+        cin_verification_status: result.cin?.status ?? prev.cin_verification_status,
+        gstin_verified_name: result.gstin?.fetched?.name ?? prev.gstin_verified_name,
+        gstin_verified_address: result.gstin?.fetched?.address ?? prev.gstin_verified_address,
+        cin_verified_name: result.cin?.fetched?.name ?? prev.cin_verified_name,
+        cin_verified_address: result.cin?.fetched?.address ?? prev.cin_verified_address,
+      }));
+    } catch (e: any) {
+      setEntityVerifyMessage(e.message || "Failed to verify.");
+    } finally {
+      setEntityVerifying(false);
+    }
+  }
 
   const fetchClients = (p: number = 1) => {
     const params = new URLSearchParams();
@@ -719,6 +770,22 @@ export default function Clients() {
   const dname = (c: any) => c.legal_name ?? c.company_name ?? "—";
   const clients = paginatedResult.data;
 
+  // Compact, dense field style for the wide Add/Edit Client modal — same
+  // pattern as the Indian Patent Invoice/Quotation form in Financial.tsx and
+  // the Add/Edit Employee modal in HRMS/Employees.tsx. Scoped locally so the
+  // module-level ic/tc/Lbl used by ImportModal/KpiModal stay untouched.
+  const fInp = "w-full h-8 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold";
+  const fTa = "w-full rounded border border-border bg-background px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-gold resize-none";
+  const FLbl = ({ children, req }: { children: React.ReactNode; req?: boolean }) => (
+    <div className="text-[10px] text-muted-foreground mb-0.5">{children}{req && <span className="text-destructive ml-0.5">*</span>}</div>
+  );
+  const FSectionHeading = ({ n, children }: { n: number; children: React.ReactNode }) => (
+    <h3 className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-2 flex items-center gap-1.5">
+      <span className="w-4 h-4 rounded-full bg-gold text-black flex items-center justify-center text-[9px] font-bold">{n}</span>
+      {children}
+    </h3>
+  );
+
   return (
     <AppLayout>
       <Head title="Clients" />
@@ -832,6 +899,11 @@ export default function Clients() {
                           <td className="px-4 py-3">
                             <div className="font-medium">{dname(c)}</div>
                             {c.pan_number && <div className="text-xs text-muted-foreground font-mono">PAN: {c.pan_number}</div>}
+                            {c.cin_number && (
+                              <Badge variant="outline" className={`mt-0.5 text-[9px] ${verifyBadgeClass(c.cin_verification_status)}`}>
+                                CIN: {c.cin_verification_status ?? "Unverified"}
+                              </Badge>
+                            )}
                           </td>
                           <td className="px-4 py-3">
                             <span className="flex items-center gap-1 text-xs text-muted-foreground">
@@ -841,6 +913,11 @@ export default function Clients() {
                           </td>
                           <td className="px-4 py-3">
                             {gm ? <Badge variant="outline" className={`text-[10px] ${gm.color}`}>{gm.label}</Badge> : "—"}
+                            {c.gstin && (
+                              <Badge variant="outline" className={`block mt-0.5 w-fit text-[9px] ${verifyBadgeClass(c.gstin_verification_status)}`}>
+                                GSTIN: {c.gstin_verification_status ?? "Unverified"}
+                              </Badge>
+                            )}
                           </td>
                           <td className="px-4 py-3 text-xs text-muted-foreground">
                             <div>{c.contact_name ?? c.contact_email ?? "—"}</div>
@@ -873,6 +950,12 @@ export default function Clients() {
                           </td>
                           <td className="px-4 py-3">
                             <div className="flex gap-1">
+                              {canVerifyEntity && (c.gstin || c.cin_number) && (
+                                <Button size="sm" variant="outline" className="h-7 w-7 p-0" title="Verify via EntityLocker"
+                                  disabled={verifyingRowId === c.id} onClick={() => verifyEntityRow(c)}>
+                                  {verifyingRowId === c.id ? <Loader2 className="h-3 w-3 animate-spin"/> : <ShieldCheck className="h-3 w-3"/>}
+                                </Button>
+                              )}
                               <Button size="sm" variant="outline" className="h-7 w-7 p-0" onClick={()=>openEdit(c)}><Pencil className="h-3 w-3"/></Button>
                               <Button size="sm" variant="outline" className="h-7 w-7 p-0 text-destructive border-destructive/30" onClick={()=>setDelTarget(c)}>
                                 <Trash2 className="h-3 w-3"/>
@@ -944,7 +1027,7 @@ export default function Clients() {
       {/* ── Client Form Modal ──────────────────────────────────────────────────── */}
       {showForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-3xl max-h-[92vh] flex flex-col">
+          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-5xl max-h-[92vh] flex flex-col">
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-border flex-shrink-0">
               <div>
@@ -960,11 +1043,12 @@ export default function Clients() {
             </div>
 
             {/* Scrollable body */}
-            <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+            <div className="flex-1 overflow-y-auto px-6 py-4 space-y-5">
 
               {/* ── 0. Client Type Toggle ─────────────────────────────────── */}
               {!editC && (
-                <Section title="Record Type">
+                <section>
+                  <FSectionHeading n={1}>Record Type</FSectionHeading>
                   <div className={`grid gap-3 ${featExistingClient ? "grid-cols-2" : "grid-cols-1"}`}>
                     {([
                       { key: "new",      label: "New Client",             hint: "Use the current auto-generation rules.", always: true },
@@ -986,23 +1070,25 @@ export default function Clients() {
                     ))}
                   </div>
                   {form.record_mode === "existing" && (
-                    <div>
-                      <Lbl req>Existing Client Code</Lbl>
-                      <input
-                        value={form.client_code}
-                        onChange={(e)=>set("client_code", e.target.value.toUpperCase())}
-                        className={ic}
-                        placeholder="e.g. A97M"
-                      />
+                    <div className="mt-3 grid grid-cols-4 gap-2">
+                      <div className="col-span-2">
+                        <FLbl req>Existing Client Code</FLbl>
+                        <input
+                          value={form.client_code}
+                          onChange={(e)=>set("client_code", e.target.value.toUpperCase())}
+                          className={fInp}
+                          placeholder="e.g. A97M"
+                        />
+                      </div>
                     </div>
                   )}
-                </Section>
+                </section>
               )}
 
               <div className="flex gap-2">
                 {(["organization","individual"] as CType[]).map((t) => (
                   <button key={t} type="button" onClick={() => set("client_type", t)}
-                    className={`flex-1 py-3 rounded-lg border-2 flex items-center justify-center gap-2 text-sm font-medium transition-all
+                    className={`flex-1 py-2.5 rounded-lg border-2 flex items-center justify-center gap-2 text-sm font-medium transition-all
                       ${form.client_type===t?"border-gold bg-gold/10 text-foreground":"border-border text-muted-foreground hover:border-gold/40"}`}>
                     {t==="organization"?<Building2 className="h-4 w-4"/>:<User className="h-4 w-4"/>}
                     {t==="organization"?"Organization":"Individual"}
@@ -1011,50 +1097,72 @@ export default function Clients() {
               </div>
 
               {/* ── 1. Identity ───────────────────────────────────────────── */}
-              <Section title="Identity & Classification">
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="col-span-2">
-                    <Lbl req>{isOrg ? "Registered Legal Name" : "Full Name (no title)"}</Lbl>
+              <section>
+                <FSectionHeading n={editC ? 1 : 2}>Identity &amp; Classification</FSectionHeading>
+                <div className="grid grid-cols-4 gap-2">
+                  <div className="col-span-4">
+                    <FLbl req>{isOrg ? "Registered Legal Name" : "Full Name (no title)"}</FLbl>
                     <input value={form.legal_name} onChange={(e)=>set("legal_name",e.target.value)}
                       placeholder={isOrg?"e.g. Acme Technologies Pvt Ltd":"e.g. Rajesh Kumar (no Mr.)"}
-                      className={ic}/>
+                      className={fInp}/>
                   </div>
                   {isOrg && <>
                     <div>
-                      <Lbl>Entity Sub-type</Lbl>
-                      <select value={form.entity_subtype} onChange={(e)=>set("entity_subtype",e.target.value)} className={ic}>
+                      <FLbl>Entity Sub-type</FLbl>
+                      <select value={form.entity_subtype} onChange={(e)=>set("entity_subtype",e.target.value)} className={fInp}>
                         <option value="">Select…</option>
                         {ORG_SUBTYPES.map((t)=><option key={t}>{t}</option>)}
                       </select>
                     </div>
                     <div>
-                      <Lbl>Trade / Brand Name</Lbl>
-                      <input value={form.trade_name} onChange={(e)=>set("trade_name",e.target.value)} className={ic} placeholder="Brand name if different"/>
+                      <FLbl>Trade / Brand Name</FLbl>
+                      <input value={form.trade_name} onChange={(e)=>set("trade_name",e.target.value)} className={fInp} placeholder="Brand name if different"/>
+                    </div>
+                    <div className="col-span-2">
+                      <FLbl>CIN Number</FLbl>
+                      <input value={form.cin_number} onChange={(e)=>set("cin_number",e.target.value.toUpperCase())} className={fInp} placeholder="U12345MH2020PTC123456" maxLength={21}/>
+                      {editC && form.cin_number && (
+                        <div className="mt-1 flex items-center gap-2 flex-wrap">
+                          <Badge variant="outline" className={`text-[10px] ${verifyBadgeClass(editC.cin_verification_status)}`}>
+                            CIN: {editC.cin_verification_status ?? "Unverified"}
+                          </Badge>
+                          {canVerifyEntity && !form.has_gstin && (
+                            <button type="button" disabled={entityVerifying} onClick={verifyEntityInForm}
+                              className="h-6 px-2 rounded-md border border-border text-[10px] text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-50">
+                              {entityVerifying ? "Verifying…" : "Verify via EntityLocker"}
+                            </button>
+                          )}
+                        </div>
+                      )}
+                      {editC && (editC.cin_verified_name || editC.cin_verified_address) && (
+                        <div className="mt-1 rounded border border-border bg-muted/30 px-2 py-1 space-y-0.5">
+                          <GovFieldRow label="Name" current={form.legal_name} fetched={editC.cin_verified_name}
+                            onUse={() => set("legal_name", editC.cin_verified_name)} />
+                          <GovFieldRow label="Address" current={form.address} fetched={editC.cin_verified_address}
+                            onUse={() => set("address", editC.cin_verified_address)} />
+                        </div>
+                      )}
                     </div>
                     <div>
-                      <Lbl>CIN Number</Lbl>
-                      <input value={form.cin_number} onChange={(e)=>set("cin_number",e.target.value.toUpperCase())} className={ic} placeholder="U12345MH2020PTC123456" maxLength={21}/>
-                    </div>
-                    <div>
-                      <Lbl>Website</Lbl>
-                      <input value={form.website} onChange={(e)=>set("website",e.target.value)} className={ic} placeholder="https://company.com"/>
+                      <FLbl>Website</FLbl>
+                      <input value={form.website} onChange={(e)=>set("website",e.target.value)} className={fInp} placeholder="https://company.com"/>
                     </div>
                   </>}
                   <div>
-                    <Lbl>PAN Number</Lbl>
-                    <input value={form.pan_number} onChange={(e)=>set("pan_number",e.target.value.toUpperCase())} className={ic} placeholder="ABCDE1234F" maxLength={10}/>
+                    <FLbl>PAN Number</FLbl>
+                    <input value={form.pan_number} onChange={(e)=>set("pan_number",e.target.value.toUpperCase())} className={fInp} placeholder="ABCDE1234F" maxLength={10}/>
                   </div>
                   <div>
-                    <Lbl>Nationality</Lbl>
-                    <select value={form.nationality} onChange={(e)=>set("nationality",e.target.value)} className={ic}>
+                    <FLbl>Nationality</FLbl>
+                    <select value={form.nationality} onChange={(e)=>set("nationality",e.target.value)} className={fInp}>
                       {["India","USA","UK","Germany","Japan","China","Singapore","Australia","Canada",
                         "France","Netherlands","South Korea","UAE","Switzerland","Other (Foreign)"]
                         .map((n)=><option key={n}>{n}</option>)}
                     </select>
                   </div>
-                  <div>
-                    <Lbl>Fee Entity Tier</Lbl>
-                    <select value={form.fee_entity_tier} onChange={(e)=>set("fee_entity_tier",e.target.value)} className={ic}>
+                  <div className="col-span-2">
+                    <FLbl>Fee Entity Tier</FLbl>
+                    <select value={form.fee_entity_tier} onChange={(e)=>set("fee_entity_tier",e.target.value)} className={fInp}>
                       <option value="">Not set</option>
                       <option value="individual_startup_msme">Individual / Startup / MSME</option>
                       <option value="large_entity_standard">Large Entity / Standard</option>
@@ -1062,18 +1170,19 @@ export default function Clients() {
                     <p className="mt-1 text-[10px] text-muted-foreground">Drives auto-populated government/professional fees on quotes &amp; invoices for this client.</p>
                   </div>
                 </div>
-              </Section>
+              </section>
 
               {/* ── 2. GST Details ────────────────────────────────────────── */}
-              <Section title="GST Details">
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="col-span-2 flex items-center justify-between">
+              <section>
+                <FSectionHeading n={editC ? 2 : 3}>GST Details</FSectionHeading>
+                <div className="grid grid-cols-4 gap-2">
+                  <div className="col-span-4 flex items-center justify-between">
                     <label className="flex items-center gap-2 cursor-pointer select-none">
                       <input type="checkbox" checked={form.has_gstin} onChange={(e)=>set("has_gstin",e.target.checked)} className="h-4 w-4 accent-current rounded"/>
-                      <span className="text-sm">Registered under GST — has GSTIN</span>
+                      <span className="text-xs">Registered under GST — has GSTIN</span>
                     </label>
                     <div className="flex items-center gap-2">
-                      <span className="text-xs text-muted-foreground">Classification:</span>
+                      <span className="text-[10px] text-muted-foreground">Classification:</span>
                       {(() => { const gm = GST_META[gstType]; return (
                         <Badge variant="outline" className={`${gm.color} text-xs font-semibold`}>{gm.label}</Badge>
                       );})()}
@@ -1081,171 +1190,193 @@ export default function Clients() {
                   </div>
 
                   {form.has_gstin && (
-                    <div className="col-span-2">
-                      <Lbl>GSTIN</Lbl>
-                      <input value={form.gstin} onChange={(e)=>set("gstin",e.target.value.toUpperCase())} className={ic} placeholder="27AAPFU0939F1ZV" maxLength={15}/>
+                    <div className="col-span-4">
+                      <FLbl>GSTIN</FLbl>
+                      <input value={form.gstin} onChange={(e)=>set("gstin",e.target.value.toUpperCase())} className={fInp} placeholder="27AAPFU0939F1ZV" maxLength={15}/>
                       {form.gstin && form.gstin.length!==15 && <p className="text-xs text-amber-500 mt-0.5">GSTIN must be exactly 15 characters</p>}
+                      {editC && form.gstin && (
+                        <div className="mt-1 flex items-center gap-2 flex-wrap">
+                          <Badge variant="outline" className={`text-[10px] ${verifyBadgeClass(editC.gstin_verification_status)}`}>
+                            GSTIN: {editC.gstin_verification_status ?? "Unverified"}
+                          </Badge>
+                          {canVerifyEntity && (
+                            <button type="button" disabled={entityVerifying} onClick={verifyEntityInForm}
+                              className="h-6 px-2 rounded-md border border-border text-[10px] text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-50">
+                              {entityVerifying ? "Verifying…" : "Verify via EntityLocker"}
+                            </button>
+                          )}
+                        </div>
+                      )}
+                      {entityVerifyMessage && <p className="text-[11px] text-muted-foreground mt-1">{entityVerifyMessage}</p>}
+                      {editC && (editC.gstin_verified_name || editC.gstin_verified_address) && (
+                        <div className="mt-1 rounded border border-border bg-muted/30 px-2 py-1 space-y-0.5">
+                          <GovFieldRow label="Name" current={form.legal_name} fetched={editC.gstin_verified_name}
+                            onUse={() => set("legal_name", editC.gstin_verified_name)} />
+                          <GovFieldRow label="Address" current={form.address} fetched={editC.gstin_verified_address}
+                            onUse={() => set("address", editC.gstin_verified_address)} />
+                        </div>
+                      )}
                     </div>
                   )}
 
                   {!isIndian && (
-                    <div className="col-span-2 flex items-center gap-2 p-3 rounded-lg bg-purple-50 border border-purple-200 text-xs text-purple-700">
+                    <div className="col-span-4 flex items-center gap-2 p-3 rounded-lg bg-purple-50 border border-purple-200 text-xs text-purple-700">
                       <Globe className="h-4 w-4 flex-shrink-0"/>
                       Foreign client — classified as <strong className="mx-1">Export</strong> (zero-rated / LUT under GST).
                     </div>
                   )}
                   {isIndian && !form.has_gstin && !isOrg && (
-                    <div className="col-span-2 flex items-center gap-2 p-3 rounded-lg bg-green-50 border border-green-200 text-xs text-green-700">
+                    <div className="col-span-4 flex items-center gap-2 p-3 rounded-lg bg-green-50 border border-green-200 text-xs text-green-700">
                       <AlertCircle className="h-4 w-4 flex-shrink-0"/>
                       Indian individual without GSTIN — classified as <strong className="mx-1">B2C</strong>.
                     </div>
                   )}
                   {isIndian && !form.has_gstin && isOrg && (
-                    <div className="col-span-2 flex items-center gap-2 p-3 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-700">
+                    <div className="col-span-4 flex items-center gap-2 p-3 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-700">
                       <AlertCircle className="h-4 w-4 flex-shrink-0"/>
                       Indian organization without GSTIN — classified as <strong className="mx-1">Unregistered</strong>.
                     </div>
                   )}
                 </div>
-              </Section>
+              </section>
 
               {/* ── 3. Contact ────────────────────────────────────────────── */}
-              <Section title="Contact Details">
-                <div className="grid grid-cols-2 gap-3">
+              <section>
+                <FSectionHeading n={editC ? 3 : 4}>Contact Details</FSectionHeading>
+                <div className="grid grid-cols-4 gap-2">
                   {isOrg && (
-                    <div className="col-span-2">
-                      <Lbl>Contact Person Name (if different from legal name)</Lbl>
-                      <input value={form.contact_name} onChange={(e)=>set("contact_name",e.target.value)} className={ic} placeholder="Primary contact at organization"/>
+                    <div className="col-span-4">
+                      <FLbl>Contact Person Name (if different from legal name)</FLbl>
+                      <input value={form.contact_name} onChange={(e)=>set("contact_name",e.target.value)} className={fInp} placeholder="Primary contact at organization"/>
                     </div>
                   )}
                   <div>
-                    <Lbl>Phone</Lbl>
-                    <input value={form.phone} onChange={(e)=>set("phone",e.target.value)} className={ic} placeholder="+91 98765 43210"/>
+                    <FLbl>Phone</FLbl>
+                    <input value={form.phone} onChange={(e)=>set("phone",e.target.value)} className={fInp} placeholder="+91 98765 43210"/>
                   </div>
                   <div>
-                    <Lbl>Email</Lbl>
-                    <input type="email" value={form.contact_email} onChange={(e)=>set("contact_email",e.target.value)} className={ic} placeholder="contact@company.com"/>
+                    <FLbl>Email</FLbl>
+                    <input type="email" value={form.contact_email} onChange={(e)=>set("contact_email",e.target.value)} className={fInp} placeholder="contact@company.com"/>
                   </div>
                   {isIndian ? (
-                    <div>
-                      <Lbl>State</Lbl>
-                      <select value={form.state} onChange={(e)=>set("state",e.target.value)} className={ic}>
+                    <div className="col-span-2">
+                      <FLbl>State</FLbl>
+                      <select value={form.state} onChange={(e)=>set("state",e.target.value)} className={fInp}>
                         <option value="">Select state…</option>
                         {INDIAN_STATES.map((s)=><option key={s}>{s}</option>)}
                       </select>
                     </div>
                   ) : (
-                    <div>
-                      <Lbl>State / Region</Lbl>
-                      <input value={form.state} onChange={(e)=>set("state",e.target.value)} className={ic} placeholder="State or region"/>
+                    <div className="col-span-2">
+                      <FLbl>State / Region</FLbl>
+                      <input value={form.state} onChange={(e)=>set("state",e.target.value)} className={fInp} placeholder="State or region"/>
                     </div>
                   )}
-                  <div className={isOrg ? "" : "col-span-1"}>
-                    {/* spacer for alignment */}
-                  </div>
-                  <div className="col-span-2">
-                    <Lbl>Address</Lbl>
-                    <textarea value={form.address} onChange={(e)=>set("address",e.target.value)} rows={2} className={tc} placeholder="Full address including city, PIN code…"/>
+                  <div className="col-span-4">
+                    <FLbl>Address</FLbl>
+                    <textarea value={form.address} onChange={(e)=>set("address",e.target.value)} rows={2} className={fTa} placeholder="Full address including city, PIN code…"/>
                   </div>
                 </div>
-              </Section>
+              </section>
 
               {/* ── 4. Business ───────────────────────────────────────────── */}
-              <Section title="Business Details">
-                <div className="grid grid-cols-2 gap-3">
+              <section>
+                <FSectionHeading n={editC ? 4 : 5}>Business Details</FSectionHeading>
+                <div className="grid grid-cols-4 gap-2">
                   <div>
-                    <Lbl>Industry</Lbl>
-                    <select value={form.industry} onChange={(e)=>set("industry",e.target.value)} className={ic}>
+                    <FLbl>Industry</FLbl>
+                    <select value={form.industry} onChange={(e)=>set("industry",e.target.value)} className={fInp}>
                       <option value="">Select…</option>
                       {INDUSTRIES.map((i)=><option key={i}>{i}</option>)}
                     </select>
                   </div>
                   <div>
-                    <Lbl>Payment Terms</Lbl>
-                    <select value={form.payment_terms} onChange={(e)=>set("payment_terms",e.target.value)} className={ic}>
+                    <FLbl>Payment Terms</FLbl>
+                    <select value={form.payment_terms} onChange={(e)=>set("payment_terms",e.target.value)} className={fInp}>
                       {PAY_TERMS.map((t)=><option key={t}>{t}</option>)}
                     </select>
                   </div>
                   <div>
-                    <Lbl>Client Manager</Lbl>
-                    <select value={form.account_manager_id} onChange={(e)=>set("account_manager_id",e.target.value)} className={ic}>
+                    <FLbl>Client Manager</FLbl>
+                    <select value={form.account_manager_id} onChange={(e)=>set("account_manager_id",e.target.value)} className={fInp}>
                       <option value="">Select manager…</option>
                       {users.map((u)=><option key={u.id} value={u.id}>{u.name}</option>)}
                     </select>
                   </div>
                   <div>
-                    <Lbl>Accounts Person</Lbl>
-                    <input value={form.accounts_person} onChange={(e)=>set("accounts_person",e.target.value)} className={ic} placeholder="Finance/accounts contact"/>
-                  </div>
-                  <div>
-                    <Lbl>Status</Lbl>
-                    <select value={form.status} onChange={(e)=>set("status",e.target.value)} className={ic}>
+                    <FLbl>Status</FLbl>
+                    <select value={form.status} onChange={(e)=>set("status",e.target.value)} className={fInp}>
                       {["Active","Inactive","Prospect","On Hold"].map((s)=><option key={s}>{s}</option>)}
                     </select>
                   </div>
+                  <div className="col-span-2">
+                    <FLbl>Accounts Person</FLbl>
+                    <input value={form.accounts_person} onChange={(e)=>set("accounts_person",e.target.value)} className={fInp} placeholder="Finance/accounts contact"/>
+                  </div>
                 </div>
-              </Section>
+              </section>
 
               {/* ── 4b. Reminders ─────────────────────────────────────────── */}
-              <Section title="Reminders" open={false}>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <Lbl>Extra reminder days (before due date)</Lbl>
-                    <input value={form.reminder_extra_days} onChange={(e)=>set("reminder_extra_days",e.target.value)} className={ic}
+              <section>
+                <FSectionHeading n={editC ? 5 : 6}>Reminders</FSectionHeading>
+                <div className="grid grid-cols-4 gap-2">
+                  <div className="col-span-2">
+                    <FLbl>Extra reminder days (before due date)</FLbl>
+                    <input value={form.reminder_extra_days} onChange={(e)=>set("reminder_extra_days",e.target.value)} className={fInp}
                       placeholder="e.g. 30 for an extra 1-month reminder"/>
-                    <p className="mt-1 text-[11px] text-muted-foreground">Comma-separated day counts, added on top of the standard 6-month/3-month renewal reminders.</p>
+                    <p className="mt-1 text-[10px] text-muted-foreground">Comma-separated day counts, added on top of the standard 6-month/3-month renewal reminders.</p>
                   </div>
-                  <div>
-                    <Lbl>Typical payment lead time (days before due date)</Lbl>
-                    <input type="number" min={0} value={form.payment_clearance_lead_days} onChange={(e)=>set("payment_clearance_lead_days",e.target.value)} className={ic}
+                  <div className="col-span-2">
+                    <FLbl>Typical payment lead time (days before due date)</FLbl>
+                    <input type="number" min={0} value={form.payment_clearance_lead_days} onChange={(e)=>set("payment_clearance_lead_days",e.target.value)} className={fInp}
                       placeholder="e.g. 14 if they usually pay 2 weeks early"/>
-                    <p className="mt-1 text-[11px] text-muted-foreground">If this client is still unpaid well past their usual pattern, they'll be escalated early.</p>
+                    <p className="mt-1 text-[10px] text-muted-foreground">If this client is still unpaid well past their usual pattern, they'll be escalated early.</p>
                   </div>
                 </div>
-              </Section>
+              </section>
 
               {/* ── 5. Banking ────────────────────────────────────────────── */}
-              <Section title="Banking Details" open={false}>
-                <div className="grid grid-cols-2 gap-3">
+              <section>
+                <FSectionHeading n={editC ? 6 : 7}>Banking Details</FSectionHeading>
+                <div className="grid grid-cols-4 gap-2">
                   <div className="col-span-2">
-                    <Lbl>Bank Name</Lbl>
-                    <input value={form.bank_name} onChange={(e)=>set("bank_name",e.target.value)} className={ic} placeholder="e.g. HDFC Bank, SBI, ICICI"/>
+                    <FLbl>Bank Name</FLbl>
+                    <input value={form.bank_name} onChange={(e)=>set("bank_name",e.target.value)} className={fInp} placeholder="e.g. HDFC Bank, SBI, ICICI"/>
                   </div>
                   <div>
-                    <Lbl>Account Number</Lbl>
-                    <input value={form.bank_account} onChange={(e)=>set("bank_account",e.target.value)} className={ic} placeholder="Account number"/>
+                    <FLbl>Account Number</FLbl>
+                    <input value={form.bank_account} onChange={(e)=>set("bank_account",e.target.value)} className={fInp} placeholder="Account number"/>
                   </div>
                   <div>
-                    <Lbl>IFSC Code</Lbl>
-                    <input value={form.bank_ifsc} onChange={(e)=>set("bank_ifsc",e.target.value.toUpperCase())} className={ic} placeholder="HDFC0001234" maxLength={11}/>
+                    <FLbl>IFSC Code</FLbl>
+                    <input value={form.bank_ifsc} onChange={(e)=>set("bank_ifsc",e.target.value.toUpperCase())} className={fInp} placeholder="HDFC0001234" maxLength={11}/>
                   </div>
                 </div>
-              </Section>
+              </section>
 
               {/* ── 6. Referral & Remarks ─────────────────────────────────── */}
-              <Section title="Referral & Remarks" open={false}>
-                <div className="space-y-3">
-                  <div>
-                    <Lbl>Referred by (Client Code)</Lbl>
-                    <div className="relative">
-                      <input
-                        value={refQ || form.referred_by_code}
-                        onChange={(e)=>{ setRefQ(e.target.value); if(!e.target.value) set("referred_by_code",""); }}
-                        className={ic} placeholder="Search code or name…"/>
-                      {refQ && (
-                        <div className="absolute z-10 top-full mt-1 w-full bg-background border border-border rounded-md shadow-lg max-h-40 overflow-y-auto">
-                          {refOptions.map((c: any) => (
-                            <button key={c.id} type="button"
-                              onClick={()=>{ set("referred_by_code",c.client_code); setRefQ(""); }}
-                              className="w-full text-left px-3 py-2 text-sm hover:bg-muted/40 flex items-center gap-2">
-                              <span className="font-mono text-gold text-xs font-semibold">{c.client_code}</span>
-                              <span className="text-muted-foreground">{c.legal_name ?? c.company_name}</span>
-                            </button>
-                          ))}
-                          {refOptions.length===0 && <p className="px-3 py-2 text-xs text-muted-foreground">No matches</p>}
-                        </div>
-                      )}
-                    </div>
+              <section>
+                <FSectionHeading n={editC ? 7 : 8}>Referral &amp; Remarks</FSectionHeading>
+                <div className="grid grid-cols-4 gap-2">
+                  <div className="col-span-2 relative">
+                    <FLbl>Referred by (Client Code)</FLbl>
+                    <input
+                      value={refQ || form.referred_by_code}
+                      onChange={(e)=>{ setRefQ(e.target.value); if(!e.target.value) set("referred_by_code",""); }}
+                      className={fInp} placeholder="Search code or name…"/>
+                    {refQ && (
+                      <div className="absolute z-10 top-full mt-1 w-full bg-background border border-border rounded-md shadow-lg max-h-40 overflow-y-auto">
+                        {refOptions.map((c: any) => (
+                          <button key={c.id} type="button"
+                            onClick={()=>{ set("referred_by_code",c.client_code); setRefQ(""); }}
+                            className="w-full text-left px-3 py-2 text-sm hover:bg-muted/40 flex items-center gap-2">
+                            <span className="font-mono text-gold text-xs font-semibold">{c.client_code}</span>
+                            <span className="text-muted-foreground">{c.legal_name ?? c.company_name}</span>
+                          </button>
+                        ))}
+                        {refOptions.length===0 && <p className="px-3 py-2 text-xs text-muted-foreground">No matches</p>}
+                      </div>
+                    )}
                     {form.referred_by_code && !refQ && (
                       <div className="flex items-center gap-2 mt-1.5 px-1">
                         <span className="font-mono text-gold text-xs font-semibold">{form.referred_by_code}</span>
@@ -1254,12 +1385,12 @@ export default function Clients() {
                       </div>
                     )}
                   </div>
-                  <div>
-                    <Lbl>Remarks</Lbl>
-                    <textarea value={form.remarks} onChange={(e)=>set("remarks",e.target.value)} rows={3} className={tc} placeholder="Internal notes, special instructions…"/>
+                  <div className="col-span-4">
+                    <FLbl>Remarks</FLbl>
+                    <textarea value={form.remarks} onChange={(e)=>set("remarks",e.target.value)} rows={2} className={fTa} placeholder="Internal notes, special instructions…"/>
                   </div>
                 </div>
-              </Section>
+              </section>
 
               {fErr && (
                 <div className="flex items-center gap-2 p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-sm text-destructive">

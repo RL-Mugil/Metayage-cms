@@ -376,11 +376,8 @@ function EmptyState({ icon: Icon, title, body }: { icon: typeof BriefcaseBusines
 
 /* ─────────────── Documents (upload / download / delete) ─────────────── */
 
-const DOC_FOLDERS = ["General", "Patents", "Trademarks", "Contracts", "Correspondence", "Invoices"]
-
 function DocumentsWorkspace({ initial, projectId, canDelete }: { initial: WorkspaceDocument[]; projectId: number; canDelete: boolean }) {
   const [docs, setDocs] = useState<WorkspaceDocument[]>(initial)
-  const [folder, setFolder] = useState("Patents")
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement | null>(null)
@@ -390,7 +387,9 @@ function DocumentsWorkspace({ initial, projectId, canDelete }: { initial: Worksp
     setBusy(true); setError(null)
     try {
       for (const file of Array.from(files)) {
-        await api.uploadDocument(file, folder, null, projectId)
+        // Case-level uploads don't need a folder — they're already scoped to this
+        // matter; the server defaults the category and auto-tags the case's client.
+        await api.uploadDocument(file, undefined, null, projectId)
       }
       const list = await api.getMatterWorkspace(projectId)
       setDocs(list.documents)
@@ -410,11 +409,6 @@ function DocumentsWorkspace({ initial, projectId, canDelete }: { initial: Worksp
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div><h2 className="text-base font-semibold">Matter documents</h2><p className="mt-1 text-sm text-muted-foreground">Files linked to this matter. Clients and staff can upload.</p></div>
         <div className="flex items-end gap-2">
-          <label className="text-xs text-muted-foreground">Folder
-            <select value={folder} onChange={(e) => setFolder(e.target.value)} className="mt-1 block h-9 rounded-md border border-border bg-background px-2 text-sm">
-              {DOC_FOLDERS.map((f) => <option key={f} value={f}>{f}</option>)}
-            </select>
-          </label>
           <input ref={fileRef} type="file" multiple hidden onChange={(e) => upload(e.target.files)} />
           <Button size="sm" disabled={busy} onClick={() => fileRef.current?.click()}>
             {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}Upload

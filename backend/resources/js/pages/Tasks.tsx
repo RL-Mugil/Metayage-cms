@@ -1,13 +1,14 @@
 import { Head, usePage } from "@inertiajs/react";
-import { useEffect, useState, useRef } from "react";
-import { createPortal } from "react-dom";
-import { Plus, Loader2, Search, X, Trash2, Download, Pencil } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Plus, Loader2, Search, X, Trash2, Download, Pencil, Paperclip } from "lucide-react";
 import AppLayout from "@/layouts/AppLayout";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { ProjectCombobox } from "@/components/project-combobox";
+import { DocumentPicker, type PickedDocument } from "@/components/document-picker";
 import { api, downloadCSV } from "@/lib/api-client";
 import { statusColor } from "@/lib/utils";
 import { fmtDate } from "@/lib/date-utils";
@@ -15,75 +16,6 @@ import { fmtDate } from "@/lib/date-utils";
 const PRIORITIES = ["Low", "Normal", "High", "Critical"];
 const STATUSES_EDIT = ["Pending", "In Progress", "Review", "Completed"];
 const blankForm = { project_id: "", title: "", description: "", assignee_id: "", priority: "Normal", due_date: "", status: "Pending" };
-
-// Portal-based searchable combobox — docket-first search
-function ProjectCombobox({ value, projects, onSelect }: {
-  value: string;
-  projects: any[];
-  onSelect: (id: string) => void;
-}) {
-  const [q, setQ]       = useState("");
-  const [open, setOpen] = useState(false);
-  const [rect, setRect] = useState<DOMRect | null>(null);
-  const inputRef        = useRef<HTMLInputElement>(null);
-
-  const selected = projects.find((p) => String(p.id) === value);
-  const filtered = projects
-    .filter((p) => {
-      if (!q) return true;
-      const lq = q.toLowerCase();
-      return (
-        (p.docket_number ?? "").toLowerCase().includes(lq) ||
-        (p.project_code ?? "").toLowerCase().includes(lq) ||
-        (p.project_name ?? "").toLowerCase().includes(lq)
-      );
-    })
-    .slice(0, 30);
-
-  useEffect(() => {
-    if (!open) return;
-    const updatePos = () => { if (inputRef.current) setRect(inputRef.current.getBoundingClientRect()); };
-    window.addEventListener("scroll", updatePos, true);
-    return () => window.removeEventListener("scroll", updatePos, true);
-  }, [open]);
-
-  const ic = "w-full h-9 rounded-md border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold";
-
-  const dropdown = open && rect
-    ? createPortal(
-        <div
-          style={{ position: "fixed", top: rect.bottom + 2, left: rect.left, width: rect.width, zIndex: 9999 }}
-          className="bg-background border border-border rounded-md shadow-2xl max-h-56 overflow-y-auto"
-        >
-          {filtered.map((p) => (
-            <button key={p.id} type="button"
-              onMouseDown={(e) => { e.preventDefault(); onSelect(String(p.id)); setOpen(false); }}
-              className={`w-full text-left px-3 py-2 text-sm hover:bg-muted/40 flex items-baseline gap-2 ${String(p.id) === value ? "bg-gold/10 text-gold font-medium" : ""}`}>
-              <span className="font-mono text-[11px] text-gold flex-shrink-0">{p.docket_number ?? p.project_code}</span>
-              <span className="truncate text-xs text-muted-foreground">{p.project_name}</span>
-            </button>
-          ))}
-          {filtered.length === 0 && <p className="px-3 py-3 text-xs text-muted-foreground text-center">No matches</p>}
-        </div>,
-        document.body
-      )
-    : null;
-
-  return (
-    <div>
-      <input
-        ref={inputRef}
-        value={open ? q : (selected ? `${selected.docket_number ?? selected.project_code} – ${selected.project_name}` : "")}
-        onFocus={() => { if (inputRef.current) setRect(inputRef.current.getBoundingClientRect()); setOpen(true); setQ(""); }}
-        onBlur={() => setTimeout(() => setOpen(false), 200)}
-        onChange={(e) => setQ(e.target.value)}
-        placeholder="Search docket number or case name…"
-        className={ic}
-      />
-      {dropdown}
-    </div>
-  );
-}
 
 export default function Tasks() {
   const { props: pageProps } = usePage() as any;
@@ -101,6 +33,7 @@ export default function Tasks() {
   const [showModal, setShowModal] = useState(false);
   const [editTask, setEditTask]   = useState<any>(null);   // null = create mode
   const [form, setForm]           = useState(blankForm);
+  const [docs, setDocs]           = useState<PickedDocument[]>([]);
   const [saving, setSaving]       = useState(false);
   const [saveError, setSaveError] = useState("");
 
@@ -139,6 +72,7 @@ export default function Tasks() {
   function openCreate() {
     setEditTask(null);
     setForm(blankForm);
+    setDocs([]);
     setSaveError("");
     setShowModal(true);
   }
@@ -154,6 +88,7 @@ export default function Tasks() {
       due_date:    t.due_date    ? t.due_date.split("T")[0] : "",
       status:      t.status      ?? "Pending",
     });
+    setDocs((t.documents ?? []).map((d: any) => ({ id: d.id, name: d.file_name })));
     setSaveError("");
     setShowModal(true);
   }
@@ -164,8 +99,9 @@ export default function Tasks() {
     try {
       const payload = {
         ...form,
-        project_id:  parseInt(form.project_id),
-        assignee_id: form.assignee_id ? parseInt(form.assignee_id) : undefined,
+        project_id:   parseInt(form.project_id),
+        assignee_id:  form.assignee_id ? parseInt(form.assignee_id) : undefined,
+        document_ids: docs.map(d => d.id),
       };
       if (editTask) {
         const updated = await api.updateTask(editTask.id, payload as any);
@@ -205,8 +141,21 @@ export default function Tasks() {
     downloadCSV(`tasks-${new Date().toISOString().slice(0,10)}.csv`, rows);
   }
 
-  const inputCls = "w-full h-9 rounded-md border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold";
   const statuses = ["All", "Pending", "In Progress", "Review", "Completed"];
+
+  // Compact, dense field style for the wide Add/Edit Task modal — same pattern
+  // as the Indian Patent Invoice/Quotation form in Financial.tsx.
+  const fInp = "w-full h-8 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold";
+  const fTa = "w-full rounded border border-border bg-background px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-gold resize-none";
+  const FLbl = ({ children, req }: { children: React.ReactNode; req?: boolean }) => (
+    <div className="text-[10px] text-muted-foreground mb-0.5">{children}{req && <span className="text-destructive ml-0.5">*</span>}</div>
+  );
+  const FSectionHeading = ({ n, children }: { n: number; children: React.ReactNode }) => (
+    <h3 className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-2 flex items-center gap-1.5">
+      <span className="w-4 h-4 rounded-full bg-gold text-black flex items-center justify-center text-[9px] font-bold">{n}</span>
+      {children}
+    </h3>
+  );
 
   return (
     <AppLayout>
@@ -225,85 +174,90 @@ export default function Tasks() {
 
       {/* ── Create / Edit Modal ────────────────────────────────────────────── */}
       {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-lg p-6 m-4">
-            <div className="flex items-center justify-between mb-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-3xl max-h-[92vh] flex flex-col">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-border flex-shrink-0">
               <h2 className="font-display text-lg font-semibold">
                 {editTask ? "Edit Task" : "New Task"}
               </h2>
               <button onClick={() => setShowModal(false)}><X className="h-5 w-5 text-muted-foreground" /></button>
             </div>
 
-            {saveError && (
-              <div className="rounded-md bg-destructive/15 border border-destructive/30 p-3 text-xs text-destructive mb-3">{saveError}</div>
-            )}
-
-            <div className="space-y-3">
-              {/* Title */}
-              <div>
-                <label className="block text-xs text-muted-foreground mb-1">Task Title *</label>
-                <input value={form.title} onChange={e => setForm(p => ({ ...p, title: e.target.value }))}
-                  placeholder="e.g. Draft patent claims" className={inputCls} />
-              </div>
-
-              {/* Case + Assignee */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs text-muted-foreground mb-1">Case / Project *</label>
-                  <ProjectCombobox
-                    value={form.project_id}
-                    projects={projects}
-                    onSelect={(id) => setForm(p => ({ ...p, project_id: id }))}
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-muted-foreground mb-1">Assignee</label>
-                  <select value={form.assignee_id} onChange={e => setForm(p => ({ ...p, assignee_id: e.target.value }))} className={inputCls}>
-                    <option value="">Assign to (me)</option>
-                    {users.map(u => <option key={u.id} value={u.id}>{u.name} ({u.role})</option>)}
-                  </select>
-                </div>
-              </div>
-
-              {/* Priority + Due Date */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs text-muted-foreground mb-1">Priority</label>
-                  <select value={form.priority} onChange={e => setForm(p => ({ ...p, priority: e.target.value }))} className={inputCls}>
-                    {PRIORITIES.map(p => <option key={p}>{p}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs text-muted-foreground mb-1">Due Date</label>
-                  <input type="date" value={form.due_date} onChange={e => setForm(p => ({ ...p, due_date: e.target.value }))} className={inputCls} />
-                </div>
-              </div>
-
-              {/* Status — only shown in edit mode */}
-              {editTask && (
-                <div>
-                  <label className="block text-xs text-muted-foreground mb-1">Status</label>
-                  <select value={form.status} onChange={e => setForm(p => ({ ...p, status: e.target.value }))} className={inputCls}>
-                    {STATUSES_EDIT.map(s => <option key={s}>{s}</option>)}
-                  </select>
-                </div>
+            <div className="flex-1 overflow-y-auto px-6 py-4 space-y-5">
+              {saveError && (
+                <div className="rounded-md bg-destructive/15 border border-destructive/30 p-3 text-xs text-destructive">{saveError}</div>
               )}
 
-              {/* Description */}
-              <div>
-                <label className="block text-xs text-muted-foreground mb-1">Description</label>
-                <textarea value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))}
-                  rows={3} placeholder="Optional details…"
-                  className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gold resize-none" />
-              </div>
+              <section>
+                <FSectionHeading n={1}>Task Details</FSectionHeading>
+                <div className="grid grid-cols-4 gap-2">
+                  <div className="col-span-4">
+                    <FLbl req>Task Title</FLbl>
+                    <input value={form.title} onChange={e => setForm(p => ({ ...p, title: e.target.value }))}
+                      placeholder="e.g. Draft patent claims" className={fInp} />
+                  </div>
+                  <div className="col-span-2">
+                    <FLbl req>Case / Project</FLbl>
+                    <ProjectCombobox
+                      value={form.project_id}
+                      projects={projects}
+                      onSelect={(id) => setForm(p => ({ ...p, project_id: id }))}
+                    />
+                  </div>
+                  <div className="col-span-2">
+                    <FLbl>Assignee</FLbl>
+                    <select value={form.assignee_id} onChange={e => setForm(p => ({ ...p, assignee_id: e.target.value }))} className={fInp}>
+                      <option value="">Assign to (me)</option>
+                      {users.map(u => <option key={u.id} value={u.id}>{u.name} ({u.role})</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <FLbl>Priority</FLbl>
+                    <select value={form.priority} onChange={e => setForm(p => ({ ...p, priority: e.target.value }))} className={fInp}>
+                      {PRIORITIES.map(p => <option key={p}>{p}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <FLbl>Due Date</FLbl>
+                    <input type="date" value={form.due_date} onChange={e => setForm(p => ({ ...p, due_date: e.target.value }))} className={fInp} />
+                  </div>
+                  {editTask && (
+                    <div>
+                      <FLbl>Status</FLbl>
+                      <select value={form.status} onChange={e => setForm(p => ({ ...p, status: e.target.value }))} className={fInp}>
+                        {STATUSES_EDIT.map(s => <option key={s}>{s}</option>)}
+                      </select>
+                    </div>
+                  )}
+                </div>
+              </section>
+
+              <section>
+                <FSectionHeading n={2}>Description &amp; Documents</FSectionHeading>
+                <div className="space-y-3">
+                  <div>
+                    <FLbl>Description</FLbl>
+                    <textarea value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))}
+                      rows={2} placeholder="Optional details…"
+                      className={fTa} />
+                  </div>
+
+                  {/* Documents — upload new, or pick from what's already on this case */}
+                  <DocumentPicker
+                    projectId={form.project_id ? parseInt(form.project_id) : null}
+                    selected={docs}
+                    onChange={setDocs}
+                  />
+                </div>
+              </section>
             </div>
 
-            <div className="flex gap-2 mt-5">
-              <Button className="bg-gold hover:bg-gold/90 text-black flex-1" onClick={handleSave} disabled={saving}>
+            <div className="flex gap-2 px-6 py-4 border-t border-border flex-shrink-0 justify-end">
+              <Button variant="outline" onClick={() => setShowModal(false)}>Cancel</Button>
+              <Button className="bg-gold hover:bg-gold/90 text-black min-w-[120px]" onClick={handleSave} disabled={saving}>
                 {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
                 {editTask ? "Save Changes" : "Create Task"}
               </Button>
-              <Button variant="outline" onClick={() => setShowModal(false)}>Cancel</Button>
             </div>
           </div>
         </div>
@@ -374,7 +328,15 @@ export default function Tasks() {
                   {filtered.map((t) => (
                     <tr key={t.id} className="border-t border-border hover:bg-muted/30">
                       <td className="px-4 py-3">
-                        <div className="font-medium">{t.title}</div>
+                        <div className="font-medium flex items-center gap-1.5">
+                          {t.title}
+                          {t.documents?.length > 0 && (
+                            <span className="flex items-center gap-0.5 text-muted-foreground" title={t.documents.map((d: any) => d.file_name).join(", ")}>
+                              <Paperclip className="h-3 w-3" />
+                              <span className="text-[10px]">{t.documents.length}</span>
+                            </span>
+                          )}
+                        </div>
                         {t.description && (
                           <div className="text-xs text-muted-foreground truncate max-w-xs">{t.description}</div>
                         )}

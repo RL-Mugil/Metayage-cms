@@ -21,6 +21,10 @@ export function DocketDeadlines({ projectId }: { projectId: number | string }) {
   const [evtType, setEvtType] = useState("");
   const [evtDate, setEvtDate] = useState("");
   const [evtNotes, setEvtNotes] = useState("");
+  // "Renewal/Maintenance Fees paid" is docketed through a dedicated endpoint (not the
+  // generic event path) — it needs the year paid through, drives the renewal schedule +
+  // stage advancement, and may auto-create the REN/RNF successor engagement on first use.
+  const [renewalPaidYear, setRenewalPaidYear] = useState("");
   const [editingEventId, setEditingEventId] = useState<number | null>(null);
   const [evtSaving, setEvtSaving] = useState(false);
   const [deadlineForm, setDeadlineForm] = useState({ title: "", due_date: "", extended_due_date: "", legal_basis: "", notes: "", risk_level: "High" as "Low" | "Medium" | "High" | "Critical" });
@@ -42,12 +46,21 @@ export function DocketDeadlines({ projectId }: { projectId: number | string }) {
 
   async function recordEvent() {
     if (!evtType || !evtDate) return;
+    if (evtType === "renewal_fee_paid" && !renewalPaidYear) return;
     setEvtSaving(true);
     try {
-      const payload = { event_type: evtType, event_date: evtDate, notes: evtNotes.trim() || undefined };
-      if (editingEventId) await api.updateDocketEvent(editingEventId, payload);
-      else await api.recordDocketEvent(projectId, payload);
-      setEvtType(""); setEvtDate(""); setEvtNotes(""); setEditingEventId(null);
+      if (evtType === "renewal_fee_paid") {
+        await api.recordRenewalPaid(projectId, {
+          paid_through_year: parseInt(renewalPaidYear, 10),
+          paid_date: evtDate,
+          notes: evtNotes.trim() || undefined,
+        });
+      } else {
+        const payload = { event_type: evtType, event_date: evtDate, notes: evtNotes.trim() || undefined };
+        if (editingEventId) await api.updateDocketEvent(editingEventId, payload);
+        else await api.recordDocketEvent(projectId, payload);
+      }
+      setEvtType(""); setEvtDate(""); setEvtNotes(""); setEditingEventId(null); setRenewalPaidYear("");
       load();
     } catch { /* ignore */ }
     finally { setEvtSaving(false); }
@@ -179,6 +192,18 @@ export function DocketDeadlines({ projectId }: { projectId: number | string }) {
             ))}
           </select>
         </div>
+        {evtType === "renewal_fee_paid" && (
+          <div>
+            <label className="text-[10px] text-muted-foreground block mb-1">Paid through year</label>
+            <select value={renewalPaidYear} onChange={(e) => setRenewalPaidYear(e.target.value)}
+              className="rounded-md border border-border bg-background px-2 py-1.5 text-xs">
+              <option value="">Select year…</option>
+              {Array.from({ length: 18 }, (_, i) => i + 3).map((year) => (
+                <option key={year} value={year}>{year}</option>
+              ))}
+            </select>
+          </div>
+        )}
         <div>
           <label className="text-[10px] text-muted-foreground block mb-1">Event date</label>
           <input type="date" value={evtDate} onChange={(e) => setEvtDate(e.target.value)}
@@ -189,7 +214,7 @@ export function DocketDeadlines({ projectId }: { projectId: number | string }) {
           <input value={evtNotes} onChange={(e) => setEvtNotes(e.target.value)} placeholder="Optional notes"
             className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs" />
         </div>
-        <button onClick={recordEvent} disabled={!evtType || !evtDate || evtSaving}
+        <button onClick={recordEvent} disabled={!evtType || !evtDate || evtSaving || (evtType === "renewal_fee_paid" && !renewalPaidYear)}
           className="rounded-md bg-primary text-primary-foreground px-3 py-1.5 text-xs font-medium disabled:opacity-50">
           {evtSaving ? "Saving…" : editingEventId ? "Update" : "Record"}
         </button>
@@ -339,7 +364,7 @@ export function DocketDeadlines({ projectId }: { projectId: number | string }) {
                   <td className="py-2 pr-3 font-medium">{docket.event_types?.[ev.event_type] ?? ev.event_type}</td>
                   <td className="py-2 pr-3 text-muted-foreground">{ev.creator?.name ?? "—"}</td>
                   <td className="py-2 text-muted-foreground italic max-w-[200px] truncate">{ev.notes ?? "—"}</td>
-                  <td className="py-2 text-right whitespace-nowrap">{canManage ? <><button onClick={() => editEvent(ev)} className="text-blue-600 hover:underline">Edit</button><button onClick={() => deleteEvent(ev.id)} className="ml-2 text-red-600 hover:underline">Delete</button></> : <span className="text-muted-foreground">View only</span>}</td>
+                  <td className="py-2 text-right whitespace-nowrap">{canManage ? <>{ev.event_type !== "renewal_fee_paid" && <button onClick={() => editEvent(ev)} className="text-blue-600 hover:underline">Edit</button>}<button onClick={() => deleteEvent(ev.id)} className="ml-2 text-red-600 hover:underline">Delete</button></> : <span className="text-muted-foreground">View only</span>}</td>
                 </tr>
               ))}
             </tbody>

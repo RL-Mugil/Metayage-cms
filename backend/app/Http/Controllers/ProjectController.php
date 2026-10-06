@@ -58,10 +58,15 @@ class ProjectController extends Controller
             $base->where($this->analystWhereClause($user, $request->input('role_filter')));
         }
 
+        $tab = (string) $request->input('tab', '');
+        if ($tab !== '') {
+            $this->applyTabFilter($base, $tab);
+        }
+
         $today = now()->toDateString();
         $rf = $request->input('role_filter', 'all');
 
-        $cacheKey = "project_stats_{$user->id}_{$user->role}_{$rf}_v" . Cache::get('dashboard_v', 0);
+        $cacheKey = "project_stats_{$user->id}_{$user->role}_{$rf}_{$tab}_v" . Cache::get('dashboard_v', 0);
         $stats = Cache::remember($cacheKey, 300, function () use ($base, $today) {
             $row = (clone $base)->selectRaw("
                 COUNT(*) as total,
@@ -101,6 +106,11 @@ class ProjectController extends Controller
             'client:id,client_code,company_name,legal_name,nationality,gst_type,state,referred_by_code,fee_entity_tier',
             'stages' => fn ($q) => $q->where('status', 'In Progress')
                                      ->select('project_id', 'stage_name', 'status', 'sequence_order'),
+            // Grant status is shared across every sibling engagement on the same real-world
+            // case via the application (see syncApplicationLegalStatus) — the list needs this
+            // to show predecessor/successor engagements as Granted without touching their own
+            // `status` column (display-only cascade, not a data mutation).
+            'patentApplication:id,legal_status',
         ]);
 
         // RBAC access filter
@@ -177,12 +187,71 @@ class ProjectController extends Controller
             count($codes) > 1 ? $query->whereIn('service_code', $codes) : $query->where('service_code', $codes[0]);
         }
 
+        // Projects-list tab (see SettingsController::updateProjectTabs) — filters to the
+        // admin-configured set of service codes for that tab, or (for the system "others"
+        // tab) to anything NOT explicitly assigned to any other tab.
+        if ($request->filled('tab')) {
+            $this->applyTabFilter($query, (string) $request->input('tab'));
+        }
+
         $sortBy = in_array($request->sort_by, ['project_name', 'docket_number', 'status', 'hard_deadline', 'filing_date'])
             ? $request->sort_by : 'hard_deadline';
         $sortDir = $request->sort_dir === 'desc' ? 'desc' : 'asc';
         $query->orderBy($sortBy, $sortDir);
 
+        // CSV export: same filters as the normal listing, but unpaginated (capped) so the
+        // exported file always reflects every match, not just the currently-viewed page.
+        if ($request->boolean('export')) {
+            return response()->json(['data' => (clone $query)->limit(20000)->get()]);
+        }
+
         return response()->json(PaginationHelper::paginate($query, $request));
+    }
+
+    /**
+     * Resolve a Projects-list "tab" key into a service_code filter on $query, per the
+     * admin-configured mapping stored in system_settings (key 'project_tabs'). The special
+     * "others" tab is the catch-all: anything not explicitly assigned to another tab.
+     * Unknown tab keys apply no filter (fail open to "All") rather than erroring.
+     */
+    private function applyTabFilter($query, string $tabKey): void
+    {
+        $tabKey = strtolower(trim($tabKey));
+        if ($tabKey === '') {
+            return;
+        }
+
+        $raw = DB::table('system_settings')->where('key', 'project_tabs')->value('value');
+        $tabs = $raw ? (json_decode($raw, true) ?: []) : [];
+
+        if ($tabKey === 'others') {
+            $assigned = [];
+            foreach ($tabs as $tab) {
+                if (($tab['key'] ?? '') === 'others') {
+                    continue;
+                }
+                foreach (($tab['codes'] ?? []) as $code) {
+                    $assigned[] = strtoupper($code);
+                }
+            }
+            if ($assigned) {
+                $query->whereNotIn('service_code', array_unique($assigned));
+            }
+            return;
+        }
+
+        foreach ($tabs as $tab) {
+            if (($tab['key'] ?? '') === $tabKey) {
+                $codes = array_map('strtoupper', $tab['codes'] ?? []);
+                if ($codes) {
+                    $query->whereIn('service_code', $codes);
+                } else {
+                    // Tab exists but has no codes assigned yet — show nothing, not everything.
+                    $query->whereRaw('1 = 0');
+                }
+                return;
+            }
+        }
     }
 
     /** Count of projects currently sitting in each lifecycle stage. */
@@ -451,7 +520,7 @@ class ProjectController extends Controller
             // India
             'PRV', 'CPT', 'CPD', 'CVP', 'CPE', 'PCT', 'NAP', 'NPE', 'NAF', 'NPA',
             'DVA', 'PAD', '9EP', '98A', '18F', '18A', 'FER', 'SER', 'TER',
-            'HRG', 'GRT', 'RNF', 'OPP', 'PGO', '27F', 'ROA', 'ERH', '24F',
+            'HRG', 'GRT', 'RNF', 'REN', 'OPP', 'PGO', '27F', 'ROA', 'ERH', '24F',
             'RPO', 'ABN', 'WDR',
             // US
             'NPV', 'NPD', 'NPP', 'NPS', 'CNS', 'DIV', 'CIP', 'OAR', 'AFT', 'RCE',
@@ -492,6 +561,21 @@ class ProjectController extends Controller
             // have any DocketEvent/DocketDeadline history of its own — unlike
             // ApplicationNumberSyncService::backfill(), which links pre-existing
             // siblings and does need relinkDocketRecords().)
+
+            // A REN/RNF engagement existing at all means the underlying patent is
+            // already granted — covers legacy/manually-entered renewal cases that
+            // never went through an explicit "granted" status transition in this
+            // system. Sets patent_granted + syncs the shared application's
+            // legal_status (and, via that, auto-generates the renewal schedule) —
+            // but deliberately never touches this project's own `status` column
+            // (that stays whatever its normal lifecycle value is), since forcing it
+            // to "Granted" would exclude it from ActionItemService's action feed.
+            if (in_array($svc, ['RNF', 'REN'], true)) {
+                $project->update(['patent_granted' => true]);
+                // No $user in scope here — this method is also called from bulk
+                // import (createFromImport()), which has no request/user context.
+                $this->syncApplicationLegalStatus($project, 'Granted', auth()->id());
+            }
         }
 
         // If an application number was supplied at creation, backfill/group it against
@@ -540,6 +624,11 @@ class ProjectController extends Controller
 
         $deadlineChanged = array_key_exists('hard_deadline', $validated)
             && $validated['hard_deadline'] !== $project->hard_deadline;
+        $oldStatus = $project->status;
+        // Not a Project column — read the real event date (if supplied by the
+        // Granted/Refused/Abandoned status-change popup) and discard before mass-assignment.
+        $statusEventDate = $validated['status_event_date'] ?? null;
+        unset($validated['status_event_date']);
 
         if (array_key_exists('patent_office_code', $validated) || array_key_exists('service_code', $validated)) {
             $validated = array_merge($validated, app(DocketNumberService::class)->recanonicalize(
@@ -550,6 +639,20 @@ class ProjectController extends Controller
         }
 
         $project->update($validated);
+
+        // A project edited to carry the REN/RNF service code is, by definition,
+        // already granted — same rule as at creation time (createProjectWithCodes()).
+        // Guarded on !patent_granted so this only fires once (the transition into
+        // REN/RNF), not on every subsequent unrelated edit — syncApplicationLegalStatus()
+        // records a fresh DocketEvent each call, which must not be duplicated.
+        if (
+            array_key_exists('service_code', $validated)
+            && in_array(strtoupper((string) $validated['service_code']), ['REN', 'RNF'], true)
+            && ! $project->patent_granted
+        ) {
+            $project->update(['patent_granted' => true]);
+            $this->syncApplicationLegalStatus($project, 'Granted', $user->id);
+        }
 
         // application_number is the one field that isn't just this project's own —
         // entering/editing it backfills every sibling engagement sharing the same
@@ -568,7 +671,7 @@ class ProjectController extends Controller
         // callers of this endpoint (Kanban drag, quick status changes, …) send
         // partial payloads that never mention these keys at all, and a blanket
         // "key exists in $validated" check would silently null them out here.
-        $applicationFieldKeys = ['application_type', 'fer_reply_date', 'certificate_issue_date', 'post_grant_journal_date'];
+        $applicationFieldKeys = ['application_type', 'fer_reply_date', 'certificate_issue_date', 'post_grant_journal_date', 'filing_date', 'grant_number'];
         $applicationFields = collect($applicationFieldKeys)
             ->filter(fn ($key) => $request->has($key))
             ->mapWithKeys(fn ($key) => [$key => $validated[$key] ?? null])
@@ -579,9 +682,9 @@ class ProjectController extends Controller
 
         // When status changes to a terminal state, clear the active pipeline stage.
         // Granted/Completed → mark all stages Completed (case is fully done).
-        // Refused/Abandoned/Closed → clear the "In Progress" stage to Pending so
+        // Refused/Abandoned/Closed/Archived → clear the "In Progress" stage to Pending so
         // the workflow history is preserved and can be resumed if status is reopened.
-        $terminalStatuses = ['Granted', 'Refused', 'Abandoned', 'Closed', 'Completed'];
+        $terminalStatuses = ['Granted', 'Refused', 'Abandoned', 'Closed', 'Completed', 'Archived'];
         if (array_key_exists('status', $validated) && in_array($validated['status'], $terminalStatuses, true)) {
             $now = Carbon::now();
             if (in_array($validated['status'], ['Granted', 'Completed'], true)) {
@@ -599,13 +702,22 @@ class ProjectController extends Controller
                     'actual_end_at'   => null,
                 ]);
             }
-            if ($validated['status'] === 'Granted') {
-                $project->update(['patent_granted' => true]);
-            }
-
             // Sync the application's legal status + auto-record docket events
             // (granted → renewal schedule + Rule 80(3) deadline; refused → review/appeal windows)
-            $this->syncApplicationLegalStatus($project, $validated['status'], $user->id);
+            $this->syncApplicationLegalStatus($project, $validated['status'], $user->id, $statusEventDate ? Carbon::parse($statusEventDate) : null);
+        }
+
+        // patent_granted must track status leaving Granted too, not just entering it —
+        // previously this only ever got set to true and never reset, so a case that was
+        // Granted and later moved to e.g. Completed (or reopened to Open/In Progress, which
+        // isn't even a "terminal" transition above) stayed stuck patent_granted=true. Single
+        // source of truth lives here server-side now; the frontend no longer guesses this.
+        if (array_key_exists('status', $validated) && $validated['status'] !== $oldStatus) {
+            if ($validated['status'] === 'Granted') {
+                $project->update(['patent_granted' => true]);
+            } elseif ($oldStatus === 'Granted') {
+                $project->update(['patent_granted' => false]);
+            }
         }
 
         // When filing_date is set, auto-advance the "Filing" stage to "Filed"
@@ -972,13 +1084,12 @@ class ProjectController extends Controller
                 "Form 27 Schedule Set (once every 3 financial years)",
                 "Completed — Patent Active",
             ],
-            $svc === 'RNF' => [
-                "Renewal Year Identified",
-                "Renewal Fee Due Date Confirmed",
-                "Renewal Decision Made by Client",
-                "Renewal Fee Paid",
-                "Completed — Next Renewal Set",
-            ],
+            // Real project data uses 'REN' for renewal engagements; 'RNF' is the code
+            // dictionary's name for the same thing (see RenewalActionController's
+            // REN/RNF dual-lookup) — both must resolve to the same stage list, kept in
+            // sync with the frontend's STAGES_BY_SERVICE and the renewal-paid docketing
+            // action (which advances these stages directly, not via a plain label write).
+            in_array($svc, ['RNF', 'REN'], true) => \App\Support\DocketRules::renewalStageNames(),
             $svc === 'RPO' => [
                 "Patent Lapse Identified (renewal fee missed — S.53)",
                 "Restoration Window Verified (18 months from lapse — S.60)",
@@ -1078,7 +1189,8 @@ class ProjectController extends Controller
      * Granted/Refused also auto-record docket events so statutory
      * deadlines (Rule 80(3) renewals, S.77(1)(f)/S.117A windows) are generated.
      */
-    private function syncApplicationLegalStatus(Project $project, string $workStatus, int $userId): void
+    /** Public so the backfill command (patents:backfill-renewal-lifecycle) can reuse it directly. */
+    public function syncApplicationLegalStatus(Project $project, string $workStatus, ?int $userId, ?Carbon $eventDate = null): void
     {
         if (!$project->patent_application_id) {
             return;
@@ -1088,13 +1200,17 @@ class ProjectController extends Controller
             return;
         }
 
+        // Falls back to now() when no explicit date is supplied — e.g. direct API updates
+        // that don't go through the Granted/Refused/Abandoned status-change popup.
+        $eventDate = $eventDate ?? Carbon::now();
+
         try {
             match ($workStatus) {
                 'Granted' => \App\Support\DocketRules::recordEvent(
-                    'granted', Carbon::now(), $project->id, $app->id, 'Auto: project status set to Granted', $userId
+                    'granted', $eventDate, $project->id, $app->id, 'Auto: project status set to Granted', $userId
                 ),
                 'Refused' => \App\Support\DocketRules::recordEvent(
-                    'refused', Carbon::now(), $project->id, $app->id, 'Auto: project status set to Refused', $userId
+                    'refused', $eventDate, $project->id, $app->id, 'Auto: project status set to Refused', $userId
                 ),
                 'Abandoned' => $app->update(['legal_status' => 'Abandoned']),
                 default     => null,
@@ -1186,6 +1302,28 @@ class ProjectController extends Controller
         'WDR'  => [],
         '24F'  => [],
     ];
+
+    /**
+     * A document-upload prompt (Grant/Refusal Order on status change, or a stage-gated
+     * draft/forms requirement) was skipped — track it so it shows up as a Task + daily
+     * reminder + in-app notification until a matching Document is uploaded (see
+     * RequiredDocumentService; auto-resolved by DocumentController::store()).
+     */
+    public function requireDocument(Request $request, $id)
+    {
+        $validated = $request->validate([
+            'category'      => 'required|string|max:100',
+            'context_label' => 'required|string|max:255',
+        ]);
+        $project = Project::findOrFail($id);
+        $this->authorize('update', $project);
+
+        app(\App\Services\RequiredDocumentService::class)->ensure(
+            $project, $validated['category'], $validated['context_label'], $request->user()->id
+        );
+
+        return response()->json(['ok' => true]);
+    }
 
     public function elevate(Request $request, $id)
     {

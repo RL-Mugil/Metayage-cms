@@ -23,6 +23,8 @@ class Client extends Model
         'pan_number', 'cin_number', 'tax_id', 'website',
         // GST
         'has_gstin', 'gstin', 'gst_type',
+        'gstin_verification_status', 'gstin_verified_at', 'gstin_verified_name', 'gstin_verified_address',
+        'cin_verification_status', 'cin_verified_at', 'cin_verified_name', 'cin_verified_address',
         // Location
         'nationality', 'state', 'address',
         'primary_jurisdiction', 'secondary_jurisdictions',
@@ -56,6 +58,8 @@ class Client extends Model
         'has_gstin'                => 'boolean',
         'portal_enabled'           => 'boolean',
         'portal_invited_at'        => 'datetime',
+        'gstin_verified_at'        => 'datetime',
+        'cin_verified_at'          => 'datetime',
         // Banking details encrypted at rest (tolerant of legacy plaintext)
         'bank_account'             => EncryptedSafe::class,
         'bank_ifsc'                => EncryptedSafe::class,

@@ -5,7 +5,11 @@ namespace App\Http\Controllers;
 use App\Models\DocketDeadline;
 use App\Models\DeadlineRuleDefinition;
 use App\Models\AuditLog;
+use App\Models\PatentApplication;
 use App\Models\Project;
+use App\Models\RenewalSchedule;
+use App\Models\User;
+use App\Services\InventionFamilyService;
 use App\Support\DocketRules;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -95,6 +99,149 @@ class DocketController extends Controller
         });
 
         return response()->json($event->load('deadlines'), 201);
+    }
+
+    /**
+     * Staff-side shortcut for recording a renewal/maintenance fee payment directly —
+     * additional to (not a replacement for) the client-portal approve/invoice/pay loop
+     * (RenewalActionController). Marks the application's RenewalSchedule rows Paid up
+     * through the given year, anchors every later year's due date to the payment date
+     * (an "anniversary of payment" rule that only kicks in prospectively, from an actual
+     * payment — it never touches an already Paid/Waived row), advances the resolved
+     * project's own renewal ProjectStage rows to match, and — if this is the first-ever
+     * renewal payment recorded on a granted application with no REN/RNF engagement yet —
+     * auto-creates that successor engagement via the existing elevation mechanism.
+     */
+    public function storeRenewalPaid(Request $request, $projectId)
+    {
+        $validated = $request->validate([
+            'paid_through_year' => 'required|integer|min:3|max:20',
+            'paid_date'         => 'required|date',
+            'notes'             => 'nullable|string|max:2000',
+        ]);
+
+        $project = Project::with('patentApplication')->findOrFail($projectId);
+        $this->authorize('update', $project);
+
+        $app = $project->patentApplication;
+        if (! $app) {
+            return response()->json(['message' => 'This case has no linked patent application yet — link an application number before docketing a renewal payment.'], 422);
+        }
+
+        $paidDate = Carbon::parse($validated['paid_date']);
+        $paidThroughYear = (int) $validated['paid_through_year'];
+        $user = $request->user();
+
+        $target = DB::transaction(function () use ($project, $app, $paidDate, $paidThroughYear, $validated, $user, $request) {
+            $target = $this->resolveRenewalTargetProject($project, $app, $user, $request);
+
+            $event = DocketRules::recordEvent(
+                'renewal_fee_paid',
+                $paidDate,
+                $target->id,
+                $app->id,
+                $validated['notes'] ?? "Renewal/maintenance fees paid through year {$paidThroughYear}",
+                $user->id
+            );
+
+            // Mark every renewal year up to and including the paid one — creating the row
+            // first if this is the very first payment recorded for the case. Never
+            // downgrade an already Paid/Waived row.
+            for ($year = 3; $year <= $paidThroughYear; $year++) {
+                $row = RenewalSchedule::firstOrCreate(
+                    ['patent_application_id' => $app->id, 'renewal_year' => $year],
+                    ['due_date' => $paidDate, 'status' => 'Unpaid']
+                );
+                if (! in_array($row->status, ['Paid', 'Waived'], true)) {
+                    $row->update(['status' => 'Paid', 'paid_at' => $paidDate]);
+                }
+            }
+
+            // Anniversary-of-payment rule for every year still ahead — applied only
+            // going forward from this real payment, and only to rows still Unpaid
+            // (mirrors the guard already in DocketRules::generateRenewalSchedule()).
+            for ($year = $paidThroughYear + 1; $year <= 20; $year++) {
+                $due = $paidDate->copy()->addYears($year - $paidThroughYear);
+                $row = RenewalSchedule::firstOrCreate(
+                    ['patent_application_id' => $app->id, 'renewal_year' => $year],
+                    ['due_date' => $due, 'status' => 'Unpaid']
+                );
+                if ($row->status === 'Unpaid' && ! $row->due_date->isSameDay($due)) {
+                    $row->update(['due_date' => $due]);
+                }
+            }
+
+            $this->advanceRenewalStages($target, $paidThroughYear, $paidDate);
+
+            AuditLog::create([
+                'user_id'    => $user->id,
+                'action'     => 'record_renewal_payment',
+                'subject_type' => 'Project',
+                'subject_id' => $target->id,
+                'metadata'   => [
+                    'source_project_id' => $project->id,
+                    'application_id'    => $app->id,
+                    'paid_through_year' => $paidThroughYear,
+                    'paid_date'         => $paidDate->toDateString(),
+                    'docket_event_id'   => $event->id,
+                    'successor_created' => $target->id !== $project->id,
+                ],
+                'ip_address' => $request->ip(),
+                'user_agent' => $request->userAgent(),
+            ]);
+
+            return $target;
+        });
+
+        return response()->json($target->fresh(['stages', 'patentApplication']));
+    }
+
+    /**
+     * Find the case's existing REN/RNF engagement, or auto-create one from whichever
+     * engagement the payment was docketed against — not service-code-specific, since the
+     * seeded service_transition_rules already cover every real path to grant (FER/SER/TER/
+     * HRG -> RNF, each gated on application legal_status = Granted).
+     */
+    private function resolveRenewalTargetProject(Project $project, PatentApplication $app, User $user, Request $request): Project
+    {
+        $existing = Project::where('patent_application_id', $app->id)
+            ->whereIn('service_code', ['REN', 'RNF'])
+            ->first();
+        if ($existing) {
+            return $existing;
+        }
+
+        return app(InventionFamilyService::class)->createBranch($project, [
+            'patent_office_code' => $project->patent_office_code,
+            'service_code'       => 'RNF',
+            'note'               => 'Auto-created on first renewal fee payment',
+            'complete_source'    => true,
+        ], $user, ['ip_address' => $request->ip(), 'user_agent' => $request->userAgent()]);
+    }
+
+    /**
+     * Advances the renewal ProjectStage rows to match a payment through $paidThroughYear —
+     * stage sequence_order N corresponds to renewal year N+2 (0 = "Not renewed", per
+     * DocketRules::renewalStageNames()). Every stage up to and including that year is
+     * Completed with the real payment date; the next one (if any) becomes the active
+     * "In Progress" stage, matching this app's existing stage-advancement convention.
+     */
+    private function advanceRenewalStages(Project $target, int $paidThroughYear, Carbon $paidDate): void
+    {
+        $completedThroughIndex = $paidThroughYear - 2;
+        foreach ($target->stages as $stage) {
+            if ($stage->sequence_order <= $completedThroughIndex) {
+                $stage->update([
+                    'status'          => 'Completed',
+                    'actual_start_at' => $stage->actual_start_at ?? $paidDate,
+                    'actual_end_at'   => $paidDate,
+                ]);
+            } elseif ($stage->sequence_order === $completedThroughIndex + 1) {
+                $stage->update(['status' => 'In Progress', 'actual_start_at' => $paidDate, 'actual_end_at' => null]);
+            } elseif ($stage->status !== 'Pending') {
+                $stage->update(['status' => 'Pending', 'actual_start_at' => null, 'actual_end_at' => null]);
+            }
+        }
     }
 
     public function updateEvent(Request $request, $eventId)
@@ -295,6 +442,7 @@ class DocketController extends Controller
             'fer_reply_date'           => 'nullable|date',
             'certificate_issue_date'   => 'nullable|date',
             'post_grant_journal_date'  => 'nullable|date',
+            'grant_number'             => 'nullable|string|max:100',
         ]);
 
         $project->patentApplication->update($validated);

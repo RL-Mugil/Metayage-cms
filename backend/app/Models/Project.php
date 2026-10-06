@@ -12,6 +12,15 @@ class Project extends Model
 {
     use BelongsToFirm, SoftDeletes;
 
+    protected static function booted(): void
+    {
+        static::saved(function (self $project): void {
+            if ($project->wasChanged(['docket_number', 'client_id'])) {
+                app(\App\Services\ZohoUinLinker::class)->linkProject($project);
+            }
+        });
+    }
+
     protected $fillable = [
         'project_code', 'matter_reference', 'client_id', 'ip_record_id', 'invention_family_id', 'project_type', 'project_name',
         'invention_title', 'technology_field', 'parent_project_id', 'priority_date',

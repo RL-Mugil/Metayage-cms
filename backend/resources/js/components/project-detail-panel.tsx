@@ -27,6 +27,9 @@ export function ProjectDetailPanel({ projectId, onClose }: Props) {
   const [lockedMsg, setLockedMsg] = useState<string | null>(null);
 
   const TERMINAL_STATUSES = ['Granted', 'Refused', 'Abandoned'];
+  // A REN/RNF engagement is normally sitting in "Granted" as its baseline, expected state —
+  // being Granted should never lock its pipeline the way it locks a prosecution matter's.
+  const isRenewalProject = (svc: string | null | undefined) => ['RNF', 'REN'].includes((svc ?? '').toUpperCase());
 
   const fetchDetail = (cancelled: { v: boolean }) => {
     setLoading(true);
@@ -46,8 +49,16 @@ export function ProjectDetailPanel({ projectId, onClose }: Props) {
 
   async function advanceToStage(stageName: string) {
     const projectStatus = data?.project?.status;
-    if (TERMINAL_STATUSES.includes(projectStatus)) {
+    if (TERMINAL_STATUSES.includes(projectStatus) && !isRenewalProject(data?.project?.service_code)) {
       setLockedMsg(`Case is ${projectStatus} — no workflow stage is applicable. Change the project status first to resume the pipeline.`);
+      return;
+    }
+    // Renewal stages are driven by the docketed renewal payment (which needs a real payment
+    // date, not "now") — this pipeline is a display of that state, not a place to set it
+    // directly. Route to the Deadlines tab, where "Renewal/Maintenance Fees paid" asks for
+    // both the year and the actual date.
+    if (isRenewalProject(data?.project?.service_code)) {
+      setLockedMsg('Renewal stages advance automatically when you docket "Renewal/Maintenance Fees paid" on the Deadlines tab — the exact payment date matters, so it isn\'t set from here.');
       return;
     }
     setLockedMsg(null);
@@ -131,7 +142,7 @@ export function ProjectDetailPanel({ projectId, onClose }: Props) {
                   {/* Terminal status banner */}
                   {(() => {
                     const projectStatus = data?.project?.status;
-                    const isTerminal = TERMINAL_STATUSES.includes(projectStatus);
+                    const isTerminal = TERMINAL_STATUSES.includes(projectStatus) && !isRenewalProject(data?.project?.service_code);
                     if (!isTerminal) return null;
                     return (
                       <div className="mb-5 flex items-start gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3">
@@ -191,7 +202,7 @@ export function ProjectDetailPanel({ projectId, onClose }: Props) {
                         const isActive = s.status === "In Progress";
                         const stages   = data.stages as any[];
                         const nextDone = stages[i + 1]?.status === "Completed";
-                        const isTerminal = TERMINAL_STATUSES.includes(data.project?.status);
+                        const isTerminal = TERMINAL_STATUSES.includes(data.project?.status) && !isRenewalProject(data.project?.service_code);
 
                         return (
                           <div key={s.id} className="flex items-start">

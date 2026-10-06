@@ -151,29 +151,62 @@ export default function Compliance() {
   const [clientId, setClientId] = useState("");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
+  const [upcomingPreset, setUpcomingPreset] = useState<number | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [newItem, setNewItem] = useState({ matter: "", type: "Patent", jurisdiction: "IPO India", deadline: "", action_required: "", client_id: "", assignee_id: "", note: "" });
+  const PER_PAGE = 50;
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
 
-  const load = useCallback(() => {
+  const load = useCallback((pg?: number) => {
     setLoading(true); setError("");
-    const params = new URLSearchParams({ per_page: "100" });
+    const p = pg ?? page;
+    const params = new URLSearchParams({ per_page: String(PER_PAGE), page: String(p) });
     if (search.trim()) params.set("search", search.trim());
     if (clientId) params.set("client_id", clientId);
     if (fromDate) params.set("from_date", fromDate);
     if (toDate) params.set("to_date", toDate);
     if (filterType !== "All") params.set((['USPTO','EPO','WIPO','IPO India','EUIPO'].includes(filterType) ? "jurisdiction" : "type"), filterType);
     if (filterStatus !== "All") params.set("status", filterStatus);
-    return api.getCompliancePaged(params).then((d) => setItems((d?.data ?? []) as unknown as ComplianceItem[]))
+    return api.getCompliancePaged(params).then((d: any) => {
+        setItems((d?.data ?? []) as unknown as ComplianceItem[]);
+        setTotal(d?.total ?? 0);
+        setPage(d?.current_page ?? p);
+      })
       .catch((e: Error) => setError(e.message || "Compliance data could not be loaded."))
       .finally(() => setLoading(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search, clientId, fromDate, toDate, filterType, filterStatus]);
+
+  // Any filter change re-queries from page 1 — paging itself calls load(pg) directly.
+  useEffect(() => {
+    load(1);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search, clientId, fromDate, toDate, filterType, filterStatus]);
 
   useEffect(() => {
-    load();
     api.getUsers().then(setUsers).catch((e: Error) => setError(e.message));
     api.getAllClients().then(setClients).catch((e: Error) => setError(e.message));
     api.getComplianceStats().then(setComplianceStats).catch(() => {});
-  }, [load]);
+  }, []);
+
+  const totalPages = Math.max(1, Math.ceil(total / PER_PAGE));
+
+  function applyUpcomingPreset(days: number) {
+    if (upcomingPreset === days) {
+      // Toggle off — clear the date range entirely.
+      setUpcomingPreset(null);
+      setFromDate("");
+      setToDate("");
+      return;
+    }
+    setUpcomingPreset(days);
+    const today = new Date();
+    const until = new Date();
+    until.setDate(until.getDate() + days);
+    setFromDate(today.toISOString().slice(0, 10));
+    setToDate(until.toISOString().slice(0, 10));
+  }
 
   async function createItem() {
     setBusy(true); setError("");
@@ -225,6 +258,29 @@ export default function Compliance() {
 
   const filtered = items;
 
+  const [exporting, setExporting] = useState(false);
+  async function exportReport() {
+    // Export ignores the current page — pull every row matching the active filters
+    // (not just what's on screen) so the report isn't silently truncated.
+    setExporting(true);
+    try {
+      const params = new URLSearchParams({ per_page: "2000", page: "1" });
+      if (search.trim()) params.set("search", search.trim());
+      if (clientId) params.set("client_id", clientId);
+      if (fromDate) params.set("from_date", fromDate);
+      if (toDate) params.set("to_date", toDate);
+      if (filterType !== "All") params.set((['USPTO','EPO','WIPO','IPO India','EUIPO'].includes(filterType) ? "jurisdiction" : "type"), filterType);
+      if (filterStatus !== "All") params.set("status", filterStatus);
+      const res: any = await api.getCompliancePaged(params);
+      const rows = ((res?.data ?? []) as ComplianceItem[]).map(i => ({ Matter: i.matter, Type: i.type, Jurisdiction: i.jurisdiction, Deadline: i.deadline, DaysLeft: i.daysLeft, Status: i.status, Action: i.action, Assignee: i.assignee }));
+      downloadCSV(`compliance-report-${new Date().toISOString().slice(0,10)}.csv`, rows);
+    } catch (e: any) {
+      setError(e.message || "Export failed.");
+    } finally {
+      setExporting(false);
+    }
+  }
+
   if (loading) return (
     <AppLayout>
       <Head title="Compliance" />
@@ -241,26 +297,54 @@ export default function Compliance() {
         eyebrow="Operations"
         title="Compliance & IP Deadlines"
         description="Track maintenance fees, renewals, and regulatory deadlines"
-        actions={<div className="flex gap-2"><Button size="sm" onClick={() => setShowCreate(true)}><Plus className="h-4 w-4 mr-2" />Add obligation</Button><Button variant="outline" size="sm" onClick={() => {
-          const rows = filtered.map(i => ({ Matter: i.matter, Type: i.type, Jurisdiction: i.jurisdiction, Deadline: i.deadline, DaysLeft: i.daysLeft, Status: i.status, Action: i.action, Assignee: i.assignee }));
-          downloadCSV(`compliance-report-${new Date().toISOString().slice(0,10)}.csv`, rows);
-        }}><Download className="h-4 w-4 mr-2" />Export Report</Button></div>}
+        actions={<div className="flex gap-2"><Button size="sm" onClick={() => setShowCreate(true)}><Plus className="h-4 w-4 mr-2" />Add obligation</Button><Button variant="outline" size="sm" disabled={exporting} onClick={exportReport}>
+          {exporting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}Export Report</Button></div>}
       />
       <div className="px-8 py-6 space-y-6">
         {kpiModal && <ComplianceKpiModal kpi={kpiModal} onClose={() => setKpiModal(null)} />}
         {showCreate && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <form className="w-full max-w-xl rounded-xl border border-border bg-background p-6 shadow-2xl space-y-4" onSubmit={(e) => { e.preventDefault(); createItem(); }}>
+          <form className="w-full max-w-3xl rounded-xl border border-border bg-background p-6 shadow-2xl space-y-4" onSubmit={(e) => { e.preventDefault(); createItem(); }}>
             <div className="flex justify-between"><div><h2 className="font-display text-lg font-semibold">Add compliance obligation</h2><p className="text-xs text-muted-foreground">Create a deadline not already generated from a case or renewal.</p></div><button type="button" onClick={() => setShowCreate(false)}><X className="h-5 w-5" /></button></div>
-            <div className="grid grid-cols-2 gap-3">
-              <input required className="col-span-2 h-9 rounded border bg-background px-3 text-sm" placeholder="Matter / reference" value={newItem.matter} onChange={e => setNewItem({...newItem, matter:e.target.value})} />
-              <select className="h-9 rounded border bg-background px-3 text-sm" value={newItem.type} onChange={e => setNewItem({...newItem,type:e.target.value})}>{["Patent","Trademark","Copyright","Design","Other"].map(v=><option key={v}>{v}</option>)}</select>
-              <input required className="h-9 rounded border bg-background px-3 text-sm" placeholder="Jurisdiction" value={newItem.jurisdiction} onChange={e => setNewItem({...newItem,jurisdiction:e.target.value})} />
-              <input required type="date" className="h-9 rounded border bg-background px-3 text-sm" value={newItem.deadline} onChange={e => setNewItem({...newItem,deadline:e.target.value})} />
-              <select className="h-9 rounded border bg-background px-3 text-sm" value={newItem.client_id} onChange={e => setNewItem({...newItem,client_id:e.target.value})}><option value="">No client</option>{clients.map(c=><option key={c.id} value={c.id}>{c.client_code} — {c.company_name || c.legal_name}</option>)}</select>
-              <textarea required className="col-span-2 rounded border bg-background px-3 py-2 text-sm" placeholder="Action required" value={newItem.action_required} onChange={e => setNewItem({...newItem,action_required:e.target.value})} />
-              <select className="h-9 rounded border bg-background px-3 text-sm" value={newItem.assignee_id} onChange={e => setNewItem({...newItem,assignee_id:e.target.value})}><option value="">Unassigned</option>{users.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}</select>
-              <input className="h-9 rounded border bg-background px-3 text-sm" placeholder="Initial note (optional)" value={newItem.note} onChange={e => setNewItem({...newItem,note:e.target.value})} />
-            </div>
+            <section>
+              <h3 className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-2 flex items-center gap-1.5">
+                <span className="w-4 h-4 rounded-full bg-gold text-black flex items-center justify-center text-[9px] font-bold">1</span>
+                Obligation Details
+              </h3>
+              <div className="grid grid-cols-4 gap-2">
+                <div className="col-span-4">
+                  <div className="text-[10px] text-muted-foreground mb-0.5">Matter / reference<span className="text-destructive ml-0.5">*</span></div>
+                  <input required className="w-full h-8 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold" placeholder="Matter / reference" value={newItem.matter} onChange={e => setNewItem({...newItem, matter:e.target.value})} />
+                </div>
+                <div>
+                  <div className="text-[10px] text-muted-foreground mb-0.5">Type</div>
+                  <select className="w-full h-8 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold" value={newItem.type} onChange={e => setNewItem({...newItem,type:e.target.value})}>{["Patent","Trademark","Copyright","Design","Other"].map(v=><option key={v}>{v}</option>)}</select>
+                </div>
+                <div>
+                  <div className="text-[10px] text-muted-foreground mb-0.5">Jurisdiction<span className="text-destructive ml-0.5">*</span></div>
+                  <input required className="w-full h-8 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold" placeholder="Jurisdiction" value={newItem.jurisdiction} onChange={e => setNewItem({...newItem,jurisdiction:e.target.value})} />
+                </div>
+                <div>
+                  <div className="text-[10px] text-muted-foreground mb-0.5">Deadline<span className="text-destructive ml-0.5">*</span></div>
+                  <input required type="date" className="w-full h-8 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold" value={newItem.deadline} onChange={e => setNewItem({...newItem,deadline:e.target.value})} />
+                </div>
+                <div>
+                  <div className="text-[10px] text-muted-foreground mb-0.5">Client</div>
+                  <select className="w-full h-8 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold" value={newItem.client_id} onChange={e => setNewItem({...newItem,client_id:e.target.value})}><option value="">No client</option>{clients.map(c=><option key={c.id} value={c.id}>{c.client_code} — {c.company_name || c.legal_name}</option>)}</select>
+                </div>
+                <div className="col-span-3">
+                  <div className="text-[10px] text-muted-foreground mb-0.5">Action required<span className="text-destructive ml-0.5">*</span></div>
+                  <textarea required className="w-full rounded border border-border bg-background px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-gold resize-none" rows={1} placeholder="Action required" value={newItem.action_required} onChange={e => setNewItem({...newItem,action_required:e.target.value})} />
+                </div>
+                <div>
+                  <div className="text-[10px] text-muted-foreground mb-0.5">Assignee</div>
+                  <select className="w-full h-8 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold" value={newItem.assignee_id} onChange={e => setNewItem({...newItem,assignee_id:e.target.value})}><option value="">Unassigned</option>{users.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}</select>
+                </div>
+                <div className="col-span-4">
+                  <div className="text-[10px] text-muted-foreground mb-0.5">Initial note (optional)</div>
+                  <input className="w-full h-8 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold" placeholder="Initial note (optional)" value={newItem.note} onChange={e => setNewItem({...newItem,note:e.target.value})} />
+                </div>
+              </div>
+            </section>
             <div className="flex justify-end gap-2"><Button type="button" variant="outline" onClick={() => setShowCreate(false)}>Cancel</Button><Button disabled={busy} type="submit">{busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Create</Button></div>
           </form>
         </div>}
@@ -299,8 +383,28 @@ export default function Compliance() {
           ))}
           <div className="relative ml-auto"><Search className="absolute left-2.5 top-2 h-4 w-4 text-muted-foreground"/><input className="h-8 w-52 rounded border bg-background pl-8 pr-2 text-xs" placeholder="Code, client, case, action" value={search} onChange={e=>setSearch(e.target.value)} /></div>
           <select className="h-8 max-w-56 rounded border bg-background px-2 text-xs" value={clientId} onChange={e=>setClientId(e.target.value)}><option value="">All clients</option>{clients.map(c=><option key={c.id} value={c.id}>{c.client_code} — {c.company_name || c.legal_name}</option>)}</select>
-          <input aria-label="Deadline from" type="date" className="h-8 rounded border bg-background px-2 text-xs" value={fromDate} onChange={e=>setFromDate(e.target.value)} />
-          <input aria-label="Deadline to" type="date" className="h-8 rounded border bg-background px-2 text-xs" value={toDate} onChange={e=>setToDate(e.target.value)} />
+        </div>
+
+        {/* Date range */}
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs text-muted-foreground">Upcoming in:</span>
+          {[90, 45, 30, 15, 7].map((d) => (
+            <button key={d} onClick={() => applyUpcomingPreset(d)}
+              className={`px-3 py-1 rounded text-xs font-medium border transition-colors ${upcomingPreset === d ? "bg-gold text-black border-gold" : "border-border text-muted-foreground hover:text-foreground"}`}>
+              {d} days
+            </button>
+          ))}
+          <div className="h-4 w-px bg-border mx-1" />
+          <input aria-label="Deadline from" type="date" className="h-8 rounded border bg-background px-2 text-xs"
+            value={fromDate} onChange={e => { setUpcomingPreset(null); setFromDate(e.target.value); }} />
+          <span className="text-xs text-muted-foreground">to</span>
+          <input aria-label="Deadline to" type="date" className="h-8 rounded border bg-background px-2 text-xs"
+            value={toDate} onChange={e => { setUpcomingPreset(null); setToDate(e.target.value); }} />
+          {(fromDate || toDate) && (
+            <button onClick={() => { setUpcomingPreset(null); setFromDate(""); setToDate(""); }} className="text-xs text-muted-foreground hover:text-foreground underline">
+              Clear dates
+            </button>
+          )}
         </div>
 
         {/* Table */}
@@ -395,6 +499,18 @@ export default function Compliance() {
             </table>
           </CardContent>
         </Card>
+        {total > 0 && (
+          <div className="flex items-center justify-between text-xs text-muted-foreground px-1">
+            <span>Showing {items.length ? (page - 1) * PER_PAGE + 1 : 0}–{(page - 1) * PER_PAGE + items.length} of {total}</span>
+            <div className="flex items-center gap-1">
+              <button onClick={() => load(page - 1)} disabled={page <= 1}
+                className="p-1.5 rounded border border-border disabled:opacity-40 hover:bg-muted/40"><ChevronLeft className="h-3.5 w-3.5" /></button>
+              <span className="px-2">Page {page} / {totalPages}</span>
+              <button onClick={() => load(page + 1)} disabled={page >= totalPages}
+                className="p-1.5 rounded border border-border disabled:opacity-40 hover:bg-muted/40"><ChevronRight className="h-3.5 w-3.5" /></button>
+            </div>
+          </div>
+        )}
       </div>
     </AppLayout>
   );

@@ -9,6 +9,7 @@ class ExpenseClaim extends Model
 {
     protected $fillable = [
         'employee_id',
+        'reimbursement_type_id',
         'category',
         'amount',
         'currency',
@@ -17,6 +18,7 @@ class ExpenseClaim extends Model
         'receipt_path',
         'status',
         'approved_by_id',
+        'payslip_id',
     ];
 
     protected $casts = [
@@ -32,5 +34,16 @@ class ExpenseClaim extends Model
     public function approvedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'approved_by_id');
+    }
+
+    public function reimbursementType(): BelongsTo
+    {
+        return $this->belongsTo(ReimbursementType::class);
+    }
+
+    /** The payroll run payslip this claim was paid out on, once swept in. */
+    public function payslip(): BelongsTo
+    {
+        return $this->belongsTo(Payslip::class);
     }
 }

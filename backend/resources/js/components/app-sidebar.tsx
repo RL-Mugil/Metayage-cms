@@ -147,7 +147,7 @@ const groups = [
     items: [
       { to: "/financial", title: "Financial Suite", icon: Wallet },
       { to: "/pending-payments", title: "Pending Payments", icon: CreditCard },
-      { to: "/analytics", title: "Analytics", icon: BarChart3 },
+      { to: "/analytics", title: "Financial Analytics", icon: BarChart3 },
       { to: "/reports", title: "Reports", icon: FileBarChart2 },
     ],
   },
@@ -170,7 +170,8 @@ const groups = [
       { to: "/hrms/attendance",  title: "Attendance",   icon: CalendarDays },
       { to: "/hrms/leave",       title: "Leave",        icon: ListChecks },
       { to: "/hrms/employees",   title: "Employees",    icon: Users,       roles: ["super_admin","partner","hr","finance","galvanizer"] },
-      { to: "/hrms/payroll",     title: "Payroll",      icon: Wallet,      roles: ["super_admin","partner","hr","finance"] },
+      { to: "/hrms/payroll",     title: "Payroll",      icon: Wallet },
+      { to: "/payroll-portal",  title: "Payroll Portal", icon: Wallet,     roles: ["super_admin","partner","finance"] },
       { to: "/hrms/performance", title: "Performance",  icon: BarChart3,   roles: ["super_admin","partner","hr","finance","galvanizer"] },
       { to: "/hrms/recruitment", title: "Recruitment",  icon: Briefcase,   roles: ["super_admin","partner","hr","finance"] },
       { to: "/hrms/offboarding", title: "Offboarding",  icon: Scale,       roles: ["super_admin","partner","hr","finance"] },
@@ -261,7 +262,7 @@ export function AppSidebar() {
                   }).map((it) => (
                     <SidebarMenuItem key={it.to}>
                       <SidebarMenuButton asChild isActive={isActive(it.to)} tooltip={it.title}>
-                        <Link href={it.to}>
+                        <Link href={it.to} {...(it.to === "/payroll-portal" ? { target: "_blank" } : {})}>
                           <it.icon className="h-4 w-4" />
                           <span>{it.title}</span>
                           {it.to === "/discussions" && chatUnread > 0 && (
