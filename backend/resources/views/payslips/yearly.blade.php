@@ -135,12 +135,11 @@
     <p>EMPLOYEE'S SIGNATURE: ____________________________ &nbsp;&nbsp;&nbsp; <strong>{{ strtoupper($employee->full_name) }}</strong> — {{ $employee->designation->title ?? '' }}</p>
     <p>For any enquiries: accounts@myipstrategy.com &nbsp;&nbsp;&nbsp; Electronically Generated at {{ $generatedAt->format('h:i A') }} UTC on {{ $generatedAt->format('d M Y') }}</p>
     @if ($internalSignature && $internalSignature->signedBy)
-      <div style="margin-top:12px;margin-left:auto;width:245px;border:1px solid #39a96b;border-radius:6px;padding:8px;color:#146c3a;background:#f0fff5;text-align:right">
-        <div style="font-size:24px;font-weight:bold;color:#168447">✓</div>
-        <div style="font-size:10px;font-weight:bold">INTERNALLY SIGNED &amp; VERIFIED</div>
-        <div style="font-size:9px">Accounts: {{ $internalSignature->signedBy->name }}</div>
-        <div style="font-size:8px">{{ $verifiedSlipCount }} monthly payslip(s) verified</div>
-        <div style="font-size:8px">Internal approval signature — not a statutory DSC</div>
+      <div style="position:relative;margin-top:12px;margin-left:auto;width:275px;height:62px;border:1px dotted #777;padding:5px 56px 4px 7px;color:#222;background:#fff;text-align:left;font-family:DejaVu Sans,sans-serif">
+        <div style="font-size:15px;line-height:17px">Signature valid</div>
+        <div style="font-size:12px;line-height:16px;white-space:nowrap">Digitally signed by <strong>{{ $internalSignature->signedBy->name }}</strong></div>
+        <div style="font-size:10px;line-height:13px">Date: {{ $internalSignature->signed_at?->format('d/m/Y h:i A') }} IST</div>
+        <div style="position:absolute;right:5px;top:1px;font-size:57px;line-height:58px;color:#159447;font-family:DejaVu Sans,sans-serif;transform:rotate(-8deg)">&#10003;</div>
       </div>
     @endif
   </div>
