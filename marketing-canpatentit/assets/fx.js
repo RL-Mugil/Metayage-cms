@@ -52,13 +52,98 @@
     return { v: v, e: e };
   }
 
+  /* Per-page shapes: each service and technology page gets its own wireframe object. */
+  function lattice() {
+    var v = [], e = [], x, y, z, idx = function (a, b, c) { return a * 9 + b * 3 + c; };
+    for (x = 0; x < 3; x++) { for (y = 0; y < 3; y++) { for (z = 0; z < 3; z++) { v.push([(x - 1) * 0.7, (y - 1) * 0.7, (z - 1) * 0.7]); } } }
+    for (x = 0; x < 3; x++) { for (y = 0; y < 3; y++) { for (z = 0; z < 3; z++) {
+      if (x < 2) { e.push([idx(x, y, z), idx(x + 1, y, z)]); }
+      if (y < 2) { e.push([idx(x, y, z), idx(x, y + 1, z)]); }
+      if (z < 2) { e.push([idx(x, y, z), idx(x, y, z + 1)]); }
+    } } }
+    return { v: v, e: e };
+  }
+  function helix() {
+    var v = [], e = [], N = 44, i;
+    for (i = 0; i < N; i++) {
+      var y = -1.3 + (2.6 * i) / (N - 1), t = i * 0.42;
+      v.push([Math.cos(t) * 0.6, y, Math.sin(t) * 0.6]);
+      v.push([Math.cos(t + Math.PI) * 0.6, y, Math.sin(t + Math.PI) * 0.6]);
+    }
+    for (i = 0; i < N - 1; i++) { e.push([i * 2, (i + 1) * 2], [i * 2 + 1, (i + 1) * 2 + 1]); }
+    for (i = 0; i < N; i += 2) { e.push([i * 2, i * 2 + 1]); }
+    return { v: v, e: e };
+  }
+  function rings() {
+    var v = [], e = [], N = 48, k, i;
+    for (k = 0; k < 3; k++) {
+      for (i = 0; i < N; i++) {
+        var a = (i / N) * Math.PI * 2, c = Math.cos(a), s = Math.sin(a), r = 1 - k * 0.14;
+        v.push(k === 0 ? [c * r, s * r, 0] : k === 1 ? [c * r, 0, s * r] : [0, c * r, s * r]);
+        e.push([k * N + i, k * N + (i + 1) % N]);
+      }
+    }
+    return { v: v, e: e };
+  }
+  function crystal() {
+    var v = [[1.15, 0, 0], [-1.15, 0, 0], [0, 1.15, 0], [0, -1.15, 0], [0, 0, 1.15], [0, 0, -1.15]], e = [], i, j;
+    for (i = 0; i < 6; i++) { for (j = i + 1; j < 6; j++) { if (Math.floor(i / 2) !== Math.floor(j / 2)) { e.push([i, j]); } } }
+    var c = [[-1, -1, -1], [1, -1, -1], [1, 1, -1], [-1, 1, -1], [-1, -1, 1], [1, -1, 1], [1, 1, 1], [-1, 1, 1]];
+    c.forEach(function (p) { v.push([p[0] * 0.5, p[1] * 0.5, p[2] * 0.5]); });
+    [[0, 1], [1, 2], [2, 3], [3, 0], [4, 5], [5, 6], [6, 7], [7, 4], [0, 4], [1, 5], [2, 6], [3, 7]].forEach(function (p) { e.push([6 + p[0], 6 + p[1]]); });
+    return { v: v, e: e };
+  }
+  function sheets() {
+    var v = [], e = [], k;
+    for (k = 0; k < 5; k++) {
+      var z = -0.8 + k * 0.4, a = k * 0.13, c = Math.cos(a), s = Math.sin(a), b = v.length;
+      [[-0.9, -0.65], [0.9, -0.65], [0.9, 0.65], [-0.9, 0.65], [-0.6, -0.15], [0.45, -0.15], [-0.6, 0.2], [0.2, 0.2]].forEach(function (p) { v.push([p[0] * c - p[1] * s, p[0] * s + p[1] * c, z]); });
+      e.push([b, b + 1], [b + 1, b + 2], [b + 2, b + 3], [b + 3, b], [b + 4, b + 5], [b + 6, b + 7]);
+    }
+    return { v: v, e: e };
+  }
+  function layers() {
+    var v = [], e = [], l, a, b, xs = [-1.0, -0.33, 0.33, 1.0], N = 3;
+    for (l = 0; l < 4; l++) { for (a = 0; a < N; a++) { for (b = 0; b < N; b++) { v.push([xs[l], (a - 1) * 0.6, (b - 1) * 0.6]); } } }
+    for (l = 0; l < 3; l++) {
+      for (a = 0; a < N * N; a++) {
+        e.push([l * 9 + a, (l + 1) * 9 + a], [l * 9 + a, (l + 1) * 9 + (a + 1) % 9], [l * 9 + a, (l + 1) * 9 + (a + 4) % 9]);
+      }
+    }
+    return { v: v, e: e };
+  }
+  function network() {
+    var v = [], e = [], N = 34, i, j, seen = {};
+    for (i = 0; i < N; i++) {
+      var y = 1 - (2 * i + 1) / N, r = Math.sqrt(1 - y * y), t = i * 2.399963;
+      v.push([Math.cos(t) * r, y, Math.sin(t) * r]);
+    }
+    for (i = 0; i < N; i++) {
+      var d = [];
+      for (j = 0; j < N; j++) { if (j !== i) { d.push([j, Math.pow(v[i][0] - v[j][0], 2) + Math.pow(v[i][1] - v[j][1], 2) + Math.pow(v[i][2] - v[j][2], 2)]); } }
+      d.sort(function (a, b) { return a[1] - b[1]; });
+      for (j = 0; j < 3; j++) {
+        var k = i < d[j][0] ? i + '_' + d[j][0] : d[j][0] + '_' + i;
+        if (!seen[k]) { seen[k] = 1; e.push([i, d[j][0]]); }
+      }
+    }
+    return { v: v, e: e };
+  }
+  var SHAPES = { sphere: function () { return icosphere(1); }, torus: function () { return torus(30, 12, 1, 0.42); }, lattice: lattice, helix: helix, rings: rings, crystal: crystal, sheets: sheets, layers: layers, network: network };
+
   /* ---------- Scene ---------- */
   var pointer = { x: 0.5, y: 0.5 };
   window.addEventListener('pointermove', function (ev) { pointer.x = ev.clientX / window.innerWidth; pointer.y = ev.clientY / window.innerHeight; }, { passive: true });
 
   function Scene(canvas) {
-    var shape = canvas.getAttribute('data-shape') === 'torus' ? torus(30, 12, 1, 0.42) : icosphere(1);
-    var inner = icosphere(0);
+    var shapeName = canvas.getAttribute('data-shape') || 'sphere';
+    var shape = (SHAPES[shapeName] || SHAPES.sphere)();
+    // Scale every shape so its farthest vertex sits at radius 1; sizes then match across pages.
+    var maxR = 0;
+    shape.v.forEach(function (p) { maxR = Math.max(maxR, Math.sqrt(p[0] * p[0] + p[1] * p[1] + p[2] * p[2])); });
+    if (maxR > 0) { shape.v = shape.v.map(function (p) { return [p[0] / maxR, p[1] / maxR, p[2] / maxR]; }); }
+    var inner = (shapeName === 'sphere' || shapeName === 'torus') ? icosphere(0) : null;
+    var isPage = !!canvas.closest('.cpi-page-hero');
     var ctx = canvas.getContext('2d');
     var w = 0, h = 0, dpr = 1, rx = 0.3, ry = 0, visible = true, last = 0;
     var dust = [];
@@ -84,9 +169,8 @@
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, w, h);
       var wide = w > 820;
-      var isTorus = canvas.getAttribute('data-shape') === 'torus';
-      var cx = wide ? w * (isTorus ? 0.82 : 0.72) : w * 0.5, cy = wide ? h * 0.5 : h * 0.62;
-      var size = Math.min(w * (wide ? (isTorus ? 0.2 : 0.3) : 0.42), h * (isTorus ? 0.36 : 0.42));
+      var cx = wide ? w * (isPage ? 0.86 : 0.72) : w * 0.5, cy = wide ? h * 0.5 : h * 0.62;
+      var size = Math.min(w * (wide ? (isPage ? 0.15 : 0.3) : 0.42), h * (isPage ? 0.3 : 0.42));
       var autoY = t * 0.00018, autoX = Math.sin(t * 0.0003) * 0.12;
       var tx = 0.25 + (pointer.y - 0.5) * (coarse ? 0 : 0.9) + autoX;
       var ty = autoY + (pointer.x - 0.5) * (coarse ? 0 : 1.6);
@@ -119,7 +203,7 @@
       ctx.fillStyle = halo; ctx.fillRect(0, 0, w, h);
 
       render(shape, size, 1, false);
-      render(inner, size * 0.42, 0.7, true);
+      if (inner) { render(inner, size * 0.42, 0.7, true); }
 
       // orbiting dust gives depth cues
       dust.forEach(function (d) {

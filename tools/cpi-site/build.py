@@ -189,9 +189,19 @@ def crumbs(items):
     return h, {"@context": "https://schema.org", "@type": "BreadcrumbList", "itemListElement": ld}
 
 
-def page_hero(crumb_html, eyebrow, h1, lead, actions=True):
+SHAPES = {
+    "ai-machine-learning": "layers", "semiconductors-quantum": "lattice", "medtech-biotechnology": "helix",
+    "climate-energy": "rings", "enterprise-software-security": "crystal",
+    "patentability-prior-art": "sphere", "provisional-applications": "sheets",
+    "us-patent-prosecution": "torus", "ip-strategy-diligence": "network",
+}
+
+
+def page_hero(crumb_html, eyebrow, h1, lead, actions=True, slug=None):
     buttons = f'<div class="cpi-hero-actions"><a class="cpi-button-lime" href="/book">Book a consultation {icon("arrow-right")}</a><a class="cpi-hero-secondary" href="/patentability-check">Try the self-check {icon("arrow-right")}</a></div>' if actions else ""
-    return f'''<section class="cpi-page-hero"><canvas class="cpi-3d" data-shape="torus" aria-hidden="true"></canvas><div class="cpi-section">{crumb_html}<div class="cpi-eyebrow cpi-eyebrow-light"><span></span> {esc(eyebrow)}</div><h1>{h1}</h1><p>{esc(lead)}</p>{buttons}</div></section>'''
+    shape = SHAPES.get(slug, "torus")
+    art = f' has-art" style="--hero-art:url(\'/assets/heroes/{slug}.jpg\')' if slug in SHAPES else ""
+    return f'''<section class="cpi-page-hero{art}"><canvas class="cpi-3d" data-shape="{shape}" aria-hidden="true"></canvas><div class="cpi-section">{crumb_html}<div class="cpi-eyebrow cpi-eyebrow-light"><span></span> {esc(eyebrow)}</div><h1>{h1}</h1><p>{esc(lead)}</p>{buttons}</div></section>'''
 
 
 def faq_block(items, heading="Common questions"):
@@ -216,7 +226,7 @@ def detail_page(kind, item, siblings):
     bl_h, bl = item["bullets"]
     bullets = f'<aside class="cpi-side-card"><h3>{esc(bl_h)}</h3><ul>' + "".join(f"<li>{icon('check')} {esc(x)}</li>" for x in bl) + "</ul></aside>"
     rel = "".join(f'<a class="cpi-related" href="/{base}/{s["slug"]}"><span>{esc(s["short"])}</span>{icon("arrow-up-right")}</a>' for s in siblings if s["slug"] != item["slug"])
-    body = page_hero(c_html, "Services" if kind == "service" else "Technology area", esc(item["title"]), item["lead"]) + f'''
+    body = page_hero(c_html, "Services" if kind == "service" else "Technology area", esc(item["title"]), item["lead"], slug=item["slug"]) + f'''
     <section class="cpi-section cpi-detail"><div class="cpi-prose">{secs}{faq_block(item["faq"])}<p class="cpi-fine">{esc(TECH_NOTE)}</p></div>{bullets}</section>
     <section class="cpi-section cpi-related-wrap"><h2>{"Other services" if kind == "service" else "Other technology areas"}</h2><div class="cpi-related-grid">{rel}</div></section>
     {cta_band()}'''
