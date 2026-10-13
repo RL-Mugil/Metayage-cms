@@ -26,8 +26,17 @@ class HtmlSanitizer
 
     private const ALIGNS = ['left', 'right', 'center', 'justify'];
 
-    public static function clean(string $html): string
+    /** Extra tags allowed only when the caller opts in (articles): images hosted on this site, with captions. */
+    private const IMAGE_TAGS = ['img', 'figure', 'figcaption'];
+
+    /** Only images uploaded through the admin (stored under /insights/img/) may be embedded. */
+    private const IMAGE_SRC = '#^/insights/img/[a-z0-9][a-z0-9._-]{0,100}\.(?:webp|jpe?g|png|gif)$#i';
+
+    private static bool $images = false;
+
+    public static function clean(string $html, bool $allowImages = false): string
     {
+        self::$images = $allowImages;
         $html = trim($html);
         if ($html === '') {
             return '';
@@ -68,9 +77,19 @@ class HtmlSanitizer
                     continue;
                 }
 
+                if ($tag === 'img' && self::$images && ! preg_match(self::IMAGE_SRC, trim((string) $child->getAttribute('src')))) {
+                    $node->removeChild($child); // not one of our uploads: never embed remote or data: images
+
+                    continue;
+                }
+
                 self::walk($child);
 
-                if (! in_array($tag, self::ALLOWED_TAGS, true)) {
+                $allowed = self::ALLOWED_TAGS;
+                if (self::$images) {
+                    $allowed = array_merge($allowed, self::IMAGE_TAGS);
+                }
+                if (! in_array($tag, $allowed, true)) {
                     // Unwrap: keep the (already sanitized) children, drop the element.
                     while ($child->firstChild) {
                         $node->insertBefore($child->firstChild, $child);
@@ -90,6 +109,8 @@ class HtmlSanitizer
     {
         $style = [];
         $href = null;
+        $src = null;
+        $alt = '';
 
         foreach (iterator_to_array($el->attributes) as $attr) {
             $name = strtolower($attr->nodeName);
@@ -103,6 +124,10 @@ class HtmlSanitizer
                 $style['color'] = $value;
             } elseif ($name === 'href' && $tag === 'a') {
                 $href = $value;
+            } elseif ($tag === 'img' && $name === 'src') {
+                $src = $value;
+            } elseif ($tag === 'img' && $name === 'alt') {
+                $alt = mb_substr($value, 0, 200);
             }
         }
 
@@ -113,6 +138,12 @@ class HtmlSanitizer
         if ($tag === 'a' && $href !== null && preg_match('#^(https?://|mailto:|/|\#)#i', $href)) {
             $el->setAttribute('href', $href);
             $el->setAttribute('rel', 'noopener noreferrer');
+        }
+
+        if ($tag === 'img' && $src !== null) {
+            $el->setAttribute('src', $src);
+            $el->setAttribute('alt', $alt);
+            $el->setAttribute('loading', 'lazy');
         }
 
         if ($style) {

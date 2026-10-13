@@ -43,6 +43,7 @@ class InsightPublisher
 
         File::put($dir.'/index.json', json_encode($rows->map(fn ($r) => [
             'slug' => $r->slug, 'title' => $r->title, 'excerpt' => $r->excerpt,
+            'cover' => $r->cover_image, 'cover_alt' => $r->cover_alt ?: $r->title,
             'date_label' => $r->published_at?->format('j M Y'), 'published_at' => $r->published_at?->toIso8601String(),
         ])->values(), JSON_UNESCAPED_UNICODE));
 
@@ -61,8 +62,12 @@ class InsightPublisher
         $url = 'https://canpatentit.com/insights/'.$a->slug;
         $date = $a->published_at?->format('j F Y') ?? '';
 
+        $cover = $a->cover_image
+            ? '<figure class="cpi-article-cover"><img src="'.e($a->cover_image).'" alt="'.e($a->cover_alt ?: $a->title).'"></figure>'
+            : '';
         $body = '<article class="cpi-article"><nav class="cpi-crumbs" aria-label="Breadcrumb"><a href="/insights">Insights</a></nav>'
             .'<h1>'.e($a->title).'</h1><p class="meta">'.e(trim($date.($a->author ? ' · '.$a->author : ''), ' ·')).'</p>'
+            .$cover
             .'<div class="cpi-prose">'.$a->body_html.'</div>'
             .'<p class="cpi-fine">General information only. Not legal advice, and no attorney–client relationship is created by reading this article.</p>'
             .'<p><a class="cpi-button-lime" href="/book">Book a consultation</a></p></article>';
@@ -70,6 +75,7 @@ class InsightPublisher
         $ld = json_encode([
             '@context' => 'https://schema.org', '@type' => 'Article', 'headline' => $a->title, 'description' => $desc,
             'datePublished' => $a->published_at?->toIso8601String(), 'dateModified' => $a->updated_at?->toIso8601String(),
+            'image' => $a->cover_image ? 'https://canpatentit.com'.$a->cover_image : 'https://canpatentit.com/assets/og-image.png',
             'author' => ['@type' => 'Organization', 'name' => $a->author ?: 'CanPatentIt'], 'mainEntityOfPage' => $url,
             'publisher' => ['@type' => 'Organization', 'name' => 'CanPatentIt', 'logo' => ['@type' => 'ImageObject', 'url' => 'https://canpatentit.com/assets/logo.png']],
         ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
@@ -80,6 +86,7 @@ class InsightPublisher
             '@@TITLE@@' => e($title),
             '@@DESC@@' => e($desc),
             '@@SLUG@@' => e($a->slug),
+            '@@OGIMAGE@@' => $a->cover_image ? 'https://canpatentit.com'.e($a->cover_image) : 'https://canpatentit.com/assets/og-image.png',
             '<!--@@HEAD@@-->' => '<script type="application/ld+json">'.$ld.'</script>',
             '@@BODY@@' => $body,
         ]);

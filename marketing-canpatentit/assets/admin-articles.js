@@ -39,9 +39,41 @@
 
   function field(label, id, node) { var l = el('label'); l.htmlFor = id; l.appendChild(document.createTextNode(label)); node.id = id; l.appendChild(node); return l; }
 
+  // Shrinks an image in the browser (max 1600px, WebP/JPEG) so uploads stay small and fast.
+  function prepareImage(file) {
+    return new Promise(function (resolve, reject) {
+      if (!/^image\/(jpeg|png|webp|gif)$/.test(file.type)) { reject(new Error('Choose a JPG, PNG, WebP or GIF image.')); return; }
+      var url = URL.createObjectURL(file), img = new Image();
+      img.onload = function () {
+        var scale = Math.min(1, 1600 / img.width), q = 0.85, tries = 0;
+        function attempt() {
+          var c = document.createElement('canvas');
+          c.width = Math.max(1, Math.round(img.width * scale)); c.height = Math.max(1, Math.round(img.height * scale));
+          c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+          c.toBlob(function (b) {
+            if (!b) { URL.revokeObjectURL(url); reject(new Error('Could not process that image.')); return; }
+            if (b.size > 900 * 1024 && tries < 4) { tries++; scale *= 0.8; q = Math.max(0.6, q - 0.08); attempt(); return; }
+            URL.revokeObjectURL(url); resolve(b);
+          }, 'image/webp', q);
+        }
+        attempt();
+      };
+      img.onerror = function () { URL.revokeObjectURL(url); reject(new Error('That file could not be read as an image.')); };
+      img.src = url;
+    });
+  }
+
+  function uploadFile(file) {
+    return prepareImage(file).then(function (blob) {
+      var fd = new FormData();
+      fd.append('image', blob, 'image.' + (blob.type === 'image/webp' ? 'webp' : 'jpg'));
+      return A().upload('/cpi-admin/images', fd);
+    });
+  }
+
   function edit(id) {
     pane.textContent = '';
-    var load = id ? A().call('GET', '/cpi-admin/articles/' + id) : Promise.resolve({ title: '', slug: '', excerpt: '', body_html: '', meta_title: '', meta_description: '', author: 'CanPatentIt', status: 'draft' });
+    var load = id ? A().call('GET', '/cpi-admin/articles/' + id) : Promise.resolve({ title: '', slug: '', excerpt: '', cover_image: '', cover_alt: '', body_html: '', meta_title: '', meta_description: '', author: 'CanPatentIt', status: 'draft' });
     load.then(function (a) {
       var back = el('button', 'adm-btn', 'Back to list'); back.type = 'button'; back.addEventListener('click', list); pane.appendChild(back);
       pane.appendChild(el('h2', null, id ? 'Edit article' : 'New article'));
@@ -57,10 +89,57 @@
       form.appendChild(field('Short summary (shown on the list and in search)', 'a-excerpt', excerpt));
       form.appendChild(field('Author', 'a-author', author));
 
+      // Cover image: shown at the top of the article and as the picture on the Insights list.
+      var cover = { url: a.cover_image || '', alt: a.cover_alt || '' };
+      var coverBox = el('div', 'adm-cover');
+      var preview = el('div', 'adm-cover-preview');
+      var coverAlt = el('input'); coverAlt.maxLength = 200; coverAlt.value = cover.alt; coverAlt.placeholder = 'Describe the picture for people who cannot see it';
+      coverAlt.addEventListener('input', function () { cover.alt = coverAlt.value; });
+      var pick = el('input'); pick.type = 'file'; pick.accept = 'image/jpeg,image/png,image/webp,image/gif'; pick.hidden = true;
+      var pickBtn = el('button', 'adm-btn', 'Choose cover image'); pickBtn.type = 'button';
+      var rmBtn = el('button', 'adm-btn', 'Remove'); rmBtn.type = 'button';
+      var coverMsg = el('span', 'adm-muted');
+      function paintCover() {
+        preview.textContent = '';
+        if (cover.url) { var im = document.createElement('img'); im.src = cover.url; im.alt = ''; preview.appendChild(im); }
+        else { preview.appendChild(el('span', 'adm-muted', 'No cover image yet')); }
+        rmBtn.hidden = !cover.url; coverAlt.parentNode && (coverAlt.parentNode.hidden = !cover.url);
+        pickBtn.textContent = cover.url ? 'Replace cover image' : 'Choose cover image';
+      }
+      pickBtn.addEventListener('click', function () { pick.click(); });
+      rmBtn.addEventListener('click', function () { cover.url = ''; paintCover(); });
+      pick.addEventListener('change', function () {
+        if (!pick.files[0]) { return; }
+        coverMsg.textContent = 'Uploading…'; setErr('');
+        uploadFile(pick.files[0]).then(function (r) { cover.url = r.url; coverMsg.textContent = 'Uploaded.'; paintCover(); })
+          .catch(function (e) { coverMsg.textContent = ''; setErr(e.message); }).then(function () { pick.value = ''; });
+      });
+      var covLabel = el('label'); covLabel.appendChild(document.createTextNode('Cover image description (alt text)')); covLabel.appendChild(coverAlt);
+      var covLabelLbl = el('label'); covLabelLbl.appendChild(document.createTextNode('Cover image'));
+      coverBox.appendChild(covLabelLbl); coverBox.appendChild(preview);
+      var covBtns = el('div', 'adm-filters'); covBtns.appendChild(pickBtn); covBtns.appendChild(rmBtn); covBtns.appendChild(coverMsg); coverBox.appendChild(covBtns); coverBox.appendChild(pick); coverBox.appendChild(covLabel);
+      form.appendChild(coverBox);
+      paintCover();
+
+      // Pictures inside the article body: uploaded, then inserted where the cursor was.
+      var inlinePick = el('input'); inlinePick.type = 'file'; inlinePick.accept = 'image/jpeg,image/png,image/webp,image/gif'; inlinePick.hidden = true;
+      var inlineSel = null;
+      inlinePick.addEventListener('change', function () {
+        var file = inlinePick.files[0]; if (!file) { return; }
+        var alt = (window.prompt('Describe this picture (alt text, optional)') || '').replace(/[&<>"]/g, '');
+        setErr('');
+        uploadFile(file).then(function (r) {
+          ed.focus();
+          if (inlineSel) { var sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(inlineSel); }
+          document.execCommand('insertHTML', false, '<img src="' + r.url + '" alt="' + alt + '">');
+        }).catch(function (e) { setErr(e.message); }).then(function () { inlinePick.value = ''; });
+      });
       var tools = el('div', 'adm-tools');
+      tools.appendChild(inlinePick);
       var ed = el('div', 'adm-editor'); ed.contentEditable = 'true'; ed.setAttribute('role', 'textbox'); ed.setAttribute('aria-label', 'Article body'); ed.setAttribute('aria-multiline', 'true');
       ed.innerHTML = a.body_html || '<p></p>';
-      [['B', 'bold'], ['I', 'italic'], ['H2', 'h2'], ['H3', 'h3'], ['• List', 'ul'], ['1. List', 'ol'], ['Quote', 'quote'], ['Link', 'link'], ['Clear', 'clear']].forEach(function (b) {
+      ed.addEventListener('blur', function () { var s = window.getSelection(); inlineSel = s.rangeCount ? s.getRangeAt(0).cloneRange() : null; });
+      [['B', 'bold'], ['I', 'italic'], ['H2', 'h2'], ['H3', 'h3'], ['• List', 'ul'], ['1. List', 'ol'], ['Quote', 'quote'], ['Link', 'link'], ['Image', 'image'], ['Clear', 'clear']].forEach(function (b) {
         var bt = el('button', 'adm-btn', b[0]); bt.type = 'button';
         bt.addEventListener('mousedown', function (ev) { ev.preventDefault(); });
         bt.addEventListener('click', function () {
@@ -71,6 +150,7 @@
           else if (b[1] === 'ul') { document.execCommand('insertUnorderedList'); }
           else if (b[1] === 'ol') { document.execCommand('insertOrderedList'); }
           else if (b[1] === 'quote') { document.execCommand('formatBlock', false, 'blockquote'); }
+          else if (b[1] === 'image') { inlinePick.click(); }
           else if (b[1] === 'clear') { document.execCommand('removeFormat'); document.execCommand('formatBlock', false, 'p'); }
           else if (b[1] === 'link') { var u = window.prompt('Link address (https://…)'); if (u && /^(https?:|mailto:)/i.test(u)) { document.execCommand('createLink', false, u); } }
         });
@@ -87,7 +167,7 @@
       bar.appendChild(save);
       var cur = a;
       function payload() {
-        var p = { title: title.value.trim(), excerpt: excerpt.value.trim() || null, body_html: ed.innerHTML, author: author.value.trim() || null, meta_title: mt.value.trim() || null, meta_description: md.value.trim() || null };
+        var p = { title: title.value.trim(), excerpt: excerpt.value.trim() || null, cover_image: cover.url || null, cover_alt: cover.url ? (cover.alt.trim() || null) : null, body_html: ed.innerHTML, author: author.value.trim() || null, meta_title: mt.value.trim() || null, meta_description: md.value.trim() || null };
         if (!slug.disabled && slug.value.trim()) { p.slug = slug.value.trim(); }
         return p;
       }

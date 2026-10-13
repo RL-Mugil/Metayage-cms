@@ -2,12 +2,14 @@
 
 namespace Tests\Feature;
 
+use App\Models\CpiArticle;
 use App\Models\CpiBooking;
 use App\Models\SiteEnquiry;
 use App\Models\User;
 use App\Services\CpiBookingService;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\File;
 use Tests\TestCase;
 
@@ -169,6 +171,55 @@ class CpiSiteTest extends TestCase
         $this->postJson("/api/cpi-admin/articles/{$id}/unpublish", [], $h)->assertOk();
         $this->assertFileDoesNotExist($this->siteDir.'/insights/why-file-early.html');
         $this->assertStringNotContainsString('why-file-early', File::get($this->siteDir.'/insights/index.json'));
+    }
+
+    // ---- Article images ----
+
+    public function test_image_upload_is_reencoded_and_stored_under_insights_img(): void
+    {
+        $h = $this->adminHeaders();
+
+        $res = $this->post('/api/cpi-admin/images', ['image' => UploadedFile::fake()->image('photo.png', 900, 600)], $h + ['Accept' => 'application/json'])->assertCreated();
+
+        $this->assertMatchesRegularExpression('#^/insights/img/[a-f0-9]{24}\.webp$#', $res->json('url'));
+        $this->assertFileExists($this->siteDir.$res->json('url'));
+    }
+
+    public function test_fake_image_upload_is_rejected(): void
+    {
+        $h = $this->adminHeaders();
+        $notImage = UploadedFile::fake()->createWithContent('evil.png', '<?php echo 1;');
+
+        $this->post('/api/cpi-admin/images', ['image' => $notImage], $h + ['Accept' => 'application/json'])->assertStatus(422);
+    }
+
+    public function test_article_keeps_only_own_uploaded_images_and_publishes_with_cover(): void
+    {
+        $h = $this->adminHeaders();
+        $id = $this->postJson('/api/cpi-admin/articles', [
+            'title' => 'With pictures',
+            'body_html' => '<p>Intro text for the preview.</p><img src="https://evil.test/x.png" alt="bad"><img src="/insights/img/abcdef0123456789abcdef01.webp" alt="ok">',
+            'cover_image' => '/insights/img/abcdef0123456789abcdef01.webp', 'cover_alt' => 'A cover',
+        ], $h)->assertCreated()->json('id');
+
+        $article = CpiArticle::find($id);
+        $this->assertStringNotContainsString('evil.test', $article->body_html);
+        $this->assertStringContainsString('/insights/img/abcdef0123456789abcdef01.webp', $article->body_html);
+        $this->assertSame('Intro text for the preview.', $article->excerpt, 'A missing summary falls back to the body text.');
+
+        $this->postJson("/api/cpi-admin/articles/{$id}/publish", [], $h)->assertOk();
+        $page = File::get($this->siteDir.'/insights/with-pictures.html');
+        $this->assertStringContainsString('cpi-article-cover', $page);
+        $this->assertStringContainsString('content="https://canpatentit.com/insights/img/abcdef0123456789abcdef01.webp"', $page);
+        $index = json_decode(File::get($this->siteDir.'/insights/index.json'), true);
+        $this->assertSame('/insights/img/abcdef0123456789abcdef01.webp', $index[0]['cover']);
+    }
+
+    public function test_cover_image_must_be_an_uploaded_path(): void
+    {
+        $h = $this->adminHeaders();
+
+        $this->postJson('/api/cpi-admin/articles', ['title' => 'x y z', 'body_html' => '<p>a</p>', 'cover_image' => 'https://evil.test/a.png'], $h)->assertStatus(422);
     }
 
     public function test_article_endpoints_require_admin_token(): void

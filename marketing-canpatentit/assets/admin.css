@@ -54,3 +54,7 @@
 .adm-rule { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .adm-cfg { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
 a.adm-btn { display: inline-flex; align-items: center; text-decoration: none; color: inherit; }
+.adm-cover { display: grid; gap: 10px; }
+.adm-cover-preview { min-height: 120px; max-width: 420px; border: 1px dashed color-mix(in oklab, var(--cpi-ink) 28%, transparent); display: grid; place-items: center; background: #fff; overflow: hidden; }
+.adm-cover-preview img { width: 100%; display: block; }
+.adm-editor img { max-width: 100%; height: auto; display: block; margin: 12px 0; }

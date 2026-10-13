@@ -98,7 +98,8 @@ def footer():
   </footer>'''
 
 
-def shell(path, title, desc, body, current=None, extra_head="", jsonld=None, noindex=False, scripts=""):
+def shell(path, title, desc, body, current=None, extra_head="", jsonld=None, noindex=False, scripts="", og_image=None):
+    og = og_image or f"{SITE}/assets/og-image.png"
     canon = SITE + url_for(path)
     full_title = title if title.startswith("CanPatentIt") else f"{title} | CanPatentIt"
     ld = ""
@@ -121,11 +122,11 @@ def shell(path, title, desc, body, current=None, extra_head="", jsonld=None, noi
   <meta property="og:url" content="{canon}">
   <meta property="og:title" content="{esc(full_title)}">
   <meta property="og:description" content="{esc(desc)}">
-  <meta property="og:image" content="{SITE}/assets/og-image.png">
+  <meta property="og:image" content="{og}">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="{esc(full_title)}">
   <meta name="twitter:description" content="{esc(desc)}">
-  <meta name="twitter:image" content="{SITE}/assets/og-image.png">
+  <meta name="twitter:image" content="{og}">
   <meta name="contact-endpoint" content="https://login.myipstrategy.com/api/public/contact">
   <meta name="api-base" content="https://login.myipstrategy.com/api">
   <meta name="turnstile-site-key" content="{TURNSTILE}">
@@ -429,7 +430,7 @@ def build_404():
 def build_article_shell():
     """Frame used by the backend InsightPublisher; the @@TOKENS@@ are replaced at publish time."""
     head = "\n  <!--@@HEAD@@-->"
-    out = shell("insights/@@SLUG@@", "@@TITLE@@", "@@DESC@@", "@@BODY@@", current="insights", extra_head=head)
+    out = shell("insights/@@SLUG@@", "@@TITLE@@", "@@DESC@@", "@@BODY@@", current="insights", extra_head=head, og_image="@@OGIMAGE@@")
     dest = os.path.join(ROOT, "backend", "resources", "cpi", "article-shell.html")
     os.makedirs(os.path.dirname(dest), exist_ok=True)
     with open(dest, "w", encoding="utf-8", newline="\n") as f:

@@ -37,7 +37,18 @@
     return new Date(iso).toLocaleString('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }) + ' IST';
   }
 
-  window.ADM = { call: call, el: el, ist: ist, $: $ };
+  // Multipart upload (no JSON content type, so the browser sets the boundary).
+  function upload(path, formData) {
+    return fetch(api + path, { method: 'POST', headers: { 'Accept': 'application/json', 'Authorization': 'Bearer ' + token }, body: formData }).then(function (res) {
+      if (res.status === 401 || res.status === 403) { signOut(false); throw new Error('Session ended'); }
+      return res.json().catch(function () { return {}; }).then(function (d) {
+        if (res.status === 413) { throw new Error('That image is too large. Try a smaller one.'); }
+        if (!res.ok) { throw new Error((d.errors && d.errors.image && d.errors.image[0]) || d.message || 'Upload failed (' + res.status + ')'); }
+        return d;
+      });
+    });
+  }
+  window.ADM = { call: call, upload: upload, el: el, ist: ist, $: $ };
   try { $('who').textContent = window.sessionStorage.getItem('cpi_admin_name') || ''; } catch (e) { /* ignore */ }
   $('logout').addEventListener('click', function () { signOut(true); });
   $('refresh').addEventListener('click', loadAll);
