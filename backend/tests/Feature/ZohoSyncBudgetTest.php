@@ -384,6 +384,35 @@ class ZohoSyncBudgetTest extends TestCase
         }
     }
 
+    public function test_poll_yields_quietly_when_another_request_holds_the_lock(): void
+    {
+        Http::fake();
+        $lock = Cache::lock('zoho_request:in:123', 90);
+        $lock->get();
+        try {
+            $this->artisan('zoho:poll')->assertExitCode(0);
+            Http::assertNothingSent();
+            $this->assertSame(0, DB::table('integration_logs')->where('event_type', 'poll')->where('status', 'fail')->count());
+        } finally {
+            $lock->release();
+        }
+    }
+
+    public function test_busy_lock_is_reported_with_the_busy_reason(): void
+    {
+        Http::fake();
+        $lock = Cache::lock('zoho_request:in:123', 90);
+        $lock->get();
+        try {
+            app(ZohoBooksService::class)->pingOrganization();
+            $this->fail('Expected the busy lock to stop the request.');
+        } catch (ZohoBudgetExhausted $error) {
+            $this->assertSame(ZohoBudgetExhausted::BUSY, $error->reason);
+        } finally {
+            $lock->release();
+        }
+    }
+
     public function test_spacing_timestamp_preserves_fractional_seconds(): void
     {
         $this->travelTo(now()->setMicrosecond(123456));

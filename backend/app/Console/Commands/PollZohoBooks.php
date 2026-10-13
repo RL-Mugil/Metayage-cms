@@ -77,6 +77,16 @@ class PollZohoBooks extends Command
             AuditLog::create(['user_id' => null, 'action' => 'zoho_poll_completed', 'subject_type' => 'ZohoPoll',
                 'metadata' => ['scope' => $zoho->scope(), 'processed' => $processed, 'failed' => $failed], 'ip_address' => null, 'user_agent' => 'scheduler']);
             return $failed ? self::FAILURE : self::SUCCESS;
+        } catch (\App\Exceptions\ZohoBudgetExhausted $error) {
+            if ($error->reason === \App\Exceptions\ZohoBudgetExhausted::BUSY) {
+                // Another Zoho request (usually the nightly sync) is running. Yield quietly: this is
+                // expected, not a failure, and the next poll runs in five minutes.
+                $this->line('Zoho is busy with another request; poll skipped.');
+                return self::SUCCESS;
+            }
+            report($error);
+            DB::table('integration_logs')->insert(['slug' => 'zoho', 'event_type' => 'poll', 'status' => 'paused', 'summary' => $error->getMessage(), 'payload' => null, 'created_at' => now(), 'updated_at' => now()]);
+            return self::SUCCESS;
         } catch (Throwable $error) {
             report($error);
             DB::table('integration_logs')->insert(['slug' => 'zoho', 'event_type' => 'poll', 'status' => 'fail', 'summary' => $error->getMessage(), 'payload' => null, 'created_at' => now(), 'updated_at' => now()]);

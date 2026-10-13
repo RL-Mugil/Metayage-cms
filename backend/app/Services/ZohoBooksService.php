@@ -106,8 +106,18 @@ class ZohoBooksService
         // Include connection tests and token renewal in the same transport lock.
         // One active Books request per organization stays below Zoho concurrency limits.
         $lock = Cache::lock('zoho_request:' . $this->scope(), 90);
-        if (! $lock->get()) {
-            throw new \App\Exceptions\ZohoBudgetExhausted('Another Zoho request is in progress. Try shortly.', 1);
+        // The poll yields at once (it runs again in five minutes). The nightly sync waits for the
+        // single in-flight request instead of pausing its whole cycle until the next night; a
+        // manual click waits a few seconds so it does not fail on a brief collision.
+        $wait = ($this->polling || app()->runningUnitTests()) ? 0 : ($this->background ? 45 : 8);
+        $acquired = false;
+        try {
+            $acquired = $wait > 0 ? (bool) $lock->block($wait) : $lock->get();
+        } catch (\Illuminate\Contracts\Cache\LockTimeoutException) {
+            $acquired = false;
+        }
+        if (! $acquired) {
+            throw new \App\Exceptions\ZohoBudgetExhausted('Another Zoho request is in progress. Try shortly.', 1, \App\Exceptions\ZohoBudgetExhausted::BUSY);
         }
         try {
             return $this->send($path, $query, $draft, $method);
