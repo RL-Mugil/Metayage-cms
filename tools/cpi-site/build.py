@@ -440,6 +440,28 @@ def check_links():
     return bad
 
 
+def version_assets():
+    """Stamp every local .js/.css link with a content hash so browsers never keep stale copies."""
+    import hashlib
+    pat = re.compile(r'(/assets/[\w.-]+\.(?:js|css))(?:\?v=\w+)?"')
+    targets = [os.path.join(r, f) for r, _, fs in os.walk(OUT) for f in fs if f.endswith(".html")]
+    targets.append(os.path.join(ROOT, "backend", "resources", "cpi", "article-shell.html"))
+
+    def stamp(m):
+        try:
+            digest = hashlib.md5(open(os.path.join(OUT, m.group(1).lstrip("/")), "rb").read()).hexdigest()[:8]
+        except OSError:
+            return m.group(0)
+        return f'{m.group(1)}?v={digest}"'
+
+    for path in targets:
+        text = open(path, encoding="utf-8").read()
+        new = pat.sub(stamp, text)
+        if new != text:
+            with open(path, "w", encoding="utf-8", newline="\n") as f:
+                f.write(new)
+
+
 def main():
     build_home()
     build_about()
@@ -456,6 +478,7 @@ def main():
     build_404()
     build_article_shell()
     build_meta_files()
+    version_assets()
     bad = check_links()
     print(f"{len(PAGES)} pages built into {OUT}")
     if bad:
