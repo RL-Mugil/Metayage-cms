@@ -207,6 +207,14 @@ class InsightPublisher
         }
 
         // Layout follows the Metayage showcase: info card, domain, title, figure, abstract, recommended patents.
+        // Indian numbers also get the Indian Patent Office. Its public search (InPASS) has no per-patent address and
+        // needs a CAPTCHA, so the visitor copies the number and pastes it into the official search.
+        if ($p->isIndian() && ! $p->link_disabled) {
+            $idHtml .= '<span class="cpi-id-office"><a class="cpi-office-link" href="'.e(CpiPatent::IPO_SEARCH_URL).'" target="_blank" rel="noopener noreferrer">Indian Patent Office <span aria-hidden="true">↗</span></a>'
+                .'<button type="button" class="cpi-copy-id" data-copy="'.e($p->indianOfficeNumber()).'">Copy number</button>'
+                .'<small>Paste it into “Application Number” on the official search, then enter the captcha.</small></span>';
+        }
+
         $body = '<article class="cpi-patent" data-slug="'.e($p->slug).'" data-domain="'.e($p->domain).'" data-country="'.e($p->country).'">'
             .'<dl class="cpi-patent-meta">'
             .'<div><dt>Patent ID:</dt><dd>'.$idHtml.'</dd></div>'

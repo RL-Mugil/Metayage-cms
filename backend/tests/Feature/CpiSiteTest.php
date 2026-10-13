@@ -410,6 +410,35 @@ class CpiSiteTest extends TestCase
         $this->assertNull($p->linkUrl(), 'The link can be switched off.');
     }
 
+    public function test_indian_numbers_get_indian_patent_office_support(): void
+    {
+        $p = fn (string $n) => new \App\Models\CpiPatent(['patent_number' => $n]);
+
+        $this->assertTrue($p('IN 202141012345')->isIndian());
+        $this->assertTrue($p('IN-4321-DEL-2012')->isIndian());
+        $this->assertFalse($p('INVALID')->isIndian(), 'A word that merely starts with IN is not an Indian number.');
+        $this->assertFalse($p('US 11,000,000 B2')->isIndian());
+        $this->assertFalse($p('WO/2020/136668')->isIndian());
+        $this->assertSame('202141012345', $p('IN 202141012345')->indianOfficeNumber());
+        $this->assertSame('4321-DEL-2012', $p('IN-4321-DEL-2012')->indianOfficeNumber());
+
+        $h = $this->adminHeaders();
+        $base = ['title' => 'Indian patent title', 'domain' => 'Healthcare', 'country' => 'India', 'abstract' => 'An abstract that is long enough.'];
+        $id = $this->postJson('/api/cpi-admin/patents', $base + ['patent_number' => 'IN 202141012345'], $h)->assertCreated()->json('id');
+        $this->postJson("/api/cpi-admin/patents/{$id}/publish", [], $h)->assertOk();
+        $page = File::get($this->siteDir.'/patent-showcase/indian-patent-title.html');
+        $this->assertStringContainsString('href="https://iprsearch.ipindia.gov.in/PublicSearch/" target="_blank" rel="noopener noreferrer"', $page);
+        $this->assertStringContainsString('data-copy="202141012345"', $page);
+        $this->assertStringContainsString('patents.google.com/patent/IN202141012345/en', $page, 'The Google Patents link stays.');
+
+        // Not for other countries, and not when the admin switches links off.
+        $usId = $this->postJson('/api/cpi-admin/patents', ['title' => 'American patent title', 'patent_number' => 'US 11,000,000 B2'] + $base, $h)->json('id');
+        $this->postJson("/api/cpi-admin/patents/{$usId}/publish", [], $h)->assertOk();
+        $this->assertStringNotContainsString('ipindia', File::get($this->siteDir.'/patent-showcase/american-patent-title.html'));
+        $this->putJson("/api/cpi-admin/patents/{$id}", $base + ['patent_number' => 'IN 202141012345', 'link_disabled' => true], $h)->assertOk();
+        $this->assertStringNotContainsString('ipindia', File::get($this->siteDir.'/patent-showcase/indian-patent-title.html'));
+    }
+
     public function test_patent_page_links_the_id_and_rejects_unsafe_override(): void
     {
         $h = $this->adminHeaders();

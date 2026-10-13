@@ -5,12 +5,38 @@
   var section = document.getElementById('recs');
   if (!art) { return; }
   initFigures();
+  initCopy();
   if (!grid || !section) { return; }
   var slug = art.getAttribute('data-slug');
   var domain = art.getAttribute('data-domain');
   var country = art.getAttribute('data-country');
 
   function el(tag, cls, text) { var n = document.createElement(tag); if (cls) { n.className = cls; } if (text !== undefined) { n.textContent = text; } return n; }
+
+  // "Copy number" for Indian patents: the Indian Patent Office search needs the number typed in.
+  function initCopy() {
+    Array.prototype.forEach.call(document.querySelectorAll('.cpi-copy-id'), function (btn) {
+      btn.addEventListener('click', function () {
+        var text = btn.getAttribute('data-copy') || '';
+        var done = function () {
+          var old = btn.textContent;
+          btn.textContent = 'Copied';
+          btn.disabled = true;
+          setTimeout(function () { btn.textContent = old; btn.disabled = false; }, 1600);
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(done, function () { fallback(text); done(); });
+        } else { fallback(text); done(); }
+      });
+    });
+    function fallback(text) {
+      var ta = document.createElement('textarea');
+      ta.value = text; ta.setAttribute('readonly', ''); ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); } catch (e) { /* ignore */ }
+      document.body.removeChild(ta);
+    }
+  }
 
   // Figure strip: scroll arrows (only when it overflows) and click-to-enlarge.
   function initFigures() {

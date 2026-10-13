@@ -56,6 +56,21 @@ class CpiPatent extends Model
         return 'https://patents.google.com/patent/'.$n.'/en';
     }
 
+    /** Indian Patent Office public search (InPASS). It has no per-patent addresses and needs a CAPTCHA, so this is the search page. */
+    public const IPO_SEARCH_URL = 'https://iprsearch.ipindia.gov.in/PublicSearch/';
+
+    /** True for Indian numbers ("IN 202141012345", "IN-4321-DEL-2012"). */
+    public function isIndian(): bool
+    {
+        return (bool) preg_match('/^IN[\s\-\/.]*\d/i', trim((string) $this->patent_number));
+    }
+
+    /** The number as InPASS expects it in the Application Number box: no "IN" prefix, no spaces. */
+    public function indianOfficeNumber(): string
+    {
+        return preg_replace('/\s+/', '', preg_replace('/^IN[\s\-\/.]*/i', '', trim((string) $this->patent_number)));
+    }
+
     /** The link the Patent ID points to: the admin's override, else the automatic Google Patents link, else none. */
     public function linkUrl(): ?string
     {

@@ -482,3 +482,12 @@ a.cpi-page:hover { border-color: var(--cpi-blue); color: var(--cpi-blue-ink); }
 .cpi-pcard-domain::before, .cpi-rcard-domain::before { width: 20px; height: 20px; border-radius: 0; -webkit-mask: var(--dom-icon) center / contain no-repeat; mask: var(--dom-icon) center / contain no-repeat; }
 .cpi-pcard-domain::before { background: var(--cpi-blue); }
 .cpi-rcard-domain::before { background: var(--cpi-green); width: 24px; height: 24px; }
+
+/* Indian Patent Office link for IN numbers */
+.cpi-id-office { display: grid; justify-items: center; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px dashed color-mix(in oklab, var(--cpi-ink) 18%, transparent); }
+.cpi-office-link { font-size: 14px; font-weight: 600; color: var(--cpi-blue); text-decoration: none; }
+.cpi-office-link:hover { text-decoration: underline; }
+.cpi-copy-id { padding: 6px 14px; border: 1px solid var(--cpi-blue); border-radius: 999px; background: transparent; color: var(--cpi-blue); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; transition: background .2s ease, color .2s ease; }
+.cpi-copy-id:hover { background: var(--cpi-blue); color: #fff; }
+.cpi-copy-id[disabled] { opacity: .7; cursor: default; }
+.cpi-id-office small { max-width: 280px; line-height: 1.5; }

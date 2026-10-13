@@ -131,6 +131,7 @@
       var override = link.value.trim();
       var url = noLink.checked ? '' : (override || googleUrl(num.value));
       linkInfo.textContent = noLink.checked ? 'The Patent ID will be plain text.' : (url ? 'The Patent ID will link to: ' + url : 'No automatic link for this ID (it does not look like a publication number). Add a link above if you want one.');
+      if (!noLink.checked && /^IN[\s\-\/.]*\d/i.test(num.value.trim())) { linkInfo.textContent += ' An Indian Patent Office button (official search page) and a Copy number button are added automatically for IN numbers.'; }
       testLink.hidden = !url;
       if (url) { testLink.href = url; }
     }
