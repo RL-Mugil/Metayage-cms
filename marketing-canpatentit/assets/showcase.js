@@ -58,19 +58,10 @@
     return li;
   }
 
-  function card(p, eager) {
+  // Grid cards are text-only: the figure appears only on the patent's own page.
+  function card(p) {
     var a = el('a', 'cpi-pcard');
     a.href = '/patent-showcase/' + encodeURIComponent(p.slug);
-    var fig = el('div', 'cpi-pcard-fig');
-    var src = safeImage(p.image);
-    if (src) {
-      var img = document.createElement('img');
-      img.src = src; img.alt = p.image_alt || p.title; img.loading = eager ? 'eager' : 'lazy';
-      fig.appendChild(img);
-    } else {
-      fig.classList.add('is-empty');
-    }
-    a.appendChild(fig);
     var body = el('div', 'cpi-pcard-body');
     var meta = el('div', 'cpi-pcard-meta');
     meta.appendChild(el('span', 'cpi-pcard-domain', p.domain));
@@ -142,7 +133,7 @@
       pager.hidden = true;
       return;
     }
-    list.slice((state.page - 1) * PER_PAGE, state.page * PER_PAGE).forEach(function (p, i) { grid.appendChild(card(p, i < 3)); });
+    list.slice((state.page - 1) * PER_PAGE, state.page * PER_PAGE).forEach(function (p) { grid.appendChild(card(p)); });
     renderPager(total);
   }
 
