@@ -27,6 +27,11 @@ interface PendingPaymentRow {
   proof_document?: { id: number; file_name: string; storage_path: string } | null;
 }
 
+interface ZohoPendingRow extends PendingPaymentRow {
+  balance: number;
+  source: "Zoho Books";
+}
+
 function paymentStatusVariant(status: string): "default" | "secondary" | "outline" | "destructive" {
   if (status === "Confirmed") return "default";
   if (status === "Proof Submitted") return "secondary";
@@ -44,6 +49,11 @@ export default function PendingPayments() {
   const isStaff = !isClient;
 
   const [rows, setRows] = useState<PendingPaymentRow[]>([]);
+  const [zohoRows, setZohoRows] = useState<ZohoPendingRow[]>([]);
+  const [zohoPage, setZohoPage] = useState(1);
+  const [zohoMeta, setZohoMeta] = useState({ current_page: 1, last_page: 1, total: 0 });
+  const [pendingTotals, setPendingTotals] = useState<Record<string, number>>({});
+  const [pendingCount, setPendingCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [uploadingId, setUploadingId] = useState<number | null>(null);
@@ -55,13 +65,17 @@ export default function PendingPayments() {
 
   const load = () => {
     setLoading(true);
-    api.getPendingPayments()
-      .then((res: any) => setRows(res?.data ?? []))
+    api.getPendingPayments(new URLSearchParams({ zoho_page: String(zohoPage), zoho_per_page: "25" }))
+      .then((res: any) => { setRows(res?.data ?? []); setZohoRows(res?.zoho?.data ?? []); setZohoMeta({ current_page: res?.zoho?.current_page ?? 1, last_page: res?.zoho?.last_page ?? 1, total: res?.zoho?.total ?? 0 }); setPendingTotals(res?.pending_totals ?? {}); setPendingCount(res?.pending_count ?? 0); })
       .catch((e: any) => setError(e?.message || "Failed to load pending payments."))
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [zohoPage]);
+
+  async function handleZohoPdf(row: ZohoPendingRow) {
+    try { await api.downloadZohoPdf(row.id); } catch (e: any) { setError(e?.message || "This local Zoho PDF is not available yet."); }
+  }
 
   async function handleProofUpload(row: PendingPaymentRow, file: File) {
     setUploadingId(row.id);
@@ -128,6 +142,11 @@ export default function PendingPayments() {
         {error && (
           <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">{error}</div>
         )}
+
+        <div className="grid gap-4 md:grid-cols-2">
+          <Card className="border-border"><CardContent className="p-5"><p className="text-xs uppercase tracking-wider text-muted-foreground">Total pending</p><p className="mt-1 font-display text-2xl font-semibold text-amber-600">{Object.entries(pendingTotals).map(([currency, amount]) => formatMoney(amount, currency)).join(" + ") || "₹0"}</p><p className="mt-1 text-xs text-muted-foreground">{pendingCount.toLocaleString("en-IN")} pending payment records across portal and Zoho Books</p></CardContent></Card>
+          <Card className="border-border"><CardContent className="p-5"><p className="text-xs uppercase tracking-wider text-muted-foreground">Zoho pending</p><p className="mt-1 font-display text-2xl font-semibold text-blue-600">{zohoMeta.total.toLocaleString("en-IN")}</p><p className="mt-1 text-xs text-muted-foreground">Local Zoho mirror records with an outstanding balance</p></CardContent></Card>
+        </div>
 
         {loading ? (
           <div className="flex items-center justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-gold" /></div>
@@ -238,6 +257,17 @@ export default function PendingPayments() {
             ))}
           </div>
         )}
+
+        <Card className="border-border">
+          <CardContent className="py-5 space-y-4">
+            <div className="flex items-center justify-between gap-3">
+              <div><h2 className="font-display text-lg font-semibold">Zoho Books pending balances</h2><p className="text-xs text-muted-foreground">Local Zoho mirror data · {zohoMeta.total} records with an outstanding balance</p></div>
+              <span className="text-xs text-muted-foreground">Page {zohoMeta.current_page} / {zohoMeta.last_page}</span>
+            </div>
+            {zohoRows.length === 0 ? <p className="py-6 text-center text-sm text-muted-foreground">No pending Zoho Books balances.</p> : <div className="overflow-x-auto rounded-lg border"><table className="w-full text-sm"><thead className="bg-muted/40 text-left text-xs uppercase text-muted-foreground"><tr><th className="px-3 py-3">UIN / Number</th><th className="px-3 py-3">Case</th><th className="px-3 py-3">Client</th><th className="px-3 py-3">Date</th><th className="px-3 py-3 text-right">Total</th><th className="px-3 py-3 text-right">Pending</th><th className="px-3 py-3">PDF</th></tr></thead><tbody>{zohoRows.map(row => <tr key={`zoho-${row.id}`} className="border-t"><td className="px-3 py-3 font-mono text-xs font-semibold text-gold">{row.invoice_uin}</td><td className="px-3 py-3">{row.project?.docket_number ?? "Unlinked"}</td><td className="px-3 py-3">{row.client?.company_name ?? row.client?.legal_name ?? "—"}</td><td className="px-3 py-3">{row.invoice_date ? fmtDate(row.invoice_date) : "—"}</td><td className="px-3 py-3 text-right">{formatMoney(row.invoice_amount, row.currency)}</td><td className="px-3 py-3 text-right font-semibold text-blue-600">{formatMoney(row.balance, row.currency)}</td><td className="px-3 py-3"><Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => handleZohoPdf(row)}><FileText className="mr-1 h-3 w-3" />PDF</Button></td></tr>)}</tbody></table></div>}
+            {zohoMeta.last_page > 1 && <div className="flex items-center justify-between text-sm text-muted-foreground"><span>Showing page {zohoMeta.current_page} of {zohoMeta.last_page}</span><div className="flex gap-2"><Button size="sm" variant="outline" disabled={zohoPage <= 1} onClick={() => setZohoPage(page => page - 1)}>Previous</Button><Button size="sm" variant="outline" disabled={zohoPage >= zohoMeta.last_page} onClick={() => setZohoPage(page => page + 1)}>Next</Button></div></div>}
+          </CardContent>
+        </Card>
       </div>
     </AppLayout>
   );

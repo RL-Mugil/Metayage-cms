@@ -59,13 +59,16 @@ export default function ForgotPassword() {
                 </div>
               )}
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-zinc-300">Email Address</label>
+                <label htmlFor="email" className="text-xs font-medium text-zinc-300">Email Address</label>
                 <div className="relative">
                   <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
                   <Input
+                    id="email"
+                    name="email"
+                    autoComplete="email"
                     type="email"
                     required
-                    placeholder="name@metayage.com"
+                    placeholder="name@myipstrategy.com"
                     value={data.email}
                     onChange={(e) => setData("email", e.target.value)}
                     className="pl-10 bg-zinc-900 border-zinc-800 text-white focus-visible:ring-gold"

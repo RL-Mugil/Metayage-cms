@@ -30,6 +30,9 @@ use App\Http\Controllers\PatentInvoiceController;
 
 // Public webhook receiver — no auth, for external integrations
 Route::post('/webhooks/zoho/deletions', [\App\Http\Controllers\ZohoDeletionWebhookController::class, 'receive'])->middleware('throttle:120,1');
+// Public marketing-site enquiry form (CORS-limited to myipstrategy.com, see config/cors.php).
+Route::post('/public/contact', [\App\Http\Controllers\PublicContactController::class, 'store'])->middleware(['throttle:public-contact', 'throttle:5,1']);
+Route::get('/public/pages/{slug}', [\App\Http\Controllers\SiteAdminController::class, 'publicPage'])->middleware('throttle:60,1');
 Route::post('/webhooks/{slug}', [\App\Http\Controllers\WebhookController::class, 'receive'])->middleware('throttle:120,1');
 
 // Authenticated routes protected by Sanctum
@@ -97,6 +100,9 @@ Route::middleware(['auth:sanctum', 'firm.context', 'throttle:120,1'])->group(fun
     // InventionFamilyService::createBranch() this wraps.
     Route::post('/projects/{id}/elevate', [ProjectController::class, 'elevate']);
     Route::post('/projects/{id}/require-document', [ProjectController::class, 'requireDocument']);
+    Route::get('/projects/{id}/trademark', [\App\Http\Controllers\TrademarkMarkController::class, 'show']);
+    Route::put('/projects/{id}/trademark', [\App\Http\Controllers\TrademarkMarkController::class, 'update']);
+    Route::post('/projects/{id}/trademark/mark-image', [\App\Http\Controllers\TrademarkMarkController::class, 'storeImage'])->middleware('throttle:30,1');
     Route::post('/projects/docket-import/preview', [\App\Http\Controllers\ProjectDocketImportController::class, 'preview'])->middleware('throttle:60,1');
     Route::post('/projects/docket-import/import', [\App\Http\Controllers\ProjectDocketImportController::class, 'import'])->middleware('throttle:30,1');
 
@@ -280,6 +286,11 @@ Route::middleware(['auth:sanctum', 'firm.context', 'throttle:120,1'])->group(fun
     Route::put('/settings/internal-signature-pin', [\App\Http\Controllers\SettingsController::class, 'resetInternalSignaturePin']);
     Route::put('/settings/notifications', [\App\Http\Controllers\SettingsController::class, 'updateNotifications']);
     Route::put('/settings/system',         [\App\Http\Controllers\SettingsController::class, 'updateSystem']);
+    Route::get('/settings/site',                  [\App\Http\Controllers\SiteAdminController::class, 'show']);
+    Route::put('/settings/badge',                 [\App\Http\Controllers\SiteAdminController::class, 'updateBadge']);
+    Route::put('/settings/maintenance',           [\App\Http\Controllers\SiteAdminController::class, 'updateMaintenance']);
+    Route::put('/settings/pages/{slug}',          [\App\Http\Controllers\SiteAdminController::class, 'updatePage']);
+    Route::delete('/settings/pages/{slug}',       [\App\Http\Controllers\SiteAdminController::class, 'resetPage']);
     Route::put('/settings/feature-flags', [\App\Http\Controllers\SettingsController::class, 'updateFeatureFlags']);
     Route::put('/settings/dropdown',      [\App\Http\Controllers\SettingsController::class, 'updateDropdown']);
     Route::get('/settings/codes',                 [\App\Http\Controllers\SettingsController::class, 'codesIndex']);
@@ -367,6 +378,7 @@ Route::middleware(['auth:sanctum', 'firm.context', 'throttle:120,1'])->group(fun
     Route::get('/integrations/zoho/quotes/{kind}/{id}', [\App\Http\Controllers\ZohoQuoteController::class, 'preview'])->whereIn('kind', ['standard', 'in'])->whereNumber('id')->middleware('throttle:zoho-read');
       Route::post('/integrations/zoho/quotes/{kind}/{id}', [\App\Http\Controllers\ZohoQuoteController::class, 'send'])->whereIn('kind', ['standard', 'in'])->whereNumber('id')->middleware('throttle:zoho-write');
       Route::post('/integrations/zoho/quotes/{kind}/{id}/delete-in-zoho', [\App\Http\Controllers\ZohoQuoteController::class, 'deleteInZoho'])->whereIn('kind', ['standard', 'in'])->whereNumber('id')->middleware('throttle:zoho-write');
+      Route::post('/integrations/zoho/quotes/{kind}/{id}/convert-to-invoice', [\App\Http\Controllers\ZohoQuoteController::class, 'convertToInvoice'])->whereIn('kind', ['standard', 'in'])->whereNumber('id')->middleware('throttle:zoho-write');
     Route::get('/integrations/zoho/records/{record}/pdf', [\App\Http\Controllers\ZohoSyncController::class, 'pdf'])->middleware('throttle:zoho-read');
     Route::get('/integrations/zoho/analytics/monthly', [\App\Http\Controllers\ZohoBooksController::class, 'monthlyAnalytics']);
 
@@ -386,6 +398,8 @@ Route::middleware(['auth:sanctum', 'firm.context', 'throttle:120,1'])->group(fun
 
     // Audit Log (super_admin / partner only — enforced in controller)
     Route::get('/audit-logs', [AuditLogController::class, 'index']);
+    Route::get('/audit-logs/zoho-monitoring', [AuditLogController::class, 'zohoMonitoring']);
+    Route::get('/audit-logs/zoho-control-panel', [AuditLogController::class, 'zohoControlPanel']);
 
     // Recycle Bin
     Route::get('/recycle-bin', [\App\Http\Controllers\RecycleBinController::class, 'index']);

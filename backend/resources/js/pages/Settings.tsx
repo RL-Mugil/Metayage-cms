@@ -1,13 +1,14 @@
 import { Head, usePage, router } from "@inertiajs/react";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { User, Bell, Shield, Palette, Settings as SettingsIcon, Key, Building, Loader2, Camera, Trash2, ZoomIn, ZoomOut, RotateCcw, Plus, X, Landmark, Check, Hash, Pencil, ArrowRightLeft, LayoutGrid, Wallet, ChevronUp, ChevronDown } from "lucide-react";
+import { User, Bell, Shield, Palette, Settings as SettingsIcon, Key, Building, Loader2, Camera, Trash2, ZoomIn, ZoomOut, RotateCcw, Plus, X, Landmark, Check, Hash, Pencil, ArrowRightLeft, LayoutGrid, Wallet, ChevronUp, ChevronDown, Globe } from "lucide-react";
 import AppLayout from "@/layouts/AppLayout";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api-client";
+import { SiteAdminPanel } from "@/components/site-admin-panel";
 import type { ProjectTab, CodeRow, CodeRenameImpact, CodeMergeAvailable, CodeMergeImpact } from "@/types";
 
 function loadPrefs<T>(key: string, fallback: T): T {
@@ -28,7 +29,7 @@ const TIMEZONES = [
 
 const LANGUAGES = ["English", "Hindi", "Tamil", "Telugu"];
 
-type Tab = "profile" | "notifications" | "security" | "appearance" | "system" | "codes" | "projectTabs" | "finance" | "payroll";
+type Tab = "profile" | "notifications" | "security" | "appearance" | "system" | "codes" | "projectTabs" | "finance" | "payroll" | "site";
 
 const tabs: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: "profile",       label: "Profile",       icon: User },
@@ -40,6 +41,7 @@ const tabs: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: "projectTabs",   label: "Project Tabs",  icon: LayoutGrid },
   { id: "finance",       label: "Finance",       icon: Landmark },
   { id: "payroll",       label: "Payroll",       icon: Wallet },
+  { id: "site",          label: "Site",          icon: Globe },
 ];
 
 const BLANK_SALARY_COMPONENT = { name: "", code: "", calc_type: "flat", category: "earning", value: "", percentage_of: "" };
@@ -646,7 +648,7 @@ export default function Settings() {
 
   const visibleTabs = tabs.filter((item) => {
     if (item.id === "system" || item.id === "finance" || item.id === "codes") return canManageSystem;
-    if (item.id === "projectTabs") return isSuperAdmin;
+    if (item.id === "projectTabs" || item.id === "site") return isSuperAdmin;
     if (item.id === "payroll") return canManagePayroll;
     return true;
   });
@@ -661,7 +663,7 @@ export default function Settings() {
 
   useEffect(() => {
     if (!canManageSystem && (tab === "system" || tab === "finance" || tab === "codes")) setTab("profile");
-    if (!isSuperAdmin && tab === "projectTabs") setTab("profile");
+    if (!isSuperAdmin && (tab === "projectTabs" || tab === "site")) setTab("profile");
     if (!canManagePayroll && tab === "payroll") setTab("profile");
   }, [canManageSystem, isSuperAdmin, canManagePayroll, tab]);
 
@@ -1623,6 +1625,8 @@ export default function Settings() {
               )}
             </div>
           )}
+
+          {tab === "site" && isSuperAdmin && <SiteAdminPanel />}
 
           {tab === "projectTabs" && isSuperAdmin && (
             <div className="space-y-6">

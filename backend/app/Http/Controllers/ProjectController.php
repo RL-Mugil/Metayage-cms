@@ -23,6 +23,7 @@ use App\Services\DocketNumberService;
 use App\Services\InventionFamilyService;
 use App\Services\ApplicationNumberSyncService;
 use App\Services\JurisdictionLifecycleService;
+use App\Services\TrademarkMatterService;
 use App\Http\Controllers\ProjectTrackerController;
 
 class ProjectController extends Controller
@@ -54,7 +55,7 @@ class ProjectController extends Controller
                 $base->where($this->analystWhereClause($user, $rf));
             }
             // else: no restriction — partner/director sees all projects
-        } elseif ($user->role === 'associate') {
+        } elseif ($user->seesOnlyOwnCases()) {
             $base->where($this->analystWhereClause($user, $request->input('role_filter')));
         }
 
@@ -125,7 +126,7 @@ class ProjectController extends Controller
             if ($rf && $rf !== 'all') {
                 $query->where($this->analystWhereClause($user, $rf));
             }
-        } elseif ($user->role === 'associate') {
+        } elseif ($user->seesOnlyOwnCases()) {
             $query->where($this->analystWhereClause($user, $request->input('role_filter')));
         } elseif ($user->isInventor()) {
             $query->whereHas('inventors', fn ($q) => $q->where('users.id', $user->id));
@@ -314,7 +315,7 @@ class ProjectController extends Controller
             if ($rf && $rf !== 'all') {
                 $q->where($this->analystWhereClause($user, $rf));
             }
-        } elseif ($user->role === 'associate') {
+        } elseif ($user->seesOnlyOwnCases()) {
             $q->where($this->analystWhereClause($user, $request->input('role_filter')));
         } elseif ($user->isInventor()) {
             $q->whereIn('id', $user->projectsAsInventor()->pluck('projects.id'));
@@ -350,8 +351,12 @@ class ProjectController extends Controller
         $user = $request->user();
         $validated = $request->validated();
 
-        $validated['assigned_partner_id'] = $validated['assigned_partner_id'] ?? $user->id;
-        $validated['assigned_manager_id'] = $validated['assigned_manager_id'] ?? $user->id;
+        // Partners/managers who open a case default to running it; other staff
+        // (e.g. Patent Analysts) keep visibility through created_by_id instead.
+        if (in_array($user->role, ['super_admin', 'partner', 'director', 'manager', 'galvanizer'], true)) {
+            $validated['assigned_partner_id'] = $validated['assigned_partner_id'] ?? $user->id;
+            $validated['assigned_manager_id'] = $validated['assigned_manager_id'] ?? $user->id;
+        }
 
         if ($user->isGalvanizer()) {
             $clientCircle = Client::where('id', $validated['client_id'])->value('circle');
@@ -397,6 +402,9 @@ class ProjectController extends Controller
      */
     private function createProjectWithCodes(array $validated): Project
     {
+        $trademark = $validated['trademark'] ?? null;
+        unset($validated['trademark']);
+        $validated['created_by_id'] = auth()->id();
         $validated = app(DocketNumberService::class)->assignForCreation($validated);
         $recordMode = $validated['record_mode'] ?? 'new';
         $manualProjectCode = strtoupper(trim((string) ($validated['project_code'] ?? '')));
@@ -528,7 +536,7 @@ class ProjectController extends Controller
         ];
         if (in_array($svc, $prosecutionSvcs, true)) {
             $syncService = app(ApplicationNumberSyncService::class);
-            $prefix = $syncService->docketPrefix($project->docket_number);
+            $prefix = $syncService->docketPrefix($project->docket_number, $project->service_code);
 
             $parentAppId = $project->parent_project_id
                 ? Project::where('id', $project->parent_project_id)->value('patent_application_id')
@@ -578,6 +586,10 @@ class ProjectController extends Controller
             }
         }
 
+        if (TrademarkMatterService::isTrademarkCode($svc)) {
+            app(TrademarkMatterService::class)->attach($project, $trademark ?? [], auth()->id());
+        }
+
         // If an application number was supplied at creation, backfill/group it against
         // any existing sibling engagements sharing the same docket prefix (see
         // ApplicationNumberSyncService docblock for the exact matching rule).
@@ -591,6 +603,10 @@ class ProjectController extends Controller
         // from matching docket events (see StageAdvancementService). Fall back to the
         // legacy hardcoded stage list for any jurisdiction/service combination that
         // isn't templated yet, so project creation never hard-fails.
+        if (TrademarkMatterService::isTrademarkCode($svc)) {
+            app(TrademarkMatterService::class)->seedStages($project);
+            return $project;
+        }
         try {
             $template = app(JurisdictionLifecycleService::class)->resolve($project->patent_office_code ?: 'IN', $svc);
             app(JurisdictionLifecycleService::class)->apply($project, $template);
@@ -819,6 +835,10 @@ class ProjectController extends Controller
             $targetStage = ProjectStage::where('project_id', $project->id)->where('stage_name', $stageName)->firstOrFail();
         }
 
+        if ($blocker = app(TrademarkMatterService::class)->filingBlocker($project, $targetStage)) {
+            return response()->json(['message' => $blocker, 'requires_mark_image' => true], 422);
+        }
+
         // 1. Mark previous active stages as Completed
         ProjectStage::where('project_id', $project->id)
             ->where('sequence_order', '<', $targetStage->sequence_order)
@@ -883,6 +903,11 @@ class ProjectController extends Controller
 
     private function stagesForServiceCode(string $svc): array
     {
+        $trademarkTemplates = config('trademark_lifecycle.templates');
+        if (isset($trademarkTemplates[$svc])) {
+            return $trademarkTemplates[$svc][1];
+        }
+
         return match (true) {
             in_array($svc, ['PAS', 'SRH', 'PAT', 'FTO']) => [
                 "Matter Created",
@@ -1332,7 +1357,7 @@ class ProjectController extends Controller
         }
 
         $data = $request->validate([
-            'to_service' => ['required', 'string', 'regex:/^[A-Za-z0-9]{3}$/'],
+            'to_service' => ['required', 'string', 'regex:/^[A-Za-z0-9]{3,5}$/'],
             'note'       => 'nullable|string|max:1000',
         ]);
 
@@ -1593,9 +1618,10 @@ class ProjectController extends Controller
     }
 
     /**
-     * Build the WHERE closure that scopes a Patent Analyst's query.
+     * Build the WHERE closure that scopes a case-scoped user's query.
      * role_filter: pcm → only assigned_manager_id, scm → secondary_manager_id,
-     * pr → patent_engineer_id, anything else → all three + task-assigned.
+     * pr → patent_engineer_id, attorney → assigned_partner_id, anything else →
+     * Project::scopeAssignedTo() (created, PR/PCM/SCM/attorney, or task-assigned).
      */
     private function analystWhereClause($user, ?string $roleFilter): \Closure
     {
@@ -1604,10 +1630,8 @@ class ProjectController extends Controller
                 'pcm' => $q->where('assigned_manager_id', $user->id),
                 'scm' => $q->where('secondary_manager_id', $user->id),
                 'pr'  => $q->where('patent_engineer_id', $user->id),
-                default => $q->where('patent_engineer_id', $user->id)
-                              ->orWhere('assigned_manager_id', $user->id)
-                              ->orWhere('secondary_manager_id', $user->id)
-                              ->orWhereHas('tasks', fn ($t) => $t->where('assignee_id', $user->id)),
+                'attorney' => $q->where('assigned_partner_id', $user->id),
+                default => $q->assignedTo($user->id),
             };
         };
     }

@@ -44,6 +44,22 @@ class DocketNumberServiceTest extends TestCase
         $this->assertSame('144M002USFIL', $second['docket_number']);
     }
 
+    public function test_it_parses_three_to_five_character_service_codes(): void
+    {
+        $service = app(DocketNumberService::class);
+
+        $this->assertSame(
+            ['invention_number' => '004', 'patent_office_code' => 'IN', 'service_code' => 'TMF'],
+            $service->parse('512M004INTMF', '512M'),
+        );
+        $this->assertSame('TMOR', $service->parse('512M004INTMOR', '512M')['service_code']);
+        $this->assertSame('TMINF', $service->parse('512m004intminf', '512M')['service_code']);
+        $this->assertSame('9EP', $service->parse('512M004IN9EP', '512M')['service_code']);
+
+        $this->expectException(ValidationException::class);
+        $service->parse('512M004INTOOLONG', '512M');
+    }
+
     public function test_it_rejects_a_noncanonical_import_identifier(): void
     {
         $client = Client::create([

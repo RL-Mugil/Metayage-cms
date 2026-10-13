@@ -8,6 +8,7 @@ import type {
 } from '@/types'
 import type { MatterWorkspace, MatterWorkspaceResponse } from '@/types/matter-workspace'
 import type { ZohoQuotePreview } from '@/types/zoho'
+import type { TrademarkDetails, TrademarkInput } from '@/types/trademark'
 
 function getCsrfToken(): string {
   if (typeof document === 'undefined') return ''
@@ -16,6 +17,14 @@ function getCsrfToken(): string {
 }
 
 export type { User, Client, Project, Task, Invoice, Employee, PaginatedResponse, SearchResult, Quotation, AuditLog, PatentInvoiceIn, ProjectTab, CodeRow, CodeRenameImpact, CodeRenameResult, CodeMergeAvailable, CodeMergeImpact, CodeMergeResult }
+
+export type LegalSlug = 'privacy' | 'terms'
+export interface MaintenanceState { enabled: boolean; title: string; tagline: string; message: string; contact: string }
+export interface SiteAdminState {
+  badge: string
+  maintenance: MaintenanceState
+  pages: Record<LegalSlug, { html: string; customized: boolean; updated_at: string | null }>
+}
 
 export interface ReminderProfile {
   id: number
@@ -99,6 +108,34 @@ export interface ZohoOpeningBalanceRow {
   balance_date: string | null; amount: number; balance: number; currency: string; source: string; synced_at: string | null;
 }
 
+export interface ZohoAuditMonitoring {
+  scope: string
+  budget: {
+    used: number; limit: number; remaining: number; nightly_limit: number
+    pools: Record<string, { used: number; limit: number; remaining: number }>
+    evening_used: number; addon_limit: number; addon_used: number
+  }
+  cycle: { started_at: string | null; completed_at: string | null; pause_reason: string | null; evening_eligible_date: string | null } | null
+  pending_snapshots: number
+  progress: Array<{ resource: string; next_page: number; started_at: string | null; completed_at: string | null }>
+  recent_runs: Array<{ id: number; status: string; summary: string | null; created_at: string }>
+}
+
+export interface ZohoControlPanel {
+  scope: string
+  plan_mode: string
+  polling_interval_minutes: number
+  budget: ZohoAuditMonitoring['budget']
+  last_successful_poll: string | null
+  waiting: { quote_exports: number; webhook_events: number; stale_records: number }
+  duplicate_prevention_checks: number
+  conflicts: Array<{ id: number; subject_type: string; subject_id: number | null; metadata: Record<string, unknown> | null; created_at: string }>
+  portal_events: Array<{ id: number; action: string; subject_type: string; subject_id: number | null; metadata: Record<string, unknown> | null; created_at: string }>
+  poll_events: Array<{ id: number; event_type: string; status: string; summary: string | null; payload: unknown; created_at: string }>
+  quote_exports: Array<{ id: number; source_type: string; source_id: number; client_id: number | null; project_id: number | null; reference: string; estimate_id: string | null; state: string; updated_at: string }>
+  stale_sla_records: number
+}
+
 export interface ZohoAllRow {
   can_refresh: boolean
   duplicate_number: boolean
@@ -117,7 +154,7 @@ export interface ZohoAllRow {
   balance: number | null
   currency: string
   url: string | null
-  match_source: 'uin' | 'docket' | 'manual' | 'export' | null
+  match_source: 'uin' | 'docket' | 'uin_prefix' | 'client_uin' | 'app_number' | 'manual' | 'export' | null
   synced_at: string | null
 }
 
@@ -149,6 +186,11 @@ export const api = {
     })
     if (!response.ok) {
       if (response.status === 401) { window.location.href = '/login'; return null as unknown as T }
+      if (response.status === 503) {
+        const body = await response.clone().json().catch(() => ({})) as { maintenance?: boolean }
+        // Maintenance mode was switched on while this tab was open: reload to show the maintenance page.
+        if (body.maintenance) { window.location.reload(); return null as unknown as T }
+      }
       const errData = await response.json().catch(() => ({}))
       // Laravel validation errors carry a generic "message" ("The given data was
       // invalid.") plus a field-keyed "errors" map with the actual specific text —
@@ -297,6 +339,37 @@ export const api = {
     note?: string
   }): Promise<{ message: string; project: Project }> {
     return this.request(`/invention-families/${familyId}/engagements`, { method: 'POST', body: JSON.stringify(data) })
+  },
+
+  // ── Trademark mark details + logo ──
+  async getProjectTrademark(projectId: number | string): Promise<TrademarkDetails | null> {
+    const res = await this.request<{ data: TrademarkDetails | null }>(`/projects/${projectId}/trademark`)
+    return res.data
+  },
+  async updateProjectTrademark(projectId: number | string, data: TrademarkInput): Promise<TrademarkDetails> {
+    const res = await this.request<{ data: TrademarkDetails }>(`/projects/${projectId}/trademark`, { method: 'PUT', body: JSON.stringify(data) })
+    return res.data
+  },
+  async uploadTrademarkMark(projectId: number | string, file: File): Promise<TrademarkDetails> {
+    const formData = new FormData()
+    formData.append('image', file)
+    const response = await fetch(`/api/projects/${projectId}/trademark/mark-image`, {
+      method: 'POST',
+      headers: { 'X-XSRF-TOKEN': getCsrfToken(), Accept: 'application/json' },
+      credentials: 'same-origin',
+      body: formData,
+    })
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}))
+      throw new Error((err as { message?: string }).message || 'Logo upload failed')
+    }
+    return ((await response.json()) as { data: TrademarkDetails }).data
+  },
+  /** Object URL for an access-checked document (caller must URL.revokeObjectURL it). */
+  async documentObjectUrl(path: string): Promise<string> {
+    const response = await fetch(`/api/documents/view?path=${encodeURIComponent(path)}`, { credentials: 'same-origin' })
+    if (!response.ok) throw new Error('Could not load file')
+    return URL.createObjectURL(await response.blob())
   },
 
   // ── Docketing engine ──
@@ -542,6 +615,12 @@ export const api = {
   async getAuditLogs(params?: URLSearchParams): Promise<PaginatedResponse<AuditLog>> {
     const query = params ? '?' + params.toString() : ''
     return this.request(`/audit-logs${query}`)
+  },
+  async getZohoAuditMonitoring(): Promise<ZohoAuditMonitoring> {
+    return this.request('/audit-logs/zoho-monitoring')
+  },
+  async getZohoControlPanel(): Promise<ZohoControlPanel> {
+    return this.request('/audit-logs/zoho-control-panel')
   },
 
   // ── Patent Invoices — Indian clients ──
@@ -851,6 +930,19 @@ export const api = {
   async updateFeatureFlags(data: { feature_link_predecessor: boolean; feature_legacy_case: boolean; feature_existing_client: boolean }): Promise<any> {
     return this.request('/settings/feature-flags', { method: 'PUT', body: JSON.stringify(data) })
   },
+  async getSiteAdmin(): Promise<SiteAdminState> { return this.request('/settings/site') },
+  async updateBadge(text: string): Promise<{ badge: string }> {
+    return this.request('/settings/badge', { method: 'PUT', body: JSON.stringify({ text }) })
+  },
+  async updateMaintenance(data: MaintenanceState): Promise<{ maintenance: MaintenanceState }> {
+    return this.request('/settings/maintenance', { method: 'PUT', body: JSON.stringify(data) })
+  },
+  async updateLegalPage(slug: LegalSlug, html: string): Promise<{ html: string; customized: boolean }> {
+    return this.request(`/settings/pages/${slug}`, { method: 'PUT', body: JSON.stringify({ html }) })
+  },
+  async resetLegalPage(slug: LegalSlug): Promise<{ html: string; customized: boolean }> {
+    return this.request(`/settings/pages/${slug}`, { method: 'DELETE' })
+  },
   async updateDropdown(key: 'dropdown_service_codes' | 'dropdown_country_codes', items: { code: string; label: string }[]): Promise<any> {
     return this.request('/settings/dropdown', { method: 'PUT', body: JSON.stringify({ key, items }) })
   },
@@ -1072,6 +1164,9 @@ export const api = {
   },
   async zohoDeleteQuoteInZoho(kind: 'standard' | 'in', id: number): Promise<{ state: string; estimate_id: string; message: string }> {
     return this.request(`/integrations/zoho/quotes/${kind}/${id}/delete-in-zoho`, { method: 'POST' })
+  },
+  async zohoConvertQuoteToInvoice(kind: 'standard' | 'in', id: number): Promise<{ state: string; estimate_id: string; invoice_id: string | null; message: string }> {
+    return this.request(`/integrations/zoho/quotes/${kind}/${id}/convert-to-invoice`, { method: 'POST' })
   },
   async zohoSyncStatus(): Promise<{ budget: { used: number; limit: number; remaining: number; nightly_limit: number; evening_used: number; addon_limit: number; addon_used: number; pools: Record<'automatic' | 'manual_read' | 'write' | 'emergency' | 'addon', { used: number; limit: number; remaining: number }> }; pending: number; evening: { evening_eligible_date: string | null; pause_reason: string | null; completed_at: string | null } | null; deletions: { mode: string; configured: boolean; pending: number; failed: number; last_received_at: string | null }; last_run: { status: string; summary: string; created_at: string } | null }> {
     return this.request('/integrations/zoho/sync-status')

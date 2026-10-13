@@ -54,6 +54,11 @@ return [
     // site_key is public (shared to the frontend via HandleInertiaRequests); secret_key is
     // server-only and must never reach the client. Both blank = Turnstile silently disabled
     // (see AuthController::verifyTurnstile()) rather than locking out login in dev/local envs.
+    // Recipient of enquiries from the public marketing-site contact form.
+    'contact' => [
+        'recipient' => env('CONTACT_RECIPIENT'),
+    ],
+
     'turnstile' => [
         'site_key'   => env('TURNSTILE_SITE_KEY'),
         'secret_key' => env('TURNSTILE_SECRET_KEY'),

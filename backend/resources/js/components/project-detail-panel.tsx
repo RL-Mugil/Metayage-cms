@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { X, Loader2, ArrowRight, Clock, Lock } from "lucide-react";
 import { api } from "@/lib/api-client";
 import { DocketDeadlines } from "@/components/docket-deadlines";
+import { TrademarkMarkPanel } from "@/components/trademark-details-fields";
 
 function fmtDate(d: string | null | undefined): string {
   if (!d) return "—";
@@ -67,7 +68,10 @@ export function ProjectDetailPanel({ projectId, onClose }: Props) {
       await api.updateProjectStage(projectId, stageName);
       const ref = { v: false };
       fetchDetail(ref);
-    } catch { /* ignore */ }
+    } catch (e) {
+      // e.g. a non-word trademark can't reach "TM-A filed" without its logo.
+      setLockedMsg(e instanceof Error ? e.message : "Could not move the case to that stage.");
+    }
     finally { setAdvancingStage(null); }
   }
 
@@ -165,6 +169,10 @@ export function ProjectDetailPanel({ projectId, onClose }: Props) {
                       </button>
                     </div>
                   )}
+
+                  <div className="mb-4 empty:hidden">
+                    <TrademarkMarkPanel projectId={projectId} serviceCode={data.project?.service_code} />
+                  </div>
 
                   {/* Progress bar */}
                   {(() => {

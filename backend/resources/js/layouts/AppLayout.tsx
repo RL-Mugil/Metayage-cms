@@ -6,7 +6,7 @@ import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { EnvBadge } from "@/components/env-badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { api } from "@/lib/api-client";
 import type { SearchResult } from "@/lib/api-client";
@@ -281,9 +281,7 @@ export default function AppLayout({ children }: Props) {
             </div>
 
             <div className="ml-auto flex items-center gap-2">
-              <Badge variant="outline" className="hidden md:inline-flex border-gold/40 text-gold">
-                Production · v2.0
-              </Badge>
+              <EnvBadge />
 
               {/* Help button */}
               <Button variant="ghost" size="icon" onClick={() => setHelpOpen(true)} aria-label="Keyboard shortcuts">

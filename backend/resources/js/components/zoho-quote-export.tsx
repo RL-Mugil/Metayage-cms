@@ -42,6 +42,17 @@ export function ZohoQuoteExport({ kind, id }: { kind: 'standard' | 'in'; id: num
       void queryClient.invalidateQueries({ queryKey: ['zoho-sync-status'] });
     },
   });
+  const convert = useMutation({
+    retry: false,
+    mutationFn: () => api.zohoConvertQuoteToInvoice(kind, id),
+    onSuccess: result => toast.success(result.message),
+    onError: (failure: Error) => toast.error(failure.message),
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: key });
+      void queryClient.invalidateQueries({ queryKey: ['zoho-sync-status'] });
+      void queryClient.invalidateQueries({ queryKey: ['financial'] });
+    },
+  });
   const blocked = data && !['new', 'rejected'].includes(data.state);
   const preview = data?.preview;
   return <>
@@ -51,6 +62,10 @@ export function ZohoQuoteExport({ kind, id }: { kind: 'standard' | 'in'; id: num
         <DialogHeader><DialogTitle>Send a draft quote to Zoho Books</DialogTitle></DialogHeader>
         <p className="text-sm text-muted-foreground">The accountant reviews this draft and creates the invoice in Zoho Books. The invoice returns with the daily sync. This action uses one quote-write call.</p>
         {data?.state === 'confirmed' ? <><p className="text-sm">Already sent: {data.estimate_id}. Make further changes in Zoho Books.</p>
+          {data.conversion_state === 'converted' ? <p className="text-sm text-emerald-600">Converted to Zoho invoice: {data.invoice_id}.</p>
+            : <Button size="sm" disabled={convert.isPending || data.conversion_state === 'converting' || data.conversion_state === 'uncertain'} onClick={() => {
+              if (window.confirm('Convert this existing Zoho draft quote to one invoice? This will not create a second quote.')) convert.mutate();
+            }}>{convert.isPending || data.conversion_state === 'converting' ? 'Converting…' : data.conversion_state === 'uncertain' ? 'Awaiting reconciliation' : 'Convert existing quote to invoice'}</Button>}
           <Button variant="destructive" size="sm" disabled={remove.isPending} onClick={() => {
             if (window.confirm('Delete this draft quotation from Zoho Books? This uses one write call and cannot be undone.')) remove.mutate();
           }}>{remove.isPending ? 'Deleting…' : 'Delete draft in Zoho (manual)'}</Button></>

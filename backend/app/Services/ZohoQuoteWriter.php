@@ -106,6 +106,36 @@ class ZohoQuoteWriter
         }
     }
 
+    public function convertToInvoice(string $kind, int $id): array
+    {
+        abort_unless($this->zoho->isConfigured(), 422, 'Zoho Books is not configured.');
+        $scope = $this->zoho->scope();
+        $lock = Cache::lock('zoho_quote:' . $scope . ':' . $kind . ':' . $id, 120);
+        abort_unless($lock->get(), 409, 'This quotation is already being updated.');
+        try {
+            $export = ZohoQuoteExport::where(compact('scope'))->where('source_type', $kind)->where('source_id', $id)->lockForUpdate()->firstOrFail();
+            abort_unless($export->state === 'confirmed' && $export->estimate_id, 409, 'Only a confirmed Zoho draft can be converted.');
+            if ($export->invoice_id || $export->conversion_state === 'converted') {
+                return $this->conversionResult($export);
+            }
+            abort_unless($export->conversion_state !== 'converting', 409, 'Invoice conversion is already in progress.');
+            $export->update(['conversion_state' => 'converting']);
+            $this->audit($export, 'zoho_invoice_conversion_started');
+            try {
+                $invoice = $this->zoho->createInvoiceFromEstimate((string) $export->estimate_id);
+                $export->update(['invoice_id' => (string) $invoice['invoice_id'], 'conversion_state' => 'converted', 'converted_at' => now()]);
+                $this->audit($export, 'zoho_invoice_converted');
+                return $this->conversionResult($export->refresh());
+            } catch (Throwable $error) {
+                $export->update(['conversion_state' => 'uncertain']);
+                $this->audit($export, 'zoho_invoice_conversion_uncertain');
+                throw new \Symfony\Component\HttpKernel\Exception\HttpException(409, 'The conversion result is uncertain. Retry is blocked until the next Zoho reconciliation confirms whether an invoice exists.');
+            }
+        } finally {
+            $lock->release();
+        }
+    }
+
     /** Called within the mirror transaction; no extra Books requests. */
     public function reconcile(string $scope, array $record, string $type): ?ZohoQuoteExport
     {
@@ -133,6 +163,9 @@ class ZohoQuoteWriter
                 $this->audit($export, 'zoho_quote_reconciled');
             }
         }
+        if ($export && $type === 'invoice' && ! empty($record['invoice_id'])) {
+            $export->update(['invoice_id' => (string) $record['invoice_id'], 'conversion_state' => 'converted', 'converted_at' => $export->converted_at ?? now()]);
+        }
         return $export;
     }
 
@@ -140,6 +173,12 @@ class ZohoQuoteWriter
     {
         return ['state' => $export->state, 'estimate_id' => $export->estimate_id, 'message' => $export->state === 'deleted'
             ? 'This quote was deleted in Zoho; re-export is blocked.' : 'Draft saved in Zoho Books. The accountant reviews it and creates the invoice there.'];
+    }
+
+    private function conversionResult(ZohoQuoteExport $export): array
+    {
+        return ['state' => $export->conversion_state, 'estimate_id' => $export->estimate_id, 'invoice_id' => $export->invoice_id,
+            'message' => $export->invoice_id ? 'The existing Zoho quote is linked to one invoice.' : 'Invoice conversion is pending reconciliation.'];
     }
 
     private function audit(ZohoQuoteExport $export, string $action): void

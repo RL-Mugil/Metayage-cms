@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api-client";
+import { fmtTime } from "@/lib/date-utils";
 
 interface Integration {
   id: string;
@@ -565,7 +566,7 @@ export default function Integrations() {
                                 <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${l.status === "ok" ? "bg-green-400" : "bg-red-400"}`} />
                                 <span className="text-muted-foreground font-mono">{l.event_type}</span>
                                 <span className="flex-1 truncate text-muted-foreground">{l.summary}</span>
-                                <span className="font-mono text-muted-foreground/60">{l.created_at ? new Date(l.created_at).toLocaleTimeString("en-IN") : ""}</span>
+                                <span className="font-mono text-muted-foreground/60">{l.created_at ? fmtTime(l.created_at) : ""}</span>
                               </div>
                             ))}
                           </div>

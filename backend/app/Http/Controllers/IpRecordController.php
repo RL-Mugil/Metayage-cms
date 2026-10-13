@@ -7,11 +7,11 @@ use App\Http\Requests\StoreIpRecordRequest;
 use App\Http\Resources\IpRecordResource;
 use App\Models\AuditLog;
 use App\Models\Client;
-use App\Models\Firm;
 use App\Models\IpRecord;
 use App\Models\PatentApplication;
 use App\Models\TrademarkApplication;
 use App\Models\User;
+use App\Services\TrademarkMatterService;
 use App\Support\FirmContext;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -70,15 +70,9 @@ class IpRecordController extends Controller
         }
 
         $record = DB::transaction(function () use ($request, $validated, $firmId): IpRecord {
-            Firm::whereKey($firmId)->lockForUpdate()->firstOrFail();
-            $year = now()->year;
-            $last = IpRecord::withTrashed()->where('record_code', 'like', "IPR-{$year}-%")
-                ->orderByDesc('record_code')->lockForUpdate()->value('record_code');
-            $sequence = $last ? ((int) substr($last, -5)) + 1 : 1;
-
             $record = IpRecord::create([
                 ...collect($validated)->except(['patent', 'trademark'])->all(),
-                'record_code' => sprintf('IPR-%d-%05d', $year, $sequence),
+                'record_code' => app(TrademarkMatterService::class)->nextRecordCode($firmId),
                 'jurisdiction' => strtoupper($validated['jurisdiction']),
             ]);
 

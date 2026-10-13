@@ -71,12 +71,15 @@ class InventionFamilyService
                 throw ValidationException::withMessages(['service_code' => "Engagement {$docket} already exists."]);
             }
 
-            $application = PatentApplication::query()
+            // Trademark engagements share the source's IpRecord (copied by replicate())
+            // rather than a patent application.
+            $isTrademark = TrademarkMatterService::isTrademarkCode($service);
+            $application = $isTrademark ? null : PatentApplication::query()
                 ->where('invention_family_id', $family->id)
                 ->where('jurisdiction', $office)
                 ->first();
 
-            if (! $application) {
+            if (! $application && ! $isTrademark) {
                 $application = PatentApplication::create([
                     'firm_id' => $source->firm_id,
                     'invention_family_id' => $family->id,
@@ -102,20 +105,27 @@ class InventionFamilyService
                 'invention_family_id' => $family->id,
                 'invention_number' => $family->invention_number,
                 'parent_project_id' => $source->id,
-                'patent_application_id' => $application->id,
+                'patent_application_id' => $application?->id,
                 'patent_office_code' => $office,
                 'service_code' => $service,
-                'application_number' => $application->application_number,
-                'filing_date' => $attributes['filing_date'] ?? $application->filing_date,
+                'application_number' => $isTrademark
+                    ? ($attributes['application_number'] ?? $source->application_number)
+                    : $application->application_number,
+                'filing_date' => $attributes['filing_date'] ?? ($isTrademark ? $source->filing_date : $application->filing_date),
                 'hard_deadline' => $attributes['hard_deadline'] ?? null,
                 'status' => 'Open',
+                'created_by_id' => $actor->id,
                 'notes' => $attributes['note'] ?? $source->notes,
                 'docket_reviewer_id' => $attributes['docket_reviewer_id'] ?? $source->docket_reviewer_id ?? $source->assigned_manager_id ?? $actor->id,
             ]);
             $successor->save();
 
-            $template = app(JurisdictionLifecycleService::class)->resolve($office, $service);
-            app(JurisdictionLifecycleService::class)->apply($successor, $template);
+            $template = $isTrademark
+                ? app(TrademarkMatterService::class)->seedStages($successor)
+                : app(JurisdictionLifecycleService::class)->resolve($office, $service);
+            if (! $isTrademark) {
+                app(JurisdictionLifecycleService::class)->apply($successor, $template);
+            }
 
             ProjectElevation::create([
                 'project_id' => $successor->id,
@@ -147,8 +157,8 @@ class InventionFamilyService
                     'new_docket' => $docket,
                     'jurisdiction' => $office,
                     'service_code' => $service,
-                    'lifecycle_template_id' => $template->id,
-                    'lifecycle_template_version' => $template->version,
+                    'lifecycle_template_id' => $template?->id,
+                    'lifecycle_template_version' => $template?->version,
                 ],
                 'ip_address' => $auditContext['ip_address'] ?? null,
                 'user_agent' => $auditContext['user_agent'] ?? null,

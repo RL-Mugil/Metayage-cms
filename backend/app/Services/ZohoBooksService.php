@@ -9,8 +9,8 @@ use RuntimeException;
 use Illuminate\Http\Client\Response;
 
 /**
- * Reads Books records and creates draft estimates only. Invoice mutations,
- * emailing, contact creation and estimate-to-invoice conversion are not exposed.
+ * Reads Books records, creates draft estimates, and converts an existing estimate
+ * into one invoice. Sending/emailing remains explicitly outside this service.
  */
 class ZohoBooksService
 {
@@ -19,6 +19,7 @@ class ZohoBooksService
     public ?string $eveningDate = null;
     public bool $emergency = false;
     public bool $addon = false;
+    public bool $polling = false;
 
     public function scope(): string
     {
@@ -119,7 +120,7 @@ class ZohoBooksService
     {
         // Reserve before authentication so an exhausted budget makes no network calls.
         // OAuth is a separate Accounts request; each Books operation reserves one call.
-        $write = $draft !== null || $method === 'DELETE';
+        $write = $draft !== null || in_array($method, ['DELETE', 'POST'], true);
         app(ZohoApiBudget::class)->reserve($this->scope(), $this->background, $write, $this->eveningDate, $this->emergency, $this->addon);
         try {
             $token = $this->getAccessToken();
@@ -136,10 +137,12 @@ class ZohoBooksService
         $http = Http::connectTimeout(10)->timeout(30)->withOptions(['allow_redirects' => false])
             ->withHeaders(['Authorization' => 'Zoho-oauthtoken ' . $token]);
         $response = $draft !== null
-            ? $http->withQueryParameters($query)->post($this->apiDomain() . '/books/v3/estimates', $draft)
+            ? $http->withQueryParameters($query)->post($this->apiDomain() . '/books/v3' . $path, $draft)
             : ($method === 'DELETE'
                 ? $http->delete($this->apiDomain() . '/books/v3' . $path, $query)
-                : $http->get($this->apiDomain() . '/books/v3' . $path, $query));
+                : ($method === 'POST'
+                    ? $http->withQueryParameters($query)->post($this->apiDomain() . '/books/v3' . $path)
+                    : $http->get($this->apiDomain() . '/books/v3' . $path, $query)));
 
         $code = (int) ($response->json('code') ?? 0);
         // A generic 404 (or a PDF 404) is not proof that a financial record was deleted.
@@ -206,6 +209,19 @@ class ZohoBooksService
         }
     }
 
+    /** Convert an existing estimate; this never creates a second independent invoice. */
+    public function createInvoiceFromEstimate(string $estimateId): array
+    {
+        abort_unless(preg_match('/^[0-9]{1,80}$/', $estimateId) === 1, 422, 'Invalid Zoho estimate ID.');
+        $response = $this->request('/invoices/fromestimates', [], ['estimate_ids' => [$estimateId]], 'POST');
+        $data = $response->json();
+        $invoice = $data['invoices'][0] ?? $data['invoice'] ?? null;
+        if (! is_array($invoice) || empty($invoice['invoice_id'])) {
+            throw new RuntimeException('Zoho did not confirm invoice conversion from the estimate.');
+        }
+        return $invoice;
+    }
+
     public const RESOURCES = [
         'invoices' => ['invoice_id', 'invoice'],
         'estimates' => ['estimate_id', 'estimate'],
@@ -216,8 +232,13 @@ class ZohoBooksService
 
     public function page(string $resource, int $page): array
     {
+        return $this->listPage($resource, ['page' => $page, 'per_page' => 200]);
+    }
+
+    public function listPage(string $resource, array $query = []): array
+    {
         $this->validateResource($resource);
-        $data = $this->get('/' . $resource, ['page' => $page, 'per_page' => 200]);
+        $data = $this->get('/' . $resource, $query + ['per_page' => 200]);
         if (! isset($data[$resource]) || ! is_array($data[$resource])
             || ! array_is_list($data[$resource])
             || ! is_bool($data['page_context']['has_more_page'] ?? null)) {

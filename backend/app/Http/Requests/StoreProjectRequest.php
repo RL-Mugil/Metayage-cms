@@ -2,7 +2,9 @@
 
 namespace App\Http\Requests;
 
+use App\Services\TrademarkMatterService;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class StoreProjectRequest extends FormRequest
 {
@@ -25,7 +27,7 @@ class StoreProjectRequest extends FormRequest
             'technology_field'      => 'nullable|string',
             'application_number'    => 'nullable|string|max:100',
             'patent_office_code'    => ['required', 'string', 'regex:/^[A-Za-z0-9]{2}$/'],
-            'service_code'          => ['required', 'string', 'regex:/^[A-Za-z0-9]{3}$/'],
+            'service_code'          => ['required', 'string', 'regex:/^[A-Za-z0-9]{3,5}$/'],
             'filing_date'           => 'nullable|date',
             'assigned_partner_id'   => 'nullable|exists:users,id',
             'assigned_manager_id'   => 'nullable|exists:users,id',
@@ -42,6 +44,39 @@ class StoreProjectRequest extends FormRequest
             'urgency'               => 'nullable|string',
             'notes'                 => 'nullable|string',
             'circle'                => 'nullable|in:A,B',
+            ...$this->trademarkRules(),
+        ];
+    }
+
+    /** Mark details for TM* service codes; mark text is mandatory on new filings. */
+    private function trademarkRules(): array
+    {
+        $service = (string) $this->input('service_code');
+        if (! TrademarkMatterService::isTrademarkCode($service)) {
+            return ['trademark' => 'prohibited'];
+        }
+
+        $isFiling = TrademarkMatterService::isFilingCode($service);
+        $classCount = match (strtoupper($service)) {
+            'TMF' => 'size:1',
+            'TMC' => 'min:2',
+            default => 'array',
+        };
+
+        return [
+            'trademark'                => $isFiling ? 'required|array' : 'nullable|array',
+            'trademark.mark_text'      => [$isFiling ? 'required' : 'nullable', 'string', 'max:255'],
+            'trademark.mark_type'      => [$isFiling ? 'required' : 'nullable', Rule::in(TrademarkMatterService::markTypes())],
+            'trademark.nice_classes'   => [$isFiling ? 'required' : 'nullable', 'array', $classCount],
+            'trademark.nice_classes.*' => 'integer|between:1,45|distinct',
+        ];
+    }
+
+    public function messages(): array
+    {
+        return [
+            'trademark.nice_classes.size' => 'A single-class filing (TMF) takes exactly one Nice class — use TMC for several.',
+            'trademark.nice_classes.min'  => 'A multi-class filing (TMC) needs at least two Nice classes.',
         ];
     }
 }

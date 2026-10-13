@@ -103,6 +103,14 @@ class User extends Authenticatable
         return $this->belongsToMany(Project::class, 'project_inventors', 'user_id', 'project_id')->withTimestamps();
     }
 
+    /** Staff who see only cases they created or are assigned to (Project::scopeAssignedTo). */
+    public const CASE_SCOPED_ROLES = ['associate', 'paralegal', 'hr'];
+
+    public function seesOnlyOwnCases(): bool
+    {
+        return in_array($this->role, self::CASE_SCOPED_ROLES, true);
+    }
+
     public function isGalvanizer(): bool
     {
         return $this->role === 'galvanizer';

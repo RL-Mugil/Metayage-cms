@@ -8,6 +8,7 @@ use App\Models\Invoice;
 use App\Models\Task;
 use App\Models\TimeEntry;
 use App\Models\ZohoInvoice;
+use App\Models\ZohoOpeningBalance;
 use App\Services\ActionItemService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -35,7 +36,8 @@ class DashboardController extends Controller
         if (! $client) {
             return response()->json([
                 'metrics' => [
-                    'zoho_outstanding' => 0, 'zoho_collected_mtd' => 0, 'ledger_balance' => 0,
+                    'zoho_outstanding' => 0, 'zoho_opening_balance' => 0, 'zoho_total_receivables' => 0,
+                    'zoho_collected_mtd' => 0, 'ledger_balance' => 0,
                     'pending_invoices' => [], 'action_items' => [], 'renewal_items' => [],
                 ],
                 'charts' => ['stage_distribution' => []],
@@ -44,13 +46,15 @@ class DashboardController extends Controller
 
         $zohoQuery = ZohoInvoice::where('zoho_type', 'invoice')->where('client_id', $client->id);
         $zohoOutstanding = (float) (clone $zohoQuery)
-            ->whereIn('status', ['overdue', 'unpaid', 'partially_paid', 'sent', 'viewed'])
+            ->where('balance', '>', 0)
+            ->whereNotIn(DB::raw('LOWER(status)'), ['paid', 'cancelled', 'void'])
             ->sum('balance');
         $zohoCollectedMtd = (float) (clone $zohoQuery)
             ->where('status', 'paid')
             ->whereMonth('txn_date', now()->month)
             ->whereYear('txn_date', now()->year)
             ->sum('total');
+        $zohoOpeningBalance = (float) ZohoOpeningBalance::where('client_id', $client->id)->sum('balance');
 
         $ledgerBalance = (float) (DB::table('client_ledger')
             ->where('client_id', $client->id)
@@ -72,6 +76,8 @@ class DashboardController extends Controller
         return response()->json([
             'metrics' => [
                 'zoho_outstanding' => $zohoOutstanding,
+                'zoho_opening_balance' => $zohoOpeningBalance,
+                'zoho_total_receivables' => $zohoOutstanding + $zohoOpeningBalance,
                 'zoho_collected_mtd' => $zohoCollectedMtd,
                 'ledger_balance' => $ledgerBalance,
                 'pending_invoices' => $pendingInvoices,
@@ -157,10 +163,8 @@ class DashboardController extends Controller
                     'pcm' => $q->where('assigned_manager_id', $user->id),
                     'scm' => $q->where('secondary_manager_id', $user->id),
                     'pr'  => $q->where('patent_engineer_id', $user->id),
-                    default => $q->where('patent_engineer_id', $user->id)
-                                  ->orWhere('assigned_manager_id', $user->id)
-                                  ->orWhere('secondary_manager_id', $user->id)
-                                  ->orWhereHas('tasks', fn ($t) => $t->where('assignee_id', $user->id)),
+                    'attorney' => $q->where('assigned_partner_id', $user->id),
+                    default => $q->assignedTo($user->id),
                 };
             };
             $activeMattersQuery->where($scopeFn);
@@ -221,6 +225,7 @@ class DashboardController extends Controller
         $invoicedAmount = 0;
         $receivedAmount = 0;
         $zohoOutstanding  = 0;
+        $zohoOpeningBalance = 0;
         $zohoCollectedMtd = 0;
 
         if ($canSeeFinancials) {
@@ -234,7 +239,11 @@ class DashboardController extends Controller
                 $zohoQuery->whereHas('project', fn ($q) => $user->applyProjectScope($q));
             }
             $zohoOutstanding = (float) (clone $zohoQuery)
-                ->whereIn('status', ['overdue', 'unpaid', 'partially_paid', 'sent', 'viewed'])
+                ->where('balance', '>', 0)
+                ->whereNotIn(DB::raw('LOWER(status)'), ['paid', 'cancelled', 'void'])
+                ->sum('balance');
+            $zohoOpeningBalance = (float) ZohoOpeningBalance::query()
+                ->whereIn('client_id', (clone $zohoQuery)->select('client_id')->distinct())
                 ->sum('balance');
             $zohoCollectedMtd = (float) (clone $zohoQuery)
                 ->where('status', 'paid')
@@ -361,6 +370,8 @@ class DashboardController extends Controller
                 'revenue_delta_trend'   => $receivedThisMonth >= $receivedLastMonth ? 'up' : 'down',
                 'deadline_risk'         => $deadlineRisk,
                 'zoho_outstanding'      => $zohoOutstanding,
+                'zoho_opening_balance'  => $zohoOpeningBalance,
+                'zoho_total_receivables' => $zohoOutstanding + $zohoOpeningBalance,
                 'zoho_collected_mtd'    => $zohoCollectedMtd,
                 'action_items'          => $actionItems,
             ],

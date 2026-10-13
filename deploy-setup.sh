@@ -4,7 +4,7 @@ set -euo pipefail
 DEPLOY_DIR="/var/www/mypl-cms"
 DB_NAME="mypl_cms"
 DB_USER="mypl_cms_user"
-DB_PASS="MYPLcms_D0_s3cur3_2024!"
+DB_PASS="${DB_PASS:?Set DB_PASS in the environment before running (never commit it)}"
 DB_PORT="5433"
 DOMAIN="myipstrategy.com"
 FPM_SOCK="/run/php/php8.4-fpm-mypl-cms.sock"

@@ -308,7 +308,7 @@ class ZohoBooksController extends Controller
         if (! in_array($request->user()->role, self::WRITE_ROLES, true)) return response()->json(['message' => 'Forbidden'], 403);
         $limit = (int) $request->input('limit', 0);
         abort_unless($limit >= 0 && $limit <= \App\Services\ZohoApiBudget::ADDON_MAX, 422, 'Add-on limit must be between 0 and 450.');
-        \Illuminate\Support\Facades\DB::table('zoho_api_budgets')->where('scope', $this->zoho->scope())->update(['addon_limit' => $limit]);
+        \Illuminate\Support\Facades\DB::table('zoho_api_budgets')->where('scope', $this->zoho->scope())->update(['addon_limit' => $limit, 'updated_at' => now()]);
         return response()->json(['ok' => true, 'limit' => $limit]);
     }
 

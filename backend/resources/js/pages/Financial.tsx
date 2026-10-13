@@ -844,6 +844,13 @@ export default function Financial() {
     }
     setIndiaSaving(true); setIndiaErr("");
     const gst = computeIndiaGst(indiaForm);
+    const selectedClient = clients.find(client => Number(client.id) === Number(indiaForm.client_id));
+    const zohoCustomerId = String(selectedClient?.zoho_contact_id ?? "");
+    if (!editIndiaRec && indiaForm.type === "quote" && !zohoCustomerId) {
+      setIndiaErr("This client is not linked to an active Zoho Books customer. Link the client to Zoho before creating a quote draft.");
+      setIndiaSaving(false);
+      return;
+    }
     const payload: Partial<PatentInvoiceIn> = {
       type:                             indiaForm.type,
       project_id:                       parseInt(indiaForm.project_id),
@@ -890,6 +897,13 @@ export default function Financial() {
         const created = await api.createPatentInvoiceIn(payload);
         setIndiaRecords(prev => [created, ...prev]);
         setIndiaTotal(t => t + 1);
+        if (indiaForm.type === "quote") {
+          const draft = await api.zohoQuotePreview("in", created.id, "", zohoCustomerId);
+          if (!draft.preview || draft.error) {
+            throw new Error(draft.error ?? "The portal quote was created, but Zoho could not prepare its draft payload.");
+          }
+          await api.zohoSendQuote("in", created.id, zohoCustomerId, draft.preview.version);
+        }
       }
       setShowIndiaModal(false);
     } catch (e: any) { setIndiaErr(e.message || "Failed to save."); }
@@ -2118,7 +2132,7 @@ export default function Financial() {
               {/* Footer */}
               <div className="flex items-center gap-2 px-6 py-4 border-t border-border sticky bottom-0 bg-background rounded-b-xl">
                 <Button className="bg-gold hover:bg-gold/90 text-black flex-1" onClick={handleSaveIndia} disabled={indiaSaving}>
-                  {indiaSaving ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Saving…</> : editIndiaRec ? "Update" : `Create ${isInv ? "Invoice" : "Quotation"}`}
+                  {indiaSaving ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />{!editIndiaRec && !isInv ? "Creating quote & saving Zoho draft…" : "Saving…"}</> : editIndiaRec ? "Update" : isInv ? "Create Invoice" : "Create Quote & Save as Zoho Draft"}
                 </Button>
                 <Button variant="outline" onClick={() => setShowIndiaModal(false)}>Cancel</Button>
               </div>

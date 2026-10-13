@@ -41,20 +41,75 @@ class ProjectControllerTest extends TestCase
         $this->getJson('/api/projects')->assertUnauthorized();
     }
 
-    public function test_only_partner_and_manager_can_create_projects(): void
+    public function test_client_users_cannot_create_projects(): void
     {
-        $associate = $this->user('associate');
-        Sanctum::actingAs($associate);
-
+        Sanctum::actingAs($this->user('client'));
         $client = $this->createClient(['company_name' => 'Test']);
 
         $this->postJson('/api/projects', [
             'project_name' => 'Test Project',
             'project_type' => 'Patent',
-            'case_type'    => 'Patent',
             'client_id'    => $client->id,
-            'status'       => 'Active',
+            'patent_office_code' => 'IN',
+            'service_code' => 'FER',
         ])->assertForbidden();
+    }
+
+    public function test_patent_analyst_can_create_and_see_only_own_or_assigned_cases(): void
+    {
+        $analyst = $this->user('associate');
+        $partner = $this->user('partner');
+        $client = $this->createClient(['company_name' => 'Test']);
+        Sanctum::actingAs($analyst);
+
+        $created = $this->postJson('/api/projects', [
+            'project_name' => 'Analyst Case',
+            'project_type' => 'Patent',
+            'client_id'    => $client->id,
+            'patent_office_code' => 'IN',
+            'service_code' => 'FER',
+        ])->assertCreated()->json();
+
+        $this->assertSame($analyst->id, Project::find($created['id'])->created_by_id);
+        // The analyst isn't silently made the case's attorney/PCM.
+        $this->assertNull($created['assigned_partner_id']);
+
+        $base = ['client_id' => $client->id, 'project_type' => 'Patent', 'patent_office_code' => 'IN', 'service_code' => 'FER'];
+        $asAttorney = Project::create($base + ['project_name' => 'Attorney Case', 'docket_number' => 'X1', 'assigned_partner_id' => $analyst->id]);
+        $asScm = Project::create($base + ['project_name' => 'SCM Case', 'docket_number' => 'X2', 'secondary_manager_id' => $analyst->id]);
+        $unrelated = Project::create($base + ['project_name' => 'Other Case', 'docket_number' => 'X3', 'created_by_id' => $partner->id, 'assigned_manager_id' => $partner->id]);
+
+        $ids = collect($this->getJson('/api/projects?per_page=100')->assertOk()->json('data'))->pluck('id')->all();
+        $this->assertEqualsCanonicalizing([$created['id'], $asAttorney->id, $asScm->id], $ids);
+
+        $this->getJson("/api/projects/{$created['id']}")->assertOk();
+        $this->getJson("/api/projects/{$asAttorney->id}")->assertOk();
+        $this->getJson("/api/projects/{$unrelated->id}")->assertForbidden();
+    }
+
+    public function test_assigned_patent_analyst_can_edit_and_move_stages_only_on_their_cases(): void
+    {
+        $analyst = $this->user('associate');
+        $client = $this->createClient(['company_name' => 'Test']);
+        $base = ['client_id' => $client->id, 'project_type' => 'Patent', 'patent_office_code' => 'IN', 'service_code' => 'FER'];
+        $assigned = Project::create($base + ['project_name' => 'Mine', 'docket_number' => 'G1', 'patent_engineer_id' => $analyst->id, 'status' => 'Open']);
+        $other = Project::create($base + ['project_name' => 'Not mine', 'docket_number' => 'G2', 'status' => 'Open']);
+        Sanctum::actingAs($analyst);
+
+        $this->putJson("/api/projects/{$assigned->id}", ['status' => 'Granted', 'status_event_date' => '2026-10-01'])->assertOk();
+        $this->assertSame('Granted', $assigned->fresh()->status);
+
+        $this->putJson("/api/projects/{$assigned->id}", ['status' => 'Open', 'project_name' => 'Renamed'])->assertOk();
+        $this->assertSame('Renamed', $assigned->fresh()->project_name);
+
+        $firstStage = $assigned->stages()->orderBy('sequence_order')->value('stage_name');
+        if ($firstStage) {
+            $this->postJson("/api/projects/{$assigned->id}/stage", ['stage_name' => $firstStage])->assertOk();
+        }
+
+        $this->putJson("/api/projects/{$other->id}", ['status' => 'Granted', 'status_event_date' => '2026-10-01'])->assertForbidden();
+        $this->putJson("/api/projects/{$other->id}", ['project_name' => 'Hijack'])->assertForbidden();
+        $this->postJson("/api/projects/{$other->id}/stage", ['stage_name' => 'Anything'])->assertForbidden();
     }
 
     public function test_partner_can_create_project(): void

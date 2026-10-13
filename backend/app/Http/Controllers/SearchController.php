@@ -76,11 +76,7 @@ class SearchController extends Controller
             $clientId = DB::table('clients')->where('account_manager_id', $user->id)->value('id');
             $pq->where('projects.client_id', $clientId ?? 0);
         } elseif (in_array($role, ['associate', 'paralegal'])) {
-            $pq->where(function ($w) use ($user) {
-                $w->where('projects.assigned_partner_id', $user->id)
-                  ->orWhere('projects.assigned_manager_id', $user->id)
-                  ->orWhere('projects.patent_engineer_id', $user->id);
-            });
+            $pq->whereIn('projects.id', \App\Models\Project::assignedTo($user->id)->select('id'));
         } elseif ($user->isGalvanizer()) {
             $codes = $user->galvanizerCircleCodes();
             $uid   = $user->id;

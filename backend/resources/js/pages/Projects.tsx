@@ -18,6 +18,11 @@ import { api, downloadCSV } from "@/lib/api-client";
 import type { ProjectTab } from "@/types";
 import { statusColor } from "@/lib/utils";
 import { AnalystRoleFilter, useAnalystRoleFilter } from "@/components/analyst-role-filter";
+import { TrademarkDetailsFields } from "@/components/trademark-details-fields";
+import {
+  isTrademarkCode, isTrademarkFilingCode, validateTrademarkInput,
+  type TrademarkDetails, type TrademarkInput,
+} from "@/types/trademark";
 
 // ── Date helper ───────────────────────────────────────────────────────────────
 
@@ -298,7 +303,33 @@ function renewalStageNames(): string[] {
   return stages;
 }
 
+// Mirrors backend config/trademark_lifecycle.php.
+const TM_FILING_STAGES = [
+  "Instruction & mark details received", "Clearance search & class selection",
+  "TM-A & TM-48 (POA) prepared", "Client approval", "TM-A filed – application no. recorded",
+  "Formalities check / Vienna codification", "Examination", "Accepted & advertised in TM Journal",
+  "Opposition window (4 months)", "Registered – certificate issued",
+];
+const TRADEMARK_STAGES: Record<string, string[]> = {
+  TMF: TM_FILING_STAGES,
+  TMC: TM_FILING_STAGES,
+  TMS: ["Instruction received", "IP India public search", "Conflicting marks analysed", "Search report drafted", "Internal review", "Report sent to client", "Closed"],
+  TMD: ["Instruction received", "Mark & class analysis", "Advice drafted", "Internal review", "Advice sent to client", "Closed"],
+  TME: ["Examination report docketed (1-month deadline)", "Objections analysed (S.9 / S.11)", "Reply & user evidence drafted", "Internal review", "Client approval", "Reply filed", "Awaiting Registrar decision"],
+  TMJ: ["Journal parameters set", "Journal reviewed", "Conflicting marks flagged", "Report to client", "Closed"],
+  TMO: ["Conflicting mark identified (4-month deadline)", "Grounds analysed", "Notice of opposition (TM-O) drafted", "Client approval", "TM-O filed", "Counter-statement received", "Evidence (Rule 45)", "Hearing", "Decision"],
+  TMOR: ["Notice of opposition received (2-month deadline)", "Grounds analysed", "Counter-statement drafted", "Client approval", "Counter-statement filed", "Evidence (Rules 46–47)", "Hearing", "Decision"],
+  TMH: ["Hearing notice docketed", "Strategy & evidence prepared", "Written submissions drafted", "Internal review", "Client preparation", "Hearing attended", "Awaiting order"],
+  TMG: ["Registration monitored", "Certificate downloaded & verified", "Sent to client", "Renewal date docketed", "Closed"],
+  TMRN: ["Renewal instruction confirmed", "Due date verified (10-year term)", "Client authority & fees confirmed", "TM-R filed", "Renewal recorded", "Next renewal docketed", "Closed"],
+  TMA: ["Assignment instruction", "Deed drafted & stamped", "Client execution", "TM-P filed", "Register updated", "Closed"],
+  TMWT: ["Watch set up", "Periodic journal review", "Conflicts reported", "Client instructions", "Closed"],
+  TMINF: ["Infringement identified", "Evidence gathered", "Cease-and-desist drafted", "Client approval", "Notice served", "Response monitored", "Escalated / closed"],
+  TMMD: ["Base application verified", "MM2 prepared", "Client approval", "Filed via IP India (office of origin)", "Certified & sent to WIPO", "International registration", "Designated-office decisions monitored", "Closed"],
+};
+
 const STAGES_BY_SERVICE: Record<string, string[]> = {
+  ...TRADEMARK_STAGES,
   PAS: [
     "Matter Created", "Inventor / Technology Disclosure Requested", "Disclosure Received",
     "Search Parameters Defined", "Prior Art Search In Progress", "Search Report Drafted",
@@ -797,6 +828,8 @@ const BLANK: PF = {
   notes: "", circle: "",
 };
 
+const BLANK_TRADEMARK: TrademarkInput = { mark_text: "", mark_type: "", nice_classes: [] };
+
 // ── KPI ───────────────────────────────────────────────────────────────────────
 
 interface KpiDef {
@@ -1032,6 +1065,10 @@ export default function Projects() {
   const [showModal, setShowModal] = useState(false);
   const [editProj, setEditProj]  = useState<any>(null);
   const [form, setForm]          = useState<PF>(BLANK);
+  const [tmForm, setTmForm]      = useState<TrademarkInput>(BLANK_TRADEMARK);
+  const [tmFile, setTmFile]      = useState<File | null>(null);
+  const [tmExisting, setTmExisting] = useState<TrademarkDetails | null>(null);
+  const [tmNotice, setTmNotice]  = useState<string | null>(null);
   const [saving, setSaving]      = useState(false);
   const [saveErr, setSaveErr]    = useState("");
   const [backfillNotice, setBackfillNotice] = useState<string[] | null>(null);
@@ -1226,7 +1263,15 @@ export default function Projects() {
   // `serverTotal`/`serverLastPage` (set alongside it) back the pager UI below.
   const totalPages = Math.max(1, serverLastPage);
 
-  function openCreate() { setForm(BLANK); setEditProj(null); setSaveErr(""); setShowModal(true); }
+  function resetTrademark(existing: TrademarkDetails | null = null) {
+    setTmExisting(existing);
+    setTmFile(null);
+    setTmForm(existing
+      ? { mark_text: existing.mark_text ?? "", mark_type: existing.mark_type ?? "", nice_classes: existing.nice_classes }
+      : BLANK_TRADEMARK);
+  }
+
+  function openCreate() { setForm(BLANK); resetTrademark(); setEditProj(null); setSaveErr(""); setShowModal(true); }
 
   async function openEdit(p: any) {
     // IPO-status fields live on the linked PatentApplication, not on the
@@ -1237,6 +1282,11 @@ export default function Projects() {
       const docket = await api.getProjectDocket(p.id);
       app = docket?.application ?? null;
     } catch { /* no linked application yet — fields just start blank */ }
+    let trademark: TrademarkDetails | null = null;
+    if (isTrademarkCode(p.service_code)) {
+      try { trademark = await api.getProjectTrademark(p.id); } catch { /* not linked yet — starts blank */ }
+    }
+    resetTrademark(trademark);
 
     setForm({
       record_mode:         "existing",
@@ -1278,9 +1328,17 @@ export default function Projects() {
     if (!editProj && form.record_mode === "existing" && !form.project_code.trim() && !form.docket_number.trim()) {
       setSaveErr("Existing case ID is required for legacy cases."); return;
     }
-    if (!/^[A-Z0-9]{2}$/i.test(form.patent_office_code) || !/^[A-Z0-9]{3}$/i.test(form.service_code)) {
-      setSaveErr("A 2-character patent office code and 3-character service code are required."); return;
+    if (!/^[A-Z0-9]{2}$/i.test(form.patent_office_code) || !/^[A-Z0-9]{3,5}$/i.test(form.service_code)) {
+      setSaveErr("A 2-character patent office code and 3–5 character service code are required."); return;
     }
+    const isTrademark = isTrademarkCode(form.service_code);
+    if (isTrademark) {
+      const tmErr = validateTrademarkInput(form.service_code, tmForm, !!tmFile || !!tmExisting?.image_path);
+      if (tmErr) { setSaveErr(tmErr); return; }
+    }
+    const trademarkPayload: TrademarkInput | null = isTrademark && (tmForm.mark_text.trim() || tmForm.mark_type || tmForm.nice_classes.length)
+      ? { ...tmForm, mark_text: tmForm.mark_text.trim() }
+      : null;
     const canonicalCaseId = (form.project_code || form.docket_number).trim().toUpperCase();
     const payload = {
       ...form,
@@ -1309,6 +1367,7 @@ export default function Projects() {
     }
 
     setSaving(true); setSaveErr("");
+    let savedId: number | null = editProj?.id ?? null;
     try {
       if (editProj) {
         const { record_mode, project_code, docket_number, ...updatePayload } = payload;
@@ -1319,7 +1378,22 @@ export default function Projects() {
           setTimeout(() => setBackfillNotice(null), 8000);
         }
       } else {
-        await api.createProject(payload as any);
+        const created = await api.createProject({ ...payload, ...(trademarkPayload ? { trademark: trademarkPayload } : {}) } as any);
+        savedId = created.id;
+      }
+      if (isTrademark && savedId) {
+        // Mark details ride on the create request; edits and the logo are separate calls.
+        if (editProj && trademarkPayload?.mark_text && trademarkPayload.mark_type && trademarkPayload.nice_classes.length) {
+          await api.updateProjectTrademark(savedId, trademarkPayload);
+        }
+        if (tmFile) {
+          try {
+            await api.uploadTrademarkMark(savedId, tmFile);
+          } catch (e: any) {
+            setTmNotice(`Case saved, but the logo upload failed (${e.message || "unknown error"}). Upload it from the case detail panel.`);
+            setTimeout(() => setTmNotice(null), 10000);
+          }
+        }
       }
       // Reload rather than patch local state — status/service_code may have changed, which
       // can move this case out of the currently active tab or status filter.
@@ -2152,6 +2226,7 @@ export default function Projects() {
                       locked={featLockCodeDropdown}
                     />
                   </div>
+                  {!isTrademarkCode(form.service_code) && (<>
                   <div>
                     <FLbl>Inventor Name</FLbl>
                     <input value={form.invention_title}
@@ -2166,7 +2241,26 @@ export default function Projects() {
                       placeholder="e.g. Biotechnology, Semiconductors"
                       className={fInp} />
                   </div>
+                  </>)}
                 </div>
+                {isTrademarkCode(form.service_code) && (
+                  <div className="mt-3 rounded border border-border/70 bg-muted/20 p-3">
+                    <div className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-2">
+                      Trademark details
+                      {!isTrademarkFilingCode(form.service_code) && (
+                        <span className="ml-1 normal-case tracking-normal font-normal">(optional — follow-on cases reuse the original filing's mark)</span>
+                      )}
+                    </div>
+                    <TrademarkDetailsFields
+                      serviceCode={form.service_code}
+                      value={tmForm}
+                      onChange={setTmForm}
+                      file={tmFile}
+                      onFileChange={setTmFile}
+                      existingImagePath={tmExisting?.image_path}
+                    />
+                  </div>
+                )}
               </section>
 
               {/* ── 3. Dates & Status ────────────────────────────────── */}
@@ -2377,7 +2471,14 @@ export default function Projects() {
                         return;
                       }
                       if (isRenewal) return; // "Not renewed" — no backend action to revert a payment.
-                      try { await api.updateProjectStage(pid, s); } catch {}
+                      try {
+                        await api.updateProjectStage(pid, s);
+                      } catch (err: any) {
+                        // e.g. a device mark can't reach "TM-A filed" until its logo is uploaded.
+                        setTmNotice(err?.message || "Could not move the case to that stage.");
+                        setTimeout(() => setTmNotice(null), 10000);
+                        return;
+                      }
                       setProjects((prev) => prev.map((p) => {
                         if (p.id !== pid) return p;
                         const stageNames = stagesForProject(p);
@@ -3602,6 +3703,16 @@ export default function Projects() {
         document.body
       )}
 
+      {tmNotice && (
+        <div className="fixed bottom-4 left-4 z-[100] max-w-sm rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-700 shadow-lg dark:text-amber-400">
+          <div className="flex items-start justify-between gap-2">
+            <p>{tmNotice}</p>
+            <button onClick={() => setTmNotice(null)} className="flex-shrink-0 opacity-70 hover:opacity-100">
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
       {backfillNotice && backfillNotice.length > 0 && (
         <div className="fixed bottom-4 right-4 z-[100] max-w-sm rounded-md border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs text-emerald-700 shadow-lg dark:text-emerald-400">
           <div className="flex items-start justify-between gap-2">

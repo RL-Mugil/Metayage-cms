@@ -612,12 +612,7 @@ class FinancialController extends Controller
 
     private function analystProjectScope($user): \Closure
     {
-        return function ($q) use ($user) {
-            $q->where('patent_engineer_id', $user->id)
-                ->orWhere('assigned_manager_id', $user->id)
-                ->orWhere('secondary_manager_id', $user->id)
-                ->orWhereHas('tasks', fn ($t) => $t->where('assignee_id', $user->id));
-        };
+        return fn ($q) => $q->assignedTo($user->id);
     }
 
     public function batchUpdate(Request $request)

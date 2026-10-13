@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Models\Concerns\BelongsToFirm;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -32,7 +33,7 @@ class Project extends Model
         'docket_number', 'original_docket', 'invention_number', 'docket_trak_ref', 'application_number', 'patent_office_code', 'service_code',
         'case_type', 'filing_date', 'patent_granted', 'secondary_manager_id', 'patent_engineer_id', 'notes', 'circle',
         'google_task_ids', 'patent_application_id', 'jurisdiction_lifecycle_template_id',
-        'lifecycle_template_version', 'docket_reviewer_id',
+        'lifecycle_template_version', 'docket_reviewer_id', 'created_by_id',
     ];
 
     protected $casts = [
@@ -55,6 +56,35 @@ class Project extends Model
     public function client(): BelongsTo
     {
         return $this->belongsTo(Client::class);
+    }
+
+    public function creator(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'created_by_id');
+    }
+
+    /**
+     * Cases a user created or is assigned to: PR, PCM, SCM, attorney, or a task
+     * on the case. The visibility rule for case-scoped staff (see
+     * User::seesOnlyOwnCases()); keep in sync with ProjectPolicy::view().
+     */
+    public function scopeAssignedTo(Builder $query, int $userId): Builder
+    {
+        return $query->where(fn (Builder $q) => $q
+            ->where('created_by_id', $userId)
+            ->orWhere('patent_engineer_id', $userId)
+            ->orWhere('assigned_manager_id', $userId)
+            ->orWhere('secondary_manager_id', $userId)
+            ->orWhere('assigned_partner_id', $userId)
+            ->orWhereHas('tasks', fn ($t) => $t->where('assignee_id', $userId)));
+    }
+
+    public function isAssignedTo(int $userId): bool
+    {
+        return in_array($userId, array_map('intval', array_filter([
+            $this->created_by_id, $this->patent_engineer_id, $this->assigned_manager_id,
+            $this->secondary_manager_id, $this->assigned_partner_id,
+        ])), true) || $this->tasks()->where('assignee_id', $userId)->exists();
     }
 
     public function ipRecord(): BelongsTo

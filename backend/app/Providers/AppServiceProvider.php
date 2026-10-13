@@ -25,6 +25,7 @@ use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Str;
 use Illuminate\Support\ServiceProvider;
 use Laravel\Horizon\Horizon;
@@ -39,6 +40,14 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         User::observe(UserObserver::class);
+
+        // Never emit http:// asset/route URLs in production, even if a proxy hides the TLS hop.
+        if ($this->app->environment('production')) {
+            URL::forceScheme('https');
+        }
+
+        // Per-IP cap on the public enquiry form, on top of the route's burst limit.
+        RateLimiter::for('public-contact', fn (Request $request) => Limit::perHour(10)->by($request->ip()));
 
         // Named limiters keep Zoho action limits separate from the general API counter.
         RateLimiter::for('zoho-refresh', fn (Request $request) => Limit::perMinute(10)->by($request->user()->id));
@@ -57,6 +66,7 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(IpRecord::class, IpRecordPolicy::class);
         Gate::policy(Reminder::class, ReminderPolicy::class);
         Gate::policy(Employee::class, EmployeePolicy::class);
+        Gate::define('manage-site', fn (User $user): bool => $user->role === 'super_admin');
         Gate::define('approve-deadline-rules', fn (User $user): bool => in_array($user->role, ['super_admin', 'partner'], true));
         Gate::define('review-docket-deadline', fn (User $user, Project $project): bool =>
             in_array($user->role, ['super_admin', 'partner'], true)

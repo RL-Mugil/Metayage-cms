@@ -10,7 +10,8 @@ class DocketNumberService
 {
     public const INVENTION_LENGTH = 3;
     public const OFFICE_LENGTH = 2;
-    public const SERVICE_LENGTH = 3;
+    public const SERVICE_MIN_LENGTH = 3;
+    public const SERVICE_MAX_LENGTH = 5;
 
     public function assignForCreation(array $attributes): array
     {
@@ -87,20 +88,18 @@ class DocketNumberService
     {
         $canonical = strtoupper(trim($docket));
         $prefix = strtoupper(trim($clientCode));
-        $suffixLength = self::INVENTION_LENGTH + self::OFFICE_LENGTH + self::SERVICE_LENGTH;
+        $suffix = str_starts_with($canonical, $prefix) ? substr($canonical, strlen($prefix)) : '';
 
-        if (! str_starts_with($canonical, $prefix) || strlen($canonical) !== strlen($prefix) + $suffixLength) {
+        if (! preg_match('/^(\d{3})([A-Z0-9]{2})([A-Z0-9]{3,5})$/', $suffix, $matches)) {
             throw ValidationException::withMessages([
-                'docket_number' => "Docket must be {$prefix} + 3-digit invention number + 2-character office code + 3-character service code.",
+                'docket_number' => "Docket must be {$prefix} + 3-digit invention number + 2-character office code + 3–5 character service code.",
             ]);
         }
 
-        $offset = strlen($prefix);
-
         return [
-            'invention_number' => $this->inventionNumber(substr($canonical, $offset, 3)),
-            'patent_office_code' => $this->officeCode(substr($canonical, $offset + 3, 2)),
-            'service_code' => $this->serviceCode(substr($canonical, $offset + 5, 3)),
+            'invention_number' => $this->inventionNumber($matches[1]),
+            'patent_office_code' => $this->officeCode($matches[2]),
+            'service_code' => $this->serviceCode($matches[3]),
         ];
     }
 
@@ -176,8 +175,8 @@ class DocketNumberService
     private function serviceCode(?string $value): string
     {
         $value = strtoupper(trim((string) $value));
-        if (! preg_match('/^[A-Z0-9]{3}$/', $value)) {
-            throw ValidationException::withMessages(['service_code' => 'Service code must be exactly 3 letters or numbers.']);
+        if (! preg_match('/^[A-Z0-9]{3,5}$/', $value)) {
+            throw ValidationException::withMessages(['service_code' => 'Service code must be 3 to 5 letters or numbers.']);
         }
         return $value;
     }

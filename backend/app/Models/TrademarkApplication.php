@@ -12,7 +12,7 @@ class TrademarkApplication extends Model
 
     protected $fillable = [
         'ip_record_id', 'application_number', 'registration_number', 'mark_text',
-        'mark_type', 'nice_classes', 'goods_services', 'proprietor_name', 'filing_date',
+        'mark_type', 'mark_document_id', 'nice_classes', 'goods_services', 'proprietor_name', 'filing_date',
         'journal_date', 'journal_number', 'registration_date', 'renewal_due_date',
         'office_status', 'office_status_date',
     ];
@@ -23,4 +23,5 @@ class TrademarkApplication extends Model
     ];
 
     public function ipRecord(): BelongsTo { return $this->belongsTo(IpRecord::class); }
+    public function markDocument(): BelongsTo { return $this->belongsTo(Document::class, 'mark_document_id'); }
 }

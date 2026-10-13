@@ -74,8 +74,8 @@ export function ClientFinanceDashboard() {
       )}
 
       <div className="px-8 py-6 space-y-6">
-        <div className="grid gap-4 md:grid-cols-3">
-          <StatCard label="Outstanding" value={formatCurrency(metrics.zoho_outstanding ?? 0)} icon={Landmark} accent="info" />
+        <div className="grid gap-4 md:grid-cols-4">
+          <StatCard label="Zoho Receivables" value={formatCurrency(metrics.zoho_total_receivables ?? metrics.zoho_outstanding ?? 0)} icon={Landmark} accent="info" subtitle={`Invoice ${formatCurrency(metrics.zoho_outstanding ?? 0)} · Opening ${formatCurrency(metrics.zoho_opening_balance ?? 0)}`} />
           <StatCard label="Collected (MTD)" value={formatCurrency(metrics.zoho_collected_mtd ?? 0)} icon={Wallet} accent="success" />
           <StatCard label="Ledger Balance" value={formatCurrency(metrics.ledger_balance ?? 0)} icon={Scale} accent="neutral" />
         </div>

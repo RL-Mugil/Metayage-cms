@@ -30,4 +30,5 @@ Schedule::command('google:sync-completions')->everyFifteenMinutes()->withoutOver
 
 // Morning allowance: 1,800 reads; reserve 100 manual reads and 100 quote writes until 23:00.
 Schedule::command('zoho:sync --scheduled')->dailyAt('03:00')->timezone('Asia/Kolkata')->withoutOverlapping(120)->onOneServer();
+Schedule::command('zoho:poll')->everyFiveMinutes()->timezone('Asia/Kolkata')->withoutOverlapping(4)->onOneServer();
 Schedule::command('zoho:sync --evening')->cron('*/5 23 * * *')->timezone('Asia/Kolkata')->withoutOverlapping(65)->onOneServer();

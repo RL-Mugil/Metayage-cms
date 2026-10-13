@@ -11,7 +11,7 @@ class ProjectPolicy
     {
         return in_array($user->role, [
             'super_admin', 'partner', 'director', 'manager', 'associate', 'paralegal',
-            'finance', 'galvanizer', 'client', 'client_admin', 'inventor',
+            'finance', 'hr', 'galvanizer', 'client', 'client_admin', 'inventor',
         ], true);
     }
 
@@ -29,25 +29,20 @@ class ProjectPolicy
             return $project->inventors()->where('users.id', $user->id)->exists();
         }
 
-        // Associates and paralegals may only view projects they are directly assigned to.
-        // Mirrors the scope in ProjectController::index() exactly to prevent
-        // policy/controller divergence causing spurious 403s.
-        if (in_array($user->role, ['associate', 'paralegal'], true)) {
-            // Patent Analysts: cases where they are PR, CM or SCM,
-            // or have a task assigned on the case.
-            if ($project->patent_engineer_id === $user->id) return true;
-            if ($project->assigned_manager_id === $user->id) return true;
-            if ($project->secondary_manager_id === $user->id) return true;
-            if ($project->tasks()->where('assignee_id', $user->id)->exists()) return true;
-            return false;
+        // Patent Analysts, paralegals and HR see only cases they created or are
+        // assigned to (PR, PCM, SCM, attorney, or a task). Mirrors
+        // Project::scopeAssignedTo(), which scopes the list endpoints.
+        if ($user->seesOnlyOwnCases()) {
+            return $project->isAssignedTo($user->id);
         }
 
         return in_array($user->role, ['super_admin', 'partner', 'director', 'manager', 'finance'], true);
     }
 
+    /** Any firm staff member may open a case; client-portal users and inventors may not. */
     public function create(User $user): bool
     {
-        return in_array($user->role, ['super_admin', 'partner', 'manager', 'galvanizer']);
+        return in_array($user->role, [...User::STAFF_ROLES, 'director'], true);
     }
 
     public function update(User $user, Project $project): bool
@@ -55,7 +50,16 @@ class ProjectPolicy
         if (in_array($user->role, ['super_admin', 'partner'])) return true;
         if ($user->isGalvanizer()) return $user->canAccessCircle($project->circle);
         if ($user->role === 'manager' && $project->assigned_manager_id === $user->id) return true;
+        // Case workers (Patent Analysts, paralegals) edit and move the stages of cases
+        // they created or are assigned to (PR, PCM, SCM, attorney, or a task).
+        if (in_array($user->role, ['associate', 'paralegal'], true)) return $project->isAssignedTo($user->id);
         return false;
+    }
+
+    /** Status-only changes (e.g. Granted with its grant date) — anyone who may update the case. */
+    public function changeStatus(User $user, Project $project): bool
+    {
+        return $this->update($user, $project);
     }
 
     public function delete(User $user, Project $project): bool

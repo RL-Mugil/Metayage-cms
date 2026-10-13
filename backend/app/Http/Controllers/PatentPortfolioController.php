@@ -27,8 +27,8 @@ class PatentPortfolioController extends Controller
             $clientId = $request->input('client_id');
         }
 
-        // Patent Analysts (associate) only see cases where they are PR, CM or
-        // SCM, or have a task assigned. role_filter narrows to one relationship.
+        // Patent Analysts (associate) only see cases they created or where they
+        // are PR, CM, SCM or attorney, or have a task assigned. role_filter narrows to one relationship.
         // Galvanizers see their circle + personally-assigned cases; role_filter
         // lets them narrow to a specific assignment column.
         $analystIds = null;
@@ -39,10 +39,8 @@ class PatentPortfolioController extends Controller
                     'pcm' => $q->where('assigned_manager_id', $user->id),
                     'scm' => $q->where('secondary_manager_id', $user->id),
                     'pr'  => $q->where('patent_engineer_id', $user->id),
-                    default => $q->where('patent_engineer_id', $user->id)
-                                  ->orWhere('assigned_manager_id', $user->id)
-                                  ->orWhere('secondary_manager_id', $user->id)
-                                  ->orWhereHas('tasks', fn ($t) => $t->where('assignee_id', $user->id)),
+                    'attorney' => $q->where('assigned_partner_id', $user->id),
+                    default => $q->assignedTo($user->id),
                 };
             })->pluck('id')->all();
         } elseif ($user->isGalvanizer()) {

@@ -57,6 +57,7 @@ class HandleInertiaRequests extends Middleware
                 : $default;
 
             return [
+                'env_badge'                   => \App\Services\SiteSettings::badge(),
                 'feature_link_predecessor'    => ($rows['feature_link_predecessor']    ?? 'true') === 'true',
                 'feature_legacy_case'         => ($rows['feature_legacy_case']         ?? 'true') === 'true',
                 'feature_existing_client'     => ($rows['feature_existing_client']     ?? 'true') === 'true',

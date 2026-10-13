@@ -20,6 +20,8 @@ class ZohoInvoiceMirror
         int &$matched,
         int &$unmatched,
         ?Collection $prefixIndex = null,
+        ?Collection $zohoClients = null,
+        ?Collection $clientProjects = null,
     ): void {
         $zohoId = (string) ($record[$idField] ?? '');
         $number = (string) ($record[$numberField] ?? '');
@@ -31,7 +33,7 @@ class ZohoInvoiceMirror
             return;
         }
 
-        $match = $matcher->match($number, $type, $uinIndex, $docketIndex, $prefixIndex);
+        $match = $matcher->match($number, $type, $uinIndex, $docketIndex, $prefixIndex, $zohoClients, $clientProjects, (string) ($record['customer_id'] ?? ''));
         $export = app(ZohoQuoteWriter::class)->reconcile(app(ZohoBooksService::class)->scope(), $record, $type);
         if ($export) {
             $match = ['project_id' => $export->project_id, 'client_id' => $export->client_id, 'source' => 'export'];

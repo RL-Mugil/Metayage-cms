@@ -55,6 +55,9 @@ Route::middleware(['auth', 'firm.context'])->group(function () {
     Route::get('/compliance', fn () => Inertia::render('Compliance'))->name('compliance');
     Route::get('/integrations', fn () => Inertia::render('Integrations'))->name('integrations');
     Route::get('/settings', fn () => Inertia::render('Settings'))->name('settings');
+    // System admins can preview the maintenance page without turning the mode on.
+    Route::get('/maintenance-preview', fn () => response()->view('maintenance', ['state' => \App\Services\SiteSettings::maintenance(), 'userName' => auth()->user()->name]))
+        ->middleware('can:manage-site')->name('maintenance.preview');
     Route::get('/patent-portfolio', fn () => Inertia::render('PatentPortfolio'))->name('patent-portfolio');
     Route::get('/patent-lifecycle', fn () => Inertia::render('PatentLifecycle'))->name('patent-lifecycle');
     Route::get('/portal-users', fn () => Inertia::render('PortalUsers'))->name('portal-users');

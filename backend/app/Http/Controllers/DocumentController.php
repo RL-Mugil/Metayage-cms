@@ -65,22 +65,13 @@ class DocumentController extends Controller
             // These roles see everything — no filter needed
         } elseif ($user->role === 'associate') {
             // See docs for projects assigned to them, or un-tagged (internal) docs
-            $assignedProjectIds = \App\Models\Project::where(function ($q) use ($user) {
-                $q->where('patent_engineer_id', $user->id)
-                  ->orWhere('assigned_manager_id', $user->id)
-                  ->orWhere('secondary_manager_id', $user->id)
-                  ->orWhereHas('tasks', fn ($t) => $t->where('assignee_id', $user->id));
-            })->pluck('id');
+            $assignedProjectIds = \App\Models\Project::assignedTo($user->id)->pluck('id');
             $query->where(function ($q) use ($assignedProjectIds) {
                 $q->whereNull('project_id')
                   ->orWhereIn('project_id', $assignedProjectIds);
             })->where(function ($q) use ($user) {
                 // Also scope to their own client or internal docs
-                $q->whereNull('client_id')->orWhereHas('project', fn ($p) => $p->where(function ($pp) use ($user) {
-                    $pp->where('patent_engineer_id', $user->id)
-                       ->orWhere('assigned_manager_id', $user->id)
-                       ->orWhere('secondary_manager_id', $user->id);
-                }));
+                $q->whereNull('client_id')->orWhereHas('project', fn ($p) => $p->assignedTo($user->id));
             });
         } elseif ($user->role === 'manager') {
             // See docs for projects they manage, or internal docs

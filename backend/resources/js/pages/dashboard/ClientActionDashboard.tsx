@@ -71,7 +71,7 @@ export function ClientActionDashboard() {
         <div className="grid gap-4 md:grid-cols-3">
           <StatCard label="Renewals Due" value={renewals.length.toString()} icon={AlertTriangle} accent={renewals.length > 0 ? "gold" : "neutral"} />
           <StatCard label="Open Action Items" value={items.length.toString()} icon={Clock} accent="primary" />
-          <StatCard label="Zoho Outstanding" value={formatCurrency(metrics.zoho_outstanding ?? 0)} icon={Landmark} accent="info" subtitle={`Collected MTD ${formatCurrency(metrics.zoho_collected_mtd ?? 0)}`} />
+          <StatCard label="Zoho Receivables" value={formatCurrency(metrics.zoho_total_receivables ?? metrics.zoho_outstanding ?? 0)} icon={Landmark} accent="info" subtitle={`Invoice ${formatCurrency(metrics.zoho_outstanding ?? 0)} · Opening ${formatCurrency(metrics.zoho_opening_balance ?? 0)}`} />
         </div>
 
         {renewals.length > 0 && (

@@ -17,7 +17,7 @@ class StoreFamilyBranchRequest extends FormRequest
         return [
             'source_project_id' => 'required|integer|exists:projects,id',
             'patent_office_code' => ['required', 'string', 'regex:/^[A-Za-z0-9]{2}$/'],
-            'service_code' => ['required', 'string', 'regex:/^[A-Za-z0-9]{3}$/'],
+            'service_code' => ['required', 'string', 'regex:/^[A-Za-z0-9]{3,5}$/'],
             'application_number' => 'nullable|string|max:100',
             'filing_date' => 'nullable|date',
             'hard_deadline' => 'nullable|date',

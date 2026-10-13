@@ -34,6 +34,7 @@ import {
 import { api, downloadCSV } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import type { Client, ReportResponse } from "@/types";
+import { fmtDateTime } from "@/lib/date-utils";
 
 interface ReportTemplate {
   id: string;
@@ -511,7 +512,7 @@ export default function Reports() {
               <div>
                 <h2 className="text-base font-semibold font-display">Generated Report Preview</h2>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  {preview.total.toLocaleString("en-IN")} records generated at {preview.generated_at}
+                  {preview.total.toLocaleString("en-IN")} records generated at {fmtDateTime(preview.generated_at)}
                 </p>
               </div>
               <div className="flex flex-wrap justify-end gap-2">
@@ -589,7 +590,7 @@ export default function Reports() {
                       <tr key={item.id} className="border-t border-border hover:bg-muted/30">
                         <td className="px-4 py-3 font-medium">{item.name}</td>
                         <td className="px-4 py-3 text-muted-foreground">{item.generated_by}</td>
-                        <td className="px-4 py-3 text-muted-foreground font-mono text-xs">{item.generated_at}</td>
+                        <td className="px-4 py-3 text-muted-foreground font-mono text-xs">{fmtDateTime(item.generated_at)}</td>
                         <td className="px-4 py-3">
                           <Badge variant={formatBadgeVariant(item.format)} className="text-[10px]">
                             {item.format}

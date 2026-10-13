@@ -13,27 +13,53 @@ tar --exclude='backend/vendor' \
     --exclude='backend/node_modules' \
     --exclude='backend/public/build' \
     --exclude='backend/.env' \
+    --exclude='backend/public/hot' \
     --exclude='backend/storage/logs/*.log' \
     -czf /tmp/mypl-cms-rebuild.tar.gz \
     backend/ nginx-mypl-cms.conf
+
+# Public marketing site (static) for myipstrategy.com
+tar -czf /tmp/mypl-marketing.tar.gz -C marketing .
 
 echo "=== Uploading to server ==="
 scp -i $KEY /tmp/mypl-cms-rebuild.tar.gz $SERVER:/tmp/mypl-cms-rebuild.tar.gz
 scp -i $KEY nginx-mypl-cms.conf $SERVER:/tmp/nginx-mypl-cms-new.conf
 scp -i $KEY nginx-security-headers.conf $SERVER:/tmp/nginx-security-headers-new.conf
+scp -i $KEY nginx-marketing.conf $SERVER:/tmp/nginx-marketing-new.conf
+scp -i $KEY nginx-marketing-headers.conf $SERVER:/tmp/nginx-marketing-headers-new.conf
+scp -i $KEY /tmp/mypl-marketing.tar.gz $SERVER:/tmp/mypl-marketing.tar.gz
 
 echo "=== Deploying on server ==="
-ssh -i $KEY $SERVER << 'ENDSSH'
+# CUTOVER=1 also moves the app to login.myipstrategy.com and publishes the marketing nginx
+# sites. Leave it unset until DNS + the certificate for login. exist (see docs in chat).
+ssh -i $KEY $SERVER "CUTOVER=${CUTOVER:-1} bash -s" << 'ENDSSH'
 set -e
 
 echo "--- Extracting files ---"
 cd /var/www/mypl-cms
 tar -xzf /tmp/mypl-cms-rebuild.tar.gz --overwrite
 
+# A stray Vite dev-server marker makes Laravel load assets from localhost (blank page).
+rm -f /var/www/mypl-cms/backend/public/hot
+
+echo "--- Publishing marketing site ---"
+mkdir -p /var/www/mypl-marketing
+tar -xzf /tmp/mypl-marketing.tar.gz -C /var/www/mypl-marketing --overwrite
+chown -R www-data:www-data /var/www/mypl-marketing
+
 echo "--- Updating Nginx config ---"
-cp /tmp/nginx-mypl-cms-new.conf /etc/nginx/sites-available/mypl-cms
-cp /tmp/nginx-security-headers-new.conf /etc/nginx/snippets/security-headers.conf
-nginx -t && systemctl reload nginx
+if [ "$CUTOVER" = "1" ]; then
+    mkdir -p /root/nginx-backup-$(date +%Y%m%d%H%M%S)
+    cp /etc/nginx/sites-available/mypl-cms /etc/nginx/snippets/security-headers.conf /root/nginx-backup-*/ 2>/dev/null || true
+    cp /tmp/nginx-mypl-cms-new.conf /etc/nginx/sites-available/mypl-cms
+    cp /tmp/nginx-security-headers-new.conf /etc/nginx/snippets/security-headers.conf
+    cp /tmp/nginx-marketing-new.conf /etc/nginx/sites-available/mypl-marketing
+    cp /tmp/nginx-marketing-headers-new.conf /etc/nginx/snippets/marketing-security-headers.conf
+    ln -sf /etc/nginx/sites-available/mypl-marketing /etc/nginx/sites-enabled/mypl-marketing
+    nginx -t && systemctl reload nginx
+else
+    echo "CUTOVER not set: nginx left unchanged (app stays on the current host)."
+fi
 
 echo "--- Installing PHP dependencies (locked versions) ---"
 cd /var/www/mypl-cms/backend
@@ -60,11 +86,13 @@ set_env() {
 set_env SESSION_SECURE_COOKIE true
 set_env REVERB_SERVER_HOST 127.0.0.1
 set_env REVERB_SERVER_PORT 8080
-set_env REVERB_HOST myipstrategy.com
+if [ "$CUTOVER" = "1" ]; then APP_HOST=login.myipstrategy.com; ORIGINS=login.myipstrategy.com; else APP_HOST=myipstrategy.com; ORIGINS=myipstrategy.com,www.myipstrategy.com; fi
+if [ "$CUTOVER" = "1" ]; then set_env APP_URL "https://$APP_HOST"; fi
+set_env REVERB_HOST "$APP_HOST"
 set_env REVERB_PORT 443
 set_env REVERB_SCHEME https
-set_env REVERB_ALLOWED_ORIGINS myipstrategy.com,www.myipstrategy.com
-set_env VITE_REVERB_HOST myipstrategy.com
+set_env REVERB_ALLOWED_ORIGINS "$ORIGINS"
+set_env VITE_REVERB_HOST "$APP_HOST"
 set_env VITE_REVERB_PORT 443
 set_env VITE_REVERB_SCHEME https
 
@@ -83,11 +111,13 @@ echo "--- Building frontend assets ---"
 npm run build
 
 echo "--- Updating .env: Sanctum stateful domains ---"
-if ! grep -q "SANCTUM_STATEFUL_DOMAINS" .env; then
-    echo "" >> .env
-    echo "SANCTUM_STATEFUL_DOMAINS=myipstrategy.com,www.myipstrategy.com" >> .env
+if [ "$CUTOVER" = "1" ]; then set_env SANCTUM_STATEFUL_DOMAINS "$APP_HOST"; elif ! grep -q "^SANCTUM_STATEFUL_DOMAINS=" .env; then set_env SANCTUM_STATEFUL_DOMAINS "$ORIGINS"; fi
+if ! grep -q "^SESSION_DRIVER=" .env; then
     echo "SESSION_DRIVER=file" >> .env
     echo "SESSION_LIFETIME=120" >> .env
+fi
+if ! grep -Eq "^CONTACT_RECIPIENT=.+" .env; then
+    echo "NOTE: set CONTACT_RECIPIENT in .env or the website contact form returns 503."
 fi
 
 echo "--- Groq AI key ---"
@@ -191,11 +221,11 @@ supervisorctl restart mypl-scheduler
 supervisorctl restart mypl-reverb
 
 echo "--- Post-deploy health check ---"
-curl --fail --silent --show-error --head -H 'Host: myipstrategy.com' http://127.0.0.1/login >/dev/null
+curl --fail --silent --show-error --head -H "Host: $APP_HOST" http://127.0.0.1/login >/dev/null
 
 echo ""
 echo "=== Rebuild deployment complete! ==="
-echo "=== Visit: https://myipstrategy.com ==="
+echo "=== App: https://$APP_HOST (CUTOVER=$CUTOVER) ==="
 ENDSSH
 
 rm -f /tmp/mypl-cms-rebuild.tar.gz

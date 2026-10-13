@@ -38,7 +38,7 @@ class ApplicationNumberSyncService
             return collect();
         }
 
-        $prefix = $this->docketPrefix($project->docket_number);
+        $prefix = $this->docketPrefix($project->docket_number, $project->service_code);
         if ($prefix === null) {
             // Docket doesn't look canonical (legacy/manual import) — just sync this project's own application, no group.
             if ($project->patent_application_id) {
@@ -152,11 +152,14 @@ class ApplicationNumberSyncService
         };
     }
 
-    /** client_code+invention_number+patent_office_code — the docket number minus its trailing 3-char service code. */
-    public function docketPrefix(?string $docket): ?string
+    /** client_code+invention_number+patent_office_code — the docket number minus its trailing 3–5 char service code. */
+    public function docketPrefix(?string $docket, ?string $serviceCode = null): ?string
     {
         $docket = strtoupper(trim((string) $docket));
-        $suffixLength = DocketNumberService::SERVICE_LENGTH;
+        $serviceCode = strtoupper(trim((string) $serviceCode));
+        $suffixLength = $serviceCode !== '' && str_ends_with($docket, $serviceCode)
+            ? strlen($serviceCode)
+            : DocketNumberService::SERVICE_MIN_LENGTH;
         if (strlen($docket) <= $suffixLength) {
             return null;
         }

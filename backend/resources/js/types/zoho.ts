@@ -1,6 +1,8 @@
 export interface ZohoQuotePreview {
   state: 'new' | 'sending' | 'uncertain' | 'rejected' | 'confirmed' | 'deleted';
   estimate_id: string | null;
+  invoice_id: string | null;
+  conversion_state: 'not_requested' | 'converting' | 'converted' | 'uncertain' | string;
   customer_id: string;
   contacts: { id: string; name: string }[];
   error: string | null;

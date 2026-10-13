@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Client;
+use App\Models\ZohoInvoice;
 use App\Models\ZohoOpeningBalance;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -26,6 +27,12 @@ class ZohoOpeningBalanceMirror
                 $query->where('company_name', $customerName)->orWhere('legal_name', $customerName);
             })->value('id');
         }
+        $currentReceivable = array_key_exists('outstanding_receivable_amount', $contact)
+            ? max(0, (float) $contact['outstanding_receivable_amount']) : null;
+        $invoiceBalance = (float) ZohoInvoice::query()
+            ->where('zoho_contact_id', $contactId)->where('zoho_type', 'invoice')->sum('balance');
+        $residualBalance = $currentReceivable === null
+            ? null : max(0, $currentReceivable - $invoiceBalance);
         $seen = [];
 
         foreach ($rows as $row) {
@@ -36,6 +43,10 @@ class ZohoOpeningBalanceMirror
             $dateValue = $row['date'] ?? $row['opening_balance_date'] ?? null;
             $date = $dateValue ? Carbon::parse($dateValue)->toDateString() : now()->toDateString();
             $amount = (float) ($row['opening_balance_amount'] ?? $row['amount'] ?? $row['bcy_amount'] ?? 0);
+            $balance = $residualBalance === null ? $amount : min($amount, $residualBalance);
+            if ($residualBalance !== null) {
+                $residualBalance = max(0, $residualBalance - $balance);
+            }
             $currency = strtoupper((string) ($row['currency_code'] ?? $contact['currency_code'] ?? 'INR'));
             $identity = $location . '|' . $date;
             $seen[] = $identity;
@@ -45,7 +56,7 @@ class ZohoOpeningBalanceMirror
                     'client_id' => $clientId,
                     'customer_name' => $customerName,
                     'amount' => $amount,
-                    'balance' => $amount,
+                    'balance' => $balance,
                     'currency' => $currency,
                     'source' => 'Zoho Opening Balance',
                     'synced_at' => now(),

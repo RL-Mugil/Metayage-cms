@@ -42,15 +42,10 @@ class DiscussionController extends Controller
             $query->where('client_id', $client->id);
         } elseif ($user->role === 'associate') {
             // General threads (no project) are visible to all staff.
-            // Case threads only where the analyst is PR, CM or SCM.
+            // Case threads only on cases they created or are assigned to.
             $query->where(function ($q) use ($user) {
                 $q->whereNull('project_id')
-                  ->orWhereHas('project', function ($pq) use ($user) {
-                      $pq->where('patent_engineer_id', $user->id)
-                         ->orWhere('assigned_manager_id', $user->id)
-                         ->orWhere('secondary_manager_id', $user->id)
-                         ->orWhereHas('tasks', fn ($t) => $t->where('assignee_id', $user->id));
-                  });
+                  ->orWhereHas('project', fn ($pq) => $pq->assignedTo($user->id));
             });
         }
         $paginated = PaginationHelper::paginate($query, $request);

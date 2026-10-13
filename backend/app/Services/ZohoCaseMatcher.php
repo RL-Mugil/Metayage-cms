@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\PatentInvoiceIn;
+use App\Models\Client;
 use App\Models\Project;
 use Illuminate\Support\Collection;
 
@@ -44,8 +45,24 @@ class ZohoCaseMatcher
             ->map(fn ($group) => $group->first());
     }
 
+    /** Zoho customer id -> local client and canonical client code. */
+    public function zohoClientIndex(): Collection
+    {
+        return Client::query()->whereNotNull('zoho_contact_id')->whereNotNull('client_code')
+            ->get(['id', 'zoho_contact_id', 'client_code'])
+            ->keyBy(fn ($client) => (string) $client->zoho_contact_id);
+    }
+
+    /** Projects grouped by client for legacy invoice-number matching. */
+    public function clientProjectIndex(): Collection
+    {
+        return Project::query()->whereNotNull('docket_number')->where('docket_number', '!=', '')
+            ->get(['id', 'client_id', 'docket_number'])
+            ->groupBy('client_id');
+    }
+
     /** @return array{project_id: ?int, client_id: ?int, docket_number: ?string, source: ?string} */
-    public function match(string $number, string $type, Collection $uinIndex, Collection $docketIndex, ?Collection $prefixIndex = null): array
+    public function match(string $number, string $type, Collection $uinIndex, Collection $docketIndex, ?Collection $prefixIndex = null, ?Collection $zohoClients = null, ?Collection $clientProjects = null, ?string $zohoContactId = null): array
     {
         $number = strtoupper(trim($number));
 
@@ -69,6 +86,20 @@ class ZohoCaseMatcher
             ];
         }
 
+        // Zoho appends its own transaction suffix to the case UIN. A case UIN
+        // is therefore a prefix of the invoice/quote number (for example
+        // 269M188INPRV302J). Resolve only the longest unique docket prefix.
+        $prefixMatches = $docketIndex->keys()->filter(fn ($caseUin) => str_starts_with($docket, (string) $caseUin));
+        if ($prefixMatches->isNotEmpty()) {
+            $longest = $prefixMatches->max(fn ($caseUin) => strlen((string) $caseUin));
+            $matches = $prefixMatches->filter(fn ($caseUin) => strlen((string) $caseUin) === $longest);
+            if ($matches->count() === 1) {
+                $project = $docketIndex->get($matches->first());
+                return ['project_id' => $project->id, 'client_id' => $project->client_id,
+                    'docket_number' => $project->docket_number, 'source' => 'uin_prefix'];
+            }
+        }
+
         // Zoho UINs use the first nine characters for the case identity; the
         // final three characters are the service code. Only unique prefixes are
         // eligible so different service records cannot be linked accidentally.
@@ -82,6 +113,37 @@ class ZohoCaseMatcher
             ];
         }
 
+        // Older Zoho numbers omit the client's trailing M and append an invoice
+        // sequence/service variant. Match those numbers within the resolved
+        // Zoho customer using client + invention number + jurisdiction. Only a
+        // unique candidate is eligible; ambiguity must remain visible to staff.
+        if ($zohoClients && $clientProjects) {
+            $client = $zohoClients->get((string) $zohoContactId);
+            if ($client) {
+                $clientCode = strtoupper(trim((string) $client->client_code));
+                $compactClientCode = preg_replace('/M$/', '', $clientCode);
+                $base = preg_replace('#/\d+$#', '', $number);
+                $remainder = str_starts_with($base, $clientCode)
+                    ? substr($base, strlen($clientCode))
+                    : (str_starts_with($base, $compactClientCode) ? substr($base, strlen($compactClientCode)) : '');
+                $invention = substr($remainder, 0, 3);
+                $office = substr($remainder, 3, 2);
+                if (preg_match('/^\d{3}[A-Z]{2}/', $remainder) && $invention !== '' && $office !== '') {
+                    $candidates = $clientProjects->get($client->id, collect())->filter(function ($project) use ($clientCode, $invention, $office) {
+                        $docket = strtoupper(trim((string) $project->docket_number));
+                        $docketRemainder = str_starts_with($docket, $clientCode) ? substr($docket, strlen($clientCode)) : '';
+                        return substr($docketRemainder, 0, 3) === $invention && substr($docketRemainder, 3, 2) === $office;
+                    });
+                    if ($candidates->count() === 1) {
+                        $project = $candidates->first();
+                        return ['project_id' => $project->id, 'client_id' => $project->client_id,
+                            'docket_number' => $project->docket_number, 'source' => 'client_uin'];
+                    }
+                }
+            }
+        }
+
         return ['project_id' => null, 'client_id' => null, 'docket_number' => null, 'source' => null];
     }
+
 }

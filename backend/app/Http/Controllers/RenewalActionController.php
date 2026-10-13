@@ -13,6 +13,7 @@ use App\Models\PatentInvoiceIn;
 use App\Models\Project;
 use App\Models\RenewalSchedule;
 use App\Models\User;
+use App\Models\ZohoInvoice;
 use App\Services\PatentInvoiceUinService;
 use App\Support\Notifier;
 use Illuminate\Http\Request;
@@ -480,6 +481,53 @@ class RenewalActionController extends Controller
             $query->where('payment_status', '!=', 'Confirmed');
         }
 
-        return response()->json($query->paginate(min((int) $request->get('per_page', 50), 200)));
+        $renewalPage = $query->paginate(
+            min((int) $request->get('per_page', 25), 100), ['*'], 'page'
+        );
+        $renewalTotals = (clone $query)->reorder()->select('currency')->selectRaw('COALESCE(SUM(invoice_amount), 0) AS amount')->groupBy('currency')->pluck('amount', 'currency');
+        $renewalCount = (clone $query)->count();
+
+        // Zoho Books pending balances are served from the local mirror. This is
+        // deliberately separate from renewal invoices because the two workflows
+        // have different proof/approval actions.
+        $zohoQuery = ZohoInvoice::with(['project:id,docket_number,project_name', 'client:id,company_name,legal_name'])
+            ->where('zoho_type', 'invoice')->where('balance', '>', 0)
+            ->whereNotIn(DB::raw('LOWER(status)'), ['paid', 'cancelled', 'void']);
+        if ($user->isClientRole()) {
+            $client = $request->attributes->get('portal_client') ?? Client::forUser($user);
+            $zohoQuery->where('client_id', $client?->id ?? 0);
+        } elseif ($user->isGalvanizer()) {
+            $zohoQuery->whereHas('project', fn ($q) => $user->applyProjectScope($q));
+        }
+        $zohoPage = $zohoQuery->orderByDesc('txn_date')->paginate(
+            min((int) $request->get('zoho_per_page', 25), 100), ['*'], 'zoho_page'
+        );
+        $zohoTotals = (clone $zohoQuery)->reorder()->select('currency')->selectRaw('COALESCE(SUM(balance), 0) AS amount')->groupBy('currency')->pluck('amount', 'currency');
+        $pendingTotals = $renewalTotals->union($zohoTotals)->mapWithKeys(fn ($amount, $currency) => [
+            $currency => round((float) $amount + (float) ($zohoTotals->get($currency, 0)), 2),
+        ]);
+        foreach ($zohoTotals as $currency => $amount) {
+            if (! $renewalTotals->has($currency)) {
+                $pendingTotals[$currency] = round((float) $amount, 2);
+            }
+        }
+
+        return response()->json(array_merge($renewalPage->toArray(), [
+            'pending_totals' => $pendingTotals,
+            'pending_count' => $renewalCount + $zohoPage->total(),
+            'zoho' => [
+                'data' => $zohoPage->getCollection()->map(fn (ZohoInvoice $row) => [
+                    'id' => $row->id, 'type' => 'zoho_invoice', 'status' => $row->status,
+                    'invoice_uin' => $row->number, 'docket_number' => $row->project?->docket_number,
+                    'invoice_date' => $row->txn_date?->toDateString(), 'invoice_amount' => (float) $row->total,
+                    'balance' => (float) $row->balance, 'currency' => $row->currency,
+                    'payment_status' => 'Pending', 'source' => 'Zoho Books',
+                    'project' => $row->project ? ['id' => $row->project->id, 'docket_number' => $row->project->docket_number, 'project_name' => $row->project->project_name] : null,
+                    'client' => $row->client ? ['id' => $row->client->id, 'company_name' => $row->client->company_name, 'legal_name' => $row->client->legal_name] : null,
+                ])->values()->all(),
+                'total' => $zohoPage->total(), 'per_page' => $zohoPage->perPage(),
+                'current_page' => $zohoPage->currentPage(), 'last_page' => $zohoPage->lastPage(),
+            ],
+        ]));
     }
 }

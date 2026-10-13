@@ -1,11 +1,11 @@
 import { Head, usePage } from "@inertiajs/react";
 import { useEffect, useState, useCallback } from "react";
-import { ShieldCheck, Search, ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
+import { ShieldCheck, Search, ChevronLeft, ChevronRight, Loader2, RefreshCw, AlertTriangle, CheckCircle2 } from "lucide-react";
 import AppLayout from "@/layouts/AppLayout";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { api } from "@/lib/api-client";
-import type { AuditLog } from "@/lib/api-client";
+import type { AuditLog, ZohoAuditMonitoring, ZohoControlPanel } from "@/lib/api-client";
 import { fmtDateTime } from "@/lib/date-utils";
 
 const ACTION_COLOR: Record<string, string> = {
@@ -33,6 +33,11 @@ export default function AuditLogs() {
   const [page, setPage] = useState(1);
   const [lastPage, setLastPage] = useState(1);
   const [loading, setLoading] = useState(true);
+  const [view, setView] = useState<"activity" | "zoho" | "control">("activity");
+  const [zoho, setZoho] = useState<ZohoAuditMonitoring | null>(null);
+  const [zohoLoading, setZohoLoading] = useState(false);
+  const [control, setControl] = useState<ZohoControlPanel | null>(null);
+  const [controlLoading, setControlLoading] = useState(false);
 
   const [search, setSearch] = useState("");
   const [subjectType, setSubjectType] = useState("");
@@ -58,6 +63,22 @@ export default function AuditLogs() {
   }, []);
 
   useEffect(() => { load(1, search, subjectType, dateFrom, dateTo); }, []);
+
+  const loadZoho = useCallback(async () => {
+    setZohoLoading(true);
+    try { setZoho(await api.getZohoAuditMonitoring()); } catch { setZoho(null); }
+    finally { setZohoLoading(false); }
+  }, []);
+
+  useEffect(() => { if (view === "zoho") loadZoho(); }, [view, loadZoho]);
+
+  const loadControl = useCallback(async () => {
+    setControlLoading(true);
+    try { setControl(await api.getZohoControlPanel()); } catch { setControl(null); }
+    finally { setControlLoading(false); }
+  }, []);
+
+  useEffect(() => { if (view === "control") loadControl(); }, [view, loadControl]);
 
   function applyFilters() { setPage(1); load(1, search, subjectType, dateFrom, dateTo); }
   function goPage(pg: number) { setPage(pg); load(pg, search, subjectType, dateFrom, dateTo); }
@@ -85,6 +106,17 @@ export default function AuditLogs() {
       />
 
       <div className="px-8 py-6 space-y-5">
+        <div className="flex gap-2 border-b border-border">
+          <button onClick={() => setView("activity")} className={`px-4 py-2 text-sm border-b-2 ${view === "activity" ? "border-gold text-foreground" : "border-transparent text-muted-foreground"}`}>Activity Log</button>
+          <button onClick={() => setView("zoho")} className={`px-4 py-2 text-sm border-b-2 ${view === "zoho" ? "border-gold text-foreground" : "border-transparent text-muted-foreground"}`}>Zoho Sync Monitor</button>
+          <button onClick={() => setView("control")} className={`px-4 py-2 text-sm border-b-2 ${view === "control" ? "border-gold text-foreground" : "border-transparent text-muted-foreground"}`}>Two-Way Control Panel</button>
+        </div>
+
+        {view === "control" ? (
+          <ZohoControlPanelView data={control} loading={controlLoading} onRefresh={loadControl} />
+        ) : view === "zoho" ? (
+          <ZohoMonitor data={zoho} loading={zohoLoading} onRefresh={loadZoho} />
+        ) : <>
         {/* Filters */}
         <div className="flex flex-wrap gap-3 items-end">
           <div className="relative">
@@ -186,7 +218,45 @@ export default function AuditLogs() {
               className="p-1.5 rounded border border-border disabled:opacity-40 hover:bg-muted/40"><ChevronRight className="h-4 w-4" /></button>
           </div>
         </div>
+        </>}
       </div>
     </AppLayout>
   );
+}
+
+function ZohoMonitor({ data, loading, onRefresh }: { data: ZohoAuditMonitoring | null; loading: boolean; onRefresh: () => void }) {
+  if (loading) return <div className="flex items-center justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-gold" /></div>;
+  if (!data) return <Card><CardContent className="py-10 text-center text-muted-foreground">Zoho monitoring data is unavailable.</CardContent></Card>;
+  const cycleFailed = data.cycle?.pause_reason === "error";
+  const cycleComplete = Boolean(data.cycle?.completed_at);
+  return <div className="space-y-5">
+    <div className="flex items-center justify-between">
+      <div><p className="text-sm text-muted-foreground">Scope: <span className="font-mono text-foreground">{data.scope}</span></p><p className="text-xs text-muted-foreground">Snapshot backlog: {data.pending_snapshots.toLocaleString()} records</p></div>
+      <button onClick={onRefresh} className="h-9 px-3 rounded-md border border-border text-sm flex items-center gap-2 hover:bg-muted/40"><RefreshCw className="h-4 w-4" />Refresh</button>
+    </div>
+    <div className="grid gap-4 md:grid-cols-4">
+      {Object.entries(data.budget.pools).map(([name, pool]) => <Card key={name}><CardHeader className="pb-2"><CardTitle className="text-xs uppercase tracking-wider text-muted-foreground">{name.replace(/_/g, " ")}</CardTitle></CardHeader><CardContent><p className="text-2xl font-display">{pool.used.toLocaleString()} <span className="text-sm text-muted-foreground">/ {pool.limit.toLocaleString()}</span></p><p className="text-xs text-muted-foreground">{pool.remaining.toLocaleString()} remaining</p></CardContent></Card>)}
+    </div>
+    <Card><CardHeader><CardTitle className="font-display flex items-center justify-between"><span className="flex items-center gap-2">{cycleFailed ? <AlertTriangle className="h-4 w-4 text-red-400" /> : <CheckCircle2 className="h-4 w-4 text-green-400" />} Sync checkpoint</span><span className="text-xs font-normal text-muted-foreground">{cycleComplete ? "Completed" : "Pending / resumable"}</span></CardTitle></CardHeader><CardContent><div className="grid gap-3 md:grid-cols-3 text-sm"><div><span className="text-muted-foreground">Started</span><p>{fmtDateTime(data.cycle?.started_at)}</p></div><div><span className="text-muted-foreground">Completed</span><p>{fmtDateTime(data.cycle?.completed_at)}</p></div><div><span className="text-muted-foreground">Pause reason</span><p>{data.cycle?.pause_reason ?? "—"}</p></div></div></CardContent></Card>
+    <Card><CardHeader><CardTitle className="font-display">Resource checkpoints</CardTitle></CardHeader><CardContent className="p-0"><table className="w-full text-sm"><thead className="bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground"><tr><th className="px-4 py-3 text-left">Resource</th><th className="px-4 py-3 text-left">Next page</th><th className="px-4 py-3 text-left">Completed</th></tr></thead><tbody>{data.progress.map(row => <tr key={row.resource} className="border-t border-border"><td className="px-4 py-2.5 font-mono">{row.resource}</td><td className="px-4 py-2.5">{row.next_page}</td><td className="px-4 py-2.5">{row.completed_at ? fmtDateTime(row.completed_at) : "Pending"}</td></tr>)}</tbody></table></CardContent></Card>
+    <Card><CardHeader><CardTitle className="font-display">Recent sync runs</CardTitle></CardHeader><CardContent className="p-0"><div className="divide-y divide-border">{data.recent_runs.map(run => <div key={run.id} className="px-4 py-3 flex items-start justify-between gap-4"><div><span className={`text-xs font-medium px-2 py-0.5 rounded-full ${run.status === "ok" ? "bg-green-500/10 text-green-400" : "bg-red-500/10 text-red-400"}`}>{run.status}</span><p className="mt-1 text-sm">{run.summary ?? "—"}</p></div><span className="text-xs text-muted-foreground whitespace-nowrap">{fmtDateTime(run.created_at)}</span></div>)}</div></CardContent></Card>
+  </div>;
+}
+
+function ZohoControlPanelView({ data, loading, onRefresh }: { data: ZohoControlPanel | null; loading: boolean; onRefresh: () => void }) {
+  if (loading) return <div className="flex items-center justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-gold" /></div>;
+  if (!data) return <Card><CardContent className="py-10 text-center text-muted-foreground">Two-way Zoho control data is unavailable.</CardContent></Card>;
+  const metricCards = [
+    ["Waiting to sync", data.waiting.quote_exports + data.waiting.webhook_events, "text-amber-600"],
+    ["Stale beyond SLA", data.stale_sla_records, data.stale_sla_records ? "text-red-600" : "text-green-600"],
+    ["Conflicts", data.conflicts.length, data.conflicts.length ? "text-red-600" : "text-green-600"],
+    ["Duplicate checks", data.duplicate_prevention_checks, "text-blue-600"],
+  ] as const;
+  return <div className="space-y-5">
+    <div className="flex items-center justify-between"><div><p className="text-sm text-muted-foreground">Scope: <span className="font-mono text-foreground">{data.scope}</span></p><p className="text-xs text-muted-foreground">Standard plan mode · polling every {data.polling_interval_minutes} minutes</p></div><button onClick={onRefresh} className="h-9 px-3 rounded-md border border-border text-sm flex items-center gap-2 hover:bg-muted/40"><RefreshCw className="h-4 w-4" />Refresh</button></div>
+    <div className="grid gap-4 md:grid-cols-4">{metricCards.map(([label, value, color]) => <Card key={label}><CardHeader className="pb-2"><CardTitle className="text-xs uppercase tracking-wider text-muted-foreground">{label}</CardTitle></CardHeader><CardContent><p className={`text-2xl font-display ${color}`}>{value.toLocaleString()}</p></CardContent></Card>)}</div>
+    <Card><CardHeader><CardTitle className="font-display">Synchronization health</CardTitle></CardHeader><CardContent className="grid gap-3 md:grid-cols-4 text-sm"><div><span className="text-muted-foreground">Last successful poll</span><p>{data.last_successful_poll ?? "Not recorded"}</p></div><div><span className="text-muted-foreground">Pending quote exports</span><p>{data.waiting.quote_exports}</p></div><div><span className="text-muted-foreground">Pending inbound events</span><p>{data.waiting.webhook_events}</p></div><div><span className="text-muted-foreground">API calls remaining</span><p>{data.budget.remaining.toLocaleString()}</p></div></CardContent></Card>
+    <Card><CardHeader><CardTitle className="font-display">Portal-to-Zoho events</CardTitle></CardHeader><CardContent className="p-0"><table className="w-full text-sm"><thead className="bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground"><tr><th className="px-4 py-3 text-left">When</th><th className="px-4 py-3 text-left">Event</th><th className="px-4 py-3 text-left">Record</th><th className="px-4 py-3 text-left">Details</th></tr></thead><tbody>{data.portal_events.map(event => <tr key={event.id} className="border-t border-border"><td className="px-4 py-2.5 text-xs text-muted-foreground">{fmtDateTime(event.created_at)}</td><td className="px-4 py-2.5">{event.action.replace(/_/g, " ")}</td><td className="px-4 py-2.5">{event.subject_type} #{event.subject_id ?? "—"}</td><td className="px-4 py-2.5 text-xs text-muted-foreground">{event.metadata ? JSON.stringify(event.metadata) : "—"}</td></tr>)}{data.portal_events.length === 0 && <tr><td colSpan={4} className="px-4 py-8 text-center text-muted-foreground">No portal-to-Zoho events recorded.</td></tr>}</tbody></table></CardContent></Card>
+    <Card><CardHeader><CardTitle className="font-display">Quote and invoice synchronization state</CardTitle></CardHeader><CardContent className="p-0"><table className="w-full text-sm"><thead className="bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground"><tr><th className="px-4 py-3 text-left">Reference</th><th className="px-4 py-3 text-left">Type</th><th className="px-4 py-3 text-left">Zoho ID</th><th className="px-4 py-3 text-left">State</th><th className="px-4 py-3 text-left">Updated</th></tr></thead><tbody>{data.quote_exports.map(row => <tr key={row.id} className="border-t border-border"><td className="px-4 py-2.5 font-mono text-xs">{row.reference}</td><td className="px-4 py-2.5">{row.source_type}</td><td className="px-4 py-2.5 font-mono text-xs">{row.estimate_id ?? "Pending"}</td><td className="px-4 py-2.5"><span className={`rounded-full px-2 py-0.5 text-xs ${row.state === "confirmed" ? "bg-green-500/10 text-green-600" : row.state === "rejected" ? "bg-red-500/10 text-red-600" : "bg-amber-500/10 text-amber-600"}`}>{row.state}</span></td><td className="px-4 py-2.5 text-xs text-muted-foreground">{fmtDateTime(row.updated_at)}</td></tr>)}{data.quote_exports.length === 0 && <tr><td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">No synchronized quote records yet.</td></tr>}</tbody></table></CardContent></Card>
+  </div>;
 }

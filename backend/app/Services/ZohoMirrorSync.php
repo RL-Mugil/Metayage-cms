@@ -18,6 +18,8 @@ class ZohoMirrorSync
     private ?\Illuminate\Support\Collection $uinIndex = null;
     private ?\Illuminate\Support\Collection $docketIndex = null;
     private ?\Illuminate\Support\Collection $docketPrefixIndex = null;
+    private ?\Illuminate\Support\Collection $zohoClientIndex = null;
+    private ?\Illuminate\Support\Collection $clientProjectIndex = null;
     private float $startedAt = 0;
     public function __construct(
         private ZohoBooksService $zoho,
@@ -66,9 +68,25 @@ class ZohoMirrorSync
             } else {
                 DB::table('zoho_sync_progress')->insertOrIgnore(['scope' => $this->zoho->scope(), 'resource' => '__cycle', 'started_at' => now()]);
                 if (! $evening) {
-                    DB::table('zoho_sync_progress')->where('scope', $this->zoho->scope())->where('resource', '__cycle')
-                        ->where('completed_at', '<', now('Asia/Kolkata')->startOfDay()->utc())
-                        ->update(['started_at' => now(), 'completed_at' => null, 'evening_eligible_date' => null, 'pause_reason' => null]);
+                    $cycleKey = ['scope' => $this->zoho->scope(), 'resource' => '__cycle'];
+                    $cycle = DB::table('zoho_sync_progress')->where($cycleKey)->first();
+                    $dayStart = now('Asia/Kolkata')->startOfDay()->utc();
+                    $cycleCompletedBeforeToday = ! $cycle?->completed_at || \Carbon\Carbon::parse($cycle->completed_at)->lt($dayStart);
+                    $erroredWithCompletedCursors = $cycle?->pause_reason === 'error'
+                        && ! DB::table('zoho_sync_progress')->where('scope', $this->zoho->scope())
+                            ->where('resource', '!=', '__cycle')->where(function ($q) {
+                                $q->whereNull('completed_at')->orWhere('next_page', '>', 1);
+                            })->exists();
+                    if ($cycleCompletedBeforeToday && ($erroredWithCompletedCursors || ($cycle?->completed_at && \Carbon\Carbon::parse($cycle->completed_at)->lt($dayStart)))) {
+                        DB::transaction(function () use ($cycleKey) {
+                            DB::table('zoho_sync_progress')->where($cycleKey)->update([
+                                'started_at' => now(), 'completed_at' => null, 'evening_eligible_date' => null, 'pause_reason' => null,
+                            ]);
+                            DB::table('zoho_sync_progress')->where('scope', $this->zoho->scope())
+                                ->where('resource', '!=', '__cycle')
+                                ->update(['next_page' => 1, 'started_at' => null, 'completed_at' => null]);
+                        });
+                    }
                 }
                 $this->scanCycle();
                 // Emergency and temporary add-on continuations both prioritize
@@ -77,9 +95,10 @@ class ZohoMirrorSync
                 $this->hydratePending($emergency || $addon);
                 // Finish the cycle only after details/PDFs too. A paused hydration run
                 // must resume that backlog before starting another scan from page one.
+                $this->rebuildOpeningBalanceMirror();
                 DB::table('zoho_sync_progress')->where([
                     'scope' => $this->zoho->scope(), 'resource' => '__cycle',
-                ])->update(['completed_at' => now()]);
+                ])->update(['completed_at' => now(), 'pause_reason' => null, 'evening_eligible_date' => null]);
             }
             return $this->result('ok', $addon ? 'Zoho add-on continuation completed.' : ($emergency ? 'Emergency Zoho continuation completed.' : ($only ? 'Selected record refreshed from Zoho.' : 'Nightly Zoho sync completed.')));
         } catch (ZohoBudgetExhausted $e) {
@@ -125,9 +144,10 @@ class ZohoMirrorSync
     {
         // Oldest incomplete records first so the historical backlog makes progress.
         $failures = 0;
-        $pending = $this->pending()->orderByRaw($emergency
-            ? "CASE resource WHEN 'invoices' THEN 0 WHEN 'estimates' THEN 1 WHEN 'customerpayments' THEN 2 WHEN 'creditnotes' THEN 3 ELSE 4 END"
-            : '0');
+        $pending = $this->pending();
+        if ($emergency) {
+            $pending->orderByRaw("CASE resource WHEN 'invoices' THEN 0 WHEN 'estimates' THEN 1 WHEN 'customerpayments' THEN 2 WHEN 'creditnotes' THEN 3 ELSE 4 END");
+        }
         foreach ($pending->orderByRaw('detail_synced_at ASC NULLS FIRST')->orderBy('id')->cursor() as $snapshot) {
             $this->checkDuration();
             try {
@@ -286,6 +306,17 @@ class ZohoMirrorSync
         }
     }
 
+    public function syncRemote(string $resource, string $remoteId): void
+    {
+        abort_unless(in_array($resource, ['invoices', 'estimates'], true), 422, 'Unsupported Zoho polling resource.');
+        $record = $this->readDetail($resource, $remoteId, true);
+        if ($record === null) return;
+        DB::transaction(function () use ($resource, $record): void {
+            $snapshot = $this->remember($resource, $record);
+            if ($snapshot) $this->saveDetail($snapshot, $record);
+        });
+    }
+
     private function mirrorRecord(string $resource, array $record): void
     {
         if (! in_array($resource, ['invoices', 'estimates'], true)) {
@@ -296,7 +327,24 @@ class ZohoMirrorSync
             ZohoBooksService::RESOURCES[$resource][0], $resource === 'invoices' ? 'invoice_number' : 'estimate_number',
             $this->matcher, $this->uinIndex ??= $this->matcher->globalUinIndex(),
             $this->docketIndex ??= $this->matcher->globalDocketIndex(), $matched, $unmatched,
-            $this->docketPrefixIndex ??= $this->matcher->globalDocketPrefixIndex());
+            $this->docketPrefixIndex ??= $this->matcher->globalDocketPrefixIndex(),
+            $this->zohoClientIndex ??= $this->matcher->zohoClientIndex(),
+            $this->clientProjectIndex ??= $this->matcher->clientProjectIndex());
+    }
+
+    /** Rebuild the derived opening-balance table from encrypted local contact snapshots. */
+    private function rebuildOpeningBalanceMirror(): void
+    {
+        ZohoSnapshot::where('scope', $this->zoho->scope())
+            ->where('resource', 'contacts')
+            ->whereNotNull('detail')
+            ->cursor()
+            ->each(function (ZohoSnapshot $snapshot): void {
+                $detail = json_decode((string) $snapshot->detail, true);
+                if (is_array($detail)) {
+                    $this->openingBalances->save($this->zoho->scope(), $detail);
+                }
+            });
     }
 
     private function audit(ZohoSnapshot $snapshot): void
@@ -311,6 +359,12 @@ class ZohoMirrorSync
         try {
             DB::table('integration_logs')->insert(['slug' => 'zoho', 'event_type' => 'sync', 'status' => $status,
                 'summary' => $message, 'payload' => null, 'created_at' => now(), 'updated_at' => now()]);
+            AuditLog::create([
+                'user_id' => auth()->id(), 'action' => 'zoho_sync_run', 'subject_type' => 'ZohoSync',
+                'metadata' => ['status' => $status, 'message' => $message, 'scope' => $this->zoho->scope(),
+                    'pending_snapshots' => $this->pending()->count()],
+                'ip_address' => request()->ip(), 'user_agent' => request()->userAgent(),
+            ]);
         } catch (Throwable $e) {
             // A secondary log failure must not replace the original sync outcome.
             report($e);

@@ -6,16 +6,35 @@ use Illuminate\Foundation\Http\FormRequest;
 
 class UpdateProjectRequest extends FormRequest
 {
+    /** Fields a user with only the changeStatus ability may send. */
+    public const STATUS_ONLY_FIELDS = ['status', 'status_event_date', 'patent_granted'];
+
     public function authorize(): bool
     {
         $user = $this->user();
         if (in_array($user->role, ['super_admin', 'partner'])) return true;
+        $project = \App\Models\Project::find($this->route('id'));
         // Managers can update projects they manage
-        if ($user->role === 'manager') {
-            $project = \App\Models\Project::find($this->route('id'));
-            return $project && $project->assigned_manager_id === $user->id;
+        if ($user->role === 'manager' && $project && $project->assigned_manager_id === $user->id) {
+            return true;
         }
-        return false;
+        if (! $project) return false;
+        // Patent Analysts / paralegals: full edit on cases they created or are assigned to.
+        if (in_array($user->role, ['associate', 'paralegal'], true)) {
+            return $user->can('update', $project);
+        }
+        // Everyone else the policy lets update (e.g. galvanizers in their circle)
+        // may change the status (e.g. mark Granted with its date) and nothing else.
+        return $project
+            && $this->isStatusOnly()
+            && $user->can('changeStatus', $project);
+    }
+
+    public function isStatusOnly(): bool
+    {
+        $sent = array_keys($this->except(['_method']));
+
+        return $sent !== [] && array_diff($sent, self::STATUS_ONLY_FIELDS) === [];
     }
 
     public function rules(): array
@@ -27,7 +46,7 @@ class UpdateProjectRequest extends FormRequest
             'technology_field'      => 'nullable|string',
             'application_number'    => 'nullable|string|max:100',
             'patent_office_code'    => ['sometimes', 'required', 'string', 'regex:/^[A-Za-z0-9]{2}$/'],
-            'service_code'          => ['sometimes', 'required', 'string', 'regex:/^[A-Za-z0-9]{3}$/'],
+            'service_code'          => ['sometimes', 'required', 'string', 'regex:/^[A-Za-z0-9]{3,5}$/'],
             'filing_date'           => 'nullable|date',
             'patent_granted'        => 'nullable|boolean',
             'assigned_partner_id'   => 'nullable|exists:users,id',

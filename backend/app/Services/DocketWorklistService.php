@@ -16,10 +16,7 @@ class DocketWorklistService
 
         if (in_array($user->role, ['associate', 'paralegal'], true)) {
             $query->where(function ($scope) use ($user): void {
-                $scope->whereHas('project', fn ($project) => $project
-                    ->where('patent_engineer_id', $user->id)->orWhere('assigned_manager_id', $user->id)
-                    ->orWhere('secondary_manager_id', $user->id)
-                    ->orWhereHas('tasks', fn ($task) => $task->where('assignee_id', $user->id)))
+                $scope->whereHas('project', fn ($project) => $project->assignedTo($user->id))
                     ->orWhereHas('ipRecord', fn ($record) => $record->where('responsible_user_id', $user->id)->orWhere('backup_user_id', $user->id));
             });
         } elseif ($user->isGalvanizer()) {

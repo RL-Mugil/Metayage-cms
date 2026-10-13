@@ -13,6 +13,7 @@ import { ProjectChat } from "@/components/project-chat"
 import { ZohoBooksPanel } from "@/components/zoho-books-panel"
 import { InventorsPanel } from "@/components/inventors-panel"
 import { IpoStatusPanel } from "@/components/ipo-status-panel"
+import { TrademarkMarkPanel } from "@/components/trademark-details-fields"
 import { api } from "@/lib/api-client"
 import type {
   MatterWorkspace as WorkspaceData,
@@ -149,6 +150,8 @@ export function MatterWorkspace({ data, projectId, tab, onTabChange }: MatterWor
               ))}
             </section>
 
+            <TrademarkMarkPanel projectId={projectId} serviceCode={project.service_code} />
+
             {application && (
               <section>
                 <IpoStatusPanel
@@ -283,7 +286,7 @@ function FamilyWorkspace({ data, projectId }: { data: WorkspaceData; projectId: 
   const selectedTransition = data.allowed_transitions.find((transition) => transition.to_service_code === service)
   const branchAllowed = sameOffice
     ? Boolean(selectedTransition?.eligible)
-    : /^[A-Z0-9]{3}$/.test(service)
+    : /^[A-Z0-9]{3,5}$/.test(service)
 
   async function createBranch() {
     if (!data.family) return
@@ -327,7 +330,7 @@ function FamilyWorkspace({ data, projectId }: { data: WorkspaceData; projectId: 
     </div>
     {open && <div className="grid gap-3 rounded-md border border-border bg-muted/20 p-4 sm:grid-cols-[140px_180px_minmax(180px,1fr)_auto] sm:items-end">
       <label className="text-xs text-muted-foreground">Office<select value={office} onChange={(event) => { setOffice(event.target.value); setService(""); setError(null) }} className="mt-1 h-9 w-full rounded-md border border-border bg-background px-2 text-sm text-foreground"><option value="IN">IN - India</option><option value="WO">WO - PCT</option><option value="US">US - USPTO</option><option value="EP">EP - EPO</option></select></label>
-      {sameOffice ? <label className="text-xs text-muted-foreground">Next service<select value={service} onChange={(event) => setService(event.target.value)} className="mt-1 h-9 w-full rounded-md border border-border bg-background px-2 font-mono text-sm text-foreground"><option value="">Select permitted service</option>{data.allowed_transitions.map((transition) => <option key={transition.id} value={transition.to_service_code} disabled={!transition.eligible}>{transition.to_service_code} - {transition.eligible ? "Available" : "Blocked"}</option>)}</select></label> : <label className="text-xs text-muted-foreground">Service code<input value={service} maxLength={3} onChange={(event) => setService(event.target.value.toUpperCase())} className="mt-1 h-9 w-full rounded-md border border-border bg-background px-2 font-mono text-sm text-foreground" /></label>}
+      {sameOffice ? <label className="text-xs text-muted-foreground">Next service<select value={service} onChange={(event) => setService(event.target.value)} className="mt-1 h-9 w-full rounded-md border border-border bg-background px-2 font-mono text-sm text-foreground"><option value="">Select permitted service</option>{data.allowed_transitions.map((transition) => <option key={transition.id} value={transition.to_service_code} disabled={!transition.eligible}>{transition.to_service_code} - {transition.eligible ? "Available" : "Blocked"}</option>)}</select></label> : <label className="text-xs text-muted-foreground">Service code<input value={service} maxLength={5} onChange={(event) => setService(event.target.value.toUpperCase())} className="mt-1 h-9 w-full rounded-md border border-border bg-background px-2 font-mono text-sm text-foreground" /></label>}
       <label className="text-xs text-muted-foreground">Application number<input value={applicationNumber} onChange={(event) => setApplicationNumber(event.target.value)} className="mt-1 h-9 w-full rounded-md border border-border bg-background px-2 text-sm text-foreground" placeholder="Optional" /></label>
       <Button size="sm" disabled={saving || !branchAllowed} onClick={createBranch}>{saving ? "Creating..." : "Create"}</Button>
       {sameOffice && service && selectedTransition?.blocker && <p className="text-sm text-muted-foreground sm:col-span-4">{selectedTransition.blocker}</p>}
