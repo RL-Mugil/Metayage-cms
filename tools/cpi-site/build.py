@@ -320,15 +320,26 @@ def build_services_overview():
     register("services", "Services", desc, body)
 
 
+NL = chr(10)
+
+
 def build_faq():
+    """The FAQ page is written by the backend (InsightPublisher::publishFaq) from questions edited in the
+    admin panel. Here we only emit its frame, so a deploy never overwrites edited questions."""
     c_html, c_ld = crumbs([("Home", ""), ("FAQ", "faq")])
     body = page_hero(c_html, "FAQ", "Questions, <em>answered plainly.</em>", "Straight answers about how we work and what to expect.", slug="faq") + f'''
-    <section class="cpi-section cpi-detail cpi-faq-page"><div class="cpi-prose">{faq_block(FAQS, "Frequently asked questions")}<p class="cpi-fine">{esc(TECH_NOTE)}</p></div>
+    <section class="cpi-section cpi-detail cpi-faq-page"><div class="cpi-prose">@@FAQ_BLOCK@@<p class="cpi-fine">{esc(TECH_NOTE)}</p></div>
     <aside class="cpi-side-card"><h3>Still unsure?</h3><p>Ask us directly. A first conversation can start with the problem you are solving.</p><a class="cpi-button-lime" href="/book">Book a consultation {icon("arrow-right")}</a></aside></section>
     {cta_band()}'''
     desc = "Answers to common questions about US patent strategy, provisional applications, disclosure and how CanPatentIt works."
-    write("faq", shell("faq", "Frequently Asked Questions", desc, body, jsonld=[c_ld, faq_ld(FAQS)]))
-    register("faq", "FAQ", desc, body)
+    out = shell("faq", "Frequently Asked Questions", desc, body, jsonld=[c_ld], extra_head=NL + "  <!--@@FAQ_LD@@-->")
+    dest = os.path.join(ROOT, "backend", "resources", "cpi", "faq-shell.html")
+    with open(dest, "w", encoding="utf-8", newline=NL) as f:
+        f.write(out)
+    stale = os.path.join(OUT, "faq.html")
+    if os.path.exists(stale):
+        os.remove(stale)
+    register("faq", "FAQ", desc, "Frequently asked questions about US patent strategy and how CanPatentIt works.")
 
 
 def build_insights():

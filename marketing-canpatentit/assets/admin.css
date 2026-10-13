@@ -58,3 +58,12 @@ a.adm-btn { display: inline-flex; align-items: center; text-decoration: none; co
 .adm-cover-preview { min-height: 120px; max-width: 420px; border: 1px dashed color-mix(in oklab, var(--cpi-ink) 28%, transparent); display: grid; place-items: center; background: #fff; overflow: hidden; }
 .adm-cover-preview img { width: 100%; display: block; }
 .adm-editor img { max-width: 100%; height: auto; display: block; margin: 12px 0; }
+.adm-faq-list { display: grid; gap: 10px; margin-top: 14px; }
+.adm-faq-item { display: flex; gap: 16px; align-items: flex-start; justify-content: space-between; padding: 14px 16px; border: 1px solid color-mix(in oklab, var(--cpi-ink) 14%, transparent); background: #fff; }
+.adm-faq-item.is-hidden { opacity: .6; }
+.adm-faq-main { display: grid; gap: 6px; min-width: 0; }
+.adm-faq-ans { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.adm-faq-acts { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.adm-faq-acts .adm-btn:disabled { opacity: .35; cursor: default; }
+.adm-check { display: flex; align-items: center; gap: 8px; font-weight: 500; }
+.adm-check input { width: auto; height: auto; }

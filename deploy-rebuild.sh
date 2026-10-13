@@ -173,6 +173,9 @@ php artisan view:clear
 php artisan cache:clear
 php artisan optimize
 
+echo "--- Republishing canpatentit.com FAQ and articles (picks up the new header/footer) ---"
+sudo -u www-data env HOME=/tmp php artisan cpi:republish || echo "WARNING: cpi:republish failed"
+
 echo "--- Publishing Horizon assets ---"
 php artisan horizon:publish --ansi
 

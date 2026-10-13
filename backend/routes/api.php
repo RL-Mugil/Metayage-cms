@@ -46,7 +46,12 @@ Route::middleware(['auth:sanctum', \Laravel\Sanctum\Http\Middleware\CheckAbiliti
     Route::get('/enquiries', [\App\Http\Controllers\CpiAdminController::class, 'index']);
     Route::patch('/enquiries/{id}', [\App\Http\Controllers\CpiAdminController::class, 'update'])->whereNumber('id');
     Route::get('/enquiries/export', [\App\Http\Controllers\CpiAdminController::class, 'export']);
-    Route::post('/images', [\App\Http\Controllers\CpiArticleController::class, 'uploadImage'])->middleware('throttle:30,1');
+    Route::get('/faqs', [\App\Http\Controllers\CpiFaqController::class, 'index']);
+    Route::post('/faqs', [\App\Http\Controllers\CpiFaqController::class, 'store']);
+    Route::put('/faqs-order', [\App\Http\Controllers\CpiFaqController::class, 'reorder']);
+    Route::put('/faqs/{id}', [\App\Http\Controllers\CpiFaqController::class, 'update'])->whereNumber('id');
+    Route::delete('/faqs/{id}', [\App\Http\Controllers\CpiFaqController::class, 'destroy'])->whereNumber('id');
+    Route::post('/images',[\App\Http\Controllers\CpiArticleController::class, 'uploadImage'])->middleware('throttle:30,1');
     Route::get('/articles', [\App\Http\Controllers\CpiArticleController::class, 'index']);
     Route::post('/articles', [\App\Http\Controllers\CpiArticleController::class, 'store']);
     Route::get('/articles/{id}', [\App\Http\Controllers\CpiArticleController::class, 'show'])->whereNumber('id');

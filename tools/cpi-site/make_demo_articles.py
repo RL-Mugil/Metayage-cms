@@ -71,19 +71,19 @@ def cover_a():  # provisional -> complete
 
 def cover_b():  # freedom to operate
     def art(d):
-        d.ellipse([430, 380, 850, 800], outline=GOLD + (255,), width=7)
-        d.ellipse([680, 380, 1100, 800], outline=CYAN + (255,), width=7)
-        d.ellipse([930, 380, 1350, 800], outline=GREEN + (255,), width=7)
-        d.rounded_rectangle([700, 520, 1080, 700], radius=18, fill=(236, 180, 57, 45), outline=WHITE + (230,), width=5)
-        d.line([760, 600, 1020, 600], fill=WHITE + (200,), width=5)
-        d.line([760, 640, 940, 640], fill=WHITE + (140,), width=5)
+        d.ellipse([450, 310, 830, 690], outline=GOLD + (255,), width=7)
+        d.ellipse([690, 310, 1070, 690], outline=CYAN + (255,), width=7)
+        d.ellipse([930, 310, 1310, 690], outline=GREEN + (255,), width=7)
+        d.rounded_rectangle([710, 440, 1050, 590], radius=18, fill=(236, 180, 57, 45), outline=WHITE + (230,), width=5)
+        d.line([765, 500, 995, 500], fill=WHITE + (200,), width=5)
+        d.line([765, 540, 925, 540], fill=WHITE + (140,), width=5)
     im = glow(backdrop(0.35), art)
     d = ImageDraw.Draw(im)
     d.text((200, 130), "FREEDOM TO OPERATE", font=font(64, True), fill=WHITE)
     d.text((200, 220), "What a search can and cannot tell you", font=font(40), fill=CYAN)
-    d.text((640, 825), "EXISTING PATENTS", font=font(24, True), fill=GOLD, anchor="ma")
-    d.text((890, 825), "YOUR PRODUCT", font=font(24, True), fill=CYAN, anchor="ma")
-    d.text((1140, 825), "TARGET MARKETS", font=font(24, True), fill=GREEN, anchor="ma")
+    d.text((640, 735), "EXISTING PATENTS", font=font(24, True), fill=GOLD, anchor="ma")
+    d.text((890, 735), "YOUR PRODUCT", font=font(24, True), fill=CYAN, anchor="ma")
+    d.text((1140, 735), "TARGET MARKETS", font=font(24, True), fill=GREEN, anchor="ma")
     return im
 
 

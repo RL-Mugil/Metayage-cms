@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\CpiArticle;
+use App\Models\CpiFaq;
 use Illuminate\Support\Facades\File;
 
 /**
@@ -23,6 +24,42 @@ class InsightPublisher
         File::ensureDirectoryExists($dir);
         File::put($dir.'/'.$a->slug.'.html', $this->render($a));
         $this->rebuild();
+    }
+
+    /** Rewrites the FAQ page from the questions saved in the admin panel. */
+    public function publishFaq(): void
+    {
+        $faqs = CpiFaq::where('active', true)->orderBy('sort_order')->orderBy('id')->get();
+        $rows = '';
+        $entities = [];
+        foreach ($faqs as $f) {
+            $paragraphs = collect(preg_split('/\n{2,}/', trim($f->answer)))->filter()
+                ->map(fn ($p) => '<p>'.nl2br(e(trim($p)), false).'</p>')->implode('');
+            $rows .= '<details class="cpi-faq"><summary>'.e($f->question).'</summary><div>'.$paragraphs.'</div></details>';
+            $entities[] = ['@type' => 'Question', 'name' => $f->question, 'acceptedAnswer' => ['@type' => 'Answer', 'text' => $f->answer]];
+        }
+        $block = '<div class="cpi-faq-list"><h2>Frequently asked questions</h2>'.($rows ?: '<p>No questions yet.</p>').'</div>';
+        $ld = $entities
+            ? '<script type="application/ld+json">'.str_replace('</', '<\/', (string) json_encode(['@context' => 'https://schema.org', '@type' => 'FAQPage', 'mainEntity' => $entities], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)).'</script>'
+            : '';
+
+        $html = strtr(File::get(resource_path('cpi/faq-shell.html')), ['@@FAQ_BLOCK@@' => $block, '<!--@@FAQ_LD@@-->' => $ld]);
+        File::ensureDirectoryExists(self::sitePath());
+        File::put(self::sitePath().'/faq.html', $html);
+    }
+
+    /** FAQ page plus every published article, e.g. after the site header or footer changed. */
+    public function republishAll(): int
+    {
+        $this->publishFaq();
+        $articles = CpiArticle::where('status', 'published')->get();
+        foreach ($articles as $a) {
+            File::ensureDirectoryExists(self::sitePath().'/insights');
+            File::put(self::sitePath().'/insights/'.$a->slug.'.html', $this->render($a));
+        }
+        $this->rebuild();
+
+        return $articles->count();
     }
 
     /** File names of every uploaded image an article uses (cover and inline). */

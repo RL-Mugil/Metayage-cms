@@ -252,6 +252,59 @@ class CpiSiteTest extends TestCase
         $this->assertFileExists($dir.'/freshstray.webp');
     }
 
+    // ---- FAQ ----
+
+    public function test_faq_can_be_added_edited_reordered_hidden_and_deleted(): void
+    {
+        $h = $this->adminHeaders();
+        $this->assertSame(13, \App\Models\CpiFaq::count(), 'The migration seeds the starting questions.');
+        \App\Models\CpiFaq::query()->delete();
+
+        $a = $this->postJson('/api/cpi-admin/faqs', ['question' => 'First question?', 'answer' => "Line one.\n\nLine two <b>x</b>"], $h)->assertCreated()->json('id');
+        $b = $this->postJson('/api/cpi-admin/faqs', ['question' => 'Second question?', 'answer' => 'Second answer.'], $h)->assertCreated()->json('id');
+
+        $page = File::get($this->siteDir.'/faq.html');
+        $this->assertStringContainsString('First question?', $page);
+        $this->assertStringContainsString('<p>Line one.</p><p>Line two &lt;b&gt;x&lt;/b&gt;</p>', $page, 'Answers are escaped and split into paragraphs.');
+        $this->assertStringContainsString('"@type":"FAQPage"', $page);
+        $this->assertLessThan(strpos($page, 'Second question?'), strpos($page, 'First question?'));
+
+        $this->putJson("/api/cpi-admin/faqs/{$a}", ['question' => 'First question, edited?', 'answer' => 'New answer.'], $h)->assertOk();
+        $this->assertStringContainsString('First question, edited?', File::get($this->siteDir.'/faq.html'));
+
+        $this->putJson('/api/cpi-admin/faqs-order', ['ids' => [$b, $a]], $h)->assertOk();
+        $page = File::get($this->siteDir.'/faq.html');
+        $this->assertLessThan(strpos($page, 'First question, edited?'), strpos($page, 'Second question?'));
+
+        $this->putJson("/api/cpi-admin/faqs/{$b}", ['question' => 'Second question?', 'answer' => 'Second answer.', 'active' => false], $h)->assertOk();
+        $this->assertStringNotContainsString('Second question?', File::get($this->siteDir.'/faq.html'));
+
+        $this->deleteJson("/api/cpi-admin/faqs/{$a}", [], $h)->assertOk();
+        $this->assertStringNotContainsString('First question', File::get($this->siteDir.'/faq.html'));
+    }
+
+    public function test_faq_endpoints_require_admin_and_validate(): void
+    {
+        $this->getJson('/api/cpi-admin/faqs')->assertUnauthorized();
+        $h = $this->adminHeaders();
+
+        $this->postJson('/api/cpi-admin/faqs', ['question' => '', 'answer' => ''], $h)->assertStatus(422);
+    }
+
+    public function test_republish_command_rewrites_faq_and_published_articles(): void
+    {
+        $h = $this->adminHeaders();
+        $id = $this->postJson('/api/cpi-admin/articles', ['title' => 'Republish me', 'body_html' => '<p>Body text here.</p>'], $h)->json('id');
+        $this->postJson("/api/cpi-admin/articles/{$id}/publish", [], $h)->assertOk();
+        File::delete($this->siteDir.'/insights/republish-me.html');
+        File::delete($this->siteDir.'/faq.html');
+
+        $this->artisan('cpi:republish')->assertSuccessful();
+
+        $this->assertFileExists($this->siteDir.'/insights/republish-me.html');
+        $this->assertFileExists($this->siteDir.'/faq.html');
+    }
+
     public function test_cover_image_must_be_an_uploaded_path(): void
     {
         $h = $this->adminHeaders();
