@@ -58,14 +58,13 @@ class CpiPatentController extends Controller
         Gate::authorize('manage-site');
         $patent = CpiPatent::findOrFail($id);
         $data = $this->validated($request, $patent->id);
-        $oldImage = $patent->image;
+        $before = $this->publisher->patentImageNames($patent);
         $patent->update($data); // the slug is a public URL and never changes after creation
         if ($patent->status === 'published') {
             $this->publisher->publishPatent($patent->fresh());
         }
-        if ($oldImage && $oldImage !== $patent->image) {
-            $this->publisher->releaseImages([basename($oldImage)], null, $patent->id);
-        }
+        // Figures removed or replaced by this edit are deleted unless another patent or article still uses them.
+        $this->publisher->releaseImages(array_diff($before, $this->publisher->patentImageNames($patent->fresh())), null, $patent->id);
         $this->audit($request, 'cpi_patent_update', $patent);
 
         return response()->json($patent->fresh());
@@ -97,13 +96,11 @@ class CpiPatentController extends Controller
     {
         Gate::authorize('manage-site');
         $patent = CpiPatent::findOrFail($id);
-        $image = $patent->image;
+        $images = $this->publisher->patentImageNames($patent);
         $this->publisher->unpublishPatent($patent);
         $patent->delete();
         $this->publisher->rebuildPatents();
-        if ($image) {
-            $this->publisher->releaseImages([basename($image)]);
-        }
+        $this->publisher->releaseImages($images);
         $this->audit($request, 'cpi_patent_delete', $patent);
 
         return response()->json(['message' => 'Deleted.']);
@@ -119,7 +116,23 @@ class CpiPatentController extends Controller
             'abstract' => ['required', 'string', 'min:10', 'max:8000'],
             'image' => ['nullable', 'string', 'max:150', 'regex:#^/insights/img/[a-z0-9][a-z0-9._-]{0,100}\.(?:webp|jpe?g|png|gif)$#i'],
             'image_alt' => ['nullable', 'string', 'max:200'],
+            'figures' => ['nullable', 'array', 'max:'.CpiPatent::MAX_FIGURES],
+            'figures.*.url' => ['required', 'string', 'max:150', 'regex:#^/insights/img/[a-z0-9][a-z0-9._-]{0,100}\.(?:webp|jpe?g|png|gif)$#i'],
+            'figures.*.alt' => ['nullable', 'string', 'max:200'],
+            // Optional override for the Patent ID link; blank means the automatic Google Patents link.
+            'link_url' => ['nullable', 'string', 'max:300', 'regex:#^https://[^\s<>"\']+$#i'],
+            'link_disabled' => ['sometimes', 'boolean'],
         ]);
+
+        // The first figure is also the grid thumbnail (image / image_alt). A lone legacy "image" still works.
+        $figures = collect($data['figures'] ?? [])->map(fn ($f) => ['url' => $f['url'], 'alt' => isset($f['alt']) ? trim((string) $f['alt']) ?: null : null])->values()->all();
+        if (! $figures && ! empty($data['image'])) {
+            $figures = [['url' => $data['image'], 'alt' => $data['image_alt'] ?? null]];
+        }
+        $data['figures'] = $figures;
+        $data['image'] = $figures[0]['url'] ?? null;
+        $data['image_alt'] = $figures[0]['alt'] ?? null;
+        $data['link_url'] = isset($data['link_url']) ? trim($data['link_url']) ?: null : null;
         foreach (['patent_number', 'title', 'domain'] as $k) {
             $data[$k] = trim(preg_replace('/\s+/', ' ', $data[$k]));
         }

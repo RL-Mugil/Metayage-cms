@@ -392,6 +392,81 @@ class CpiSiteTest extends TestCase
         $this->assertDatabaseMissing('cpi_patents', ['id' => $id]);
     }
 
+    public function test_patent_id_links_to_google_patents_automatically(): void
+    {
+        $url = fn (string $n) => (new \App\Models\CpiPatent(['patent_number' => $n]))->googlePatentsUrl();
+
+        $this->assertSame('https://patents.google.com/patent/WO2020136668/en', $url('WO/2020/136668'));
+        $this->assertSame('https://patents.google.com/patent/US11000000B2/en', $url('US 11,000,000 B2'));
+        $this->assertSame('https://patents.google.com/patent/US20210123456A1/en', $url('us 2021/0123456 a1'));
+        $this->assertSame('https://patents.google.com/patent/IN202141012345/en', $url('IN 202141012345'));
+        $this->assertNull($url('SAMPLE-0001'), 'Demo IDs get no link.');
+        $this->assertNull($url('ABC'), 'Not a publication number.');
+        $this->assertNull($url('12345678'), 'No country prefix.');
+
+        $p = new \App\Models\CpiPatent(['patent_number' => 'WO/2020/136668', 'link_url' => 'https://ipindia.example/case/1']);
+        $this->assertSame('https://ipindia.example/case/1', $p->linkUrl(), 'An override beats the automatic link.');
+        $p->link_disabled = true;
+        $this->assertNull($p->linkUrl(), 'The link can be switched off.');
+    }
+
+    public function test_patent_page_links_the_id_and_rejects_unsafe_override(): void
+    {
+        $h = $this->adminHeaders();
+        $base = ['title' => 'Linked patent title', 'domain' => 'Cryptography', 'country' => 'USA', 'abstract' => 'An abstract that is long enough.'];
+
+        $this->postJson('/api/cpi-admin/patents', $base + ['patent_number' => 'US 11,000,000 B2', 'link_url' => 'javascript:alert(1)'], $h)->assertStatus(422)->assertJsonValidationErrors(['link_url']);
+        $this->postJson('/api/cpi-admin/patents', $base + ['patent_number' => 'US 11,000,000 B2', 'link_url' => 'http://insecure.example/x'], $h)->assertStatus(422);
+
+        $id = $this->postJson('/api/cpi-admin/patents', $base + ['patent_number' => 'US 11,000,000 B2'], $h)->assertCreated()->json('id');
+        $this->postJson("/api/cpi-admin/patents/{$id}/publish", [], $h)->assertOk();
+        $page = File::get($this->siteDir.'/patent-showcase/linked-patent-title.html');
+        $this->assertStringContainsString('href="https://patents.google.com/patent/US11000000B2/en" target="_blank" rel="noopener noreferrer"', $page);
+        $this->assertStringContainsString('"sameAs":"https://patents.google.com/patent/US11000000B2/en"', $page);
+
+        $this->putJson("/api/cpi-admin/patents/{$id}", $base + ['patent_number' => 'US 11,000,000 B2', 'link_disabled' => true], $h)->assertOk();
+        $this->assertStringNotContainsString('patents.google.com', File::get($this->siteDir.'/patent-showcase/linked-patent-title.html'));
+    }
+
+    public function test_patent_with_several_figures_scrolls_in_a_strip_and_cleans_up_removed_ones(): void
+    {
+        $h = $this->adminHeaders();
+        $up = fn () => $this->post('/api/cpi-admin/images', ['image' => UploadedFile::fake()->image('f'.uniqid().'.png', 300 + random_int(1, 300), 200)], $h + ['Accept' => 'application/json'])->json('url');
+        [$a, $b, $c] = [$up(), $up(), $up()];
+        $base = ['patent_number' => 'EP 1234567', 'title' => 'Many figures patent', 'domain' => 'Healthcare', 'country' => 'Others', 'abstract' => 'An abstract that is long enough.'];
+
+        $id = $this->postJson('/api/cpi-admin/patents', $base + ['figures' => [['url' => $a, 'alt' => 'First'], ['url' => $b, 'alt' => null], ['url' => $c, 'alt' => 'Third']]], $h)->assertCreated()->json('id');
+        $this->assertSame($a, \App\Models\CpiPatent::find($id)->image, 'The first figure is the grid thumbnail.');
+        $this->postJson("/api/cpi-admin/patents/{$id}/publish", [], $h)->assertOk();
+        $page = File::get($this->siteDir.'/patent-showcase/many-figures-patent.html');
+        $this->assertSame(3, substr_count($page, 'class="cpi-fig"'));
+        $this->assertStringContainsString('FIG. 2 of 3', $page);
+        $this->assertStringContainsString('class="cpi-figstrip"', $page);
+        $this->assertSame(3, json_decode(File::get($this->siteDir.'/patent-showcase/index.json'), true)[0]['figure_count']);
+
+        // Every figure of a patent survives the clean-up job.
+        foreach ([$a, $b, $c] as $u) {
+            touch($this->siteDir.$u, time() - 7200);
+        }
+        $this->artisan('cpi:prune-images')->assertSuccessful();
+        foreach ([$a, $b, $c] as $u) {
+            $this->assertFileExists($this->siteDir.$u);
+        }
+
+        // Dropping the second figure deletes just that file.
+        $this->putJson("/api/cpi-admin/patents/{$id}", $base + ['figures' => [['url' => $a, 'alt' => 'First'], ['url' => $c, 'alt' => 'Third']]], $h)->assertOk();
+        $this->assertFileDoesNotExist($this->siteDir.$b);
+        $this->assertFileExists($this->siteDir.$a);
+
+        // Deleting the patent removes the rest.
+        $this->deleteJson("/api/cpi-admin/patents/{$id}", [], $h)->assertOk();
+        $this->assertFileDoesNotExist($this->siteDir.$a);
+        $this->assertFileDoesNotExist($this->siteDir.$c);
+
+        $thirteen = array_fill(0, 13, ['url' => '/insights/img/abcdef0123456789abcdef01.webp', 'alt' => null]);
+        $this->postJson('/api/cpi-admin/patents', $base + ['patent_number' => 'EP 7654321', 'figures' => $thirteen], $h)->assertStatus(422)->assertJsonValidationErrors(['figures']);
+    }
+
     public function test_patent_validation_and_unique_number(): void
     {
         $h = $this->adminHeaders();

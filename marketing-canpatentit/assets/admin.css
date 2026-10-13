@@ -70,3 +70,10 @@ a.adm-btn { display: inline-flex; align-items: center; text-decoration: none; co
 .adm-thumb { width: 84px; }
 .adm-thumb img { width: 72px; height: 54px; object-fit: contain; background: #fff; border: 1px solid color-mix(in oklab, var(--cpi-ink) 14%, transparent); display: block; }
 .adm-fig-preview { background: #fff; }
+.adm-figlist { display: grid; gap: 10px; }
+.adm-figrow { display: grid; grid-template-columns: 84px 1fr auto auto auto; gap: 10px; align-items: center; padding: 8px; border: 1px solid color-mix(in oklab, var(--cpi-ink) 14%, transparent); background: #fff; }
+.adm-figrow img { width: 84px; height: 62px; object-fit: contain; background: #fff; border: 1px solid color-mix(in oklab, var(--cpi-ink) 14%, transparent); }
+.adm-figinfo { display: grid; gap: 6px; min-width: 0; }
+.adm-figinfo strong { font-size: 12px; }
+.adm-linkinfo { overflow-wrap: anywhere; margin: 0; }
+@media (max-width: 700px) { .adm-figrow { grid-template-columns: 70px 1fr; } .adm-figrow .adm-btn { justify-self: start; } }

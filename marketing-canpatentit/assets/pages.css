@@ -425,3 +425,40 @@ a.cpi-page:hover { border-color: var(--cpi-blue); color: var(--cpi-blue-ink); }
 .cpi-legal section { scroll-margin-top: 100px; margin-top: 44px; }
 .cpi-legal section > h2 { font-size: 30px; margin: 0 0 6px; padding-bottom: 12px; border-bottom: 2px solid var(--cpi-blue); }
 .cpi-legal h3 { font-size: 18px; margin: 28px 0 8px; }
+
+/* ===== Patent figures: one small strip that scrolls sideways (the page itself does not) ===== */
+.cpi-figwrap { position: relative; width: fit-content; max-width: 100%; margin: 0 auto 52px; }
+.cpi-figstrip { display: flex; gap: 18px; width: fit-content; max-width: 100%; margin: 0 auto 52px; padding: 4px 4px 16px; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory; scroll-behavior: smooth; scrollbar-width: thin; scrollbar-color: var(--cpi-blue) color-mix(in oklab, var(--cpi-ink) 10%, transparent); text-align: center; overscroll-behavior-x: contain; }
+.cpi-figwrap .cpi-figstrip { margin: 0; }
+.cpi-figstrip:focus-visible { outline: 2px solid var(--cpi-blue); outline-offset: 4px; }
+.cpi-figstrip::-webkit-scrollbar { height: 10px; }
+.cpi-figstrip::-webkit-scrollbar-track { background: color-mix(in oklab, var(--cpi-ink) 8%, transparent); border-radius: 6px; }
+.cpi-figstrip::-webkit-scrollbar-thumb { background: var(--cpi-blue); border-radius: 6px; }
+.cpi-fig { flex: 0 0 auto; margin: 0; scroll-snap-align: center; }
+.cpi-fig-open { display: block; padding: 0; border: 0; background: none; cursor: zoom-in; }
+.cpi-fig img { display: block; height: 280px; width: auto; max-width: min(560px, 82vw); object-fit: contain; background: #fff; border: 1px solid color-mix(in oklab, var(--cpi-ink) 16%, transparent); padding: 8px; }
+.cpi-fig figcaption { margin-top: 8px; font-size: 12px; letter-spacing: .04em; color: color-mix(in oklab, var(--cpi-ink) 58%, transparent); }
+.cpi-fig-nav { position: absolute; top: 118px; width: 40px; height: 40px; border-radius: 50%; border: 1px solid color-mix(in oklab, var(--cpi-ink) 20%, transparent); background: var(--cpi-paper); color: var(--cpi-ink); font-size: 22px; line-height: 1; cursor: pointer; box-shadow: 0 6px 18px rgb(0 0 0 / .18); z-index: 2; display: none; }
+.cpi-fig-nav.prev { left: -14px; }
+.cpi-fig-nav.next { right: -14px; }
+.cpi-figwrap.is-overflowing .cpi-fig-nav { display: block; }
+.cpi-fig-nav:hover { background: var(--cpi-blue); color: #fff; }
+.cpi-fig-nav[disabled] { opacity: .35; cursor: default; }
+.cpi-lightbox { border: 0; padding: 0; background: transparent; max-width: 96vw; max-height: 96vh; overflow: visible; }
+.cpi-lightbox::backdrop { background: rgb(8 12 20 / .85); }
+.cpi-lightbox-body { position: relative; display: grid; justify-items: center; gap: 12px; }
+.cpi-lightbox img { display: block; max-width: 92vw; max-height: 82vh; object-fit: contain; background: #fff; padding: 12px; }
+.cpi-lightbox-cap { color: #fff; font-size: 13px; }
+.cpi-lightbox-btn { position: absolute; top: 8px; width: 42px; height: 42px; border-radius: 50%; border: 0; background: rgb(255 255 255 / .92); color: #212529; font-size: 22px; cursor: pointer; }
+.cpi-lightbox-btn.close { right: 8px; }
+.cpi-lightbox-btn.prev { top: 45%; left: 8px; }
+.cpi-lightbox-btn.next { top: 45%; right: 8px; }
+.cpi-lightbox-btn[disabled] { opacity: .35; cursor: default; }
+@media (max-width: 680px) { .cpi-fig img { height: 220px; } .cpi-fig-nav { top: 90px; } .cpi-fig-nav.prev { left: -6px; } .cpi-fig-nav.next { right: -6px; } }
+
+/* Patent ID link */
+.cpi-id-link { color: var(--cpi-blue); text-decoration: none; border-bottom: 1px dashed color-mix(in oklab, var(--cpi-blue) 60%, transparent); }
+.cpi-id-link:hover { border-bottom-style: solid; }
+.cpi-patent-meta dd small { display: block; margin-top: 6px; font-size: 12px; font-weight: 400; color: color-mix(in oklab, var(--cpi-ink) 56%, transparent); }
+
+.cpi-patent-meta > div { align-content: start; }

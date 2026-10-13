@@ -119,6 +119,17 @@ class InsightPublisher
 
     // ---- Patent showcase ----
 
+    /** File names of every uploaded figure a patent uses (the whole list plus the thumbnail). */
+    public function patentImageNames(CpiPatent $p): array
+    {
+        $names = collect($p->figureList())->pluck('url')->map(fn ($u) => basename((string) $u));
+        if ($p->image) {
+            $names->push(basename($p->image));
+        }
+
+        return $names->filter()->unique()->values()->all();
+    }
+
     public function publishPatent(CpiPatent $p): void
     {
         $this->writePatentPage($p);
@@ -143,7 +154,7 @@ class InsightPublisher
 
         File::put($dir.'/index.json', json_encode($rows->map(fn ($r) => [
             'slug' => $r->slug, 'id' => $r->patent_number, 'title' => $r->title, 'domain' => $r->domain, 'country' => $r->country,
-            'image' => $r->image, 'image_alt' => $r->image_alt ?: $r->title,
+            'image' => $r->image, 'image_alt' => $r->image_alt ?: $r->title, 'figure_count' => count($r->figureList()),
         ])->values(), JSON_UNESCAPED_UNICODE));
 
         $xml = '<?xml version="1.0" encoding="UTF-8"?>'."\n".'<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'."\n";
@@ -171,14 +182,34 @@ class InsightPublisher
 
             return '<p>'.($i === 0 ? '<strong>ABSTRACT:</strong> ' : '').$text.'</p>';
         })->implode('');
-        $figure = $p->image
-            ? '<figure class="cpi-patent-figure"><img src="'.e($p->image).'" alt="'.e($p->image_alt ?: $p->title).'"></figure>'
-            : '';
+        // Several figures sit in one small strip that scrolls sideways; only the strip scrolls, not the page.
+        $figs = $p->figureList();
+        $figure = '';
+        if ($figs) {
+            $n = count($figs);
+            $tiles = '';
+            foreach ($figs as $i => $f) {
+                $alt = ! empty($f['alt']) ? $f['alt'] : $p->title.' (figure '.($i + 1).')';
+                $tiles .= '<figure class="cpi-fig"><button type="button" class="cpi-fig-open" aria-label="Enlarge figure '.($i + 1).'"><img src="'.e($f['url']).'" alt="'.e($alt).'" loading="'.($i === 0 ? 'eager' : 'lazy').'"></button>'
+                    .'<figcaption>FIG. '.($i + 1).($n > 1 ? ' of '.$n : '').'</figcaption></figure>';
+            }
+            $figure = '<div class="cpi-figstrip" tabindex="0" role="region" aria-label="Patent figures" data-count="'.$n.'">'.$tiles.'</div>';
+        }
+
+        // The Patent ID links to the case on Google Patents automatically (or to the admin's override link).
+        $link = $p->linkUrl();
+        $idHtml = e($p->patent_number);
+        if ($link) {
+            $host = (string) parse_url($link, PHP_URL_HOST);
+            $hint = $host === 'patents.google.com' ? 'Google Patents' : preg_replace('/^www\./', '', $host);
+            $idHtml = '<a class="cpi-id-link" href="'.e($link).'" target="_blank" rel="noopener noreferrer">'.e($p->patent_number).'<span aria-hidden="true"> ↗</span></a>'
+                .'<small>'.e($hint).'</small>';
+        }
 
         // Layout follows the Metayage showcase: info card, domain, title, figure, abstract, recommended patents.
         $body = '<article class="cpi-patent" data-slug="'.e($p->slug).'" data-domain="'.e($p->domain).'" data-country="'.e($p->country).'">'
             .'<dl class="cpi-patent-meta">'
-            .'<div><dt>Patent ID:</dt><dd>'.e($p->patent_number).'</dd></div>'
+            .'<div><dt>Patent ID:</dt><dd>'.$idHtml.'</dd></div>'
             .'<div><dt>Patent Domain:</dt><dd><a href="/patent-showcase?domain='.rawurlencode($p->domain).'">'.e($p->domain).'</a></dd></div>'
             .'<div><dt>Country:</dt><dd><a href="/patent-showcase?country='.rawurlencode($p->country).'">'.e($p->country).'</a></dd></div>'
             .'</dl>'
@@ -193,6 +224,7 @@ class InsightPublisher
         $ld = str_replace('</', '<\/', (string) json_encode([
             '@context' => 'https://schema.org', '@type' => 'CreativeWork', 'name' => $p->title, 'identifier' => $p->patent_number,
             'description' => $desc, 'about' => $p->domain, 'url' => $url,
+            ...($link ? ['sameAs' => $link] : []),
             'image' => $p->image ? 'https://canpatentit.com'.$p->image : 'https://canpatentit.com/assets/og-image.png',
         ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
 
@@ -233,9 +265,11 @@ class InsightPublisher
                 }
             });
         // Patent showcase figures share the same image folder.
-        CpiPatent::query()->when($exceptPatentId, fn ($q) => $q->where('id', '!=', $exceptPatentId))->whereNotNull('image')->pluck('image')
-            ->each(function ($img) use (&$inUse) {
-                $inUse[basename($img)] = true;
+        CpiPatent::query()->when($exceptPatentId, fn ($q) => $q->where('id', '!=', $exceptPatentId))->get()
+            ->each(function ($patent) use (&$inUse) {
+                foreach ($this->patentImageNames($patent) as $n) {
+                    $inUse[$n] = true;
+                }
             });
 
         $removed = 0;
@@ -266,8 +300,10 @@ class InsightPublisher
                 $used[$n] = true;
             }
         });
-        CpiPatent::query()->whereNotNull('image')->pluck('image')->each(function ($img) use (&$used) {
-            $used[basename($img)] = true;
+        CpiPatent::query()->get()->each(function ($patent) use (&$used) {
+            foreach ($this->patentImageNames($patent) as $n) {
+                $used[$n] = true;
+            }
         });
 
         $removed = 0;

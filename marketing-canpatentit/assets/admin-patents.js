@@ -116,36 +116,83 @@
     form.appendChild(two);
     form.appendChild(field('Abstract', 'p-abs', abs));
 
-    // Figure
-    var img = { url: cur.image || '', alt: cur.image_alt || '' };
-    var box = el('div', 'adm-cover');
-    var preview = el('div', 'adm-cover-preview adm-fig-preview');
-    var alt = el('input'); alt.maxLength = 200; alt.value = img.alt; alt.placeholder = 'Describe the figure for people who cannot see it';
-    alt.addEventListener('input', function () { img.alt = alt.value; });
-    var pick = el('input'); pick.type = 'file'; pick.accept = 'image/jpeg,image/png,image/webp,image/gif'; pick.hidden = true;
-    var pickBtn = el('button', 'adm-btn', 'Choose figure'); pickBtn.type = 'button';
-    var rm = el('button', 'adm-btn', 'Remove'); rm.type = 'button';
-    var imsg = el('span', 'adm-muted');
-    var altLabel = el('label'); altLabel.appendChild(document.createTextNode('Figure description (alt text)')); altLabel.appendChild(alt);
-    function paint() {
-      preview.textContent = '';
-      if (img.url) { var im = document.createElement('img'); im.src = 'https://canpatentit.com' + img.url; im.alt = ''; preview.appendChild(im); } else { preview.appendChild(el('span', 'adm-muted', 'No figure yet. A branded placeholder is shown.')); }
-      rm.hidden = !img.url; altLabel.hidden = !img.url; pickBtn.textContent = img.url ? 'Replace figure' : 'Choose figure';
+    // Patent ID link: automatic Google Patents link unless overridden or switched off.
+    var link = el('input'); link.maxLength = 300; link.value = cur.link_url || ''; link.placeholder = 'Leave blank to link to Google Patents automatically';
+    var noLink = el('input'); noLink.type = 'checkbox'; noLink.id = 'p-nolink'; noLink.checked = !!cur.link_disabled;
+    var noLinkLabel = el('label', 'adm-check'); noLinkLabel.htmlFor = 'p-nolink'; noLinkLabel.appendChild(noLink); noLinkLabel.appendChild(document.createTextNode(' Do not link the Patent ID'));
+    var linkInfo = el('p', 'adm-muted adm-linkinfo');
+    var testLink = el('a', 'adm-btn', 'Test link'); testLink.target = '_blank'; testLink.rel = 'noopener noreferrer';
+    function googleUrl(n) {
+      var x = String(n || '').toUpperCase().replace(/[\s,\/\-.]+/g, '');
+      if (!/^[A-Z]{2}[A-Z0-9]{4,}$/.test(x) || !/\d/.test(x) || x.indexOf('SAMPLE') === 0) { return ''; }
+      return 'https://patents.google.com/patent/' + x + '/en';
     }
-    pickBtn.addEventListener('click', function () { pick.click(); });
-    rm.addEventListener('click', function () { img.url = ''; paint(); });
+    function paintLink() {
+      var override = link.value.trim();
+      var url = noLink.checked ? '' : (override || googleUrl(num.value));
+      linkInfo.textContent = noLink.checked ? 'The Patent ID will be plain text.' : (url ? 'The Patent ID will link to: ' + url : 'No automatic link for this ID (it does not look like a publication number). Add a link above if you want one.');
+      testLink.hidden = !url;
+      if (url) { testLink.href = url; }
+    }
+    [num, link].forEach(function (i) { i.addEventListener('input', paintLink); });
+    noLink.addEventListener('change', paintLink);
+    var linkBox = el('div', 'adm-cover');
+    linkBox.appendChild(field('Patent link (optional)', 'p-link', link));
+    linkBox.appendChild(noLinkLabel);
+    var lrow = el('div', 'adm-filters'); lrow.appendChild(linkInfo); lrow.appendChild(testLink); linkBox.appendChild(lrow);
+    form.appendChild(linkBox);
+
+    // Figures: several drawings per patent. The first one is the thumbnail on the showcase grid.
+    var figs = (cur.figures && cur.figures.length ? cur.figures : (cur.image ? [{ url: cur.image, alt: cur.image_alt || '' }] : [])).map(function (f) { return { url: f.url, alt: f.alt || '' }; });
+    var MAX = 12;
+    var box = el('div', 'adm-cover');
+    box.appendChild(el('label', null, 'Figures (drawings from the patent, up to ' + MAX + ')'));
+    var figList = el('div', 'adm-figlist');
+    var pick = el('input'); pick.type = 'file'; pick.multiple = true; pick.accept = 'image/jpeg,image/png,image/webp,image/gif'; pick.hidden = true;
+    var addBtn = el('button', 'adm-btn', 'Add figures'); addBtn.type = 'button';
+    var imsg = el('span', 'adm-muted');
+    function paint() {
+      figList.textContent = '';
+      if (!figs.length) { figList.appendChild(el('p', 'adm-muted', 'No figures yet. A branded placeholder is shown on the grid.')); }
+      figs.forEach(function (f, i) {
+        var row = el('div', 'adm-figrow');
+        var th = document.createElement('img'); th.src = 'https://canpatentit.com' + f.url; th.alt = '';
+        var alt = el('input'); alt.maxLength = 200; alt.value = f.alt; alt.placeholder = 'Describe this figure'; alt.setAttribute('aria-label', 'Figure ' + (i + 1) + ' description');
+        alt.addEventListener('input', function () { f.alt = alt.value; });
+        var info = el('div', 'adm-figinfo'); info.appendChild(el('strong', null, 'FIG. ' + (i + 1) + (i === 0 ? ' · grid thumbnail' : ''))); info.appendChild(alt);
+        var up = el('button', 'adm-btn', '\u2191'); up.type = 'button'; up.disabled = i === 0; up.setAttribute('aria-label', 'Move up');
+        var down = el('button', 'adm-btn', '\u2193'); down.type = 'button'; down.disabled = i === figs.length - 1; down.setAttribute('aria-label', 'Move down');
+        var del = el('button', 'adm-btn', 'Remove'); del.type = 'button';
+        up.addEventListener('click', function () { var t = figs[i - 1]; figs[i - 1] = figs[i]; figs[i] = t; paint(); });
+        down.addEventListener('click', function () { var t = figs[i + 1]; figs[i + 1] = figs[i]; figs[i] = t; paint(); });
+        del.addEventListener('click', function () { figs.splice(i, 1); paint(); });
+        row.appendChild(th); row.appendChild(info); row.appendChild(up); row.appendChild(down); row.appendChild(del);
+        figList.appendChild(row);
+      });
+      addBtn.disabled = figs.length >= MAX;
+    }
+    addBtn.addEventListener('click', function () { pick.click(); });
     pick.addEventListener('change', function () {
-      if (!pick.files[0]) { return; }
-      imsg.textContent = 'Uploading…'; setErr('');
-      A().uploadFile(pick.files[0]).then(function (res) { img.url = res.url; imsg.textContent = 'Uploaded.'; paint(); })
-        .catch(function (e) { imsg.textContent = ''; setErr(e.message); }).then(function () { pick.value = ''; });
+      var files = Array.prototype.slice.call(pick.files).slice(0, MAX - figs.length);
+      if (!files.length) { return; }
+      setErr('');
+      var n = 0;
+      files.reduce(function (chain, file) {
+        return chain.then(function () {
+          imsg.textContent = 'Uploading ' + (++n) + ' of ' + files.length + '…';
+          return A().uploadFile(file).then(function (res) { figs.push({ url: res.url, alt: '' }); paint(); });
+        });
+      }, Promise.resolve())
+        .then(function () { imsg.textContent = 'Uploaded.'; })
+        .catch(function (e) { imsg.textContent = ''; setErr(e.message); })
+        .then(function () { pick.value = ''; });
     });
-    var lbl = el('label'); lbl.appendChild(document.createTextNode('Figure (a drawing from the patent)'));
-    var btns = el('div', 'adm-filters'); btns.appendChild(pickBtn); btns.appendChild(rm); btns.appendChild(imsg);
-    box.appendChild(lbl); box.appendChild(preview); box.appendChild(btns); box.appendChild(pick); box.appendChild(altLabel);
+    var btns = el('div', 'adm-filters'); btns.appendChild(addBtn); btns.appendChild(imsg);
+    box.appendChild(figList); box.appendChild(btns); box.appendChild(pick);
     form.appendChild(box);
     pane.appendChild(form);
     paint();
+    paintLink();
 
     var bar = el('div', 'adm-filters');
     var save = el('button', 'adm-btn', 'Save'); save.type = 'button';
@@ -154,7 +201,11 @@
     var del = el('button', 'adm-btn', 'Delete'); del.type = 'button';
     var msg = el('span', 'adm-muted');
     function payload() {
-      return { patent_number: num.value.trim(), title: title.value.trim(), domain: dom.value.trim(), country: country.value, abstract: abs.value.trim(), image: img.url || null, image_alt: img.url ? (img.alt.trim() || null) : null };
+      return {
+        patent_number: num.value.trim(), title: title.value.trim(), domain: dom.value.trim(), country: country.value, abstract: abs.value.trim(),
+        figures: figs.map(function (f) { return { url: f.url, alt: f.alt.trim() || null }; }),
+        link_url: link.value.trim() || null, link_disabled: noLink.checked
+      };
     }
     function doSave() {
       var p = payload();
