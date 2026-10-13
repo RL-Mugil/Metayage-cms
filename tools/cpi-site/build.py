@@ -528,7 +528,8 @@ def version_assets():
     import hashlib
     pat = re.compile(r'(/assets/[\w.-]+\.(?:js|css))(?:\?v=\w+)?"')
     targets = [os.path.join(r, f) for r, _, fs in os.walk(OUT) for f in fs if f.endswith(".html")]
-    targets.append(os.path.join(ROOT, "backend", "resources", "cpi", "article-shell.html"))
+    for shell_name in ("article-shell.html", "faq-shell.html", "patent-shell.html"):
+        targets.append(os.path.join(ROOT, "backend", "resources", "cpi", shell_name))
 
     def stamp(m):
         try:
