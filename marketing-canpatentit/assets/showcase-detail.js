@@ -9,25 +9,21 @@
   var country = art.getAttribute('data-country');
 
   function el(tag, cls, text) { var n = document.createElement(tag); if (cls) { n.className = cls; } if (text !== undefined) { n.textContent = text; } return n; }
-  function safeImage(src) { return typeof src === 'string' && /^\/insights\/img\/[a-z0-9][a-z0-9._-]*$/i.test(src) ? src : ''; }
 
+  // Recommended patents are text-only cards: domain, title, country badge and a View Patent button.
   function card(p) {
-    var a = el('a', 'cpi-pcard');
-    a.href = '/patent-showcase/' + encodeURIComponent(p.slug);
-    var fig = el('div', 'cpi-pcard-fig');
-    var src = safeImage(p.image);
-    if (src) { var img = document.createElement('img'); img.src = src; img.alt = p.image_alt || p.title; img.loading = 'lazy'; fig.appendChild(img); } else { fig.classList.add('is-empty'); }
-    a.appendChild(fig);
-    var body = el('div', 'cpi-pcard-body');
-    var meta = el('div', 'cpi-pcard-meta');
-    meta.appendChild(el('span', 'cpi-pcard-domain', p.domain));
-    meta.appendChild(el('span', 'cpi-pcard-country', p.country));
-    body.appendChild(meta);
-    body.appendChild(el('h3', null, p.title));
-    body.appendChild(el('span', 'cpi-pcard-id', p.id));
-    body.appendChild(el('span', 'cpi-text-link', 'View Patent'));
-    a.appendChild(body);
-    return a;
+    var box = el('div', 'cpi-rcard');
+    box.appendChild(el('p', 'cpi-rcard-domain', p.domain));
+    box.appendChild(el('h3', null, p.title));
+    var country = el('p', 'cpi-rcard-country');
+    country.appendChild(el('span', 'cpi-globe'));
+    country.appendChild(el('b', null, p.country));
+    box.appendChild(country);
+    var btn = el('a', 'cpi-rcard-btn', 'View Patent');
+    btn.href = '/patent-showcase/' + encodeURIComponent(p.slug);
+    btn.setAttribute('aria-label', 'View patent: ' + p.title);
+    box.appendChild(btn);
+    return box;
   }
 
   fetch('/patent-showcase/index.json', { headers: { 'Accept': 'application/json' } })

@@ -165,23 +165,30 @@ class InsightPublisher
         $shell = File::get(resource_path('cpi/patent-shell.html'));
         $url = 'https://canpatentit.com/patent-showcase/'.$p->slug;
         $desc = Str::limit(trim(preg_replace('/\s+/', ' ', $p->abstract)), 190, '…');
-        $paragraphs = collect(preg_split('/\n{2,}/', trim($p->abstract)))->filter()->map(fn ($t) => '<p>'.nl2br(e(trim($t)), false).'</p>')->implode('');
+        $paras = collect(preg_split('/\n{2,}/', trim($p->abstract)))->filter()->values();
+        $paragraphs = $paras->map(function ($t, $i) {
+            $text = nl2br(e(trim($t)), false);
+
+            return '<p>'.($i === 0 ? '<strong>ABSTRACT:</strong> ' : '').$text.'</p>';
+        })->implode('');
         $figure = $p->image
             ? '<figure class="cpi-patent-figure"><img src="'.e($p->image).'" alt="'.e($p->image_alt ?: $p->title).'"></figure>'
             : '';
 
+        // Layout follows the Metayage showcase: info card, domain, title, figure, abstract, recommended patents.
         $body = '<article class="cpi-patent" data-slug="'.e($p->slug).'" data-domain="'.e($p->domain).'" data-country="'.e($p->country).'">'
-            .'<nav class="cpi-crumbs" aria-label="Breadcrumb"><a href="/patent-showcase">Patent showcase</a></nav>'
-            .'<div class="cpi-patent-head"><dl class="cpi-patent-meta">'
-            .'<div><dt>Patent ID</dt><dd>'.e($p->patent_number).'</dd></div>'
-            .'<div><dt>Domain</dt><dd><a href="/patent-showcase?domain='.rawurlencode($p->domain).'">'.e($p->domain).'</a></dd></div>'
-            .'<div><dt>Country</dt><dd><a href="/patent-showcase?country='.rawurlencode($p->country).'">'.e($p->country).'</a></dd></div>'
-            .'</dl><h1>'.e($p->title).'</h1></div>'
+            .'<dl class="cpi-patent-meta">'
+            .'<div><dt>Patent ID:</dt><dd>'.e($p->patent_number).'</dd></div>'
+            .'<div><dt>Patent Domain:</dt><dd><a href="/patent-showcase?domain='.rawurlencode($p->domain).'">'.e($p->domain).'</a></dd></div>'
+            .'<div><dt>Country:</dt><dd><a href="/patent-showcase?country='.rawurlencode($p->country).'">'.e($p->country).'</a></dd></div>'
+            .'</dl>'
+            .'<p class="cpi-patent-domain">'.e($p->domain).'</p>'
+            .'<h1>'.e($p->title).'</h1>'
             .$figure
-            .'<section class="cpi-patent-abstract"><h2>Abstract</h2><div class="cpi-prose">'.$paragraphs.'</div></section>'
-            .'<p class="cpi-fine">Shown as an example of the work Metayage and CanPatentIt do. Not legal advice, and no outcome is guaranteed for any other invention.</p>'
-            .'<section class="cpi-patent-recs" id="recs" hidden><h2>Recommended patents</h2><div class="cpi-post-grid cpi-rec-grid" id="rec-grid"></div></section>'
-            .'<p><a class="cpi-button-lime" href="/book">Book a consultation</a></p></article>';
+            .'<section class="cpi-patent-abstract"><div class="cpi-prose">'.$paragraphs.'</div></section>'
+            .'<section class="cpi-patent-recs" id="recs" hidden><h2>Recommended Patents</h2><div class="cpi-rec-grid" id="rec-grid"></div></section>'
+            .'<p class="cpi-fine cpi-patent-note">Shown as an example of the work Metayage and CanPatentIt do. Not legal advice, and no outcome is guaranteed for any other invention.</p>'
+            .'<p class="cpi-patent-cta"><a class="cpi-button-lime" href="/book">Book a consultation</a></p></article>';
 
         $ld = str_replace('</', '<\/', (string) json_encode([
             '@context' => 'https://schema.org', '@type' => 'CreativeWork', 'name' => $p->title, 'identifier' => $p->patent_number,

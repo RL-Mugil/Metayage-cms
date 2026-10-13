@@ -92,7 +92,7 @@ def footer():
       <div><h3>Services</h3><ul>{svc}</ul></div>
       <div><h3>Technology</h3><ul>{tech}</ul></div>
       <div><h3>Explore</h3><ul><li><a href="/about">About</a></li><li><a href="/insights">Insights</a></li><li><a href="/patent-showcase">Patent showcase</a></li><li><a href="/faq">FAQ</a></li><li><a href="/patentability-check">Patentability self-check</a></li><li><a href="/book">Book a consultation</a></li></ul></div>
-      <div><h3>Legal</h3><ul><li><a href="/privacy">Privacy</a></li><li><a href="/terms">Terms</a></li><li><a href="#" data-cookie-settings>Cookie settings</a></li><li><a href="mailto:{EMAIL}">{EMAIL}</a></li></ul></div>
+      <div><h3>Legal</h3><ul><li><a href="/terms">Terms &amp; Privacy</a></li><li><a href="#" data-cookie-settings>Cookie settings</a></li><li><a href="mailto:{EMAIL}">{EMAIL}</a></li></ul></div>
     </div>
     <div class="cpi-footer-bottom"><span>© <span id="year">2026</span> CanPatentIt</span><span>US patent strategy for deep technology</span></div>
     <p class="cpi-footer-note">CanPatentIt is a brand of <a href="https://metayage.com" rel="noopener" target="_blank">Metayage Private Limited</a>. CanPatentIt provides patent strategy services. Nothing on this site is legal advice or creates an attorney–client relationship, and no outcome is guaranteed.</p>
@@ -154,7 +154,7 @@ def shell(path, title, desc, body, current=None, extra_head="", jsonld=None, noi
   </div>
 </div>
 <div class="cpi-cookie" id="cookie-banner" role="dialog" aria-label="Cookie notice" hidden>
-  <p>We use optional analytics cookies to understand how this site is used. See our <a href="/privacy">Privacy Policy</a>.</p>
+  <p>We use optional analytics cookies to understand how this site is used. See our <a href="/terms#privacy">Privacy Policy</a>.</p>
   <button type="button" id="cookie-reject">Decline</button>
   <button type="button" class="primary" id="cookie-accept">Accept</button>
 </div>
@@ -434,7 +434,7 @@ def legal_page(path, title, desc, inner):
 
 
 def build_legal():
-    legal_page("privacy", "Privacy Policy", "How CanPatentIt collects, uses and protects personal data.", f'''
+    privacy_inner = f'''
       <p>This policy explains how CanPatentIt, a brand of Metayage Private Limited (“we”, “us”), handles personal data on canpatentit.com.</p>
       <h2>1. What we collect</h2>
       <ul><li><strong>Enquiry form:</strong> name, work email, company, company stage, technology area and the description you write.</li>
@@ -453,8 +453,8 @@ def build_legal():
       <p>Enquiries and bookings are kept only as long as needed to respond and for reasonable record keeping. Data is protected with encryption in transit and access controls.</p>
       <h2>6. Your rights</h2>
       <p>Subject to applicable law, you may ask to access, correct or delete your personal data or withdraw consent. Email <a href="mailto:{EMAIL}">{EMAIL}</a> with “Privacy request” in the subject.</p>
-      <h2>7. Changes</h2><p>We may update this policy and will change the date above when we do.</p>''')
-    legal_page("terms", "Terms of Use", "Terms for using the CanPatentIt website.", f'''
+      <h2>7. Changes</h2><p>We may update this policy and will change the date above when we do.</p>'''
+    terms_inner = f'''
       <p>canpatentit.com is operated by Metayage Private Limited under the CanPatentIt brand. By using the site you agree to these terms.</p>
       <h2>1. Information only</h2><p>Content on this site, including the patentability self-check and articles, is general information about patent strategy. It is not legal advice, and using the site, taking the self-check or booking a call does not create an attorney–client relationship. An engagement begins only when we agree in writing.</p>
       <h2>2. No guarantees</h2><p>Patentability and outcomes depend on the facts of each invention and on examination by the relevant patent office. Nothing on this site guarantees that any invention can or will be patented.</p>
@@ -463,7 +463,18 @@ def build_legal():
       <h2>5. Acceptable use</h2><p>You agree not to misuse the site, attempt to disrupt it, or submit unlawful, misleading or automated content.</p>
       <h2>6. Intellectual property</h2><p>The site’s text, design and logo belong to CanPatentIt and may not be copied without permission.</p>
       <h2>7. Liability</h2><p>To the extent permitted by law, the site is provided “as is” and we are not liable for losses arising from its use.</p>
-      <h2>8. Contact</h2><p>Questions about these terms: <a href="mailto:{EMAIL}">{EMAIL}</a>.</p>''')
+      <h2>8. Contact</h2><p>Questions about these terms: <a href="mailto:{EMAIL}">{EMAIL}</a>.</p>'''
+    # One page (keeps the site at 18 pages): Terms of Use first, then the Privacy Policy at #privacy.
+    lower = lambda html: html.replace("<h2>", "<h3>").replace("</h2>", "</h3>")
+    inner = (
+        '<nav class="cpi-legal-toc" aria-label="On this page"><a href="#terms">Terms of Use</a><a href="#privacy">Privacy Policy</a></nav>'
+        f'<section id="terms"><h2>Terms of Use</h2>{lower(terms_inner)}</section>'
+        f'<section id="privacy"><h2>Privacy Policy</h2>{lower(privacy_inner)}</section>'
+    )
+    legal_page("terms", "Terms & Privacy", "Terms of use and privacy policy for the CanPatentIt website.", inner)
+    stale = os.path.join(OUT, "privacy.html")  # /privacy now redirects to /terms#privacy (nginx)
+    if os.path.exists(stale):
+        os.remove(stale)
 
 
 def build_404():
@@ -484,14 +495,14 @@ def build_article_shell():
 def build_meta_files():
     sm = ['<?xml version="1.0" encoding="UTF-8"?>', '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">']
     for p in PAGES:
-        pr = "1.0" if p["path"] == "" else ("0.3" if p["path"] in ("privacy", "terms") else "0.7")
+        pr = "1.0" if p["path"] == "" else ("0.3" if p["path"] == "terms" else "0.7")
         sm.append(f'  <url><loc>{SITE}{url_for(p["path"])}</loc><lastmod>{TODAY}</lastmod><priority>{pr}</priority></url>')
     sm.append("</urlset>")
     open(os.path.join(OUT, "sitemap-pages.xml"), "w", encoding="utf-8", newline="\n").write("\n".join(sm) + "\n")
     idx = f'<?xml version="1.0" encoding="UTF-8"?>\n<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n  <sitemap><loc>{SITE}/sitemap-pages.xml</loc></sitemap>\n  <sitemap><loc>{SITE}/insights/sitemap-insights.xml</loc></sitemap>\n  <sitemap><loc>{SITE}/patent-showcase/sitemap-patents.xml</loc></sitemap>\n</sitemapindex>\n'
     open(os.path.join(OUT, "sitemap.xml"), "w", encoding="utf-8", newline="\n").write(idx)
     open(os.path.join(OUT, "robots.txt"), "w", newline="\n").write(f"User-agent: *\nAllow: /\nDisallow: /login\nDisallow: /admin\n\nSitemap: {SITE}/sitemap.xml\n")
-    index = [{"url": url_for(p["path"]), "title": p["title"], "desc": p["desc"], "text": p["text"]} for p in PAGES if p["path"] not in ("privacy", "terms")]
+    index = [{"url": url_for(p["path"]), "title": p["title"], "desc": p["desc"], "text": p["text"]} for p in PAGES if p["path"] != "terms"]
     os.makedirs(os.path.join(OUT, "assets"), exist_ok=True)
     with open(os.path.join(OUT, "assets", "search-index.json"), "w", encoding="utf-8", newline="\n") as f:
         json.dump(index, f, ensure_ascii=False)

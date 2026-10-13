@@ -371,7 +371,7 @@ class CpiSiteTest extends TestCase
         $page = File::get($this->siteDir.'/patent-showcase/system-and-method-for-generating-a-modified-design-creative.html');
         $this->assertStringContainsString('WO/2020/136668', $page);
         $this->assertStringContainsString('Artificial Intelligence', $page);
-        $this->assertStringContainsString('<dt>Country</dt><dd><a href="/patent-showcase?country=India">India</a>', $page);
+        $this->assertStringContainsString('<dt>Country:</dt><dd><a href="/patent-showcase?country=India">India</a>', $page);
         $this->assertStringContainsString('Second &lt;b&gt;one&lt;/b&gt;.', $page, 'The abstract is escaped.');
         $this->assertStringContainsString('id="rec-grid"', $page, 'Recommended patents container is present.');
         $index = json_decode(File::get($this->siteDir.'/patent-showcase/index.json'), true);
