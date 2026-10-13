@@ -34,3 +34,7 @@ Schedule::command('zoho:sync --scheduled')->dailyAt('03:00')->timezone('Asia/Kol
 // The minute % 10 estimates/invoices alternation in PollZohoBooks is preserved (2 -> estimates, 7 -> invoices).
 Schedule::command('zoho:poll')->cron('2-59/5 * * * *')->timezone('Asia/Kolkata')->withoutOverlapping(4)->onOneServer();
 Schedule::command('zoho:sync --evening')->cron('*/5 23 * * *')->timezone('Asia/Kolkata')->withoutOverlapping(65)->onOneServer();
+
+// Remove article images that no article references any more (stray uploads older than an hour).
+
+Schedule::command('cpi:prune-images')->dailyAt('04:30')->timezone('Asia/Kolkata')->onOneServer();

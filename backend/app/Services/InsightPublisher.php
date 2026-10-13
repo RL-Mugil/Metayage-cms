@@ -25,6 +25,74 @@ class InsightPublisher
         $this->rebuild();
     }
 
+    /** File names of every uploaded image an article uses (cover and inline). */
+    public function imageNames(CpiArticle $a): array
+    {
+        $names = [];
+        if ($a->cover_image) {
+            $names[] = basename($a->cover_image);
+        }
+        preg_match_all('#/insights/img/([a-z0-9][a-z0-9._-]*\.(?:webp|jpe?g|png|gif))#i', (string) $a->body_html, $m);
+
+        return array_values(array_unique(array_merge($names, $m[1])));
+    }
+
+    /** Deletes the given images unless some other article still uses them. Returns how many were removed. */
+    public function releaseImages(array $names, ?int $exceptArticleId = null): int
+    {
+        $names = array_values(array_unique(array_filter($names)));
+        if (! $names) {
+            return 0;
+        }
+        $inUse = [];
+        CpiArticle::query()->when($exceptArticleId, fn ($q) => $q->where('id', '!=', $exceptArticleId))->get(['id', 'cover_image', 'body_html'])
+            ->each(function ($other) use (&$inUse) {
+                foreach ($this->imageNames($other) as $n) {
+                    $inUse[$n] = true;
+                }
+            });
+
+        $removed = 0;
+        foreach ($names as $n) {
+            $path = self::sitePath().'/insights/img/'.$n;
+            if (! isset($inUse[$n]) && preg_match('#^[a-z0-9][a-z0-9._-]*$#i', $n) && File::exists($path)) {
+                File::delete($path);
+                $removed++;
+            }
+        }
+
+        return $removed;
+    }
+
+    /**
+     * Safety net for stray uploads (picked in the editor but never saved): removes every file in the
+     * image folder that no article references, once it is older than the grace period.
+     */
+    public function pruneImages(int $graceMinutes = 60): int
+    {
+        $dir = self::sitePath().'/insights/img';
+        if (! File::isDirectory($dir)) {
+            return 0;
+        }
+        $used = [];
+        CpiArticle::query()->get(['cover_image', 'body_html'])->each(function ($a) use (&$used) {
+            foreach ($this->imageNames($a) as $n) {
+                $used[$n] = true;
+            }
+        });
+
+        $removed = 0;
+        foreach (File::files($dir) as $file) {
+            if (isset($used[$file->getFilename()]) || $file->getMTime() > time() - $graceMinutes * 60) {
+                continue;
+            }
+            File::delete($file->getPathname());
+            $removed++;
+        }
+
+        return $removed;
+    }
+
     public function unpublish(CpiArticle $a): void
     {
         $file = self::sitePath().'/insights/'.$a->slug.'.html';

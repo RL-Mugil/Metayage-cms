@@ -56,10 +56,13 @@ class CpiArticleController extends Controller
         } else {
             unset($data['slug']);
         }
+        $before = $this->publisher->imageNames($article);
         $article->update($data);
         if ($article->status === 'published') {
             $this->publisher->publish($article->fresh());
         }
+        // Pictures removed or replaced by this edit are deleted unless another article uses them.
+        $this->publisher->releaseImages(array_diff($before, $this->publisher->imageNames($article->fresh())), $article->id);
         $this->audit($request, 'cpi_article_update', $article);
 
         return response()->json($article->fresh());
@@ -91,9 +94,11 @@ class CpiArticleController extends Controller
     {
         Gate::authorize('manage-site');
         $article = CpiArticle::findOrFail($id);
+        $images = $this->publisher->imageNames($article);
         $this->publisher->unpublish($article);
         $article->delete();
         $this->publisher->rebuild();
+        $this->publisher->releaseImages($images); // the article is gone, so only other articles can still need them
         $this->audit($request, 'cpi_article_delete', $article);
 
         return response()->json(['message' => 'Deleted.']);

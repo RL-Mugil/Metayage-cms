@@ -215,6 +215,43 @@ class CpiSiteTest extends TestCase
         $this->assertSame('/insights/img/abcdef0123456789abcdef01.webp', $index[0]['cover']);
     }
 
+    public function test_deleted_and_replaced_images_are_cleaned_up_but_shared_ones_stay(): void
+    {
+        $h = $this->adminHeaders();
+        $up = fn () => $this->post('/api/cpi-admin/images', ['image' => UploadedFile::fake()->image('p'.uniqid().'.png', 300 + random_int(1, 200), 200)], $h + ['Accept' => 'application/json'])->json('url');
+        [$a, $b, $shared] = [$up(), $up(), $up()];
+
+        $first = $this->postJson('/api/cpi-admin/articles', ['title' => 'First article', 'body_html' => "<p>x</p><img src=\"{$b}\" alt=\"\"><img src=\"{$shared}\" alt=\"\">", 'cover_image' => $a], $h)->json('id');
+        $second = $this->postJson('/api/cpi-admin/articles', ['title' => 'Second article', 'body_html' => "<p>y</p><img src=\"{$shared}\" alt=\"\">"], $h)->json('id');
+
+        // Editing out the inline picture deletes it; the cover stays.
+        $this->putJson("/api/cpi-admin/articles/{$first}", ['title' => 'First article', 'body_html' => "<p>x</p><img src=\"{$shared}\" alt=\"\">", 'cover_image' => $a], $h)->assertOk();
+        $this->assertFileDoesNotExist($this->siteDir.$b);
+        $this->assertFileExists($this->siteDir.$a);
+
+        // Deleting the first article removes its cover but keeps the picture the second article still uses.
+        $this->deleteJson("/api/cpi-admin/articles/{$first}", [], $h)->assertOk();
+        $this->assertFileDoesNotExist($this->siteDir.$a);
+        $this->assertFileExists($this->siteDir.$shared);
+
+        $this->deleteJson("/api/cpi-admin/articles/{$second}", [], $h)->assertOk();
+        $this->assertFileDoesNotExist($this->siteDir.$shared);
+    }
+
+    public function test_prune_command_removes_old_strays_only(): void
+    {
+        $dir = $this->siteDir.'/insights/img';
+        File::ensureDirectoryExists($dir);
+        File::put($dir.'/oldstray.webp', 'x');
+        touch($dir.'/oldstray.webp', time() - 7200);
+        File::put($dir.'/freshstray.webp', 'x');
+
+        $this->artisan('cpi:prune-images')->assertSuccessful();
+
+        $this->assertFileDoesNotExist($dir.'/oldstray.webp');
+        $this->assertFileExists($dir.'/freshstray.webp');
+    }
+
     public function test_cover_image_must_be_an_uploaded_path(): void
     {
         $h = $this->adminHeaders();
