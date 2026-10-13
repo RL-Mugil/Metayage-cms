@@ -316,3 +316,8 @@ a.cpi-page:hover { border-color: var(--cpi-blue); color: var(--cpi-blue-ink); }
   .is-list .cpi-post-body { padding: 52px 24px 22px; }
 }
 @media (prefers-reduced-motion: reduce) { .cpi-post, .cpi-post:hover, .cpi-post:hover .cpi-post-arrow, .cpi-post:hover .cpi-post-media img { transform: none; } }
+/* icon-only layout switch */
+.cpi-view-toggle button { width: 46px; padding: 0; justify-content: center; }
+.cpi-view-toggle button::before { width: 16px; height: 16px; opacity: 1; }
+#view-grid::before { -webkit-mask-size: 7px 7px, 7px 7px, 7px 7px, 7px 7px; -webkit-mask-position: 0 0, 9px 0, 0 9px, 9px 9px; mask-size: 7px 7px, 7px 7px, 7px 7px, 7px 7px; mask-position: 0 0, 9px 0, 0 9px, 9px 9px; }
+#view-list::before { -webkit-mask-size: 16px 3px, 16px 3px, 16px 3px; -webkit-mask-position: 0 1px, 0 6.5px, 0 12px; mask-size: 16px 3px, 16px 3px, 16px 3px; mask-position: 0 1px, 0 6.5px, 0 12px; }

@@ -7,7 +7,8 @@
   var pager = document.getElementById('insights-pager');
   var btnGrid = document.getElementById('view-grid');
   var btnList = document.getElementById('view-list');
-  var PER_PAGE = { grid: 9, list: 6 };
+  // Articles per page. Raise these (for example 9 and 6) once there are plenty of articles.
+  var PER_PAGE = { grid: 3, list: 3 };
   var items = [];
   var view = 'grid';
   var page = 1;
