@@ -425,8 +425,3 @@ a.cpi-page:hover { border-color: var(--cpi-blue); color: var(--cpi-blue-ink); }
 .cpi-legal section { scroll-margin-top: 100px; margin-top: 44px; }
 .cpi-legal section > h2 { font-size: 30px; margin: 0 0 6px; padding-bottom: 12px; border-bottom: 2px solid var(--cpi-blue); }
 .cpi-legal h3 { font-size: 18px; margin: 28px 0 8px; }
-
-/* text-only patent cards in the grid */
-.cpi-pcard { border-top: 3px solid var(--cpi-blue); }
-.cpi-pcard-body { padding: 26px 24px 26px; gap: 14px; }
-.cpi-pcard h3 { font-size: 21px; }
