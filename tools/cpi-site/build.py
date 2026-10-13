@@ -94,7 +94,7 @@ def footer():
       <div><h3>Legal</h3><ul><li><a href="/privacy">Privacy</a></li><li><a href="/terms">Terms</a></li><li><a href="#" data-cookie-settings>Cookie settings</a></li><li><a href="mailto:{EMAIL}">{EMAIL}</a></li></ul></div>
     </div>
     <div class="cpi-footer-bottom"><span>© <span id="year">2026</span> CanPatentIt</span><span>US patent strategy for deep technology</span></div>
-    <p class="cpi-footer-note">CanPatentIt provides patent strategy services. Nothing on this site is legal advice or creates an attorney–client relationship, and no outcome is guaranteed.</p>
+    <p class="cpi-footer-note">CanPatentIt is a brand of <a href="https://metayage.com" rel="noopener" target="_blank">Metayage Private Limited</a>. CanPatentIt provides patent strategy services. Nothing on this site is legal advice or creates an attorney–client relationship, and no outcome is guaranteed.</p>
   </footer>'''
 
 
@@ -250,9 +250,11 @@ def build_home():
       <a class="cpi-teaser" href="/book"><span class="cpi-section-number">02</span><h3>Book a consultation</h3><p>Pick a time that suits you. We start with the technology, not a pitch.</p><span class="cpi-text-link">See available times {icon("arrow-right")}</span></a>
       <a class="cpi-teaser" href="/insights"><span class="cpi-section-number">03</span><h3>Insights</h3><p>Short, practical notes on patents for deep-tech founders and the people who back them.</p><span class="cpi-text-link">Read the insights {icon("arrow-right")}</span></a>
     </section>'''
-    main = main.replace('<section class="cpi-founder-band"', extra + '\n    <section class="cpi-founder-band"', 1)
+    company = f'''
+    <section class="cpi-section cpi-company"><div><span class="cpi-section-number">MY</span><h2>A brand of Metayage Private Limited</h2></div><div><p>CanPatentIt is a brand of Metayage, an intellectual property services and consulting company founded in 2006 and working as a strategic IP partner to founders, faculty, students and incubators.</p><a class="cpi-text-link" href="/about#metayage">About Metayage and CanPatentIt {icon("arrow-right")}</a></div></section>'''
+    main = main.replace('<section class="cpi-founder-band"', extra + company + '\n    <section class="cpi-founder-band"', 1)
     desc = "Patent strategy and protection for US founders building AI, software, hardware, and other deep technology."
-    ld = [{"@context": "https://schema.org", "@type": "ProfessionalService", "name": "CanPatentIt", "url": SITE + "/", "logo": SITE + "/assets/logo.png", "description": "US patent strategy for deep technology founders.", "email": EMAIL},
+    ld = [{"@context": "https://schema.org", "@type": "ProfessionalService", "name": "CanPatentIt", "url": SITE + "/", "logo": SITE + "/assets/logo.png", "description": "US patent strategy for deep technology founders.", "email": EMAIL, "parentOrganization": {"@type": "Organization", "name": "Metayage Private Limited", "url": "https://metayage.com"}},
           {"@context": "https://schema.org", "@type": "WebSite", "name": "CanPatentIt", "url": SITE + "/"}]
     write("", shell("", "CanPatentIt | Deep Tech IP Strategy for US Founders", desc, main, jsonld=ld, current=""))
     register("", "Home", desc, main)
@@ -270,11 +272,16 @@ def build_about():
           <div><span>03</span><h3>Protect with context</h3><p>Filings shaped around the product, the market and the questions future investors and partners will ask.</p></div>
           <div><span>04</span><h3>Stay in step</h3><p>Plain-language updates and deadline tracking, so decisions never arrive as surprises.</p></div>
         </div></section>
+      <section class="cpi-prose-sec" id="metayage"><h2>A brand of Metayage Private Limited</h2>
+        <p>CanPatentIt is a brand of <a href="https://metayage.com" rel="noopener" target="_blank">Metayage Private Limited</a>, an intellectual property services and consulting company that describes itself as a strategic IP partner: an extended in-house IP department that also works as an external IP firm.</p>
+        <p>Metayage IP was founded in 2006 to bridge the gap between ideas and their implementation. The name comes from a French word for an old farming arrangement in which a farmer works a landowner’s land and shares in the harvest. It is a fitting picture of the relationship we aim for with clients: working together to grow the value of what you build.</p>
+        <p>Metayage works with founders, faculty, students and incubators, and its offices sit inside incubators on engineering college campuses in Bengaluru, Coimbatore, Hyderabad and Chennai, with a US office in Redmond, Washington. CanPatentIt carries that approach to US patent strategy for deep-technology companies.</p>
+        <p><a class="cpi-text-link" href="https://metayage.com" rel="noopener" target="_blank">Visit metayage.com {icon("arrow-up-right")}</a></p></section>
       <section class="cpi-prose-sec"><h2>What we will not do</h2><ul><li>Promise that anything will be granted</li><li>Publish unverified statistics, client names or testimonials</li><li>Ask you to disclose more than you are comfortable sharing in a first conversation</li></ul></section>
       <p class="cpi-fine">{esc(TECH_NOTE)}</p></div>
       <aside class="cpi-side-card"><h3>Start a conversation</h3><p>Tell us what you are building and we will suggest a sensible next step.</p><a class="cpi-button-lime" href="/book">Book a consultation {icon("arrow-right")}</a><p class="cpi-fine">Or write to <a href="mailto:{EMAIL}">{EMAIL}</a></p></aside></section>
     {cta_band()}'''
-    desc = "CanPatentIt is a US patent strategy practice for deep-tech founders and investors. How we work and who we help."
+    desc = "CanPatentIt is a Metayage brand offering US patent strategy for deep-tech founders and investors. How we work and who we help."
     write("about", shell("about", "About CanPatentIt", desc, body, jsonld=[c_ld]))
     register("about", "About", desc, body)
 
@@ -363,7 +370,7 @@ def legal_page(path, title, desc, inner):
 
 def build_legal():
     legal_page("privacy", "Privacy Policy", "How CanPatentIt collects, uses and protects personal data.", f'''
-      <p>This policy explains how CanPatentIt (“we”, “us”) handles personal data on canpatentit.com.</p>
+      <p>This policy explains how CanPatentIt, a brand of Metayage Private Limited (“we”, “us”), handles personal data on canpatentit.com.</p>
       <h2>1. What we collect</h2>
       <ul><li><strong>Enquiry form:</strong> name, work email, company, company stage, technology area and the description you write.</li>
       <li><strong>Patentability self-check:</strong> answers stay in your browser. If you choose to send them to us, we receive your answers together with your contact details.</li>
@@ -383,7 +390,7 @@ def build_legal():
       <p>Subject to applicable law, you may ask to access, correct or delete your personal data or withdraw consent. Email <a href="mailto:{EMAIL}">{EMAIL}</a> with “Privacy request” in the subject.</p>
       <h2>7. Changes</h2><p>We may update this policy and will change the date above when we do.</p>''')
     legal_page("terms", "Terms of Use", "Terms for using the CanPatentIt website.", f'''
-      <p>By using canpatentit.com you agree to these terms.</p>
+      <p>canpatentit.com is operated by Metayage Private Limited under the CanPatentIt brand. By using the site you agree to these terms.</p>
       <h2>1. Information only</h2><p>Content on this site, including the patentability self-check and articles, is general information about patent strategy. It is not legal advice, and using the site, taking the self-check or booking a call does not create an attorney–client relationship. An engagement begins only when we agree in writing.</p>
       <h2>2. No guarantees</h2><p>Patentability and outcomes depend on the facts of each invention and on examination by the relevant patent office. Nothing on this site guarantees that any invention can or will be patented.</p>
       <h2>3. Confidential information</h2><p>Do not send trade secrets or unpublished technical details through website forms. Share only a high-level description until we have agreed how to exchange confidential material.</p>
