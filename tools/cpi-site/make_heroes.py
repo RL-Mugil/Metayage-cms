@@ -372,7 +372,147 @@ def strategy():
     return a
 
 
+# ---------------------------------------------------------------- other pages
+def about():
+    """Metayage offices as a connected constellation (Bengaluru, Coimbatore, Hyderabad, Chennai, Redmond)."""
+    a = Art()
+    pts = {"Redmond": (760, 190), "Hyderabad": (1130, 300), "Bengaluru": (1060, 440), "Chennai": (1215, 450), "Coimbatore": (990, 520)}
+    names = list(pts)
+    for i in range(len(names)):
+        for j in range(i + 1, len(names)):
+            p, q = pts[names[i]], pts[names[j]]
+            mid = ((p[0] + q[0]) / 2, (p[1] + q[1]) / 2 - 60 - 0.12 * abs(p[0] - q[0]))
+            prev = p
+            for k in range(1, 31):
+                t = k / 30
+                x = (1 - t) ** 2 * p[0] + 2 * (1 - t) * t * mid[0] + t * t * q[0]
+                y = (1 - t) ** 2 * p[1] + 2 * (1 - t) * t * mid[1] + t * t * q[1]
+                a.line(prev, (x, y), CYAN, 1.1, 55 + 60 * math.sin(t * math.pi))
+                prev = (x, y)
+    for n, p in pts.items():
+        a.circle(p, 20, CYAN, 1.2, 120)
+        a.dot(p, 8, GOLD if n == "Redmond" else CYAN, 255)
+        a.text((p[0], p[1] + 38), n.upper(), CYAN, 13, 220)
+    for r in (150, 220, 290):
+        a.circle((1030, 380), r, BLUE, 1, 45)
+    return a
+
+
+def services_overview():
+    a = Art()
+    hub = (CX, CY)
+    spokes = [(740, 170), (1260, 170), (740, 490), (1260, 490)]
+    for s in spokes:
+        a.line(hub, s, CYAN, 1.6, 120)
+    pts = [(hub[0] + 62 * math.cos(math.pi / 3 * k + math.pi / 6), hub[1] + 62 * math.sin(math.pi / 3 * k + math.pi / 6)) for k in range(6)]
+    a.poly(pts, GOLD, 3, 250, fill=(236, 180, 57, 40))
+    a.text(hub, "IP", GOLD, 34, 255)
+    for i, s in enumerate(spokes):
+        a.circle(s, 58, CYAN, 2.4, 230, fill=(12, 36, 56, 170))
+        if i == 0:   # magnifier
+            a.circle((s[0] - 4, s[1] - 4), 16, CYAN, 3, 250)
+            a.line((s[0] + 8, s[1] + 8), (s[0] + 24, s[1] + 24), CYAN, 4, 250)
+        elif i == 1:  # document
+            a.poly([(s[0] - 18, s[1] - 24), (s[0] + 8, s[1] - 24), (s[0] + 18, s[1] - 14), (s[0] + 18, s[1] + 24), (s[0] - 18, s[1] + 24)], CYAN, 3, 250)
+            for l in range(3):
+                a.line((s[0] - 10, s[1] - 6 + l * 9), (s[0] + 10, s[1] - 6 + l * 9), CYAN, 2, 200)
+        elif i == 2:  # shield
+            a.poly([(s[0], s[1] - 26), (s[0] + 22, s[1] - 16), (s[0] + 22, s[1] + 4), (s[0], s[1] + 26), (s[0] - 22, s[1] + 4), (s[0] - 22, s[1] - 16)], CYAN, 3, 250)
+        else:         # growth
+            for b in range(4):
+                a.rect(s[0] - 22 + b * 12, s[1] + 20 - 12 * (b + 1), s[0] - 14 + b * 12, s[1] + 20, CYAN, 2, 240, fill=(57, 197, 240, 90))
+    for t, p in zip(("SEARCH", "FILE", "PROTECT", "GROW"), spokes):
+        a.text((p[0], p[1] + 84), t, GOLD, 13, 230)
+    return a
+
+
+def faq():
+    a = Art()
+    def bubble(x, y, w, h, col, label=""):
+        a.rect(x, y, x + w, y + h, col, 2.2, 240, fill=(12, 36, 56, 150), radius=18)
+        a.poly([(x + 28, y + h), (x + 48, y + h), (x + 30, y + h + 22)], col, 2.2, 240, fill=(12, 36, 56, 150))
+        if label:
+            a.text((x + w / 2, y + h / 2), label, col, 40, 255)
+    bubble(800, 150, 240, 120, CYAN, "?")
+    bubble(1040, 250, 270, 130, GOLD, "?")
+    bubble(780, 380, 200, 100, BLUE, "?")
+    for k in range(3):
+        a.line((830, 190 + k * 18), (1000 - k * 30, 190 + k * 18), CYAN, 1.5, 90)
+    a.circle((1190, 140), 36, GOLD, 2.4, 220, fill=(236, 180, 57, 40))
+    a.text((1190, 140), "A", GOLD, 28, 255)
+    a.circle((1000, 520), 28, CYAN, 2, 200)
+    a.text((1000, 520), "A", CYAN, 22, 255)
+    return a
+
+
+def insights():
+    a = Art()
+    for k, (ox, oy, ang) in enumerate(((760, 200, -10), (880, 170, -3), (1000, 160, 5), (1120, 190, 12))):
+        c, s = math.cos(math.radians(ang)), math.sin(math.radians(ang))
+        def P(x, y):
+            return (ox + x * c - y * s, oy + x * s + y * c)
+        a.poly([P(0, 0), P(150, 0), P(150, 240), P(0, 240)], CYAN if k != 2 else GOLD, 2.2, 230, fill=(12, 36, 56, 170))
+        a.poly([P(14, 14), P(136, 14), P(136, 84), P(14, 84)], BLUE, 1.5, 180, fill=(20, 129, 196, 70))
+        for l in range(6):
+            a.line(P(14, 110 + l * 20), P(136 - (l % 3) * 28, 110 + l * 20), CYAN, 1.5, 120)
+    a.poly([(1080, 360), (1112, 360), (1112, 420), (1096, 406), (1080, 420)], GOLD, 2, 250, fill=(236, 180, 57, 90))
+    return a
+
+
+def quiz():
+    a = Art()
+    xs = [720 + i * 110 for i in range(6)]
+    for i in range(5):
+        a.line((xs[i], 330), (xs[i + 1], 330), CYAN if i < 3 else BLUE, 3, 210 if i < 3 else 110)
+    for i, x in enumerate(xs):
+        done = i < 3
+        a.circle((x, 330), 30, GOLD if i == 3 else (CYAN if done else BLUE), 3, 250, fill=(12, 36, 56, 170))
+        if done:
+            a.line((x - 11, 331), (x - 3, 340), CYAN, 4, 255)
+            a.line((x - 3, 340), (x + 12, 320), CYAN, 4, 255)
+        else:
+            a.text((x, 330), str(i + 1), GOLD if i == 3 else BLUE, 22, 255)
+    a.rect(800, 130, 1220, 230, CYAN, 2.2, 220, fill=(12, 36, 56, 150), radius=14)
+    a.text((1010, 165), "What best describes", CYAN, 20, 240)
+    a.text((1010, 197), "your invention?", CYAN, 20, 240)
+    for k, lab in enumerate(("A", "B", "C")):
+        a.circle((800 + 70 + k * 160, 450), 26, GOLD if k == 1 else CYAN, 2.4, 240, fill=(236, 180, 57, 60) if k == 1 else None)
+        a.text((870 + k * 160, 450), lab, GOLD if k == 1 else CYAN, 20, 255)
+    return a
+
+
+def book():
+    a = Art()
+    x0, y0, cw, ch = 760, 190, 66, 54
+    a.rect(x0 - 20, y0 - 70, x0 + cw * 7 + 20, y0 + ch * 5 + 24, CYAN, 2.4, 230, fill=(12, 36, 56, 150), radius=14)
+    a.line((x0 - 20, y0 - 16), (x0 + cw * 7 + 20, y0 - 16), CYAN, 1.6, 150)
+    a.text((x0 + 110, y0 - 44), "OCTOBER", GOLD, 18, 255)
+    for i, d in enumerate("SMTWTFS"):
+        a.text((x0 + i * cw + cw / 2, y0), d, CYAN, 13, 200)
+    n = 0
+    for r in range(5):
+        for c in range(7):
+            n += 1
+            if n > 31:
+                break
+            cx, cy = x0 + c * cw + cw / 2, y0 + 34 + r * ch
+            if n == 16:
+                a.circle((cx, cy), 20, GOLD, 3, 255, fill=(236, 180, 57, 90))
+            a.text((cx, cy), str(n), GOLD if n == 16 else CYAN, 16, 255 if n == 16 else 150)
+    ck = (1310, 200)
+    a.circle(ck, 70, CYAN, 3, 240, fill=(12, 36, 56, 190))
+    for m in range(12):
+        ang = m * math.pi / 6
+        a.line((ck[0] + 58 * math.sin(ang), ck[1] - 58 * math.cos(ang)), (ck[0] + 66 * math.sin(ang), ck[1] - 66 * math.cos(ang)), CYAN, 2.2, 220)
+    a.line(ck, (ck[0], ck[1] - 44), GOLD, 4, 255)
+    a.line(ck, (ck[0] + 32, ck[1] + 14), GOLD, 4, 255)
+    a.dot(ck, 6, GOLD, 255)
+    return a
+
+
 JOBS = {
+    "about": about, "services": services_overview, "faq": faq, "insights": insights,
+    "patentability-check": quiz, "book": book,
     "ai-machine-learning": ai, "semiconductors-quantum": semis, "medtech-biotechnology": medtech,
     "climate-energy": climate, "enterprise-software-security": enterprise,
     "patentability-prior-art": patentability, "provisional-applications": provisional,

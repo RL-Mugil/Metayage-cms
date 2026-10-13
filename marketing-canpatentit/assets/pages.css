@@ -229,3 +229,6 @@ a.cpi-domain-row:hover { background: color-mix(in oklab, var(--cpi-paper) 6%, tr
 /* Per-page hero art for services and technology areas */
 .cpi-page-hero.has-art { background-color: #212529; background-image: linear-gradient(90deg, rgb(33 37 41 / .97) 0%, rgb(33 37 41 / .86) 34%, rgb(33 37 41 / .22) 72%, rgb(33 37 41 / .04) 100%), var(--hero-art); background-size: cover; background-position: calc(100% - (var(--mx, 50%) - 50%) * 0.05) calc(50% + (var(--my, 50%) - 50%) * 0.2); padding-block: 64px 84px; }
 @media (max-width: 900px) { .cpi-page-hero.has-art { background-image: linear-gradient(90deg, rgb(33 37 41 / .94) 0%, rgb(33 37 41 / .75) 100%), var(--hero-art); } }
+.cpi-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.cpi-chip { padding: 7px 14px; border: 1px solid color-mix(in oklab, var(--cpi-blue) 45%, transparent); border-radius: 999px; font-size: 12px; text-decoration: none; color: var(--cpi-blue-ink); background: color-mix(in oklab, var(--cpi-blue) 7%, transparent); transition: background .2s ease, transform .2s ease; }
+.cpi-chip:hover { background: color-mix(in oklab, var(--cpi-blue) 18%, transparent); transform: translateY(-2px); }

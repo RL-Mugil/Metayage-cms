@@ -15,7 +15,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
 OUT = os.path.join(ROOT, "marketing-canpatentit")
 sys.path.insert(0, HERE)
-from content import SERVICES, AREAS, FAQS, TECH_NOTE  # noqa: E402
+from content import SERVICES, AREAS, FAQS, TECH_NOTE, RELATED_SERVICES, SHOWCASE_URL  # noqa: E402
 
 SITE = "https://canpatentit.com"
 EMAIL = "mugilvannan@myipstrategy.com"
@@ -194,6 +194,9 @@ SHAPES = {
     "climate-energy": "rings", "enterprise-software-security": "crystal",
     "patentability-prior-art": "sphere", "provisional-applications": "sheets",
     "us-patent-prosecution": "torus", "ip-strategy-diligence": "network",
+    # Other pages: art in assets/heroes/<slug>.jpg and their own 3D shape.
+    "about": "sphere", "services": "rings", "faq": "crystal", "insights": "sheets",
+    "patentability-check": "layers", "book": "torus",
 }
 
 
@@ -226,8 +229,12 @@ def detail_page(kind, item, siblings):
     bl_h, bl = item["bullets"]
     bullets = f'<aside class="cpi-side-card"><h3>{esc(bl_h)}</h3><ul>' + "".join(f"<li>{icon('check')} {esc(x)}</li>" for x in bl) + "</ul></aside>"
     rel = "".join(f'<a class="cpi-related" href="/{base}/{s["slug"]}"><span>{esc(s["short"])}</span>{icon("arrow-up-right")}</a>' for s in siblings if s["slug"] != item["slug"])
+    domains = ""
+    if item.get("domains"):
+        chips = "".join(f'<a class="cpi-chip" href="{SHOWCASE_URL}" rel="noopener" target="_blank">{esc(d)}</a>' for d in item["domains"])
+        domains = f'<section class="cpi-prose-sec"><h2>Related domains in Metayage’s patent showcase</h2><p>Metayage, the company behind CanPatentIt, organises its patent showcase by technology domain. The domains closest to this area are:</p><div class="cpi-chips">{chips}</div></section>'
     body = page_hero(c_html, "Services" if kind == "service" else "Technology area", esc(item["title"]), item["lead"], slug=item["slug"]) + f'''
-    <section class="cpi-section cpi-detail"><div class="cpi-prose">{secs}{faq_block(item["faq"])}<p class="cpi-fine">{esc(TECH_NOTE)}</p></div>{bullets}</section>
+    <section class="cpi-section cpi-detail"><div class="cpi-prose">{secs}{domains}{faq_block(item["faq"])}<p class="cpi-fine">{esc(TECH_NOTE)}</p></div>{bullets}</section>
     <section class="cpi-section cpi-related-wrap"><h2>{"Other services" if kind == "service" else "Other technology areas"}</h2><div class="cpi-related-grid">{rel}</div></section>
     {cta_band()}'''
     ld = [c_ld, faq_ld(item["faq"])]
@@ -273,7 +280,7 @@ def build_home():
 
 def build_about():
     c_html, c_ld = crumbs([("Home", ""), ("About", "about")])
-    body = page_hero(c_html, "About", "Technical thinking, <em>IP with intent.</em>", "A US patent strategy practice for the people building and backing what comes next.") + f'''
+    body = page_hero(c_html, "About", "Technical thinking, <em>IP with intent.</em>", "A US patent strategy practice for the people building and backing what comes next.", slug="about") + f'''
     <section class="cpi-section cpi-detail"><div class="cpi-prose">
       <section class="cpi-prose-sec"><h2>Who we help</h2><p>Deep-tech founders, CTOs and engineers who need an IP plan that respects the runway, and the investors and advisers who want a clear view of what is owned, what is protectable and where risk remains.</p></section>
       <section class="cpi-prose-sec" id="approach"><h2>Our approach</h2>
@@ -301,9 +308,11 @@ def build_services_overview():
     c_html, c_ld = crumbs([("Home", ""), ("Services", "services")])
     cards = "".join(f'<a class="cpi-card" href="/services/{s["slug"]}"><span class="cpi-card-ic">{icon(s["icon"])}</span><h3>{esc(s["short"])}</h3><p>{esc(s["desc"])}</p><span class="cpi-text-link">Learn more {icon("arrow-right")}</span></a>' for s in SERVICES)
     tech = "".join(f'<a class="cpi-related" href="/technology/{a["slug"]}"><span>{esc(a["short"])}</span>{icon("arrow-up-right")}</a>' for a in AREAS)
-    body = page_hero(c_html, "Services", "Clarity at every <em>IP decision.</em>", "From a first idea to the next financing conversation, make your next move with context.") + f'''
+    extra_cards = "".join(f'<a class="cpi-card" href="{u}" rel="noopener" target="_blank"><h3>{esc(t)}</h3><p>{esc(d)}</p><span class="cpi-text-link">On metayage.com {icon("arrow-up-right")}</span></a>' for t, u, d in RELATED_SERVICES)
+    body = page_hero(c_html, "Services", "Clarity at every <em>IP decision.</em>", "From a first idea to the next financing conversation, make your next move with context.", slug="services") + f'''
     <section class="cpi-section cpi-card-grid-wrap"><div class="cpi-card-grid">{cards}</div></section>
     <section class="cpi-section cpi-related-wrap"><h2>Technology areas we work in</h2><div class="cpi-related-grid">{tech}</div></section>
+    <section class="cpi-section cpi-related-wrap"><h2>Also from Metayage</h2><p class="cpi-fine" style="max-width:680px;margin-bottom:18px">CanPatentIt focuses on US patent strategy. Our parent company, Metayage, also offers these services, which we can introduce you to.</p><div class="cpi-card-grid">{extra_cards}</div><p class="cpi-fine" style="margin-top:18px">Metayage’s patent showcase is organised across 14 technology domains: Artificial Intelligence, Telecommunication, Electric Vehicle, Healthcare, Cryptography, 3D/AR/VR, Blockchain, Manufacturing, Business Intelligence, Network Management, Food and Beverages, Aerospace Engineering, Bio-Medical Engineering and Polymer Technology. <a href="{SHOWCASE_URL}" rel="noopener" target="_blank">Browse the patent showcase</a>.</p></section>
     {cta_band()}'''
     desc = "US patent services for deep-tech founders: patentability and prior art, provisional applications, prosecution, and IP strategy."
     write("services", shell("services", "Patent Services for Deep Tech", desc, body, jsonld=[c_ld]))
@@ -312,7 +321,7 @@ def build_services_overview():
 
 def build_faq():
     c_html, c_ld = crumbs([("Home", ""), ("FAQ", "faq")])
-    body = page_hero(c_html, "FAQ", "Questions, <em>answered plainly.</em>", "Straight answers about how we work and what to expect.") + f'''
+    body = page_hero(c_html, "FAQ", "Questions, <em>answered plainly.</em>", "Straight answers about how we work and what to expect.", slug="faq") + f'''
     <section class="cpi-section cpi-detail cpi-faq-page"><div class="cpi-prose">{faq_block(FAQS, "Frequently asked questions")}<p class="cpi-fine">{esc(TECH_NOTE)}</p></div>
     <aside class="cpi-side-card"><h3>Still unsure?</h3><p>Ask us directly. A first conversation can start with the problem you are solving.</p><a class="cpi-button-lime" href="/book">Book a consultation {icon("arrow-right")}</a></aside></section>
     {cta_band()}'''
@@ -323,7 +332,7 @@ def build_faq():
 
 def build_insights():
     c_html, c_ld = crumbs([("Home", ""), ("Insights", "insights")])
-    body = page_hero(c_html, "Insights", "Practical notes on <em>deep-tech IP.</em>", "Short articles for founders, engineers and investors. General information, not legal advice.") + '''
+    body = page_hero(c_html, "Insights", "Practical notes on <em>deep-tech IP.</em>", "Short articles for founders, engineers and investors. General information, not legal advice.", slug="insights") + '''
     <section class="cpi-section cpi-insights-wrap"><div id="insights-list" class="cpi-card-grid" aria-live="polite"><p class="cpi-fine">Loading articles…</p></div><noscript><p class="cpi-fine">Enable JavaScript to see the article list.</p></noscript></section>
     ''' + cta_band()
     desc = "Practical articles on US patent strategy for deep-tech founders, engineers and investors."
@@ -333,7 +342,7 @@ def build_insights():
 
 def build_quiz():
     c_html, c_ld = crumbs([("Home", ""), ("Patentability self-check", "patentability-check")])
-    body = page_hero(c_html, "Self-check", "Can you <em>patent it?</em>", "Answer a few questions about your invention. You will get plain-language guidance, not a legal opinion.", actions=False) + f'''
+    body = page_hero(c_html, "Self-check", "Can you <em>patent it?</em>", "Answer a few questions about your invention. You will get plain-language guidance, not a legal opinion.", actions=False, slug="patentability-check") + f'''
     <section class="cpi-section cpi-quiz-wrap"><div class="cpi-quiz" id="quiz" aria-live="polite"><p class="cpi-fine">Loading the self-check…</p></div>
     <noscript><p class="cpi-fine">The self-check needs JavaScript. You can also <a href="/book">book a consultation</a>.</p></noscript>
     <p class="cpi-fine">{esc(TECH_NOTE)} Answers stay in your browser unless you choose to send them to us.</p></section>'''
@@ -344,7 +353,7 @@ def build_quiz():
 
 def build_book():
     c_html, c_ld = crumbs([("Home", ""), ("Book a consultation", "book")])
-    body = page_hero(c_html, "Book a consultation", "Let’s talk about <em>your technology.</em>", "Choose a time that suits you. Times are shown in your own time zone.", actions=False) + f'''
+    body = page_hero(c_html, "Book a consultation", "Let’s talk about <em>your technology.</em>", "Choose a time that suits you. Times are shown in your own time zone.", actions=False, slug="book") + f'''
     <section class="cpi-section cpi-book-wrap">
       <div class="cpi-book" id="book" aria-live="polite">
         <div class="cpi-book-step"><h2>1. Pick a day</h2><div id="book-days" class="cpi-days"><p class="cpi-fine">Loading availability…</p></div></div>
