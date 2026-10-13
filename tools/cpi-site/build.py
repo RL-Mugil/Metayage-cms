@@ -156,7 +156,8 @@ def shell(path, title, desc, body, current=None, extra_head="", jsonld=None, noi
   <button type="button" id="cookie-reject">Decline</button>
   <button type="button" class="primary" id="cookie-accept">Accept</button>
 </div>
-<script src="/assets/site.js" defer></script>{scripts}
+<script src="/assets/site.js" defer></script>
+<script src="/assets/fx.js" defer></script>{scripts}
 </body>
 </html>
 '''
@@ -190,7 +191,7 @@ def crumbs(items):
 
 def page_hero(crumb_html, eyebrow, h1, lead, actions=True):
     buttons = f'<div class="cpi-hero-actions"><a class="cpi-button-lime" href="/book">Book a consultation {icon("arrow-right")}</a><a class="cpi-hero-secondary" href="/patentability-check">Try the self-check {icon("arrow-right")}</a></div>' if actions else ""
-    return f'''<section class="cpi-page-hero"><div class="cpi-section">{crumb_html}<div class="cpi-eyebrow cpi-eyebrow-light"><span></span> {esc(eyebrow)}</div><h1>{h1}</h1><p>{esc(lead)}</p>{buttons}</div></section>'''
+    return f'''<section class="cpi-page-hero"><canvas class="cpi-3d" data-shape="torus" aria-hidden="true"></canvas><div class="cpi-section">{crumb_html}<div class="cpi-eyebrow cpi-eyebrow-light"><span></span> {esc(eyebrow)}</div><h1>{h1}</h1><p>{esc(lead)}</p>{buttons}</div></section>'''
 
 
 def faq_block(items, heading="Common questions"):
@@ -244,6 +245,7 @@ def build_home():
         part = part.replace("</article>", "</a>", 1)
         out.append(f'<a class="cpi-domain-row" href="/technology/{a["slug"]}">' + part)
     main = "".join(out)
+    main = main.replace('<div class="cpi-hero-shade"></div>', '<canvas class="cpi-3d" data-shape="sphere" aria-hidden="true"></canvas><div class="cpi-hero-shade"></div>', 1)
     extra = f'''
     <section class="cpi-section cpi-teasers" id="tools">
       <a class="cpi-teaser" href="/patentability-check"><span class="cpi-section-number">01</span><h3>Patentability self-check</h3><p>Answer a few questions about your invention and get plain-language guidance on what to do next.</p><span class="cpi-text-link">Start the self-check {icon("arrow-right")}</span></a>
