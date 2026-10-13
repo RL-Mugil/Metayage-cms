@@ -112,7 +112,7 @@ def shell(path, title, desc, body, current=None, extra_head="", jsonld=None, noi
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{esc(full_title)}</title>
   <meta name="description" content="{esc(desc)}">{robots}
-  <meta name="theme-color" content="#fbf9f4">
+  <meta name="theme-color" content="#f8f9fa">
   <link rel="canonical" href="{canon}">
   <link rel="icon" type="image/png" href="/assets/favicon.png">
   <link rel="apple-touch-icon" href="/assets/favicon.png">

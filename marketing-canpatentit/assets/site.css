@@ -1,10 +1,10 @@
 /* CanPatentIt marketing site. Static port of the approved design. */
 :root {
-  --cpi-ink: oklch(0.17 0.025 259);
-  --cpi-paper: oklch(0.985 0.008 92);
-  --cpi-blue: oklch(0.55 0.19 253);
-  --cpi-lime: oklch(0.88 0.17 119);
-  --cpi-mist: oklch(0.94 0.02 207);
+  --cpi-ink: #212529;
+  --cpi-paper: #f8f9fa;
+  --cpi-blue: #1481c4;
+  --cpi-lime: #39c5f0;
+  --cpi-mist: #e3f5fb;
 }
 *, *::before, *::after { box-sizing: border-box; }
 html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
@@ -34,7 +34,7 @@ button { font: inherit; }
 .cpi-notfound { min-height: 70vh; display: grid; place-content: center; text-align: center; gap: 14px; padding: 40px 20px; }
 .cpi-notfound h1 { font-size: 72px; }
 .cpi-notfound p { color: color-mix(in oklab, var(--cpi-ink) 68%, transparent); }
-.cpi-hero { background-image: radial-gradient(ellipse at 75% 45%, oklch(0.42 0.12 262), transparent 55%), linear-gradient(135deg, oklch(0.17 0.025 259), oklch(0.24 0.05 262)); }
+.cpi-hero { background-image: radial-gradient(ellipse at 75% 45%, #1b6a9c, transparent 55%), linear-gradient(135deg, #212529, #2b3138); }
 .cpi-hero.has-photo { background-image: url("hero.jpg"); }
 /* Cookie notice */
 .cpi-cookie { position: fixed; left: 16px; right: 16px; bottom: 16px; z-index: 30; max-width: 560px; margin-inline: auto; padding: 16px 18px; background: var(--cpi-ink); color: var(--cpi-paper); font-size: 12px; line-height: 1.6; box-shadow: 0 12px 40px rgb(0 0 0 / .35); display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }

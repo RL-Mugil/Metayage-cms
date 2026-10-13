@@ -1,4 +1,4 @@
-.adm { background: oklch(0.97 0.006 92); color: var(--cpi-ink); font-family: "Segoe UI", system-ui, -apple-system, Arial, sans-serif; font-size: 14px; min-height: 100vh; }
+.adm { background: #f1f3f5; color: var(--cpi-ink); font-family: "Segoe UI", system-ui, -apple-system, Arial, sans-serif; font-size: 14px; min-height: 100vh; }
 .adm a { color: var(--cpi-blue); }
 .adm-muted { color: color-mix(in oklab, var(--cpi-ink) 62%, transparent); font-size: 12px; }
 .adm-error { color: oklch(0.5 0.2 27); min-height: 1.2em; font-size: 13px; }
@@ -26,8 +26,8 @@
 .adm-bar-fill { width: 100%; background: var(--cpi-blue); min-height: 2px; }
 .adm-bar-n, .adm-bar-d { font-size: 10px; color: color-mix(in oklab, var(--cpi-ink) 60%, transparent); }
 .adm-health { list-style: none; padding: 0; display: grid; gap: 8px; }
-.adm-health li b { display: inline-block; min-width: 54px; padding: 2px 6px; font-size: 10px; text-align: center; border-radius: 2px; color: #fff; background: oklch(0.5 0.14 150); }
-.adm-health li.warn b { background: oklch(0.55 0.2 40); }
+.adm-health li b { display: inline-block; min-width: 54px; padding: 2px 6px; font-size: 10px; text-align: center; border-radius: 2px; color: #fff; background: #30b67d; }
+.adm-health li.warn b { background: #b8821a; }
 .adm-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .adm-filters h2 { margin-right: auto; }
 .adm-filters select { height: 34px; font-size: 12px; }
@@ -38,7 +38,7 @@
 .adm-table .nowrap { white-space: nowrap; }
 .adm-msg { max-width: 420px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .adm-pill { display: inline-block; padding: 2px 8px; font-size: 11px; border: 1px solid color-mix(in oklab, var(--cpi-ink) 25%, transparent); border-radius: 10px; margin-bottom: 4px; }
-.adm-pill.ok { border-color: oklch(0.5 0.14 150); color: oklch(0.4 0.14 150); }
+.adm-pill.ok { border-color: #30b67d; color: #1f7a52; }
 .adm-pill.warn { border-color: oklch(0.55 0.22 27); color: oklch(0.5 0.2 27); }
 .adm-pill.hot { border-color: var(--cpi-blue); color: var(--cpi-blue); }
 .adm-tabs { display: flex; gap: 6px; flex-wrap: wrap; border-bottom: 1px solid color-mix(in oklab, var(--cpi-ink) 14%, transparent); }
