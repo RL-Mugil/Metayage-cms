@@ -58,6 +58,17 @@
     return li;
   }
 
+  // Maps a domain name to one of the icon classes (see .dom-* in pages.css); unknown domains get the generic icon.
+  function domainClass(d) {
+    var t = String(d || '').toLowerCase();
+    var rules = [['artificial', 'ai'], [' ai', 'ai'], ['telecom', 'telecom'], ['electric', 'ev'], ['vehicle', 'ev'], ['health', 'health'], ['crypto', 'crypto'],
+      ['3d', 'xr'], ['vr', 'xr'], ['blockchain', 'chain'], ['manufactur', 'factory'], ['business', 'bi'], ['network', 'network'], ['food', 'food'], ['beverage', 'food'],
+      ['aerospace', 'aero'], ['aero', 'aero'], ['bio', 'bio'], ['polymer', 'polymer']];
+    if (/^ai\b/.test(t)) { return 'dom-ai'; }
+    for (var i = 0; i < rules.length; i++) { if (t.indexOf(rules[i][0]) >= 0) { return 'dom-' + rules[i][1]; } }
+    return 'dom-default';
+  }
+
   function card(p, eager) {
     var a = el('a', 'cpi-pcard');
     a.href = '/patent-showcase/' + encodeURIComponent(p.slug);
@@ -73,7 +84,7 @@
     a.appendChild(fig);
     var body = el('div', 'cpi-pcard-body');
     var meta = el('div', 'cpi-pcard-meta');
-    meta.appendChild(el('span', 'cpi-pcard-domain', p.domain));
+    meta.appendChild(el('span', 'cpi-pcard-domain ' + domainClass(p.domain), p.domain));
     meta.appendChild(el('span', 'cpi-pcard-country', p.country));
     body.appendChild(meta);
     body.appendChild(el('h3', null, p.title));

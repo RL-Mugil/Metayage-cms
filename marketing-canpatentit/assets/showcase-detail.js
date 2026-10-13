@@ -77,10 +77,21 @@
     dlg.addEventListener('keydown', function (e) { if (e.key === 'ArrowLeft') { show(idx - 1); } else if (e.key === 'ArrowRight') { show(idx + 1); } });
   }
 
+  // Maps a domain name to one of the icon classes (see .dom-* in pages.css); unknown domains get the generic icon.
+  function domainClass(d) {
+    var t = String(d || '').toLowerCase();
+    var rules = [['artificial', 'ai'], [' ai', 'ai'], ['telecom', 'telecom'], ['electric', 'ev'], ['vehicle', 'ev'], ['health', 'health'], ['crypto', 'crypto'],
+      ['3d', 'xr'], ['vr', 'xr'], ['blockchain', 'chain'], ['manufactur', 'factory'], ['business', 'bi'], ['network', 'network'], ['food', 'food'], ['beverage', 'food'],
+      ['aerospace', 'aero'], ['aero', 'aero'], ['bio', 'bio'], ['polymer', 'polymer']];
+    if (/^ai\b/.test(t)) { return 'dom-ai'; }
+    for (var i = 0; i < rules.length; i++) { if (t.indexOf(rules[i][0]) >= 0) { return 'dom-' + rules[i][1]; } }
+    return 'dom-default';
+  }
+
   // Recommended patents are text-only cards: domain, title, country badge and a View Patent button.
   function card(p) {
     var box = el('div', 'cpi-rcard');
-    box.appendChild(el('p', 'cpi-rcard-domain', p.domain));
+    box.appendChild(el('p', 'cpi-rcard-domain ' + domainClass(p.domain), p.domain));
     box.appendChild(el('h3', null, p.title));
     var country = el('p', 'cpi-rcard-country');
     country.appendChild(el('span', 'cpi-globe'));
