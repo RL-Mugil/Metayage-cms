@@ -8,7 +8,7 @@
   var btnGrid = document.getElementById('view-grid');
   var btnList = document.getElementById('view-list');
   // Articles per page. Raise these (for example 9 and 6) once there are plenty of articles.
-  var PER_PAGE = { grid: 3, list: 3 };
+  var PER_PAGE = { grid: 6, list: 3 };
   var items = [];
   var view = 'grid';
   var page = 1;
