@@ -46,6 +46,7 @@ Route::middleware(['auth:sanctum', \Laravel\Sanctum\Http\Middleware\CheckAbiliti
     Route::get('/enquiries', [\App\Http\Controllers\CpiAdminController::class, 'index']);
     Route::patch('/enquiries/{id}', [\App\Http\Controllers\CpiAdminController::class, 'update'])->whereNumber('id');
     Route::get('/enquiries/export', [\App\Http\Controllers\CpiAdminController::class, 'export']);
+    Route::get('/faqs-pages', [\App\Http\Controllers\CpiFaqController::class, 'pages']);
     Route::get('/faqs', [\App\Http\Controllers\CpiFaqController::class, 'index']);
     Route::post('/faqs', [\App\Http\Controllers\CpiFaqController::class, 'store']);
     Route::put('/faqs-order', [\App\Http\Controllers\CpiFaqController::class, 'reorder']);

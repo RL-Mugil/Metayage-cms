@@ -235,13 +235,14 @@ def detail_page(kind, item, siblings):
         chips = "".join(f'<a class="cpi-chip" href="{SHOWCASE_URL}" rel="noopener" target="_blank">{esc(d)}</a>' for d in item["domains"])
         domains = f'<section class="cpi-prose-sec"><h2>Related domains in Metayage’s patent showcase</h2><p>Metayage, the company behind CanPatentIt, organises its patent showcase by technology domain. The domains closest to this area are:</p><div class="cpi-chips">{chips}</div></section>'
     body = page_hero(c_html, "Services" if kind == "service" else "Technology area", esc(item["title"]), item["lead"], slug=item["slug"]) + f'''
-    <section class="cpi-section cpi-detail"><div class="cpi-prose">{secs}{domains}{faq_block(item["faq"])}<p class="cpi-fine">{esc(TECH_NOTE)}</p></div>{bullets}</section>
+    <section class="cpi-section cpi-detail"><div class="cpi-prose">{secs}{domains}<!--cpi:faq-->{faq_block(item["faq"])}<!--/cpi:faq--><p class="cpi-fine">{esc(TECH_NOTE)}</p></div>{bullets}</section>
     <section class="cpi-section cpi-related-wrap"><h2>{"Other services" if kind == "service" else "Other technology areas"}</h2><div class="cpi-related-grid">{rel}</div></section>
     {cta_band()}'''
-    ld = [c_ld, faq_ld(item["faq"])]
+    ld = [c_ld]
     if kind == "service":
         ld.append({"@context": "https://schema.org", "@type": "Service", "name": item["title"], "description": item["desc"], "provider": {"@type": "ProfessionalService", "name": "CanPatentIt", "url": SITE}, "areaServed": "US"})
-    write(path, shell(path, item["title"], item["desc"], body, jsonld=ld))
+    faq_ld_tag = "<!--cpi:faqld--><script type=\"application/ld+json\">" + json.dumps(faq_ld(item["faq"]), ensure_ascii=False) + "</script><!--/cpi:faqld-->"
+    write(path, shell(path, item["title"], item["desc"], body, jsonld=ld, extra_head="  " + faq_ld_tag))
     register(path, item["title"], item["desc"], body)
 
 

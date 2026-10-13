@@ -257,8 +257,9 @@ class CpiSiteTest extends TestCase
     public function test_faq_can_be_added_edited_reordered_hidden_and_deleted(): void
     {
         $h = $this->adminHeaders();
-        $this->assertSame(13, \App\Models\CpiFaq::count(), 'The migration seeds the starting questions.');
-        \App\Models\CpiFaq::query()->delete();
+        $this->assertSame(13, \App\Models\CpiFaq::whereNull('page')->count(), 'The migration seeds the starting questions.');
+        $this->assertSame(17, \App\Models\CpiFaq::whereNotNull('page')->count(), 'And the per-page common questions.');
+        \App\Models\CpiFaq::whereNull('page')->delete();
 
         $a = $this->postJson('/api/cpi-admin/faqs', ['question' => 'First question?', 'answer' => "Line one.\n\nLine two <b>x</b>"], $h)->assertCreated()->json('id');
         $b = $this->postJson('/api/cpi-admin/faqs', ['question' => 'Second question?', 'answer' => 'Second answer.'], $h)->assertCreated()->json('id');
@@ -281,6 +282,54 @@ class CpiSiteTest extends TestCase
 
         $this->deleteJson("/api/cpi-admin/faqs/{$a}", [], $h)->assertOk();
         $this->assertStringNotContainsString('First question', File::get($this->siteDir.'/faq.html'));
+    }
+
+    public function test_common_questions_on_a_service_page_can_be_managed_without_touching_other_pages(): void
+    {
+        $h = $this->adminHeaders();
+        File::ensureDirectoryExists($this->siteDir.'/services');
+        File::ensureDirectoryExists($this->siteDir.'/technology');
+        $tpl = '<main><!--cpi:faq--><div class="old">default</div><!--/cpi:faq--><p>rest</p></main><head><!--cpi:faqld--><!--/cpi:faqld--></head>';
+        File::put($this->siteDir.'/services/patentability-prior-art.html', $tpl);
+        File::put($this->siteDir.'/technology/climate-energy.html', $tpl);
+
+        $this->getJson('/api/cpi-admin/faqs-pages', $h)->assertOk()->assertJsonCount(10);
+        $this->assertCount(3, $this->getJson('/api/cpi-admin/faqs?page=patentability-prior-art', $h)->assertOk()->json());
+
+        $id = $this->postJson('/api/cpi-admin/faqs', ['page' => 'patentability-prior-art', 'question' => 'Does it work <i>here</i>?', 'answer' => 'Yes.'], $h)->assertCreated()->json('id');
+        $svc = File::get($this->siteDir.'/services/patentability-prior-art.html');
+        $this->assertStringContainsString('Does it work &lt;i&gt;here&lt;/i&gt;?', $svc);
+        $this->assertStringContainsString('<h2>Common questions</h2>', $svc);
+        $this->assertStringContainsString('"@type":"FAQPage"', $svc);
+        $this->assertStringContainsString('<p>rest</p>', $svc, 'The rest of the page is untouched.');
+        $this->assertStringContainsString('class="old"', File::get($this->siteDir.'/technology/climate-energy.html'), 'Other pages are not rewritten.');
+
+        $this->putJson("/api/cpi-admin/faqs/{$id}", ['question' => 'Edited here?', 'answer' => 'Still yes.'], $h)->assertOk();
+        $this->assertStringContainsString('Edited here?', File::get($this->siteDir.'/services/patentability-prior-art.html'));
+
+        // Deleting every question leaves no empty heading and no FAQ markup.
+        foreach ($this->getJson('/api/cpi-admin/faqs?page=patentability-prior-art', $h)->json() as $row) {
+            $this->deleteJson('/api/cpi-admin/faqs/'.$row['id'], [], $h)->assertOk();
+        }
+        $svc = File::get($this->siteDir.'/services/patentability-prior-art.html');
+        $this->assertStringNotContainsString('Common questions', $svc);
+        $this->assertStringNotContainsString('FAQPage', $svc);
+        $this->assertStringContainsString('<p>rest</p>', $svc);
+    }
+
+    public function test_faq_page_must_be_a_known_page_and_reorder_is_scoped(): void
+    {
+        $h = $this->adminHeaders();
+
+        $this->postJson('/api/cpi-admin/faqs', ['page' => '../../etc/passwd', 'question' => 'Bad page?', 'answer' => 'No.'], $h)->assertStatus(422);
+
+        $mainId = \App\Models\CpiFaq::whereNull('page')->orderBy('sort_order')->value('id');
+        $pageIds = \App\Models\CpiFaq::where('page', 'climate-energy')->orderBy('sort_order')->pluck('id')->all();
+        $before = \App\Models\CpiFaq::find($mainId)->sort_order;
+
+        // A main-page id sent in another page's order list is ignored.
+        $this->putJson('/api/cpi-admin/faqs-order', ['page' => 'climate-energy', 'ids' => array_merge([$mainId], $pageIds)], $h)->assertOk();
+        $this->assertSame($before, \App\Models\CpiFaq::find($mainId)->sort_order);
     }
 
     public function test_faq_endpoints_require_admin_and_validate(): void

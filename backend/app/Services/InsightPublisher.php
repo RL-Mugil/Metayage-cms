@@ -26,10 +26,22 @@ class InsightPublisher
         $this->rebuild();
     }
 
-    /** Rewrites the FAQ page from the questions saved in the admin panel. */
-    public function publishFaq(): void
+    /** Service and technology pages that carry their own "Common questions" block: slug => [path, label]. */
+    public const PAGE_FAQS = [
+        'patentability-prior-art' => ['services/patentability-prior-art', 'Service: Patentability & prior art'],
+        'provisional-applications' => ['services/provisional-applications', 'Service: Provisional applications'],
+        'us-patent-prosecution' => ['services/us-patent-prosecution', 'Service: US patent prosecution'],
+        'ip-strategy-diligence' => ['services/ip-strategy-diligence', 'Service: IP strategy & diligence'],
+        'ai-machine-learning' => ['technology/ai-machine-learning', 'Technology: AI & machine learning'],
+        'semiconductors-quantum' => ['technology/semiconductors-quantum', 'Technology: Semiconductors & quantum'],
+        'medtech-biotechnology' => ['technology/medtech-biotechnology', 'Technology: MedTech & biotechnology'],
+        'climate-energy' => ['technology/climate-energy', 'Technology: Climate & energy'],
+        'enterprise-software-security' => ['technology/enterprise-software-security', 'Technology: Enterprise software & security'],
+    ];
+
+    /** @return array{0: string, 1: string} [block html, FAQPage json-ld script or ''] */
+    private function faqMarkup($faqs, string $heading, string $empty): array
     {
-        $faqs = CpiFaq::where('active', true)->orderBy('sort_order')->orderBy('id')->get();
         $rows = '';
         $entities = [];
         foreach ($faqs as $f) {
@@ -38,20 +50,57 @@ class InsightPublisher
             $rows .= '<details class="cpi-faq"><summary>'.e($f->question).'</summary><div>'.$paragraphs.'</div></details>';
             $entities[] = ['@type' => 'Question', 'name' => $f->question, 'acceptedAnswer' => ['@type' => 'Answer', 'text' => $f->answer]];
         }
-        $block = '<div class="cpi-faq-list"><h2>Frequently asked questions</h2>'.($rows ?: '<p>No questions yet.</p>').'</div>';
+        $block = $rows === '' ? $empty : '<div class="cpi-faq-list"><h2>'.e($heading).'</h2>'.$rows.'</div>';
         $ld = $entities
             ? '<script type="application/ld+json">'.str_replace('</', '<\/', (string) json_encode(['@context' => 'https://schema.org', '@type' => 'FAQPage', 'mainEntity' => $entities], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)).'</script>'
             : '';
+
+        return [$block, $ld];
+    }
+
+    /** Rewrites the main FAQ page from the questions saved in the admin panel. */
+    public function publishFaq(): void
+    {
+        $faqs = CpiFaq::whereNull('page')->where('active', true)->orderBy('sort_order')->orderBy('id')->get();
+        [$block, $ld] = $this->faqMarkup($faqs, 'Frequently asked questions', '<div class="cpi-faq-list"><h2>Frequently asked questions</h2><p>No questions yet.</p></div>');
 
         $html = strtr(File::get(resource_path('cpi/faq-shell.html')), ['@@FAQ_BLOCK@@' => $block, '<!--@@FAQ_LD@@-->' => $ld]);
         File::ensureDirectoryExists(self::sitePath());
         File::put(self::sitePath().'/faq.html', $html);
     }
 
+    /** Rewrites only the "Common questions" block (and its markup) inside one service or technology page. */
+    public function publishPageFaq(string $slug): void
+    {
+        if (! isset(self::PAGE_FAQS[$slug])) {
+            return;
+        }
+        $file = self::sitePath().'/'.self::PAGE_FAQS[$slug][0].'.html';
+        if (! File::exists($file)) {
+            return;
+        }
+        $faqs = CpiFaq::where('page', $slug)->where('active', true)->orderBy('sort_order')->orderBy('id')->get();
+        [$block, $ld] = $this->faqMarkup($faqs, 'Common questions', '');
+
+        $html = File::get($file);
+        $html = preg_replace_callback('~<!--cpi:faq-->.*?<!--/cpi:faq-->~s', fn () => '<!--cpi:faq-->'.$block.'<!--/cpi:faq-->', $html);
+        $html = preg_replace_callback('~<!--cpi:faqld-->.*?<!--/cpi:faqld-->~s', fn () => '<!--cpi:faqld-->'.$ld.'<!--/cpi:faqld-->', $html);
+        File::put($file, $html);
+    }
+
+    /** Republishes whichever page a question belongs to (null = the main FAQ page). */
+    public function publishFaqFor(?string $page): void
+    {
+        $page === null ? $this->publishFaq() : $this->publishPageFaq($page);
+    }
+
     /** FAQ page plus every published article, e.g. after the site header or footer changed. */
     public function republishAll(): int
     {
         $this->publishFaq();
+        foreach (array_keys(self::PAGE_FAQS) as $slug) {
+            $this->publishPageFaq($slug);
+        }
         $articles = CpiArticle::where('status', 'published')->get();
         foreach ($articles as $a) {
             File::ensureDirectoryExists(self::sitePath().'/insights');
