@@ -223,3 +223,6 @@ a.cpi-domain-row:hover { background: color-mix(in oklab, var(--cpi-paper) 6%, tr
 @media (max-width: 680px) { .cpi-3d { opacity: .55; } .cpi-domain-band::after { display: none; } }
 @media (prefers-reduced-motion: reduce) { .cpi-domain-band::before, .cpi-founder-band::before, .cpi-cta-band::before, .cpi-founder-band::after, .cpi-cta-band::after { animation: none; } .cpi-tilt { transform: none !important; } }
 .js .reveal.cpi-tilt { transition: opacity .6s ease, transform .18s ease-out, box-shadow .25s ease, border-color .25s ease; }
+/* Home hero photo with pointer parallax */
+.cpi-hero.has-photo { background-size: cover; background-position: calc(50% + (var(--mx, 50%) - 50%) * 0.06) calc(54% + (var(--my, 50%) - 50%) * 0.18); transition: background-position .25s ease-out; }
+@media (max-width: 680px) { .cpi-hero.has-photo { background-position: 68% center; } }

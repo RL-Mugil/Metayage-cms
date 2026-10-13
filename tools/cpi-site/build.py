@@ -245,7 +245,6 @@ def build_home():
         part = part.replace("</article>", "</a>", 1)
         out.append(f'<a class="cpi-domain-row" href="/technology/{a["slug"]}">' + part)
     main = "".join(out)
-    main = main.replace('<div class="cpi-hero-shade"></div>', '<canvas class="cpi-3d" data-shape="sphere" aria-hidden="true"></canvas><div class="cpi-hero-shade"></div>', 1)
     extra = f'''
     <section class="cpi-section cpi-teasers" id="tools">
       <a class="cpi-teaser" href="/patentability-check"><span class="cpi-section-number">01</span><h3>Patentability self-check</h3><p>Answer a few questions about your invention and get plain-language guidance on what to do next.</p><span class="cpi-text-link">Start the self-check {icon("arrow-right")}</span></a>
