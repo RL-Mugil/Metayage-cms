@@ -354,6 +354,72 @@ class CpiSiteTest extends TestCase
         $this->assertFileExists($this->siteDir.'/faq.html');
     }
 
+    // ---- Patent showcase ----
+
+    public function test_patent_crud_publishes_page_index_and_sitemap(): void
+    {
+        $h = $this->adminHeaders();
+        $this->assertFileExists(resource_path('cpi/patent-shell.html'), 'Run python tools/cpi-site/build.py first.');
+
+        $id = $this->postJson('/api/cpi-admin/patents', [
+            'patent_number' => 'WO/2020/136668', 'title' => 'System and method for generating a modified design creative',
+            'domain' => 'Artificial Intelligence', 'country' => 'India', 'abstract' => "First paragraph of the abstract.\n\nSecond <b>one</b>.",
+        ], $h)->assertCreated()->json('id');
+        $this->assertFileDoesNotExist($this->siteDir.'/patent-showcase/system-and-method-for-generating-a-modified-design-creative.html', 'Drafts are not public.');
+
+        $this->postJson("/api/cpi-admin/patents/{$id}/publish", [], $h)->assertOk();
+        $page = File::get($this->siteDir.'/patent-showcase/system-and-method-for-generating-a-modified-design-creative.html');
+        $this->assertStringContainsString('WO/2020/136668', $page);
+        $this->assertStringContainsString('Artificial Intelligence', $page);
+        $this->assertStringContainsString('<dt>Country</dt><dd><a href="/patent-showcase?country=India">India</a>', $page);
+        $this->assertStringContainsString('Second &lt;b&gt;one&lt;/b&gt;.', $page, 'The abstract is escaped.');
+        $this->assertStringContainsString('id="rec-grid"', $page, 'Recommended patents container is present.');
+        $index = json_decode(File::get($this->siteDir.'/patent-showcase/index.json'), true);
+        $this->assertSame('India', $index[0]['country']);
+        $this->assertStringContainsString('/patent-showcase/system-and-method', File::get($this->siteDir.'/patent-showcase/sitemap-patents.xml'));
+
+        $this->putJson("/api/cpi-admin/patents/{$id}", [
+            'patent_number' => 'WO/2020/136668', 'title' => 'System and method for generating a modified design creative', 'domain' => 'Business Intelligence',
+            'country' => 'USA', 'abstract' => 'An edited abstract for the patent.',
+        ], $h)->assertOk();
+        $this->assertStringContainsString('Business Intelligence', File::get($this->siteDir.'/patent-showcase/system-and-method-for-generating-a-modified-design-creative.html'));
+
+        $this->postJson("/api/cpi-admin/patents/{$id}/unpublish", [], $h)->assertOk();
+        $this->assertFileDoesNotExist($this->siteDir.'/patent-showcase/system-and-method-for-generating-a-modified-design-creative.html');
+        $this->assertSame([], json_decode(File::get($this->siteDir.'/patent-showcase/index.json'), true));
+
+        $this->deleteJson("/api/cpi-admin/patents/{$id}", [], $h)->assertOk();
+        $this->assertDatabaseMissing('cpi_patents', ['id' => $id]);
+    }
+
+    public function test_patent_validation_and_unique_number(): void
+    {
+        $h = $this->adminHeaders();
+        $ok = ['patent_number' => 'US 11,000,000 B2', 'title' => 'A sample patent title', 'domain' => 'Cryptography', 'country' => 'USA', 'abstract' => 'A long enough abstract.'];
+        $this->postJson('/api/cpi-admin/patents', $ok, $h)->assertCreated();
+
+        $this->postJson('/api/cpi-admin/patents', $ok, $h)->assertStatus(422)->assertJsonValidationErrors(['patent_number']);
+        $this->postJson('/api/cpi-admin/patents', array_merge($ok, ['patent_number' => 'X-2', 'country' => 'Mars']), $h)->assertStatus(422)->assertJsonValidationErrors(['country']);
+        $this->postJson('/api/cpi-admin/patents', array_merge($ok, ['patent_number' => 'X-3', 'image' => 'https://evil.test/a.png']), $h)->assertStatus(422)->assertJsonValidationErrors(['image']);
+        $this->getJson('/api/cpi-admin/patents')->assertUnauthorized();
+    }
+
+    public function test_patent_figure_survives_prune_and_is_deleted_with_the_patent(): void
+    {
+        $h = $this->adminHeaders();
+        $url = $this->post('/api/cpi-admin/images', ['image' => UploadedFile::fake()->image('fig.png', 400, 300)], $h + ['Accept' => 'application/json'])->json('url');
+        $id = $this->postJson('/api/cpi-admin/patents', [
+            'patent_number' => 'IN 123456', 'title' => 'Figure holder patent', 'domain' => 'Healthcare', 'country' => 'India', 'abstract' => 'Abstract text long enough.', 'image' => $url,
+        ], $h)->assertCreated()->json('id');
+
+        touch($this->siteDir.$url, time() - 7200);
+        $this->artisan('cpi:prune-images')->assertSuccessful();
+        $this->assertFileExists($this->siteDir.$url, 'A figure used by a patent is never pruned.');
+
+        $this->deleteJson("/api/cpi-admin/patents/{$id}", [], $h)->assertOk();
+        $this->assertFileDoesNotExist($this->siteDir.$url);
+    }
+
     public function test_cover_image_must_be_an_uploaded_path(): void
     {
         $h = $this->adminHeaders();

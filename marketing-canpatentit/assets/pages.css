@@ -321,3 +321,67 @@ a.cpi-page:hover { border-color: var(--cpi-blue); color: var(--cpi-blue-ink); }
 .cpi-view-toggle button::before { width: 16px; height: 16px; opacity: 1; }
 #view-grid::before { -webkit-mask-size: 7px 7px, 7px 7px, 7px 7px, 7px 7px; -webkit-mask-position: 0 0, 9px 0, 0 9px, 9px 9px; mask-size: 7px 7px, 7px 7px, 7px 7px, 7px 7px; mask-position: 0 0, 9px 0, 0 9px, 9px 9px; }
 #view-list::before { -webkit-mask-size: 16px 3px, 16px 3px, 16px 3px; -webkit-mask-position: 0 1px, 0 6.5px, 0 12px; mask-size: 16px 3px, 16px 3px, 16px 3px; mask-position: 0 1px, 0 6.5px, 0 12px; }
+
+/* ===== Patent showcase ===== */
+.cpi-showcase { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 48px; padding-block: 64px 40px; align-items: start; }
+.cpi-showcase-filters h2 { font-size: 26px; font-weight: 500; margin: 0 0 18px; }
+.cpi-showcase-filters h2:not(:first-child) { margin-top: 44px; }
+.cpi-filter { list-style: none; padding: 0; margin: 0; border: 1px solid color-mix(in oklab, var(--cpi-ink) 14%, transparent); padding: 10px; background: var(--cpi-paper); box-shadow: 0 8px 30px rgb(0 0 0 / .05); }
+.cpi-filter li + li { border-top: 1px solid color-mix(in oklab, var(--cpi-ink) 10%, transparent); }
+.cpi-filter-btn { width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 52px; padding: 0 18px; border: 0; background: transparent; color: var(--cpi-ink); font: inherit; font-size: 15px; text-align: left; cursor: pointer; transition: background .2s ease, color .2s ease; }
+.cpi-filter-btn:hover { background: color-mix(in oklab, var(--cpi-blue) 8%, transparent); }
+.cpi-filter-btn.is-active { background: var(--cpi-blue-deep); color: #fff; font-weight: 600; }
+.cpi-filter-tail { display: inline-flex; align-items: center; gap: 12px; flex: none; }
+.cpi-filter-tail em { font-style: normal; font-size: 11px; opacity: .7; }
+.cpi-filter-tail i { font-style: normal; font-size: 18px; }
+.cpi-showcase-title { font-size: clamp(22px, 2.6vw, 32px); font-weight: 500; margin: 0 0 24px; line-height: 1.25; }
+.cpi-patent-grid { grid-template-columns: repeat(3, 1fr); gap: 26px; }
+.cpi-pcard { display: flex; flex-direction: column; text-decoration: none; color: var(--cpi-ink); background: var(--cpi-paper); border: 1px solid color-mix(in oklab, var(--cpi-ink) 14%, transparent); transition: transform .25s ease, box-shadow .3s ease, border-color .25s ease; overflow: hidden; }
+.cpi-pcard:hover { transform: translateY(-5px); border-color: var(--cpi-blue); box-shadow: 0 24px 50px rgb(20 129 196 / .18); }
+.cpi-pcard-fig { aspect-ratio: 4 / 3; background: #fff; display: grid; place-items: center; overflow: hidden; border-bottom: 1px solid color-mix(in oklab, var(--cpi-ink) 10%, transparent); }
+.cpi-pcard-fig img { width: 100%; height: 100%; object-fit: contain; display: block; transition: transform .5s ease; }
+.cpi-pcard:hover .cpi-pcard-fig img { transform: scale(1.04); }
+.cpi-pcard-fig.is-empty { background: linear-gradient(135deg, #212529, #0f6ca8); position: relative; }
+.cpi-pcard-fig.is-empty::after { content: ""; position: absolute; inset: 0; background: url("favicon.png") center / 64px no-repeat; opacity: .9; }
+.cpi-pcard-body { display: flex; flex-direction: column; gap: 10px; padding: 20px 22px 24px; flex: 1; }
+.cpi-pcard-meta { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.cpi-pcard-domain { font-size: 14px; color: color-mix(in oklab, var(--cpi-ink) 70%, transparent); display: inline-flex; align-items: center; gap: 8px; }
+.cpi-pcard-domain::before { content: ""; width: 16px; height: 13px; background: currentColor; -webkit-mask: linear-gradient(#000 0 0) 0 4px / 16px 9px no-repeat, linear-gradient(#000 0 0) 5px 0 / 6px 4px no-repeat; mask: linear-gradient(#000 0 0) 0 4px / 16px 9px no-repeat, linear-gradient(#000 0 0) 5px 0 / 6px 4px no-repeat; border-radius: 2px; }
+.cpi-pcard-country { padding: 3px 10px; border-radius: 4px; background: #212529; color: #fff; font-size: 12px; font-weight: 700; }
+.cpi-pcard h3 { font-size: 20px; line-height: 1.35; font-weight: 400; }
+.cpi-pcard-id { font-size: 12px; color: color-mix(in oklab, var(--cpi-ink) 56%, transparent); letter-spacing: .03em; }
+.cpi-pcard .cpi-text-link { margin-top: auto; padding-top: 6px; text-decoration: underline; }
+.cpi-fine-wrap { padding-block: 0 48px; }
+/* patent detail page */
+.cpi-patent { width: min(100% - 40px, 960px); margin: 0 auto; padding: 48px 0 80px; }
+.cpi-patent-head h1 { font-size: clamp(28px, 3.6vw, 44px); line-height: 1.15; font-weight: 500; margin: 20px 0 28px; }
+.cpi-patent-meta { display: flex; flex-wrap: wrap; gap: 14px 40px; margin: 8px 0 0; padding: 18px 22px; border: 1px solid color-mix(in oklab, var(--cpi-ink) 14%, transparent); background: color-mix(in oklab, var(--cpi-blue) 5%, var(--cpi-paper)); }
+.cpi-patent-meta dt { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: color-mix(in oklab, var(--cpi-ink) 56%, transparent); }
+.cpi-patent-meta dd { margin: 4px 0 0; font-size: 17px; font-weight: 600; }
+.cpi-patent-meta a { color: var(--cpi-blue-ink); text-decoration: none; }
+.cpi-patent-meta a:hover { text-decoration: underline; }
+.cpi-patent-figure { margin: 28px 0; background: #fff; border: 1px solid color-mix(in oklab, var(--cpi-ink) 14%, transparent); padding: 18px; }
+.cpi-patent-figure img { display: block; max-width: 100%; max-height: 560px; height: auto; margin: 0 auto; }
+.cpi-patent-abstract h2, .cpi-patent-recs h2 { font-size: 26px; font-weight: 500; margin: 34px 0 14px; }
+.cpi-patent-recs { margin-top: 50px; padding-top: 10px; border-top: 1px solid color-mix(in oklab, var(--cpi-ink) 14%, transparent); }
+.cpi-patent-recs[hidden] { display: none; }
+.cpi-rec-grid { grid-template-columns: repeat(3, 1fr); gap: 22px; }
+.cpi-patent .cpi-button-lime { margin-top: 34px; }
+@media (max-width: 1100px) { .cpi-patent-grid, .cpi-rec-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 900px) { .cpi-showcase { grid-template-columns: 1fr; gap: 32px; } }
+@media (max-width: 600px) { .cpi-patent-grid, .cpi-rec-grid { grid-template-columns: 1fr; } }
+
+/* Navigation: keep links on one line, and use the menu button below 1040px (the nav has more links now) */
+.cpi-nav > a, .cpi-dd-btn { white-space: nowrap; }
+@media (max-width: 1040px) {
+  .cpi-menu-button { display: inline-flex; }
+  .cpi-nav { display: none; position: absolute; top: 84px; left: 0; right: 0; padding: 18px 28px; background: var(--cpi-paper); box-shadow: 0 12px 20px color-mix(in oklab, var(--cpi-ink) 10%, transparent); z-index: 20; }
+  .cpi-nav.is-open { display: flex; align-items: stretch; flex-direction: column; gap: 0; }
+  .cpi-nav > a:not(.cpi-nav-cta) { padding: 13px 4px; font-size: 13px; border-bottom: 1px solid color-mix(in oklab, var(--cpi-ink) 13%, transparent); }
+  .cpi-nav > a.cpi-nav-cta { margin-top: 13px; justify-content: center; }
+  .cpi-dd-menu { position: static; display: grid; box-shadow: none; border: 0; padding: 0 0 6px 10px; min-width: 0; }
+  .cpi-dd { border-bottom: 1px solid color-mix(in oklab, var(--cpi-ink) 13%, transparent); }
+  .cpi-dd-btn { padding: 13px 4px; font-size: 13px; width: 100%; justify-content: space-between; }
+  .cpi-dd-btn svg { display: none; }
+}
+@media (max-width: 680px) { .cpi-nav { top: 72px; padding: 18px; } }

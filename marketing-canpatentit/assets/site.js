@@ -145,8 +145,11 @@
       return fetch('/insights/index.json').then(function (r) { return r.ok ? r.json() : []; }).catch(function () { return []; });
     }).then(function (arts) {
       (arts || []).forEach(function (a) { all.push({ url: '/insights/' + a.slug, title: a.title, desc: a.excerpt || '', text: a.excerpt || '' }); });
-      searchData = all;
-      return all;
+      return fetch('/patent-showcase/index.json').then(function (r) { return r.ok ? r.json() : []; }).catch(function () { return []; }).then(function (pats) {
+        (pats || []).forEach(function (p) { all.push({ url: '/patent-showcase/' + p.slug, title: p.title, desc: p.domain + ' · ' + p.country + ' · ' + p.id, text: p.id + ' ' + p.domain }); });
+        searchData = all;
+        return all;
+      });
     }).catch(function () { searchData = []; return []; });
   }
   function runSearch() {

@@ -71,6 +71,7 @@ def header(current):
       <div class="cpi-dd"><button type="button" class="cpi-dd-btn" aria-expanded="false">Technology {icon("chevron-down")}</button><div class="cpi-dd-menu">{tech}</div></div>
       {link("about", "About")}
       {link("insights", "Insights")}
+      {link("patent-showcase", "Patent showcase")}
       {link("faq", "FAQ")}
       <a class="cpi-nav-cta" href="/book">Book a consultation {icon("arrow-up-right")}</a>
     </nav>
@@ -90,7 +91,7 @@ def footer():
     <div class="cpi-footer-cols">
       <div><h3>Services</h3><ul>{svc}</ul></div>
       <div><h3>Technology</h3><ul>{tech}</ul></div>
-      <div><h3>Explore</h3><ul><li><a href="/about">About</a></li><li><a href="/insights">Insights</a></li><li><a href="/faq">FAQ</a></li><li><a href="/patentability-check">Patentability self-check</a></li><li><a href="/book">Book a consultation</a></li></ul></div>
+      <div><h3>Explore</h3><ul><li><a href="/about">About</a></li><li><a href="/insights">Insights</a></li><li><a href="/patent-showcase">Patent showcase</a></li><li><a href="/faq">FAQ</a></li><li><a href="/patentability-check">Patentability self-check</a></li><li><a href="/book">Book a consultation</a></li></ul></div>
       <div><h3>Legal</h3><ul><li><a href="/privacy">Privacy</a></li><li><a href="/terms">Terms</a></li><li><a href="#" data-cookie-settings>Cookie settings</a></li><li><a href="mailto:{EMAIL}">{EMAIL}</a></li></ul></div>
     </div>
     <div class="cpi-footer-bottom"><span>© <span id="year">2026</span> CanPatentIt</span><span>US patent strategy for deep technology</span></div>
@@ -197,7 +198,7 @@ SHAPES = {
     "us-patent-prosecution": "torus", "ip-strategy-diligence": "network",
     # Other pages: art in assets/heroes/<slug>.jpg and their own 3D shape.
     "about": "sphere", "services": "rings", "faq": "crystal", "insights": "sheets",
-    "patentability-check": "layers", "book": "torus",
+    "patentability-check": "layers", "book": "torus", "patent-showcase": "lattice",
 }
 
 
@@ -343,6 +344,37 @@ def build_faq():
     register("faq", "FAQ", desc, "Frequently asked questions about US patent strategy and how CanPatentIt works.")
 
 
+def build_showcase():
+    """Patent showcase index (filters + grid are filled in by showcase.js from /patent-showcase/index.json)
+    and the frame the backend uses for each patent page."""
+    c_html, c_ld = crumbs([("Home", ""), ("Patent showcase", "patent-showcase")])
+    body = page_hero(c_html, "Patent showcase", "Patents we have <em>worked on.</em>", "A selection of patents, by technology domain and country. Examples of the work, not a promise of results.", slug="patent-showcase") + f'''
+    <section class="cpi-section cpi-showcase">
+      <aside class="cpi-showcase-filters" aria-label="Filters">
+        <h2>Select country</h2>
+        <ul class="cpi-filter" id="country-filter" role="list"><li><p class="cpi-fine">Loading…</p></li></ul>
+        <h2>Select domain</h2>
+        <ul class="cpi-filter" id="domain-filter" role="list"></ul>
+      </aside>
+      <div class="cpi-showcase-main">
+        <h2 class="cpi-showcase-title" id="showcase-title" aria-live="polite">Patents related to all domains (all countries)</h2>
+        <div id="showcase-grid" class="cpi-post-grid cpi-patent-grid" aria-live="polite"></div>
+        <nav class="cpi-pager" id="showcase-pager" aria-label="Pagination" hidden></nav>
+        <noscript><p class="cpi-fine">Enable JavaScript to browse the patent showcase.</p></noscript>
+      </div>
+    </section>
+    <section class="cpi-section cpi-fine-wrap"><p class="cpi-fine">Patent details are shown for illustration. {esc(TECH_NOTE)}</p></section>
+    {cta_band()}'''
+    desc = "A selection of patents by technology domain and country, shown as examples of the work done by Metayage and CanPatentIt."
+    write("patent-showcase", shell("patent-showcase", "Patent Showcase", desc, body, jsonld=[c_ld], scripts='\n<script src="/assets/showcase.js" defer></script>'))
+    register("patent-showcase", "Patent showcase", desc, body)
+
+    out = shell("patent-showcase/@@SLUG@@", "@@TITLE@@", "@@DESC@@", "@@BODY@@", current="patent-showcase", extra_head=NL + "  <!--@@HEAD@@-->", og_image="@@OGIMAGE@@", scripts=NL + '<script src="/assets/showcase-detail.js" defer></script>')
+    dest = os.path.join(ROOT, "backend", "resources", "cpi", "patent-shell.html")
+    with open(dest, "w", encoding="utf-8", newline=NL) as f:
+        f.write(out)
+
+
 def build_insights():
     c_html, c_ld = crumbs([("Home", ""), ("Insights", "insights")])
     body = page_hero(c_html, "Insights", "Practical notes on <em>deep-tech IP.</em>", "Short articles for founders, engineers and investors. General information, not legal advice.", slug="insights") + '''
@@ -456,7 +488,7 @@ def build_meta_files():
         sm.append(f'  <url><loc>{SITE}{url_for(p["path"])}</loc><lastmod>{TODAY}</lastmod><priority>{pr}</priority></url>')
     sm.append("</urlset>")
     open(os.path.join(OUT, "sitemap-pages.xml"), "w", encoding="utf-8", newline="\n").write("\n".join(sm) + "\n")
-    idx = f'<?xml version="1.0" encoding="UTF-8"?>\n<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n  <sitemap><loc>{SITE}/sitemap-pages.xml</loc></sitemap>\n  <sitemap><loc>{SITE}/insights/sitemap-insights.xml</loc></sitemap>\n</sitemapindex>\n'
+    idx = f'<?xml version="1.0" encoding="UTF-8"?>\n<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n  <sitemap><loc>{SITE}/sitemap-pages.xml</loc></sitemap>\n  <sitemap><loc>{SITE}/insights/sitemap-insights.xml</loc></sitemap>\n  <sitemap><loc>{SITE}/patent-showcase/sitemap-patents.xml</loc></sitemap>\n</sitemapindex>\n'
     open(os.path.join(OUT, "sitemap.xml"), "w", encoding="utf-8", newline="\n").write(idx)
     open(os.path.join(OUT, "robots.txt"), "w", newline="\n").write(f"User-agent: *\nAllow: /\nDisallow: /login\nDisallow: /admin\n\nSitemap: {SITE}/sitemap.xml\n")
     index = [{"url": url_for(p["path"]), "title": p["title"], "desc": p["desc"], "text": p["text"]} for p in PAGES if p["path"] not in ("privacy", "terms")]
@@ -512,6 +544,7 @@ def main():
         detail_page("area", a, AREAS)
     build_faq()
     build_insights()
+    build_showcase()
     build_quiz()
     build_book()
     build_legal()

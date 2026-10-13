@@ -71,6 +71,9 @@
     });
   }
 
+  // Shared with the patent showcase editor.
+  if (window.ADM) { window.ADM.uploadFile = uploadFile; }
+
   function edit(id) {
     pane.textContent = '';
     var load = id ? A().call('GET', '/cpi-admin/articles/' + id) : Promise.resolve({ title: '', slug: '', excerpt: '', cover_image: '', cover_alt: '', body_html: '', meta_title: '', meta_description: '', author: 'CanPatentIt', status: 'draft' });

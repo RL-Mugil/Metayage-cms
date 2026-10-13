@@ -510,7 +510,36 @@ def book():
     return a
 
 
+def patent_showcase():
+    """Patent drawing sheets (block diagrams) with domain and country tags."""
+    a = Art()
+    sheets = ((720, 190, -7), (880, 160, 0), (1040, 190, 8))
+    for k, (ox, oy, ang) in enumerate(sheets):
+        c, sn = math.cos(math.radians(ang)), math.sin(math.radians(ang))
+
+        def P(x, y, ox=ox, oy=oy, c=c, sn=sn):
+            return (ox + x * c - y * sn, oy + x * sn + y * c)
+
+        a.poly([P(0, 0), P(210, 0), P(210, 300), P(0, 300)], CYAN if k != 1 else GOLD, 2.4, 235, fill=(235, 246, 255, 26))
+        for r in range(3):
+            for col in range(2):
+                x0, y0 = 24 + col * 92, 26 + r * 74
+                a.poly([P(x0, y0), P(x0 + 70, y0), P(x0 + 70, y0 + 44), P(x0, y0 + 44)], BLUE, 1.6, 220)
+        a.line(P(94, 48), P(114, 48), CYAN, 1.5, 200)
+        a.line(P(94, 122), P(114, 122), CYAN, 1.5, 200)
+        a.line(P(60, 70), P(60, 100), CYAN, 1.5, 200)
+        a.line(P(152, 70), P(152, 100), CYAN, 1.5, 200)
+        a.line(P(105, 262), P(160, 262), CYAN, 1.4, 140)
+    for label, pos, col in (("AI", (700, 520), CYAN), ("USA", (810, 540), GOLD), ("INDIA", (940, 520), GREEN), ("CRYPTO", (1070, 540), CYAN)):
+        a.rect(pos[0] - 46, pos[1] - 18, pos[0] + 46, pos[1] + 18, col, 2, 230, fill=(12, 36, 56, 160), radius=10)
+        a.text(pos, label, col, 13, 255)
+    a.circle((1230, 300), 70, CYAN, 4, 230, fill=(12, 36, 56, 90))
+    a.line((1280, 350), (1330, 400), CYAN, 9, 235)
+    return a
+
+
 JOBS = {
+    "patent-showcase": patent_showcase,
     "about": about, "services": services_overview, "faq": faq, "insights": insights,
     "patentability-check": quiz, "book": book,
     "ai-machine-learning": ai, "semiconductors-quantum": semis, "medtech-biotechnology": medtech,

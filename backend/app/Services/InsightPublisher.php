@@ -4,7 +4,9 @@ namespace App\Services;
 
 use App\Models\CpiArticle;
 use App\Models\CpiFaq;
+use App\Models\CpiPatent;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Str;
 
 /**
  * Publishes admin-written articles as static HTML on canpatentit.com so they are fast and indexable.
@@ -101,6 +103,10 @@ class InsightPublisher
         foreach (array_keys(self::PAGE_FAQS) as $slug) {
             $this->publishPageFaq($slug);
         }
+        foreach (CpiPatent::where('status', 'published')->get() as $patent) {
+            $this->writePatentPage($patent);
+        }
+        $this->rebuildPatents();
         $articles = CpiArticle::where('status', 'published')->get();
         foreach ($articles as $a) {
             File::ensureDirectoryExists(self::sitePath().'/insights');
@@ -109,6 +115,88 @@ class InsightPublisher
         $this->rebuild();
 
         return $articles->count();
+    }
+
+    // ---- Patent showcase ----
+
+    public function publishPatent(CpiPatent $p): void
+    {
+        $this->writePatentPage($p);
+        $this->rebuildPatents();
+    }
+
+    public function unpublishPatent(CpiPatent $p): void
+    {
+        $file = self::sitePath().'/patent-showcase/'.$p->slug.'.html';
+        if (File::exists($file)) {
+            File::delete($file);
+        }
+        $this->rebuildPatents();
+    }
+
+    /** Rewrites the list JSON (filters, grid and recommendations read it) and the patent sitemap. */
+    public function rebuildPatents(): void
+    {
+        $dir = self::sitePath().'/patent-showcase';
+        File::ensureDirectoryExists($dir);
+        $rows = CpiPatent::where('status', 'published')->orderByDesc('published_at')->orderByDesc('id')->get();
+
+        File::put($dir.'/index.json', json_encode($rows->map(fn ($r) => [
+            'slug' => $r->slug, 'id' => $r->patent_number, 'title' => $r->title, 'domain' => $r->domain, 'country' => $r->country,
+            'image' => $r->image, 'image_alt' => $r->image_alt ?: $r->title,
+        ])->values(), JSON_UNESCAPED_UNICODE));
+
+        $xml = '<?xml version="1.0" encoding="UTF-8"?>'."\n".'<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'."\n";
+        foreach ($rows as $r) {
+            $xml .= '  <url><loc>https://canpatentit.com/patent-showcase/'.e($r->slug).'</loc><lastmod>'.($r->updated_at ?? now())->format('Y-m-d').'</lastmod></url>'."\n";
+        }
+        File::put($dir.'/sitemap-patents.xml', $xml.'</urlset>'."\n");
+    }
+
+    private function writePatentPage(CpiPatent $p): void
+    {
+        $dir = self::sitePath().'/patent-showcase';
+        File::ensureDirectoryExists($dir);
+        File::put($dir.'/'.$p->slug.'.html', $this->renderPatent($p));
+    }
+
+    public function renderPatent(CpiPatent $p): string
+    {
+        $shell = File::get(resource_path('cpi/patent-shell.html'));
+        $url = 'https://canpatentit.com/patent-showcase/'.$p->slug;
+        $desc = Str::limit(trim(preg_replace('/\s+/', ' ', $p->abstract)), 190, '…');
+        $paragraphs = collect(preg_split('/\n{2,}/', trim($p->abstract)))->filter()->map(fn ($t) => '<p>'.nl2br(e(trim($t)), false).'</p>')->implode('');
+        $figure = $p->image
+            ? '<figure class="cpi-patent-figure"><img src="'.e($p->image).'" alt="'.e($p->image_alt ?: $p->title).'"></figure>'
+            : '';
+
+        $body = '<article class="cpi-patent" data-slug="'.e($p->slug).'" data-domain="'.e($p->domain).'" data-country="'.e($p->country).'">'
+            .'<nav class="cpi-crumbs" aria-label="Breadcrumb"><a href="/patent-showcase">Patent showcase</a></nav>'
+            .'<div class="cpi-patent-head"><dl class="cpi-patent-meta">'
+            .'<div><dt>Patent ID</dt><dd>'.e($p->patent_number).'</dd></div>'
+            .'<div><dt>Domain</dt><dd><a href="/patent-showcase?domain='.rawurlencode($p->domain).'">'.e($p->domain).'</a></dd></div>'
+            .'<div><dt>Country</dt><dd><a href="/patent-showcase?country='.rawurlencode($p->country).'">'.e($p->country).'</a></dd></div>'
+            .'</dl><h1>'.e($p->title).'</h1></div>'
+            .$figure
+            .'<section class="cpi-patent-abstract"><h2>Abstract</h2><div class="cpi-prose">'.$paragraphs.'</div></section>'
+            .'<p class="cpi-fine">Shown as an example of the work Metayage and CanPatentIt do. Not legal advice, and no outcome is guaranteed for any other invention.</p>'
+            .'<section class="cpi-patent-recs" id="recs" hidden><h2>Recommended patents</h2><div class="cpi-post-grid cpi-rec-grid" id="rec-grid"></div></section>'
+            .'<p><a class="cpi-button-lime" href="/book">Book a consultation</a></p></article>';
+
+        $ld = str_replace('</', '<\/', (string) json_encode([
+            '@context' => 'https://schema.org', '@type' => 'CreativeWork', 'name' => $p->title, 'identifier' => $p->patent_number,
+            'description' => $desc, 'about' => $p->domain, 'url' => $url,
+            'image' => $p->image ? 'https://canpatentit.com'.$p->image : 'https://canpatentit.com/assets/og-image.png',
+        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+
+        return strtr($shell, [
+            '@@TITLE@@' => e($p->title),
+            '@@DESC@@' => e($desc),
+            '@@SLUG@@' => e($p->slug),
+            '@@OGIMAGE@@' => $p->image ? 'https://canpatentit.com'.e($p->image) : 'https://canpatentit.com/assets/og-image.png',
+            '<!--@@HEAD@@-->' => '<script type="application/ld+json">'.$ld.'</script>',
+            '@@BODY@@' => $body,
+        ]);
     }
 
     /** File names of every uploaded image an article uses (cover and inline). */
@@ -124,7 +212,7 @@ class InsightPublisher
     }
 
     /** Deletes the given images unless some other article still uses them. Returns how many were removed. */
-    public function releaseImages(array $names, ?int $exceptArticleId = null): int
+    public function releaseImages(array $names, ?int $exceptArticleId = null, ?int $exceptPatentId = null): int
     {
         $names = array_values(array_unique(array_filter($names)));
         if (! $names) {
@@ -136,6 +224,11 @@ class InsightPublisher
                 foreach ($this->imageNames($other) as $n) {
                     $inUse[$n] = true;
                 }
+            });
+        // Patent showcase figures share the same image folder.
+        CpiPatent::query()->when($exceptPatentId, fn ($q) => $q->where('id', '!=', $exceptPatentId))->whereNotNull('image')->pluck('image')
+            ->each(function ($img) use (&$inUse) {
+                $inUse[basename($img)] = true;
             });
 
         $removed = 0;
@@ -165,6 +258,9 @@ class InsightPublisher
             foreach ($this->imageNames($a) as $n) {
                 $used[$n] = true;
             }
+        });
+        CpiPatent::query()->whereNotNull('image')->pluck('image')->each(function ($img) use (&$used) {
+            $used[basename($img)] = true;
         });
 
         $removed = 0;
