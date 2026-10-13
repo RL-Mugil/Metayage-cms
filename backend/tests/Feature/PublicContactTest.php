@@ -28,6 +28,24 @@ class PublicContactTest extends TestCase
         $this->postJson('/api/public/contact', $this->valid)->assertCreated();
     }
 
+    public function test_canpatentit_assessment_is_accepted_and_unknown_source_rejected(): void
+    {
+        config(['mail.default' => 'array']);
+        $payload = array_merge($this->valid, ['source' => 'canpatentit', 'stage' => 'Pre-seed / seed', 'domain' => 'AI & machine learning']);
+
+        $this->postJson('/api/public/contact', $payload)->assertCreated();
+        $this->postJson('/api/public/contact', array_merge($payload, ['source' => 'other']))
+            ->assertStatus(422)->assertJsonValidationErrors(['source']);
+    }
+
+    public function test_cors_allows_canpatentit_origin(): void
+    {
+        $this->call('OPTIONS', '/api/public/contact', [], [], [], [
+            'HTTP_ORIGIN' => 'https://canpatentit.com',
+            'HTTP_ACCESS_CONTROL_REQUEST_METHOD' => 'POST',
+        ])->assertHeader('Access-Control-Allow-Origin', 'https://canpatentit.com');
+    }
+
     public function test_invalid_payload_is_rejected(): void
     {
         $this->postJson('/api/public/contact', ['name' => 'A', 'email' => 'nope', 'message' => 'short'])
@@ -47,11 +65,20 @@ class PublicContactTest extends TestCase
             ->assertOk();
     }
 
-    public function test_missing_recipient_returns_503(): void
+    public function test_missing_recipient_still_stores_enquiry_and_flags_mail_failure(): void
     {
         config(['services.contact.recipient' => null]);
 
-        $this->postJson('/api/public/contact', $this->valid)->assertStatus(503);
+        $this->postJson('/api/public/contact', $this->valid)->assertCreated();
+        $this->assertDatabaseHas('site_enquiries', ['email' => 'asha@example.com', 'mail_status' => 'failed']);
+    }
+
+    public function test_successful_send_is_recorded_as_sent(): void
+    {
+        config(['mail.default' => 'array']);
+
+        $this->postJson('/api/public/contact', array_merge($this->valid, ['source' => 'canpatentit']))->assertCreated();
+        $this->assertDatabaseHas('site_enquiries', ['source' => 'canpatentit', 'mail_status' => 'sent']);
     }
 
     public function test_turnstile_failure_is_rejected_when_configured(): void

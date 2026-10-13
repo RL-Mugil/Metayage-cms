@@ -32,6 +32,31 @@ use App\Http\Controllers\PatentInvoiceController;
 Route::post('/webhooks/zoho/deletions', [\App\Http\Controllers\ZohoDeletionWebhookController::class, 'receive'])->middleware('throttle:120,1');
 // Public marketing-site enquiry form (CORS-limited to myipstrategy.com, see config/cors.php).
 Route::post('/public/contact', [\App\Http\Controllers\PublicContactController::class, 'store'])->middleware(['throttle:public-contact', 'throttle:5,1']);
+Route::prefix('public/cpi')->group(function () {
+    Route::get('/days', [\App\Http\Controllers\CpiBookingController::class, 'days'])->middleware('throttle:60,1');
+    Route::get('/slots', [\App\Http\Controllers\CpiBookingController::class, 'slots'])->middleware('throttle:60,1');
+    Route::post('/book', [\App\Http\Controllers\CpiBookingController::class, 'book'])->middleware(['throttle:public-contact', 'throttle:5,1']);
+    Route::get('/cancel/{id}/{token}', [\App\Http\Controllers\CpiBookingController::class, 'cancelPage'])->whereNumber('id')->middleware('throttle:30,1');
+    Route::post('/cancel/{id}/{token}', [\App\Http\Controllers\CpiBookingController::class, 'cancel'])->whereNumber('id')->middleware('throttle:10,1');
+});
+Route::post('/cpi-admin/login', [\App\Http\Controllers\CpiAdminController::class, 'login'])->middleware('throttle:5,1');
+Route::middleware(['auth:sanctum', \Laravel\Sanctum\Http\Middleware\CheckAbilities::class.':cpi-admin', 'throttle:60,1'])->prefix('cpi-admin')->group(function () {
+    Route::post('/logout', [\App\Http\Controllers\CpiAdminController::class, 'logout']);
+    Route::get('/overview', [\App\Http\Controllers\CpiAdminController::class, 'overview']);
+    Route::get('/enquiries', [\App\Http\Controllers\CpiAdminController::class, 'index']);
+    Route::patch('/enquiries/{id}', [\App\Http\Controllers\CpiAdminController::class, 'update'])->whereNumber('id');
+    Route::get('/enquiries/export', [\App\Http\Controllers\CpiAdminController::class, 'export']);
+    Route::get('/articles', [\App\Http\Controllers\CpiArticleController::class, 'index']);
+    Route::post('/articles', [\App\Http\Controllers\CpiArticleController::class, 'store']);
+    Route::get('/articles/{id}', [\App\Http\Controllers\CpiArticleController::class, 'show'])->whereNumber('id');
+    Route::put('/articles/{id}', [\App\Http\Controllers\CpiArticleController::class, 'update'])->whereNumber('id');
+    Route::post('/articles/{id}/publish', [\App\Http\Controllers\CpiArticleController::class, 'publish'])->whereNumber('id');
+    Route::post('/articles/{id}/unpublish', [\App\Http\Controllers\CpiArticleController::class, 'unpublish'])->whereNumber('id');
+    Route::delete('/articles/{id}', [\App\Http\Controllers\CpiArticleController::class, 'destroy'])->whereNumber('id');
+    Route::get('/bookings', [\App\Http\Controllers\CpiBookingController::class, 'adminIndex']);
+    Route::post('/bookings/{id}/cancel', [\App\Http\Controllers\CpiBookingController::class, 'adminCancel'])->whereNumber('id');
+    Route::put('/availability', [\App\Http\Controllers\CpiBookingController::class, 'saveAvailability']);
+});
 Route::get('/public/pages/{slug}', [\App\Http\Controllers\SiteAdminController::class, 'publicPage'])->middleware('throttle:60,1');
 Route::post('/webhooks/{slug}', [\App\Http\Controllers\WebhookController::class, 'receive'])->middleware('throttle:120,1');
 

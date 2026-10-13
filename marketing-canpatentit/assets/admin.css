@@ -1,0 +1,56 @@
+.adm { background: oklch(0.97 0.006 92); color: var(--cpi-ink); font-family: "Segoe UI", system-ui, -apple-system, Arial, sans-serif; font-size: 14px; min-height: 100vh; }
+.adm a { color: var(--cpi-blue); }
+.adm-muted { color: color-mix(in oklab, var(--cpi-ink) 62%, transparent); font-size: 12px; }
+.adm-error { color: oklch(0.5 0.2 27); min-height: 1.2em; font-size: 13px; }
+.adm-login { max-width: 380px; margin: 0 auto; padding: 72px 20px; display: grid; gap: 14px; }
+.adm-login h1 { font-size: 26px; }
+.adm-login form { display: grid; gap: 14px; }
+.adm label { display: grid; gap: 6px; font-weight: 600; font-size: 12px; }
+.adm input, .adm select { height: 42px; padding: 0 12px; border: 1px solid color-mix(in oklab, var(--cpi-ink) 25%, transparent); background: #fff; font: inherit; border-radius: 2px; }
+.adm-bar { display: flex; align-items: center; gap: 14px; padding: 12px 24px; background: #fff; border-bottom: 1px solid color-mix(in oklab, var(--cpi-ink) 14%, transparent); }
+.adm-bar img { margin-right: auto; height: 34px; width: auto; }
+.adm-btn { min-height: 34px; padding: 0 12px; border: 1px solid color-mix(in oklab, var(--cpi-ink) 28%, transparent); background: #fff; cursor: pointer; font: inherit; font-size: 12px; border-radius: 2px; }
+.adm-btn:hover { border-color: var(--cpi-blue); color: var(--cpi-blue); }
+.adm-wrap { max-width: 1200px; margin: 0 auto; padding: 24px 20px 64px; display: grid; gap: 20px; }
+.adm-wrap h1 { font-size: 26px; }
+.adm-wrap h2 { font-size: 15px; }
+.adm-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+.adm-card { background: #fff; border: 1px solid color-mix(in oklab, var(--cpi-ink) 12%, transparent); padding: 16px; display: grid; gap: 4px; }
+.adm-card-n { font-size: 30px; font-weight: 600; }
+.adm-card-l { font-size: 12px; color: color-mix(in oklab, var(--cpi-ink) 62%, transparent); }
+.adm-card.hot { border-color: var(--cpi-blue); }
+.adm-card.bad { border-color: oklch(0.55 0.22 27); }
+.adm-panel { background: #fff; border: 1px solid color-mix(in oklab, var(--cpi-ink) 12%, transparent); padding: 18px; display: grid; gap: 12px; }
+.adm-chart { display: flex; align-items: flex-end; gap: 6px; height: 140px; }
+.adm-bar-col { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; height: 100%; gap: 3px; min-width: 0; }
+.adm-bar-fill { width: 100%; background: var(--cpi-blue); min-height: 2px; }
+.adm-bar-n, .adm-bar-d { font-size: 10px; color: color-mix(in oklab, var(--cpi-ink) 60%, transparent); }
+.adm-health { list-style: none; padding: 0; display: grid; gap: 8px; }
+.adm-health li b { display: inline-block; min-width: 54px; padding: 2px 6px; font-size: 10px; text-align: center; border-radius: 2px; color: #fff; background: oklch(0.5 0.14 150); }
+.adm-health li.warn b { background: oklch(0.55 0.2 40); }
+.adm-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.adm-filters h2 { margin-right: auto; }
+.adm-filters select { height: 34px; font-size: 12px; }
+.adm-table-wrap { overflow-x: auto; }
+.adm-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.adm-table th { text-align: left; font-size: 11px; text-transform: uppercase; color: color-mix(in oklab, var(--cpi-ink) 60%, transparent); padding: 8px; border-bottom: 1px solid color-mix(in oklab, var(--cpi-ink) 18%, transparent); }
+.adm-table td { padding: 10px 8px; vertical-align: top; border-bottom: 1px solid color-mix(in oklab, var(--cpi-ink) 10%, transparent); }
+.adm-table .nowrap { white-space: nowrap; }
+.adm-msg { max-width: 420px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.adm-pill { display: inline-block; padding: 2px 8px; font-size: 11px; border: 1px solid color-mix(in oklab, var(--cpi-ink) 25%, transparent); border-radius: 10px; margin-bottom: 4px; }
+.adm-pill.ok { border-color: oklch(0.5 0.14 150); color: oklch(0.4 0.14 150); }
+.adm-pill.warn { border-color: oklch(0.55 0.22 27); color: oklch(0.5 0.2 27); }
+.adm-pill.hot { border-color: var(--cpi-blue); color: var(--cpi-blue); }
+.adm-tabs { display: flex; gap: 6px; flex-wrap: wrap; border-bottom: 1px solid color-mix(in oklab, var(--cpi-ink) 14%, transparent); }
+.adm-tab { padding: 10px 16px; border: 0; border-bottom: 2px solid transparent; background: transparent; cursor: pointer; font: inherit; font-size: 13px; color: color-mix(in oklab, var(--cpi-ink) 70%, transparent); }
+.adm-tab.on { border-bottom-color: var(--cpi-blue); color: var(--cpi-blue); font-weight: 600; }
+[data-pane][hidden] { display: none; }
+.adm-form { display: grid; gap: 14px; max-width: 760px; }
+.adm-form textarea { padding: 10px 12px; border: 1px solid color-mix(in oklab, var(--cpi-ink) 25%, transparent); background: #fff; font: inherit; border-radius: 2px; }
+.adm-tools { display: flex; flex-wrap: wrap; gap: 6px; }
+.adm-editor { min-height: 260px; padding: 14px; border: 1px solid color-mix(in oklab, var(--cpi-ink) 25%, transparent); background: #fff; line-height: 1.7; font-size: 15px; }
+.adm-editor:focus { outline: 2px solid var(--cpi-blue); }
+.adm-rules { display: grid; gap: 8px; }
+.adm-rule { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.adm-cfg { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+a.adm-btn { display: inline-flex; align-items: center; text-decoration: none; color: inherit; }

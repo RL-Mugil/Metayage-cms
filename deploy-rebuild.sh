@@ -20,6 +20,8 @@ tar --exclude='backend/vendor' \
 
 # Public marketing site (static) for myipstrategy.com
 tar -czf /tmp/mypl-marketing.tar.gz -C marketing .
+# Second marketing site (static) for canpatentit.com, independent of the portal
+tar -czf /tmp/canpatentit.tar.gz -C marketing-canpatentit .
 
 echo "=== Uploading to server ==="
 scp -i $KEY /tmp/mypl-cms-rebuild.tar.gz $SERVER:/tmp/mypl-cms-rebuild.tar.gz
@@ -28,6 +30,9 @@ scp -i $KEY nginx-security-headers.conf $SERVER:/tmp/nginx-security-headers-new.
 scp -i $KEY nginx-marketing.conf $SERVER:/tmp/nginx-marketing-new.conf
 scp -i $KEY nginx-marketing-headers.conf $SERVER:/tmp/nginx-marketing-headers-new.conf
 scp -i $KEY /tmp/mypl-marketing.tar.gz $SERVER:/tmp/mypl-marketing.tar.gz
+scp -i $KEY /tmp/canpatentit.tar.gz $SERVER:/tmp/canpatentit.tar.gz
+scp -i $KEY nginx-canpatentit.conf $SERVER:/tmp/nginx-canpatentit-new.conf
+scp -i $KEY nginx-canpatentit-headers.conf $SERVER:/tmp/nginx-canpatentit-headers-new.conf
 
 echo "=== Deploying on server ==="
 # CUTOVER=1 also moves the app to login.myipstrategy.com and publishes the marketing nginx
@@ -46,6 +51,20 @@ echo "--- Publishing marketing site ---"
 mkdir -p /var/www/mypl-marketing
 tar -xzf /tmp/mypl-marketing.tar.gz -C /var/www/mypl-marketing --overwrite
 chown -R www-data:www-data /var/www/mypl-marketing
+
+echo "--- Publishing canpatentit.com ---"
+mkdir -p /var/www/canpatentit
+tar -xzf /tmp/canpatentit.tar.gz -C /var/www/canpatentit --overwrite
+chown -R www-data:www-data /var/www/canpatentit
+# The nginx site is installed only once its certificate exists, so this can never break the portal.
+if [ -f /etc/letsencrypt/live/canpatentit.com/fullchain.pem ]; then
+    cp /tmp/nginx-canpatentit-headers-new.conf /etc/nginx/snippets/canpatentit-security-headers.conf
+    cp /tmp/nginx-canpatentit-new.conf /etc/nginx/sites-available/canpatentit
+    ln -sf /etc/nginx/sites-available/canpatentit /etc/nginx/sites-enabled/canpatentit
+    if nginx -t; then systemctl reload nginx; else rm -f /etc/nginx/sites-enabled/canpatentit; echo "WARNING: canpatentit nginx config rejected; site disabled"; fi
+else
+    echo "canpatentit.com certificate not issued yet: nginx site not installed (files are staged)."
+fi
 
 echo "--- Updating Nginx config ---"
 if [ "$CUTOVER" = "1" ]; then

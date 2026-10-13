@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\SiteEnquiry;
 use App\Services\TurnstileVerificationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -21,6 +22,11 @@ class PublicContactController extends Controller
             'email'        => ['required', 'email:rfc', 'max:150'],
             'organization' => ['nullable', 'string', 'max:150'],
             'message'      => ['required', 'string', 'min:10', 'max:2000'],
+            'stage'        => ['nullable', 'string', 'max:60'],
+            'domain'       => ['nullable', 'string', 'max:80'],
+            'source'       => ['nullable', 'string', 'in:myipstrategy,canpatentit,canpatentit-quiz'],
+            'answers'      => ['nullable', 'array', 'max:12'],
+            'answers.*'    => ['nullable', 'string', 'max:60'],
             'website'      => ['nullable', 'string', 'max:255'],
             'elapsed_ms'   => ['nullable', 'integer', 'min:0'],
         ]);
@@ -36,33 +42,59 @@ class PublicContactController extends Controller
             return response()->json(['message' => 'Verification failed. Please try again.'], 422);
         }
 
-        $recipient = config('services.contact.recipient');
-        if (! $recipient) {
-            Log::error('Public contact form submitted but CONTACT_RECIPIENT is not configured.');
-            return response()->json(['message' => 'Contact is temporarily unavailable.'], 503);
-        }
-
         // Strip CR/LF so user input can never inject mail headers.
         $clean = fn (?string $v): string => trim(preg_replace('/[\r\n]+/', ' ', (string) $v));
         $name = $clean($data['name']);
         $org = $clean($data['organization'] ?? '');
 
-        $body = "New website enquiry\n\n"
+        $stage = $clean($data['stage'] ?? '');
+        $domain = $clean($data['domain'] ?? '');
+        $isQuiz = ($data['source'] ?? '') === 'canpatentit-quiz';
+        $isCpi = $isQuiz || ($data['source'] ?? '') === 'canpatentit';
+
+        $body = ($isQuiz ? 'New CanPatentIt self-check result' : ($isCpi ? 'New CanPatentIt tech assessment' : 'New website enquiry'))."\n\n"
             ."Name: {$name}\n"
             ."Email: {$data['email']}\n"
             .'Organization: '.($org !== '' ? $org : '-')."\n"
+            .($stage !== '' ? "Company stage: {$stage}\n" : '')
+            .($domain !== '' ? "Technology area: {$domain}\n" : '')
             .'IP: '.$request->ip()."\n\n"
             .$data['message']."\n";
 
+        // Keep every enquiry in the dashboard even if email delivery is down or unconfigured.
+        $enquiry = SiteEnquiry::create([
+            'source' => $isCpi ? 'canpatentit' : 'myipstrategy',
+            'type' => $isQuiz ? 'quiz' : 'enquiry',
+            'payload' => $isQuiz ? ($data['answers'] ?? null) : null,
+            'name' => $name,
+            'email' => $data['email'],
+            'organization' => $org !== '' ? $org : null,
+            'stage' => $stage !== '' ? $stage : null,
+            'domain' => $domain !== '' ? $domain : null,
+            'message' => $data['message'],
+            'ip_address' => $request->ip(),
+            'user_agent' => mb_substr((string) $request->userAgent(), 0, 255),
+        ]);
+
+        $recipient = config('services.contact.recipient');
         try {
-            Mail::raw($body, function ($m) use ($recipient, $data, $name) {
+            if (! $recipient) {
+                throw new \RuntimeException('CONTACT_RECIPIENT is not configured.');
+            }
+            $subject = $isQuiz
+                ? 'CanPatentIt self-check — '.$name
+                : ($isCpi
+                    ? 'CanPatentIt tech assessment — '.($org !== '' ? $org : $name)
+                    : 'Website enquiry from '.$name);
+            Mail::raw($body, function ($m) use ($recipient, $data, $name, $subject) {
                 $m->to($recipient)
                     ->replyTo($data['email'], $name)
-                    ->subject('Website enquiry from '.$name);
+                    ->subject($subject);
             });
+            $enquiry->update(['mail_status' => 'sent']);
         } catch (\Throwable $e) {
             Log::error('Public contact mail failed', ['error' => $e->getMessage()]);
-            return response()->json(['message' => 'We could not send your message. Please try again shortly.'], 503);
+            $enquiry->update(['mail_status' => 'failed', 'mail_error' => mb_substr($e->getMessage(), 0, 500)]);
         }
 
         return response()->json(['message' => 'Thank you. We will be in touch shortly.'], 201);

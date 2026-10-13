@@ -70,6 +70,11 @@ return [
         'export_rate'    => (float) env('GST_EXPORT_RATE',   0),    // % — zero-rated exports
     ],
 
+    // canpatentit.com static site root (written by InsightPublisher).
+    'cpi' => [
+        'site_path' => env('CPI_SITE_PATH', '/var/www/canpatentit'),
+    ],
+
     // Error monitoring webhook (point at a self-hosted n8n workflow, which
     // can forward to GlitchTip / email / Slack). Empty = monitoring disabled.
     'monitoring' => [

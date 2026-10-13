@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign in | CanPatentIt</title>
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="api-base" content="https://login.myipstrategy.com/api">
+  <link rel="icon" type="image/png" href="/assets/favicon.png">
+  <link rel="stylesheet" href="/assets/site.css">
+  <link rel="stylesheet" href="/assets/admin.css">
+</head>
+<body class="adm">
+  <main class="adm-login">
+    <img src="/assets/logo.png" alt="CanPatentIt" width="192" height="44">
+    <h1>Admin sign in</h1>
+    <p class="adm-muted">System administrators only. Use your IPFlow portal email and password.</p>
+    <form id="login-form" novalidate>
+      <label for="email">Email<input id="email" name="email" type="email" autocomplete="username" required></label>
+      <label for="password">Password<input id="password" name="password" type="password" autocomplete="current-password" required></label>
+      <p class="adm-error" id="login-error" role="alert"></p>
+      <button class="cpi-button-lime" id="login-submit" type="submit">Sign in</button>
+    </form>
+    <p class="adm-muted"><a href="/">Back to site</a></p>
+  </main>
+  <script src="/assets/admin-login.js" defer></script>
+</body>
+</html>

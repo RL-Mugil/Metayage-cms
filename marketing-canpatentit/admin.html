@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dashboard | CanPatentIt</title>
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="api-base" content="https://login.myipstrategy.com/api">
+  <link rel="icon" type="image/png" href="/assets/favicon.png">
+  <link rel="stylesheet" href="/assets/site.css">
+  <link rel="stylesheet" href="/assets/admin.css">
+</head>
+<body class="adm">
+  <header class="adm-bar">
+    <img src="/assets/logo.png" alt="CanPatentIt" width="150" height="34">
+    <span class="adm-muted" id="who"></span>
+    <button class="adm-btn" id="export" type="button">Export CSV</button>
+    <button class="adm-btn" id="refresh" type="button">Refresh</button>
+    <button class="adm-btn" id="logout" type="button">Sign out</button>
+  </header>
+  <main class="adm-wrap">
+    <h1>Website monitor</h1>
+    <div class="adm-tabs" role="tablist"><button class="adm-tab on" role="tab" data-tab="overview" type="button">Overview &amp; enquiries</button><button class="adm-tab" role="tab" data-tab="insights" type="button">Insights</button><button class="adm-tab" role="tab" data-tab="bookings" type="button">Bookings &amp; availability</button></div>
+    <p class="adm-error" id="page-error" role="alert"></p>
+
+    <div data-pane="overview">
+    <section class="adm-cards" id="cards" aria-label="Totals"></section>
+
+    <section class="adm-panel">
+      <h2>Enquiries, last 14 days</h2>
+      <div class="adm-chart" id="chart" role="img" aria-label="Enquiries per day for the last 14 days"></div>
+    </section>
+
+    <section class="adm-panel">
+      <h2>Delivery health</h2>
+      <ul class="adm-health" id="health"></ul>
+    </section>
+
+    <section class="adm-panel">
+      <div class="adm-filters">
+        <h2>Enquiries</h2>
+        <select id="f-source" aria-label="Site"><option value="">All sites</option><option value="canpatentit">CanPatentIt</option><option value="myipstrategy">MyIPStrategy</option></select>
+        <select id="f-status" aria-label="Status"><option value="">Any status</option><option value="new">New</option><option value="handled">Handled</option></select>
+        <select id="f-type" aria-label="Type"><option value="">Any type</option><option value="enquiry">Enquiries</option><option value="quiz">Self-checks</option><option value="booking">Bookings</option></select>
+        <select id="f-mail" aria-label="Email delivery"><option value="">Any delivery</option><option value="failed">Email failed</option></select>
+      </div>
+      <div class="adm-table-wrap">
+        <table class="adm-table">
+          <thead><tr><th>Received (IST)</th><th>Site</th><th>From</th><th>Details</th><th>Email</th><th>Status</th></tr></thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+      <p class="adm-muted" id="empty" hidden>No enquiries match.</p>
+    </section>
+    </div>
+    <div data-pane="insights" hidden><section class="adm-panel" id="articles-pane"></section></div>
+    <div data-pane="bookings" hidden><section class="adm-panel" id="bookings-pane"></section></div>
+  </main>
+  <script src="/assets/admin.js" defer></script>
+  <script src="/assets/admin-articles.js" defer></script>
+  <script src="/assets/admin-bookings.js" defer></script>
+</body>
+</html>
