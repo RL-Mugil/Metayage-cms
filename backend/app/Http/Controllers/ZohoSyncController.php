@@ -26,6 +26,7 @@ class ZohoSyncController extends Controller
                 'failed' => \Illuminate\Support\Facades\DB::table('zoho_webhook_events')->where('scope', $zoho->scope())->whereNull('processed_at')->where('attempts', '>=', 5)->count(),
                 'last_received_at' => \Illuminate\Support\Facades\DB::table('zoho_webhook_events')->where('scope', $zoho->scope())->max('received_at'),
             ],
+            'deletion_checks' => app(\App\Services\ZohoDeletionChecks::class)->status($zoho->scope()),
             'last_run' => \Illuminate\Support\Facades\DB::table('integration_logs')
                 ->where('slug', 'zoho')->where('event_type', 'sync')->orderByDesc('id')
                 ->first(['status', 'summary', 'created_at']),

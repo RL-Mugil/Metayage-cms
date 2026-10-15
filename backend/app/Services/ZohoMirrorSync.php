@@ -88,11 +88,16 @@ class ZohoMirrorSync
                         });
                     }
                 }
+                // A deleted record never appears in a list, so each invoice and quote is read from Zoho once a
+                // day: the oldest-checked first, with a priority batch ahead of the lists and whatever allowance
+                // is left after them. A definitive "does not exist" answer removes the record from the portal.
+                $this->checkDeletions(ZohoDeletionChecks::PRIORITY_CHECKS, true);
                 $this->scanCycle();
                 // Emergency and temporary add-on continuations both prioritize
                 // invoice/quote hydration so the financial mirror catches up
                 // before spending the remaining reserve on secondary resources.
                 $this->hydratePending($emergency || $addon);
+                $this->checkDeletions(PHP_INT_MAX, false);
                 // Finish the cycle only after details/PDFs too. A paused hydration run
                 // must resume that backlog before starting another scan from page one.
                 $this->rebuildOpeningBalanceMirror();
@@ -137,6 +142,125 @@ class ZohoMirrorSync
             $this->zoho->emergency = false;
             $this->zoho->addon = false;
             $lock->release();
+        }
+    }
+
+    /** Largest number of vanished records one pass will act on; more than this looks like a bad list, not deletions. */
+    public const RECONCILE_MAX_REMOVALS = 25;
+
+    /**
+     * Find invoices and quotes that were deleted in Zoho Books. A deleted record never appears in the
+     * "recently modified" poll, so without this it stayed in the portal (and in the receivables total)
+     * until the next nightly cycle. One pass reads the full invoice and estimate lists (about 7 calls),
+     * and every mirrored record that is missing from them is confirmed with a single detail read before it
+     * is removed. Only a definitive "does not exist" answer from Zoho removes anything.
+     *
+     * @return array{ok: bool, status: string, message: string, removed: int}
+     */
+    public function reconcileDeleted(): array
+    {
+        if (! $this->zoho->isConfigured()) {
+            return ['ok' => false, 'status' => 'unconfigured', 'message' => 'Zoho Books is not configured.', 'removed' => 0];
+        }
+        $scope = $this->zoho->scope();
+        $lock = Cache::lock('zoho_sync:' . $scope, 900);
+        if (! $lock->get()) {
+            return ['ok' => true, 'status' => 'busy', 'message' => 'A Zoho sync is running; reconcile skipped.', 'removed' => 0];
+        }
+        $this->zoho->background = true;
+        $this->startedAt = microtime(true);
+        $passStart = now();
+        $removed = 0;
+        try {
+            foreach (['invoices' => 'invoice', 'estimates' => 'quote'] as $resource => $type) {
+                $idField = ZohoBooksService::RESOURCES[$resource][0];
+                $seen = [];
+                $page = 1;
+                do {
+                    $this->checkDuration();
+                    $data = $this->zoho->page($resource, $page);
+                    $more = (bool) $data['page_context']['has_more_page'];
+                    if ($more && $data[$resource] === []) {
+                        throw new RuntimeException('Zoho returned an empty page with more pages indicated; nothing was removed.');
+                    }
+                    foreach ($data[$resource] as $record) {
+                        $id = (string) ($record[$idField] ?? '');
+                        if ($id === '') {
+                            throw new RuntimeException('Zoho returned a record without an ID; nothing was removed.');
+                        }
+                        $seen[$id] = true;
+                    }
+                    $page++;
+                } while ($more);
+
+                // Records written after the pass began (by the poll) are excluded: the list may predate them.
+                $mirrored = DB::table('zoho_invoices')->where('scope', $scope)->where('zoho_type', $type)
+                    ->whereNull('deleted_at')->where('synced_at', '<', $passStart)->pluck('zoho_id')->map(fn ($v) => (string) $v)->all();
+                $missing = array_values(array_filter($mirrored, fn ($id) => ! isset($seen[$id])));
+                if (count($missing) > self::RECONCILE_MAX_REMOVALS) {
+                    $message = count($missing) . " {$resource} are missing from Zoho's list; that is too many to be deletions, so none were removed.";
+                    Log::warning($message);
+                    app(OpsAlertService::class)->alert('Zoho reconcile stopped', $message, 'zoho-reconcile-' . $resource, 360);
+                    continue;
+                }
+                foreach ($missing as $id) {
+                    $this->checkDuration();
+                    // The detail read deletes the record only when Zoho says definitively that it does not exist.
+                    if ($this->readDetail($resource, $id, true, 'reconcile_missing_from_list') === null) {
+                        $removed++;
+                    }
+                }
+            }
+            if ($removed > 0) {
+                return $this->result('ok', "Zoho reconcile removed {$removed} record(s) deleted in Zoho Books.") + ['removed' => $removed];
+            }
+            return ['ok' => true, 'status' => 'ok', 'message' => 'Zoho reconcile found nothing deleted.', 'removed' => 0];
+        } catch (ZohoBudgetExhausted $e) {
+            return ['ok' => true, 'status' => 'paused', 'message' => $e->getMessage(), 'removed' => $removed];
+        } catch (Throwable $e) {
+            report($e);
+            return ['ok' => false, 'status' => 'fail', 'message' => $e->getMessage(), 'removed' => $removed];
+        } finally {
+            $this->zoho->background = false;
+            $lock->release();
+        }
+    }
+
+    /**
+     * Read the invoices and quotes that have not been checked today (see ZohoDeletionChecks), oldest first, never
+     * checked first. Each read refreshes the mirror row and stamps detail_synced_at, so the check resumes from the
+     * next unchecked record after a pause. With $mustFinish the budget running out pauses the sync (the priority
+     * batch); without it the pass just stops quietly, because it only uses what the lists left over.
+     */
+    private function checkDeletions(int $limit, bool $mustFinish): void
+    {
+        $scope = $this->zoho->scope();
+        $due = app(ZohoDeletionChecks::class)->due($scope)
+            ->orderByRaw('snapshot.detail_synced_at ASC NULLS FIRST')->orderBy('mirror.id')
+            ->limit($limit)->get(['mirror.zoho_id', 'mirror.zoho_type']);
+
+        foreach ($due as $row) {
+            $this->checkDuration();
+            $resource = $row->zoho_type === 'invoice' ? 'invoices' : 'estimates';
+            try {
+                $record = $this->readDetail($resource, (string) $row->zoho_id, true, 'api_check');
+            } catch (ZohoBudgetExhausted $e) {
+                if ($mustFinish || ! in_array($e->reason, ['automatic_daily', 'daily_budget', 'emergency_reserve', 'addon_reserve'], true)) {
+                    throw $e;
+                }
+
+                return;
+            }
+            if ($record === null) {
+                continue; // Zoho confirmed it is gone; the lifecycle already removed it from the portal
+            }
+            DB::transaction(function () use ($scope, $resource, $record, $row) {
+                $snapshot = ZohoSnapshot::where(['scope' => $scope, 'resource' => $resource, 'remote_id' => (string) $row->zoho_id])->first()
+                    ?? $this->remember($resource, $record); // legacy mirror row that has no snapshot yet
+                if ($snapshot) {
+                    $this->saveDetail($snapshot, $record);
+                }
+            });
         }
     }
 
@@ -294,13 +418,13 @@ class ZohoMirrorSync
             $this->audit($snapshot);
     }
 
-    private function readDetail(string $resource, string $id, bool $removeMissing = false): ?array
+    private function readDetail(string $resource, string $id, bool $removeMissing = false, string $source = 'manual_detail_not_found'): ?array
     {
         try {
             return $this->zoho->detail($resource, $id);
         } catch (\App\Exceptions\ZohoRecordMissing) {
             if ($removeMissing) {
-                app(ZohoRecordLifecycle::class)->delete($this->zoho->scope(), $resource, $id, 'manual_detail_not_found');
+                app(ZohoRecordLifecycle::class)->delete($this->zoho->scope(), $resource, $id, $source);
             }
             return null;
         }

@@ -13,6 +13,10 @@ return new class extends Migration
             $table->date('budget_date');
             $table->unsignedInteger('calls')->default(0);
             $table->timestamp('last_call_at', 6)->nullable();
+            // Added by 2026_10_06_000002/3, which run before this table exists on a fresh database.
+            $table->unsignedInteger('emergency_calls')->default(0);
+            $table->unsignedInteger('addon_calls')->default(0);
+            $table->unsignedInteger('addon_limit')->default(0);
         });
         Schema::create('zoho_sync_progress', function (Blueprint $table) {
             $table->id();
