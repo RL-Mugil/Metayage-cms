@@ -87,11 +87,11 @@ def footer():
     svc = "".join(f'<li><a href="/services/{s["slug"]}">{esc(s["short"])}</a></li>' for s in SERVICES)
     tech = "".join(f'<li><a href="/technology/{a["slug"]}">{esc(a["short"])}</a></li>' for a in AREAS)
     return f'''<footer class="cpi-footer cpi-footer-full">
-    <div class="cpi-footer-top"><a class="cpi-brand cpi-footer-brand" href="/" aria-label="CanPatentIt home"><img src="/assets/logo.png" alt="CanPatentIt" width="168" height="56" loading="lazy"></a><p>Protect what you’re building.<br>Make room for what’s next.</p><a class="cpi-nav-cta" href="/book">Book a consultation {icon("arrow-up-right")}</a></div>
+    <div class="cpi-footer-top"><a class="cpi-brand cpi-footer-brand" href="/" aria-label="CanPatentIt home"><img src="/assets/logo.png" alt="CanPatentIt" width="168" height="56" loading="lazy"></a><p>Protect what you’re building.<br>Make room for what’s next.</p></div>
     <div class="cpi-footer-cols">
       <div><h3>Services</h3><ul>{svc}</ul></div>
       <div><h3>Technology</h3><ul>{tech}</ul></div>
-      <div><h3>Explore</h3><ul><li><a href="/about">About</a></li><li><a href="/insights">Insights</a></li><li><a href="/patent-showcase">Patent showcase</a></li><li><a href="/faq">FAQ</a></li><li><a href="/patentability-check">Patentability self-check</a></li><li><a href="/book">Book a consultation</a></li></ul></div>
+      <div><h3>Explore</h3><ul><li><a href="/about">About</a></li><li><a href="/insights">Insights</a></li><li><a href="/patent-showcase">Patent showcase</a></li><li><a href="/faq">FAQ</a></li><li><a href="/patentability-check">Patentability self-check</a></li></ul></div>
       <div><h3>Legal</h3><ul><li><a href="/terms">Terms &amp; Privacy</a></li><li><a href="#" data-cookie-settings>Cookie settings</a></li><li><a href="mailto:{EMAIL}">{EMAIL}</a></li></ul></div>
     </div>
     <div class="cpi-footer-bottom"><span>© <span id="year">2026</span> CanPatentIt</span><span>US patent strategy for deep technology</span></div>
@@ -203,7 +203,7 @@ SHAPES = {
 
 
 def page_hero(crumb_html, eyebrow, h1, lead, actions=True, slug=None):
-    buttons = f'<div class="cpi-hero-actions"><a class="cpi-button-lime" href="/book">Book a consultation {icon("arrow-right")}</a><a class="cpi-hero-secondary" href="/patentability-check">Try the self-check {icon("arrow-right")}</a></div>' if actions else ""
+    buttons = f'<div class="cpi-hero-actions"><a class="cpi-hero-secondary" href="/patentability-check">Try the self-check {icon("arrow-right")}</a></div>' if actions else ""
     shape = SHAPES.get(slug, "torus")
     art = f' has-art" style="--hero-art:url(\'/assets/heroes/{slug}.jpg\')' if slug in SHAPES else ""
     return f'''<section class="cpi-page-hero{art}"><canvas class="cpi-3d" data-shape="{shape}" aria-hidden="true"></canvas><div class="cpi-section">{crumb_html}<div class="cpi-eyebrow cpi-eyebrow-light"><span></span> {esc(eyebrow)}</div><h1>{h1}</h1><p>{esc(lead)}</p>{buttons}</div></section>'''
@@ -300,7 +300,7 @@ def build_about():
         <p><a class="cpi-text-link" href="https://metayage.com" rel="noopener" target="_blank">Visit metayage.com {icon("arrow-up-right")}</a></p></section>
       <section class="cpi-prose-sec"><h2>What we will not do</h2><ul><li>Promise that anything will be granted</li><li>Publish unverified statistics, client names or testimonials</li><li>Ask you to disclose more than you are comfortable sharing in a first conversation</li></ul></section>
       <p class="cpi-fine">{esc(TECH_NOTE)}</p></div>
-      <aside class="cpi-side-card"><h3>Start a conversation</h3><p>Tell us what you are building and we will suggest a sensible next step.</p><a class="cpi-button-lime" href="/book">Book a consultation {icon("arrow-right")}</a><p class="cpi-fine">Or write to <a href="mailto:{EMAIL}">{EMAIL}</a></p></aside></section>
+      <aside class="cpi-side-card"><h3>Start a conversation</h3><p>Tell us what you are building and we will suggest a sensible next step.</p><a class="cpi-text-link" href="/book">Pick a time {icon("arrow-right")}</a><p class="cpi-fine">Or write to <a href="mailto:{EMAIL}">{EMAIL}</a></p></aside></section>
     {cta_band()}'''
     desc = "CanPatentIt is a Metayage brand offering US patent strategy for deep-tech founders and investors. How we work and who we help."
     write("about", shell("about", "About CanPatentIt", desc, body, jsonld=[c_ld]))
@@ -331,7 +331,7 @@ def build_faq():
     c_html, c_ld = crumbs([("Home", ""), ("FAQ", "faq")])
     body = page_hero(c_html, "FAQ", "Questions, <em>answered plainly.</em>", "Straight answers about how we work and what to expect.", slug="faq") + f'''
     <section class="cpi-section cpi-detail cpi-faq-page"><div class="cpi-prose">@@FAQ_BLOCK@@<p class="cpi-fine">{esc(TECH_NOTE)}</p></div>
-    <aside class="cpi-side-card"><h3>Still unsure?</h3><p>Ask us directly. A first conversation can start with the problem you are solving.</p><a class="cpi-button-lime" href="/book">Book a consultation {icon("arrow-right")}</a></aside></section>
+    <aside class="cpi-side-card"><h3>Still unsure?</h3><p>Ask us directly. A first conversation can start with the problem you are solving.</p><a class="cpi-text-link" href="/book">Pick a time {icon("arrow-right")}</a></aside></section>
     {cta_band()}'''
     desc = "Answers to common questions about US patent strategy, provisional applications, disclosure and how CanPatentIt works."
     out = shell("faq", "Frequently Asked Questions", desc, body, jsonld=[c_ld], extra_head=NL + "  <!--@@FAQ_LD@@-->")

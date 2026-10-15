@@ -491,3 +491,11 @@ a.cpi-page:hover { border-color: var(--cpi-blue); color: var(--cpi-blue-ink); }
 .cpi-copy-id:hover { background: var(--cpi-blue); color: #fff; }
 .cpi-copy-id[disabled] { opacity: .7; cursor: default; }
 .cpi-id-office small { max-width: 280px; line-height: 1.5; }
+
+/* Home hero: the process scene sits above the shade so every step stays bright */
+.cpi-hero > canvas.cpi-3d { z-index: 0; }
+.cpi-hero-content { z-index: 1; }
+@media (max-width: 900px) {
+  .cpi-hero, .cpi-hero-content { min-height: 1000px; }
+  .cpi-hero-note { display: none; }
+}

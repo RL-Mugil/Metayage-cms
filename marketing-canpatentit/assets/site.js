@@ -32,14 +32,6 @@
   var yearEl = document.getElementById('year');
   if (yearEl) { yearEl.textContent = String(new Date().getFullYear()); }
 
-  /* Hero photo: used when assets/hero.jpg exists, otherwise the CSS gradient stays. */
-  var hero = document.querySelector('[data-hero]');
-  if (hero) {
-    var probe = new Image();
-    probe.onload = function () { hero.classList.add('has-photo'); };
-    probe.src = '/assets/hero.jpg';
-  }
-
   /* Mobile menu */
   var nav = document.getElementById('site-nav');
   var menuBtn = document.getElementById('menu-button');
