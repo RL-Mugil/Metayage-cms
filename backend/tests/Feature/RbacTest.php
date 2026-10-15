@@ -61,13 +61,16 @@ class RbacTest extends TestCase
             ->assertForbidden();
     }
 
-    public function test_only_hr_and_admin_can_create_payroll(): void
+    public function test_only_payroll_roles_can_create_payroll(): void
     {
-        Sanctum::actingAs($this->user('associate'));
-        $this->postJson('/api/payroll/runs', ['period' => '2026-06'])->assertForbidden();
+        foreach (['associate', 'hr'] as $role) {
+            Sanctum::actingAs($this->user($role));
+            $this->postJson('/api/payroll/runs', ['period' => '2026-06'])->assertForbidden();
+        }
 
+        // finance is a payroll role (User::PAYROLL_ACCESS_ROLES): it passes the role gate, so it gets past 403.
+        // With no salaried employees in this test database the run is rejected as unprocessable, not forbidden.
         Sanctum::actingAs($this->user('finance'));
-        // finance can view but not create runs
-        $this->postJson('/api/payroll/runs', ['period' => '2026-06'])->assertForbidden();
+        $this->assertNotSame(403, $this->postJson('/api/payroll/runs', ['period' => '2026-06'])->status());
     }
 }

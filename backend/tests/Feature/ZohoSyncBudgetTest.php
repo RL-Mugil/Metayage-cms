@@ -118,7 +118,7 @@ class ZohoSyncBudgetTest extends TestCase
 
     public function test_page_checkpoint_resumes_next_day_without_restarting(): void
     {
-        $this->budget(1799);
+        $this->budget(ZohoApiBudget::NIGHTLY_LIMIT - 1);
         $this->fakeRemote(true);
         $this->assertSame('paused', app(ZohoMirrorSync::class)->run()['status']);
         $this->assertDatabaseHas('zoho_sync_progress', ['resource' => 'invoices', 'next_page' => 2]);
@@ -269,8 +269,8 @@ class ZohoSyncBudgetTest extends TestCase
 
     public function test_pdf_backlog_resumes_without_repeating_lists_and_includes_next_day_existence_check(): void
     {
-        // Five list calls and one detail call exhaust the automatic allowance.
-        $this->budget(1794);
+        // Five list calls and one detail call exhaust the nightly allowance (ZohoApiBudget::NIGHTLY_LIMIT).
+        $this->budget(ZohoApiBudget::NIGHTLY_LIMIT - 6);
         $this->fakeRemote();
         $this->assertSame('paused', app(ZohoMirrorSync::class)->run()['status']);
         $snapshot = ZohoSnapshot::firstOrFail();

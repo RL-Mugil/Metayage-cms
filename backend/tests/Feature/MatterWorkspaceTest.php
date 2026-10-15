@@ -93,7 +93,7 @@ class MatterWorkspaceTest extends TestCase
         $this->assertSame('2027-01-01', $deadline->due_date->toDateString());
     }
 
-    public function test_draft_rule_does_not_generate_a_legal_deadline(): void
+    public function test_draft_rule_is_ignored_and_the_built_in_statutory_rule_docket_the_deadline(): void
     {
         $partner = $this->user('partner', 'draft-rule@workspace.test');
         $project = $this->project();
@@ -101,7 +101,11 @@ class MatterWorkspaceTest extends TestCase
         DocketRules::recordEvent('fer_received', Carbon::parse('2026-07-01'), $project->id, $project->patent_application_id, null, $partner->id);
 
         $this->assertDatabaseHas('docket_events', ['project_id' => $project->id, 'event_type' => 'fer_received']);
-        $this->assertDatabaseMissing('docket_deadlines', ['project_id' => $project->id]);
+        // A draft database rule never produces a deadline itself; DocketRules::generateDeadlines() falls back to the
+        // built-in statutory calculation so routine docketing is not blocked on an approval workflow.
+        $deadline = DocketDeadline::query()->where('project_id', $project->id)->firstOrFail();
+        $this->assertSame('Built-in Rule', $deadline->source_type);
+        $this->assertNotSame('2026.1-candidate', $deadline->rule_version);
     }
 
     private function user(string $role, string $email): User

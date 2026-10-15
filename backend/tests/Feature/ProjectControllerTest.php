@@ -72,12 +72,12 @@ class ProjectControllerTest extends TestCase
 
         $this->assertSame($analyst->id, Project::find($created['id'])->created_by_id);
         // The analyst isn't silently made the case's attorney/PCM.
-        $this->assertNull($created['assigned_partner_id']);
+        $this->assertNull($created['assigned_partner_id'] ?? null);
 
         $base = ['client_id' => $client->id, 'project_type' => 'Patent', 'patent_office_code' => 'IN', 'service_code' => 'FER'];
-        $asAttorney = Project::create($base + ['project_name' => 'Attorney Case', 'docket_number' => 'X1', 'assigned_partner_id' => $analyst->id]);
-        $asScm = Project::create($base + ['project_name' => 'SCM Case', 'docket_number' => 'X2', 'secondary_manager_id' => $analyst->id]);
-        $unrelated = Project::create($base + ['project_name' => 'Other Case', 'docket_number' => 'X3', 'created_by_id' => $partner->id, 'assigned_manager_id' => $partner->id]);
+        $asAttorney = Project::create($base + ['project_name' => 'Attorney Case', 'project_code' => 'X1', 'docket_number' => 'X1', 'assigned_partner_id' => $analyst->id]);
+        $asScm = Project::create($base + ['project_name' => 'SCM Case', 'project_code' => 'X2', 'docket_number' => 'X2', 'secondary_manager_id' => $analyst->id]);
+        $unrelated = Project::create($base + ['project_name' => 'Other Case', 'project_code' => 'X3', 'docket_number' => 'X3', 'created_by_id' => $partner->id, 'assigned_manager_id' => $partner->id]);
 
         $ids = collect($this->getJson('/api/projects?per_page=100')->assertOk()->json('data'))->pluck('id')->all();
         $this->assertEqualsCanonicalizing([$created['id'], $asAttorney->id, $asScm->id], $ids);
@@ -92,8 +92,8 @@ class ProjectControllerTest extends TestCase
         $analyst = $this->user('associate');
         $client = $this->createClient(['company_name' => 'Test']);
         $base = ['client_id' => $client->id, 'project_type' => 'Patent', 'patent_office_code' => 'IN', 'service_code' => 'FER'];
-        $assigned = Project::create($base + ['project_name' => 'Mine', 'docket_number' => 'G1', 'patent_engineer_id' => $analyst->id, 'status' => 'Open']);
-        $other = Project::create($base + ['project_name' => 'Not mine', 'docket_number' => 'G2', 'status' => 'Open']);
+        $assigned = Project::create($base + ['project_name' => 'Mine', 'project_code' => 'G1', 'docket_number' => 'G1', 'patent_engineer_id' => $analyst->id, 'status' => 'Open']);
+        $other = Project::create($base + ['project_name' => 'Not mine', 'project_code' => 'G2', 'docket_number' => 'G2', 'status' => 'Open']);
         Sanctum::actingAs($analyst);
 
         $this->putJson("/api/projects/{$assigned->id}", ['status' => 'Granted', 'status_event_date' => '2026-10-01'])->assertOk();

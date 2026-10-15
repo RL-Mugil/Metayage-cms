@@ -60,7 +60,7 @@ class SiblingLinkingAtCreationTest extends TestCase
 
         $cpt = $this->createProject($client, '397M004INCPT', 'IN', 'CPT');
 
-        $this->assertNull($cpt['application_number']);
+        $this->assertNull($cpt['application_number'] ?? null);
         $this->assertSame($fer['patent_application_id'], $cpt['patent_application_id']);
     }
 

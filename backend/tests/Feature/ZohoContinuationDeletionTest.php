@@ -106,7 +106,7 @@ class ZohoContinuationDeletionTest extends TestCase
 
     public function test_morning_checkpoint_resumes_in_evening_without_relisting_page_one(): void
     {
-        DB::table('zoho_api_budgets')->insert(['scope' => 'in:123', 'budget_date' => now('Asia/Kolkata')->toDateString(), 'calls' => 1799, 'automatic_calls' => 1799]);
+        DB::table('zoho_api_budgets')->insert(['scope' => 'in:123', 'budget_date' => now('Asia/Kolkata')->toDateString(), 'calls' => ZohoApiBudget::NIGHTLY_LIMIT - 1, 'automatic_calls' => ZohoApiBudget::NIGHTLY_LIMIT - 1]);
         Http::fake(fn ($r) => Http::response(['invoices' => [['invoice_id' => '900', 'invoice_number' => 'INV-900']], 'page_context' => ['has_more_page' => true]]));
         $this->assertSame('paused', app(ZohoMirrorSync::class)->run(null, false, true)['status']);
         $this->assertDatabaseHas('zoho_sync_progress', ['resource' => 'invoices', 'next_page' => 2]);
@@ -207,7 +207,7 @@ class ZohoContinuationDeletionTest extends TestCase
     public function test_rolling_saved_id_check_recovers_missed_deletion_before_any_list_request(): void
     {
         $record = $this->record();
-        DB::table('zoho_api_budgets')->insert(['scope' => 'in:123', 'budget_date' => now('Asia/Kolkata')->toDateString(), 'calls' => 1799, 'automatic_calls' => 1799]);
+        DB::table('zoho_api_budgets')->insert(['scope' => 'in:123', 'budget_date' => now('Asia/Kolkata')->toDateString(), 'calls' => ZohoApiBudget::NIGHTLY_LIMIT - 1, 'automatic_calls' => ZohoApiBudget::NIGHTLY_LIMIT - 1]);
         Http::fake(['*' => Http::response(['code' => 1002, 'message' => 'Invoice does not exist.'], 404)]);
         $this->assertSame('paused', app(ZohoMirrorSync::class)->run(null, false, true)['status']);
         $this->assertNull(ZohoInvoice::find($record->id));
@@ -306,7 +306,7 @@ class ZohoContinuationDeletionTest extends TestCase
     {
         config(['zoho.webhook_secret' => null]);
         $quote = ZohoInvoice::create(['zoho_id' => '901', 'zoho_type' => 'quote', 'number' => 'LEGACY']);
-        DB::table('zoho_api_budgets')->insert(['scope' => 'in:123', 'budget_date' => now('Asia/Kolkata')->toDateString(), 'calls' => 1799, 'automatic_calls' => 1799]);
+        DB::table('zoho_api_budgets')->insert(['scope' => 'in:123', 'budget_date' => now('Asia/Kolkata')->toDateString(), 'calls' => ZohoApiBudget::NIGHTLY_LIMIT - 1, 'automatic_calls' => ZohoApiBudget::NIGHTLY_LIMIT - 1]);
         Http::fake(['*' => Http::response(['code' => 1002, 'message' => 'Estimate does not exist.'], 400)]);
         $this->assertSame('paused', app(ZohoMirrorSync::class)->run(null, false, true)['status']);
         $this->assertNull(ZohoInvoice::find($quote->id));
@@ -351,7 +351,7 @@ class ZohoContinuationDeletionTest extends TestCase
         $this->record();
         ZohoSnapshot::query()->update(['detail_synced_at' => now()->subDay()]);
         ZohoInvoice::create(['zoho_id' => '901', 'zoho_type' => 'invoice', 'number' => 'LEGACY']);
-        DB::table('zoho_api_budgets')->insert(['scope' => 'in:123', 'budget_date' => now('Asia/Kolkata')->toDateString(), 'calls' => 1799, 'automatic_calls' => 1799]);
+        DB::table('zoho_api_budgets')->insert(['scope' => 'in:123', 'budget_date' => now('Asia/Kolkata')->toDateString(), 'calls' => ZohoApiBudget::NIGHTLY_LIMIT - 1, 'automatic_calls' => ZohoApiBudget::NIGHTLY_LIMIT - 1]);
         Http::fake(fn ($r) => Http::response(['invoice' => ['invoice_id' => '901', 'invoice_number' => 'LEGACY', 'total' => 100]]));
         $this->assertSame('paused', app(ZohoMirrorSync::class)->run(null, false, true)['status']);
         Http::assertSentCount(1);

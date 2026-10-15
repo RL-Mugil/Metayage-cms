@@ -51,10 +51,14 @@ class ModuleActionsTest extends TestCase
     {
         $this->user('super_admin');
         $this->seed(\Database\Seeders\DemoModulesSeeder::class);
+        $integrations = Integration::count();
         $this->seed(\Database\Seeders\DemoModulesSeeder::class); // second run must not duplicate
 
         $this->assertEquals(0, ComplianceItem::count());
-        $this->assertEquals(8, Integration::count());
+        // Migrations already provision the real integrations (Zoho Books, API Setu, EntityLocker), so the demo seeder
+        // adds nothing on top of them; what matters is that running it again changes nothing.
+        $this->assertGreaterThan(0, $integrations);
+        $this->assertEquals($integrations, Integration::count());
         // Feedback, reminders, performance, recruitment, offboarding not seeded
         $this->assertEquals(0, Reminder::count());
         $this->assertEquals(0, PerformanceReview::count());
@@ -274,8 +278,10 @@ class ModuleActionsTest extends TestCase
         $this->postJson('/api/integrations/slack/toggle')->assertOk()->assertJson(['connected' => true]);
 
         $list = $this->getJson('/api/integrations')->assertOk()->json();
-        $this->assertTrue($list[0]['hasKey']);
-        $this->assertArrayNotHasKey('config', $list[0]); // key material never leaves the server
+        $slack = collect($list)->firstWhere('name', 'Slack');
+        $this->assertNotNull($slack);
+        $this->assertTrue($slack['hasKey']);
+        $this->assertArrayNotHasKey('config', $slack); // key material never leaves the server
 
         // Integration list is readable by all internal staff (READ_ROLES); only
         // WRITE_ROLES may configure. Secrets are stripped from the response above.

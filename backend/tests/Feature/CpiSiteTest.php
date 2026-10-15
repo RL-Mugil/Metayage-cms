@@ -505,6 +505,8 @@ class CpiSiteTest extends TestCase
         $this->postJson('/api/cpi-admin/patents', $ok, $h)->assertStatus(422)->assertJsonValidationErrors(['patent_number']);
         $this->postJson('/api/cpi-admin/patents', array_merge($ok, ['patent_number' => 'X-2', 'country' => 'Mars']), $h)->assertStatus(422)->assertJsonValidationErrors(['country']);
         $this->postJson('/api/cpi-admin/patents', array_merge($ok, ['patent_number' => 'X-3', 'image' => 'https://evil.test/a.png']), $h)->assertStatus(422)->assertJsonValidationErrors(['image']);
+        // Sanctum's guard keeps the user it resolved for the requests above; drop it so this request is anonymous.
+        $this->app['auth']->forgetGuards();
         $this->getJson('/api/cpi-admin/patents')->assertUnauthorized();
     }
 
