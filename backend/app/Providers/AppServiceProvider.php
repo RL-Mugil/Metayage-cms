@@ -41,6 +41,18 @@ class AppServiceProvider extends ServiceProvider
     {
         User::observe(UserObserver::class);
 
+        // A queue job that exhausts its retries alerts the system admins and directors (once per job class per hour).
+        if ($this->app->environment('production')) {
+            \Illuminate\Support\Facades\Queue::failing(function (\Illuminate\Queue\Events\JobFailed $event): void {
+                $this->app->make(\App\Services\OpsAlertService::class)->alert(
+                    'Queue job failed: '.$event->job->resolveName(),
+                    $event->exception->getMessage().PHP_EOL.PHP_EOL."Connection: {$event->connectionName}, queue: ".$event->job->getQueue(),
+                    'job|'.$event->job->resolveName(),
+                    60,
+                );
+            });
+        }
+
         // Never emit http:// asset/route URLs in production, even if a proxy hides the TLS hop.
         if ($this->app->environment('production')) {
             URL::forceScheme('https');

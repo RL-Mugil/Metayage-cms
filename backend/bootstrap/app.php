@@ -42,6 +42,23 @@ return Application::configure(basePath: dirname(__DIR__))
         // Forward unhandled exceptions to a monitoring webhook (e.g. a
         // self-hosted n8n workflow → GlitchTip/email). No-op when unset.
         // Best-effort and fully swallowed so monitoring can never break a request.
+        // Tell the system admins and directors (in-app + email) about unhandled errors. Production only, and
+        // de-duplicated per error location so a storm sends one alert per 15 minutes.
+        $exceptions->report(function (\Throwable $e): void {
+            if (! app()->environment('production')) {
+                return;
+            }
+            try {
+                app(\App\Services\OpsAlertService::class)->alert(
+                    'Server error: '.class_basename($e),
+                    $e->getMessage().PHP_EOL.PHP_EOL.$e->getFile().':'.$e->getLine().PHP_EOL.request()->method().' '.request()->fullUrl().PHP_EOL.now()->toDateTimeString().' (server time)',
+                    $e::class.'|'.$e->getFile().':'.$e->getLine(),
+                );
+            } catch (\Throwable) {
+                // never let alerting failures surface
+            }
+        });
+
         $exceptions->report(function (\Throwable $e): void {
             $url = config('services.monitoring.webhook');
             if (! $url) {

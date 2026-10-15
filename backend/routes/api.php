@@ -30,6 +30,8 @@ use App\Http\Controllers\PatentInvoiceController;
 
 // Public webhook receiver — no auth, for external integrations
 Route::post('/webhooks/zoho/deletions', [\App\Http\Controllers\ZohoDeletionWebhookController::class, 'receive'])->middleware('throttle:120,1');
+// Liveness/readiness probe for the uptime monitor (reports ok/fail only).
+Route::get('/health', \App\Http\Controllers\HealthController::class)->middleware('throttle:120,1');
 // Public marketing-site enquiry form (CORS-limited to myipstrategy.com, see config/cors.php).
 Route::post('/public/contact', [\App\Http\Controllers\PublicContactController::class, 'store'])->middleware(['throttle:public-contact', 'throttle:5,1']);
 Route::prefix('public/cpi')->group(function () {
