@@ -41,6 +41,11 @@ TURNSTILE = _turnstile_key()
 EXTRA_ICONS = (
     '<symbol id="i-calendar" viewBox="0 0 24 24"><path d="M8 2v4M16 2v4M3 10h18"/><rect x="3" y="4" width="18" height="18" rx="2"/></symbol>'
     '<symbol id="i-moon" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></symbol>'
+    '<symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>'
+    '<symbol id="i-doc" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5Z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></symbol>'
+    '<symbol id="i-layers" viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 13 9 5 9-5"/><path d="m3 17.5 9 5 9-5"/></symbol>'
+    '<symbol id="i-flag" viewBox="0 0 24 24"><path d="M5 21V4M5 4h11l-2 4 2 4H5"/></symbol>'
+    '<symbol id="i-book" viewBox="0 0 24 24"><path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2V5Z"/><path d="M8 7h7M8 11h5"/></symbol>'
     '<symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2m-7.07-2.93 1.41-1.41M17.66 6.34l1.41-1.41M2 12h2M20 12h2M4.93 4.93l1.41 1.41m11.32 11.32 1.41 1.41"/></symbol>'
 )
 ICONS = open(os.path.join(HERE, "icons.svg.html"), encoding="utf-8").read().replace("</defs>", EXTRA_ICONS + "</defs>")
@@ -106,7 +111,8 @@ def shell(path, title, desc, body, current=None, extra_head="", jsonld=None, noi
     ld = ""
     for obj in jsonld or []:
         ld += f'\n  <script type="application/ld+json">{json.dumps(obj, ensure_ascii=False)}</script>'
-    robots = '\n  <meta name="robots" content="noindex, nofollow">' if noindex else ""
+    robots = ('\n  <meta name="robots" content="noindex, nofollow">' if noindex else
+              '\n  <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1">')
     return f'''<!doctype html>
 <html lang="en">
 <head>
@@ -116,10 +122,13 @@ def shell(path, title, desc, body, current=None, extra_head="", jsonld=None, noi
   <meta name="description" content="{esc(desc)}">{robots}
   <meta name="theme-color" content="#f8f9fa">
   <link rel="canonical" href="{canon}">
+  <link rel="alternate" hreflang="en-us" href="{canon}">
+  <link rel="alternate" hreflang="x-default" href="{canon}">
   <link rel="icon" type="image/png" href="/assets/favicon.png">
   <link rel="apple-touch-icon" href="/assets/favicon.png">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="CanPatentIt">
+  <meta property="og:locale" content="en_US">
   <meta property="og:url" content="{canon}">
   <meta property="og:title" content="{esc(full_title)}">
   <meta property="og:description" content="{esc(desc)}">
@@ -267,17 +276,48 @@ def build_home():
     main = "".join(out)
     extra = f'''
     <section class="cpi-section cpi-teasers" id="tools">
-      <a class="cpi-teaser" href="/patentability-check"><span class="cpi-section-number">01</span><h3>Patentability self-check</h3><p>Answer a few questions about your invention and get plain-language guidance on what to do next.</p><span class="cpi-text-link">Start the self-check {icon("arrow-right")}</span></a>
-      <a class="cpi-teaser" href="/book"><span class="cpi-section-number">02</span><h3>Book a consultation</h3><p>Pick a time that suits you. We start with the technology, not a pitch.</p><span class="cpi-text-link">See available times {icon("arrow-right")}</span></a>
-      <a class="cpi-teaser" href="/insights"><span class="cpi-section-number">03</span><h3>Insights</h3><p>Short, practical notes on patents for deep-tech founders and the people who back them.</p><span class="cpi-text-link">Read the insights {icon("arrow-right")}</span></a>
+      <div class="cpi-teasers-head"><div class="cpi-eyebrow"><span></span> Start where you are</div><h2>Three easy ways to <em>get moving.</em></h2></div>
+      <a class="cpi-teaser" href="/patentability-check"><span class="cpi-teaser-icon">{icon("file-search")}</span><h3>Patentability self-check</h3><p>Answer a few questions about your invention and get plain-language guidance on what to do next.</p><span class="cpi-text-link">Start the self-check {icon("arrow-right")}</span></a>
+      <a class="cpi-teaser" href="/book"><span class="cpi-teaser-icon">{icon("calendar")}</span><h3>Book a consultation</h3><p>Pick a time that suits you. We start with the technology, not a pitch.</p><span class="cpi-text-link">See available times {icon("arrow-right")}</span></a>
+      <a class="cpi-teaser" href="/insights"><span class="cpi-teaser-icon">{icon("book")}</span><h3>Insights</h3><p>Short, practical notes on patents for deep-tech founders and the people who back them.</p><span class="cpi-text-link">Read the insights {icon("arrow-right")}</span></a>
     </section>'''
     company = f'''
     <section class="cpi-section cpi-company"><div><span class="cpi-section-number">MY</span><h2>A brand of Metayage Private Limited</h2></div><div><p>CanPatentIt is a brand of Metayage, an intellectual property services and consulting company founded in 2006 and working as a strategic IP partner to founders, faculty, students and incubators.</p><a class="cpi-text-link" href="/about#metayage">About Metayage and CanPatentIt {icon("arrow-right")}</a></div></section>'''
     main = main.replace('<section class="cpi-founder-band"', extra + company + '\n    <section class="cpi-founder-band"', 1)
-    desc = "Patent strategy and protection for US founders building AI, software, hardware, and other deep technology."
-    ld = [{"@context": "https://schema.org", "@type": "ProfessionalService", "name": "CanPatentIt", "url": SITE + "/", "logo": SITE + "/assets/logo.png", "description": "US patent strategy for deep technology founders.", "email": EMAIL, "parentOrganization": {"@type": "Organization", "name": "Metayage Private Limited", "url": "https://metayage.com"}},
-          {"@context": "https://schema.org", "@type": "WebSite", "name": "CanPatentIt", "url": SITE + "/"}]
-    write("", shell("", "CanPatentIt | Deep Tech IP Strategy for US Founders", desc, main, jsonld=ld, current=""))
+    home_faqs = [FAQS[i] for i in (5, 6, 7, 3, 2, 11)]
+    faq_rows = "".join(f'<details class="cpi-faq"><summary>{esc(q)}</summary><div><p>{esc(a)}</p></div></details>' for q, a in home_faqs)
+    faq_section = f'''
+    <section class="cpi-home-faq" id="faq-home" aria-labelledby="home-faq-h">
+      <div class="cpi-section cpi-home-faq-layout">
+        <div class="cpi-home-faq-head"><div class="cpi-eyebrow"><span></span> Straight answers</div><h2 id="home-faq-h">Questions founders <em>ask first.</em></h2><p>Short, plain-language answers on provisional applications, timing, international protection and how we work.</p><a class="cpi-text-link" href="/faq">See all questions {icon("arrow-right")}</a></div>
+        <div class="cpi-faq-list">{faq_rows}</div>
+      </div>
+    </section>'''
+    main = main.replace('<section class="cpi-assessment-section"', faq_section + '\n    <section class="cpi-assessment-section"', 1)
+    desc = "Patentability and prior-art searches, provisional applications and US patent prosecution for founders building AI, chips, MedTech, climate and software."
+    steps = [("Tell us about the technology", "A short conversation about how the technology works and what makes it different."),
+             ("Search and assess", "Review the prior art and consider where protection is realistic and what to file first."),
+             ("File with intent", "File a provisional application to secure an early date, or a full application written around the real invention."),
+             ("Prosecute and build", "Respond to the examiner, shape claims around the business, and keep the IP ready for diligence.")]
+    org = {"@type": "ProfessionalService", "@id": SITE + "/#organization", "name": "CanPatentIt", "url": SITE + "/", "logo": SITE + "/assets/logo.png",
+           "image": SITE + "/assets/og-image.png", "email": EMAIL,
+           "description": "CanPatentIt is a US patent strategy service for deep-technology founders, engineers and investors: patentability and prior-art searches, provisional applications, US patent prosecution, and IP strategy for funding diligence.",
+           "slogan": "Build something worth defending.", "areaServed": "US", "serviceType": [x["short"] for x in SERVICES],
+           "knowsAbout": [x["short"] for x in AREAS] + ["US patent law", "Provisional patent applications", "Prior art searching", "Patent prosecution"],
+           "parentOrganization": {"@type": "Organization", "name": "Metayage Private Limited", "url": "https://metayage.com", "foundingDate": "2006"},
+           "sameAs": ["https://metayage.com"],
+           "hasOfferCatalog": {"@type": "OfferCatalog", "name": "Patent services", "itemListElement": [
+               {"@type": "Offer", "itemOffered": {"@type": "Service", "name": x["title"], "description": x["desc"], "url": f"{SITE}/services/{x['slug']}"}} for x in SERVICES]}}
+    ld = [{"@context": "https://schema.org", "@graph": [
+              org,
+              {"@type": "WebSite", "@id": SITE + "/#website", "url": SITE + "/", "name": "CanPatentIt", "inLanguage": "en-US", "publisher": {"@id": SITE + "/#organization"}},
+              {"@type": "WebPage", "@id": SITE + "/#webpage", "url": SITE + "/", "name": "US Patent Strategy for Deep Tech Founders | CanPatentIt", "description": desc,
+               "isPartOf": {"@id": SITE + "/#website"}, "about": {"@id": SITE + "/#organization"}, "inLanguage": "en-US"},
+              {"@type": "HowTo", "name": "How to protect a deep-tech invention with a US patent", "description": "The path from first idea to a granted US patent.",
+               "step": [{"@type": "HowToStep", "position": i + 1, "name": n, "text": t, "url": SITE + "/#process"} for i, (n, t) in enumerate(steps)]},
+          ]}, faq_ld(home_faqs)]
+    write("", shell("", "US Patent Strategy for Deep Tech Founders", desc, main, jsonld=ld, current="",
+                    extra_head='\n  <link rel="stylesheet" href="/assets/home.css">'))
     register("", "Home", desc, main)
 
 
@@ -501,7 +541,41 @@ def build_meta_files():
     open(os.path.join(OUT, "sitemap-pages.xml"), "w", encoding="utf-8", newline="\n").write("\n".join(sm) + "\n")
     idx = f'<?xml version="1.0" encoding="UTF-8"?>\n<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n  <sitemap><loc>{SITE}/sitemap-pages.xml</loc></sitemap>\n  <sitemap><loc>{SITE}/insights/sitemap-insights.xml</loc></sitemap>\n  <sitemap><loc>{SITE}/patent-showcase/sitemap-patents.xml</loc></sitemap>\n</sitemapindex>\n'
     open(os.path.join(OUT, "sitemap.xml"), "w", encoding="utf-8", newline="\n").write(idx)
-    open(os.path.join(OUT, "robots.txt"), "w", newline="\n").write(f"User-agent: *\nAllow: /\nDisallow: /login\nDisallow: /admin\n\nSitemap: {SITE}/sitemap.xml\n")
+    bots = ["GPTBot", "OAI-SearchBot", "ChatGPT-User", "ClaudeBot", "Claude-User", "Claude-SearchBot", "PerplexityBot", "Google-Extended", "Applebot-Extended", "CCBot", "Bingbot"]
+    block = "Allow: /\nDisallow: /login\nDisallow: /admin\n"
+    robots = "User-agent: *\n" + block + "\n# Search and AI answer engines are welcome to read the public pages.\n"
+    robots += "".join(f"User-agent: {b}\n{block}\n" for b in bots) + f"Sitemap: {SITE}/sitemap.xml\n"
+    open(os.path.join(OUT, "robots.txt"), "w", newline="\n").write(robots)
+    svc_lines = "\n".join(f"- [{x['title']}]({SITE}/services/{x['slug']}): {x['desc']}" for x in SERVICES)
+    area_lines = "\n".join(f"- [{x['title']}]({SITE}/technology/{x['slug']})" for x in AREAS)
+    llms = f"""# CanPatentIt
+
+> CanPatentIt is a US patent strategy service for deep-technology founders, engineers and investors. It helps decide what to protect and how: patentability and prior-art searches, provisional applications, US patent prosecution, and IP strategy for funding diligence. CanPatentIt is a brand of Metayage Private Limited, an intellectual property services company founded in 2006.
+
+Nothing on this site is legal advice and no outcome is guaranteed. Contact: {EMAIL}
+
+## Services
+{svc_lines}
+
+## Technology areas
+{area_lines}
+
+## Key facts
+- A US provisional application secures an early filing date and expires after 12 months; a non-provisional must be filed within that window to keep the priority date.
+- Most patent applications are published about 18 months after the earliest filing date.
+- Patents are national or regional; there is no single international patent.
+
+## Pages
+- [Home]({SITE}/): overview, process and common questions
+- [About]({SITE}/about)
+- [Frequently asked questions]({SITE}/faq)
+- [Patentability self-check]({SITE}/patentability-check): a short questionnaire with plain-language guidance
+- [Book a consultation]({SITE}/book)
+- [Insights]({SITE}/insights): practical notes on patents for deep-tech founders
+- [Patent showcase]({SITE}/patent-showcase)
+- [Terms and privacy]({SITE}/terms)
+"""
+    open(os.path.join(OUT, "llms.txt"), "w", encoding="utf-8", newline="\n").write(llms)
     index = [{"url": url_for(p["path"]), "title": p["title"], "desc": p["desc"], "text": p["text"]} for p in PAGES if p["path"] != "terms"]
     os.makedirs(os.path.join(OUT, "assets"), exist_ok=True)
     with open(os.path.join(OUT, "assets", "search-index.json"), "w", encoding="utf-8", newline="\n") as f:

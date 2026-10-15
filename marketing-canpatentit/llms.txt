@@ -1,0 +1,33 @@
+# CanPatentIt
+
+> CanPatentIt is a US patent strategy service for deep-technology founders, engineers and investors. It helps decide what to protect and how: patentability and prior-art searches, provisional applications, US patent prosecution, and IP strategy for funding diligence. CanPatentIt is a brand of Metayage Private Limited, an intellectual property services company founded in 2006.
+
+Nothing on this site is legal advice and no outcome is guaranteed. Contact: mugilvannan@myipstrategy.com
+
+## Services
+- [Patentability & Prior Art Search](https://canpatentit.com/services/patentability-prior-art): Patentability, state-of-the-art, freedom-to-operate and invalidity searches that turn patent data into clear next steps.
+- [Provisional Patent Applications](https://canpatentit.com/services/provisional-applications): Establish an early US filing date with a technical disclosure built around your real invention, and plan the route to a full filing.
+- [US Patent Prosecution](https://canpatentit.com/services/us-patent-prosecution): Drafting, examination, office action responses and issue-stage upkeep for US applications, with the technical detail and strategy your invention deserves.
+- [IP Strategy & Diligence](https://canpatentit.com/services/ip-strategy-diligence): Freedom-to-operate, patent scope, validity, ownership and trademark diligence, plus ongoing IP strategy for founders and investors.
+
+## Technology areas
+- [Patents for AI & Machine Learning](https://canpatentit.com/technology/ai-machine-learning)
+- [Patents for Semiconductors & Quantum](https://canpatentit.com/technology/semiconductors-quantum)
+- [Patents for MedTech & Biotechnology](https://canpatentit.com/technology/medtech-biotechnology)
+- [Patents for Climate & Energy](https://canpatentit.com/technology/climate-energy)
+- [Patents for Enterprise Software & Security](https://canpatentit.com/technology/enterprise-software-security)
+
+## Key facts
+- A US provisional application secures an early filing date and expires after 12 months; a non-provisional must be filed within that window to keep the priority date.
+- Most patent applications are published about 18 months after the earliest filing date.
+- Patents are national or regional; there is no single international patent.
+
+## Pages
+- [Home](https://canpatentit.com/): overview, process and common questions
+- [About](https://canpatentit.com/about)
+- [Frequently asked questions](https://canpatentit.com/faq)
+- [Patentability self-check](https://canpatentit.com/patentability-check): a short questionnaire with plain-language guidance
+- [Book a consultation](https://canpatentit.com/book)
+- [Insights](https://canpatentit.com/insights): practical notes on patents for deep-tech founders
+- [Patent showcase](https://canpatentit.com/patent-showcase)
+- [Terms and privacy](https://canpatentit.com/terms)

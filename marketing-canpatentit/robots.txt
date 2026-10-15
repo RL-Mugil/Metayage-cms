@@ -3,4 +3,60 @@ Allow: /
 Disallow: /login
 Disallow: /admin
 
+# Search and AI answer engines are welcome to read the public pages.
+User-agent: GPTBot
+Allow: /
+Disallow: /login
+Disallow: /admin
+
+User-agent: OAI-SearchBot
+Allow: /
+Disallow: /login
+Disallow: /admin
+
+User-agent: ChatGPT-User
+Allow: /
+Disallow: /login
+Disallow: /admin
+
+User-agent: ClaudeBot
+Allow: /
+Disallow: /login
+Disallow: /admin
+
+User-agent: Claude-User
+Allow: /
+Disallow: /login
+Disallow: /admin
+
+User-agent: Claude-SearchBot
+Allow: /
+Disallow: /login
+Disallow: /admin
+
+User-agent: PerplexityBot
+Allow: /
+Disallow: /login
+Disallow: /admin
+
+User-agent: Google-Extended
+Allow: /
+Disallow: /login
+Disallow: /admin
+
+User-agent: Applebot-Extended
+Allow: /
+Disallow: /login
+Disallow: /admin
+
+User-agent: CCBot
+Allow: /
+Disallow: /login
+Disallow: /admin
+
+User-agent: Bingbot
+Allow: /
+Disallow: /login
+Disallow: /admin
+
 Sitemap: https://canpatentit.com/sitemap.xml

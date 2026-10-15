@@ -116,7 +116,7 @@
 
   /* Scroll reveal (skipped for reduced motion) */
   var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  var revealEls = document.querySelectorAll('.cpi-intro, .cpi-services, .cpi-domain-layout, .cpi-teasers, .cpi-card, .cpi-related, .cpi-prose-sec, .cpi-side-card, .cpi-founder-copy');
+  var revealEls = document.querySelectorAll('.cpi-intro, .cpi-services, .cpi-domain-layout, .cpi-teasers, .cpi-card, .cpi-related, .cpi-prose-sec, .cpi-side-card, .cpi-founder-copy, .cpi-facts-layout, .cpi-process .cpi-section, .cpi-home-faq-layout');
   if ('IntersectionObserver' in window && !reduce) {
     var io = new IntersectionObserver(function (entries) {
       entries.forEach(function (en) { if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); } });
