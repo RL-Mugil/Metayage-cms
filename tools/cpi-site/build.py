@@ -16,6 +16,7 @@ ROOT = os.path.dirname(os.path.dirname(HERE))
 OUT = os.path.join(ROOT, "marketing-canpatentit")
 sys.path.insert(0, HERE)
 from content import SERVICES, AREAS, FAQS, TECH_NOTE, RELATED_SERVICES, SHOWCASE_URL  # noqa: E402
+from interact_content import JOURNEY, SCENARIOS, GLOSSARY, MYTHS, NEXT_STEP  # noqa: E402
 
 SITE = "https://canpatentit.com"
 EMAIL = "mugilvannan@myipstrategy.com"
@@ -41,6 +42,7 @@ TURNSTILE = _turnstile_key()
 EXTRA_ICONS = (
     '<symbol id="i-calendar" viewBox="0 0 24 24"><path d="M8 2v4M16 2v4M3 10h18"/><rect x="3" y="4" width="18" height="18" rx="2"/></symbol>'
     '<symbol id="i-moon" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></symbol>'
+    '<symbol id="i-message" viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12Z"/><path d="M8.5 11h7M8.5 14h4"/></symbol>'
     '<symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>'
     '<symbol id="i-doc" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5Z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></symbol>'
     '<symbol id="i-layers" viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 13 9 5 9-5"/><path d="m3 17.5 9 5 9-5"/></symbol>'
@@ -96,7 +98,7 @@ def footer():
     <div class="cpi-footer-cols">
       <div><h3>Services</h3><ul>{svc}</ul></div>
       <div><h3>Technology</h3><ul>{tech}</ul></div>
-      <div><h3>Explore</h3><ul><li><a href="/about">About</a></li><li><a href="/insights">Insights</a></li><li><a href="/patent-showcase">Patent showcase</a></li><li><a href="/faq">FAQ</a></li><li><a href="/patentability-check">Patentability self-check</a></li></ul></div>
+      <div><h3>Explore</h3><ul><li><a href="/about">About</a></li><li><a href="/insights">Insights</a></li><li><a href="/patent-showcase">Patent showcase</a></li><li><a href="/faq">FAQ</a></li><li><a href="/patentability-check">Patentability self-check</a></li><li><a href="/tools/deadlines">Deadline tools</a></li><li><a href="/glossary">Glossary</a></li></ul></div>
       <div><h3>Legal</h3><ul><li><a href="/terms">Terms &amp; Privacy</a></li><li><a href="#" data-cookie-settings>Cookie settings</a></li><li><a href="mailto:{EMAIL}">{EMAIL}</a></li></ul></div>
     </div>
     <div class="cpi-footer-bottom"><span>© <span id="year">2026</span> CanPatentIt</span><span>US patent strategy for deep technology</span></div>
@@ -143,7 +145,8 @@ def shell(path, title, desc, body, current=None, extra_head="", jsonld=None, noi
   <meta name="ga-measurement-id" content="">
   <script src="/assets/theme.js"></script>
   <link rel="stylesheet" href="/assets/site.css">
-  <link rel="stylesheet" href="/assets/pages.css">{extra_head}{ld}
+  <link rel="stylesheet" href="/assets/pages.css">
+  <link rel="stylesheet" href="/assets/interact.css">{extra_head}{ld}
 </head>
 <body>
 {ICONS}
@@ -168,7 +171,9 @@ def shell(path, title, desc, body, current=None, extra_head="", jsonld=None, noi
   <button type="button" class="primary" id="cookie-accept">Accept</button>
 </div>
 <script src="/assets/site.js" defer></script>
-<script src="/assets/fx.js" defer></script>{scripts}
+<script src="/assets/fx.js" defer></script>
+<script src="/assets/glossary.js" defer></script>
+<script src="/assets/helper.js" defer></script>{scripts}
 </body>
 </html>
 '''
@@ -227,8 +232,71 @@ def faq_ld(items):
     return {"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": q, "acceptedAnswer": {"@type": "Answer", "text": a}} for q, a in items]}
 
 
-def cta_band(text="Tell us what you’re building and we’ll suggest a sensible next step."):
-    return f'''<section class="cpi-cta-band"><div class="cpi-section"><h2>{esc(text)}</h2><div class="cpi-hero-actions"><a class="cpi-button-lime" href="/book">Book a consultation {icon("arrow-right")}</a><a class="cpi-text-link" href="/#assessment">Send a short description {icon("arrow-right")}</a></div></div></section>'''
+def cta_band(kind="default", topic=""):
+    """Closing strip that talks to the visitor in the context of the page, and opens the helper."""
+    heading, ask = NEXT_STEP.get(kind, NEXT_STEP["default"])
+    heading, ask = heading.replace("{topic}", topic), ask.replace("{topic}", topic)
+    topic_attr = f' data-helper-topic="{esc(topic)}"' if topic else ""
+    return f'''<section class="cpi-cta-band"><div class="cpi-section"><h2>{esc(heading)}</h2><div class="cpi-hero-actions"><button type="button" class="cpi-button-lime" data-helper-open="ask"{topic_attr}>{esc(ask)} {icon("arrow-right")}</button><a class="cpi-text-link" href="/book">Or book a time {icon("arrow-right")}</a><a class="cpi-text-link" href="/tools/deadlines">Check your dates {icon("arrow-right")}</a></div></div></section>'''
+
+
+SERVICE_BY_SLUG = {x["slug"]: x for x in SERVICES}
+
+
+def link_for(slug):
+    return f"/services/{slug}" if slug in SERVICE_BY_SLUG else f"/{slug}"
+
+
+def journey_section():
+    tabs = "".join(
+        f'<button type="button" role="tab" id="j-tab-{i}" aria-controls="j-panel-{i}" aria-selected="{"true" if i == 0 else "false"}" tabindex="{"0" if i == 0 else "-1"}"><span class="cpi-j-no">{i + 1}</span><span class="cpi-j-label">{esc(j["short"])}</span></button>'
+        for i, j in enumerate(JOURNEY))
+    panels = ""
+    for i, j in enumerate(JOURNEY):
+        svc = SERVICE_BY_SLUG[j["service"]]
+        panels += f'''<article class="cpi-j-panel" role="tabpanel" id="j-panel-{i}" aria-labelledby="j-tab-{i}">
+          <div class="cpi-j-main"><span class="cpi-j-step">Stage {i + 1} of {len(JOURNEY)}</span><h3>{esc(j["title"])}</h3><p class="cpi-j-lead">{esc(j["lead"])}</p>
+          <dl><div><dt>What happens</dt><dd>{esc(j["what"])}</dd></div><div><dt>Usual timing</dt><dd>{esc(j["timing"])}</dd></div><div><dt>How we help</dt><dd>{esc(j["we"])}</dd></div></dl></div>
+          <div class="cpi-j-side"><a class="cpi-button-lime" href="/services/{j["service"]}">{esc(svc["short"])} {icon("arrow-right")}</a><button type="button" class="cpi-ghost-btn" data-helper-open="ask" data-helper-topic="{esc(j["title"])}">Ask about this stage</button></div>
+        </article>'''
+    return f'''
+    <section class="cpi-journey-sec" id="journey" aria-labelledby="journey-h">
+      <div class="cpi-section">
+        <div class="cpi-section-head">
+          <div><div class="cpi-eyebrow"><span></span> The US patent journey</div><h2 id="journey-h">Six stages. <em>Tap any to explore.</em></h2></div>
+          <p>Every patent follows a path. See what happens at each stage, how long it usually takes, and where a second pair of eyes helps.</p>
+        </div>
+        <div class="cpi-journey" data-journey><div class="cpi-j-tabs" role="tablist" aria-label="Stages of a US patent">{tabs}</div><div class="cpi-j-panels">{panels}</div></div>
+      </div>
+    </section>'''
+
+
+def scenarios_section():
+    cards = "".join(
+        f'<button type="button" class="cpi-scn" aria-expanded="false" aria-controls="scn-{x["id"]}" data-scn="{x["id"]}"><span class="cpi-scn-ic">{icon(x["icon"])}</span><span>{esc(x["label"])}</span></button>'
+        for x in SCENARIOS)
+    panels = ""
+    for x in SCENARIOS:
+        links = "".join(f'<a class="cpi-text-link" href="{link_for(slug)}">{esc(label)} {icon("arrow-right")}</a>' for slug, label in x["links"])
+        panels += f'''<div class="cpi-scn-panel" id="scn-{x["id"]}" role="region" aria-label="{esc(x["label"])}" data-scn-panel="{x["id"]}">
+          <ul><li><strong>What it means.</strong> {esc(x["meaning"])}</li><li><strong>Worth considering.</strong> {esc(x["consider"])}</li><li><strong>A sensible next step.</strong> {esc(x["next"])}</li></ul>
+          <div class="cpi-scn-links">{links}<button type="button" class="cpi-ghost-btn" data-helper-open="ask" data-helper-topic="{esc(x["label"])}">Talk it through with a person</button></div>
+        </div>'''
+    return f'''
+    <section class="cpi-section cpi-scenarios" id="whats-happening" aria-labelledby="scn-h">
+      <div class="cpi-scn-head"><div class="cpi-eyebrow"><span></span> What is going on for you?</div><h2 id="scn-h">Pick the one that sounds <em>like you.</em></h2><p>Tap a situation for a plain-language next step. Nothing is sent anywhere, and you do not need to type a thing.</p></div>
+      <div class="cpi-scn-grid" data-scenarios>{cards}</div>
+      <div class="cpi-scn-panels">{panels}</div>
+    </section>'''
+
+
+def myths_section(compact=False):
+    cards = "".join(
+        f'<button type="button" class="cpi-myth" aria-pressed="false"><span class="cpi-myth-face cpi-myth-front"><small>Myth</small>{esc(m["myth"])}<i>Tap to flip</i></span><span class="cpi-myth-face cpi-myth-back"><small>Fact</small>{esc(m["fact"])}</span></button>'
+        for m in MYTHS)
+    cls = "cpi-myths cpi-myths-compact" if compact else "cpi-section cpi-myths"
+    inner = f'<div class="cpi-myths-head"><div class="cpi-eyebrow"><span></span> Myth or fact?</div><h2>Common ideas about patents, <em>checked.</em></h2></div><div class="cpi-myth-grid" data-myths>{cards}</div>'
+    return f'<section class="{cls}" id="myths" aria-label="Myth or fact">{inner}</section>' if not compact else f'<section class="cpi-section {cls}" id="myths" aria-label="Myth or fact">{inner}</section>'
 
 
 def detail_page(kind, item, siblings):
@@ -247,7 +315,7 @@ def detail_page(kind, item, siblings):
     body = page_hero(c_html, "Services" if kind == "service" else "Technology area", esc(item["title"]), item["lead"], slug=item["slug"]) + f'''
     <section class="cpi-section cpi-detail"><div class="cpi-prose">{secs}{domains}<!--cpi:faq-->{faq_block(item["faq"])}<!--/cpi:faq--><p class="cpi-fine">{esc(TECH_NOTE)}</p></div>{bullets}</section>
     <section class="cpi-section cpi-related-wrap"><h2>{"Other services" if kind == "service" else "Other technology areas"}</h2><div class="cpi-related-grid">{rel}</div></section>
-    {cta_band()}'''
+    {cta_band(kind, item["short"])}'''
     ld = [c_ld]
     if kind == "service":
         ld.append({"@context": "https://schema.org", "@type": "Service", "name": item["title"], "description": item["desc"], "provider": {"@type": "ProfessionalService", "name": "CanPatentIt", "url": SITE}, "areaServed": "US"})
@@ -275,15 +343,19 @@ def build_home():
         out.append(f'<a class="cpi-domain-row" href="/technology/{a["slug"]}">' + part)
     main = "".join(out)
     extra = f'''
+    {scenarios_section()}
+    {myths_section()}
     <section class="cpi-section cpi-teasers" id="tools">
-      <div class="cpi-teasers-head"><div class="cpi-eyebrow"><span></span> Start where you are</div><h2>Three easy ways to <em>get moving.</em></h2></div>
+      <div class="cpi-teasers-head"><div class="cpi-eyebrow"><span></span> Start where you are</div><h2>Four easy ways to <em>get moving.</em></h2></div>
       <a class="cpi-teaser" href="/patentability-check"><span class="cpi-teaser-icon">{icon("file-search")}</span><h3>Patentability self-check</h3><p>Answer a few questions about your invention and get plain-language guidance on what to do next.</p><span class="cpi-text-link">Start the self-check {icon("arrow-right")}</span></a>
+      <a class="cpi-teaser" href="/tools/deadlines"><span class="cpi-teaser-icon">{icon("clock")}</span><h3>Deadline tools</h3><p>Enter a date and see your provisional, disclosure and publication deadlines. Runs in your browser; nothing is stored.</p><span class="cpi-text-link">Check your dates {icon("arrow-right")}</span></a>
       <a class="cpi-teaser" href="/book"><span class="cpi-teaser-icon">{icon("calendar")}</span><h3>Book a consultation</h3><p>Pick a time that suits you. We start with the technology, not a pitch.</p><span class="cpi-text-link">See available times {icon("arrow-right")}</span></a>
       <a class="cpi-teaser" href="/insights"><span class="cpi-teaser-icon">{icon("book")}</span><h3>Insights</h3><p>Short, practical notes on patents for deep-tech founders and the people who back them.</p><span class="cpi-text-link">Read the insights {icon("arrow-right")}</span></a>
     </section>'''
     company = f'''
     <section class="cpi-section cpi-company"><div><span class="cpi-section-number">MY</span><h2>A brand of Metayage Private Limited</h2></div><div><p>CanPatentIt is a brand of Metayage, an intellectual property services and consulting company founded in 2006 and working as a strategic IP partner to founders, faculty, students and incubators.</p><a class="cpi-text-link" href="/about#metayage">About Metayage and CanPatentIt {icon("arrow-right")}</a></div></section>'''
     main = main.replace('<section class="cpi-founder-band"', extra + company + '\n    <section class="cpi-founder-band"', 1)
+    main = main.replace('<section class="cpi-domain-band"', journey_section() + '\n    <section class="cpi-domain-band"', 1)
     home_faqs = [FAQS[i] for i in (5, 6, 7, 3, 2, 11)]
     faq_rows = "".join(f'<details class="cpi-faq"><summary>{esc(q)}</summary><div><p>{esc(a)}</p></div></details>' for q, a in home_faqs)
     faq_section = f'''
@@ -341,7 +413,7 @@ def build_about():
       <section class="cpi-prose-sec"><h2>What we will not do</h2><ul><li>Promise that anything will be granted</li><li>Publish unverified statistics, client names or testimonials</li><li>Ask you to disclose more than you are comfortable sharing in a first conversation</li></ul></section>
       <p class="cpi-fine">{esc(TECH_NOTE)}</p></div>
       <aside class="cpi-side-card"><h3>Start a conversation</h3><p>Tell us what you are building and we will suggest a sensible next step.</p><a class="cpi-text-link" href="/book">Pick a time {icon("arrow-right")}</a><p class="cpi-fine">Or write to <a href="mailto:{EMAIL}">{EMAIL}</a></p></aside></section>
-    {cta_band()}'''
+    {cta_band("about")}'''
     desc = "CanPatentIt is a Metayage brand offering US patent strategy for deep-tech founders and investors. How we work and who we help."
     write("about", shell("about", "About CanPatentIt", desc, body, jsonld=[c_ld]))
     register("about", "About", desc, body)
@@ -356,7 +428,8 @@ def build_services_overview():
     <section class="cpi-section cpi-card-grid-wrap"><div class="cpi-card-grid">{cards}</div></section>
     <section class="cpi-section cpi-related-wrap"><h2>Technology areas we work in</h2><div class="cpi-related-grid">{tech}</div></section>
     <section class="cpi-section cpi-related-wrap"><h2>Also from Metayage</h2><p class="cpi-fine" style="max-width:680px;margin-bottom:18px">CanPatentIt focuses on US patent strategy. Our parent company, Metayage, also offers these services, which we can introduce you to.</p><div class="cpi-card-grid">{extra_cards}</div><p class="cpi-fine" style="margin-top:18px">Metayage’s patent showcase is organised across 14 technology domains: Artificial Intelligence, Telecommunication, Electric Vehicle, Healthcare, Cryptography, 3D/AR/VR, Blockchain, Manufacturing, Business Intelligence, Network Management, Food and Beverages, Aerospace Engineering, Bio-Medical Engineering and Polymer Technology. <a href="{SHOWCASE_URL}" rel="noopener" target="_blank">Browse the patent showcase</a>.</p></section>
-    {cta_band()}'''
+    {journey_section()}
+    {cta_band("services")}'''
     desc = "US patent services for deep-tech founders: patentability and prior art, provisional applications, prosecution, and IP strategy."
     write("services", shell("services", "Patent Services for Deep Tech", desc, body, jsonld=[c_ld]))
     register("services", "Services", desc, body)
@@ -370,9 +443,10 @@ def build_faq():
     admin panel. Here we only emit its frame, so a deploy never overwrites edited questions."""
     c_html, c_ld = crumbs([("Home", ""), ("FAQ", "faq")])
     body = page_hero(c_html, "FAQ", "Questions, <em>answered plainly.</em>", "Straight answers about how we work and what to expect.", slug="faq") + f'''
+    {myths_section(compact=True)}
     <section class="cpi-section cpi-detail cpi-faq-page"><div class="cpi-prose">@@FAQ_BLOCK@@<p class="cpi-fine">{esc(TECH_NOTE)}</p></div>
     <aside class="cpi-side-card"><h3>Still unsure?</h3><p>Ask us directly. A first conversation can start with the problem you are solving.</p><a class="cpi-text-link" href="/book">Pick a time {icon("arrow-right")}</a></aside></section>
-    {cta_band()}'''
+    {cta_band("faq")}'''
     desc = "Answers to common questions about US patent strategy, provisional applications, disclosure and how CanPatentIt works."
     out = shell("faq", "Frequently Asked Questions", desc, body, jsonld=[c_ld], extra_head=NL + "  <!--@@FAQ_LD@@-->")
     dest = os.path.join(ROOT, "backend", "resources", "cpi", "faq-shell.html")
@@ -404,7 +478,7 @@ def build_showcase():
       </div>
     </section>
     <section class="cpi-section cpi-fine-wrap"><p class="cpi-fine">Patent details are shown for illustration. {esc(TECH_NOTE)}</p></section>
-    {cta_band()}'''
+    {cta_band("showcase")}'''
     desc = "A selection of patents by technology domain and country, shown as examples of the work done by Metayage and CanPatentIt."
     write("patent-showcase", shell("patent-showcase", "Patent Showcase", desc, body, jsonld=[c_ld], scripts='\n<script src="/assets/showcase.js" defer></script>'))
     register("patent-showcase", "Patent showcase", desc, body)
@@ -419,7 +493,7 @@ def build_insights():
     c_html, c_ld = crumbs([("Home", ""), ("Insights", "insights")])
     body = page_hero(c_html, "Insights", "Practical notes on <em>deep-tech IP.</em>", "Short articles for founders, engineers and investors. General information, not legal advice.", slug="insights") + '''
     <section class="cpi-section cpi-insights-wrap"><div class="cpi-insights-bar" id="insights-bar" hidden><p class="cpi-fine" id="insights-count"></p><div class="cpi-view-toggle" role="group" aria-label="Choose layout"><button type="button" id="view-grid" aria-pressed="true" aria-label="Grid view" title="Grid view"></button><button type="button" id="view-list" aria-pressed="false" aria-label="List view" title="List view"></button></div></div><div id="insights-list" class="cpi-post-grid" aria-live="polite"><p class="cpi-fine">Loading articles…</p></div><nav class="cpi-pager" id="insights-pager" aria-label="Pagination" hidden></nav><noscript><p class="cpi-fine">Enable JavaScript to see the article list.</p></noscript></section>
-    ''' + cta_band()
+    ''' + cta_band("insights")
     desc = "Practical articles on US patent strategy for deep-tech founders, engineers and investors."
     write("insights", shell("insights", "Insights", desc, body, jsonld=[c_ld], scripts='\n<script src="/assets/insights.js" defer></script>'))
     register("insights", "Insights", desc, body)
@@ -532,6 +606,47 @@ def build_article_shell():
         f.write(out)
 
 
+def build_deadlines():
+    c_html, c_ld = crumbs([("Home", ""), ("Deadline tools", "tools/deadlines")])
+    tools = [
+        ("provisional", "clock", "I filed a provisional application", "Enter the filing date to see when a full application is due to keep that date.", "Provisional filing date"),
+        ("disclosure", "sparkles", "I showed or published my invention", "Enter the first public disclosure date to see the last day to file in the US under the inventor grace period.", "First public disclosure date"),
+        ("publication", "doc", "I filed an application", "Enter the earliest filing date to see roughly when the application is likely to be published.", "Earliest filing date"),
+        ("pct", "layers", "I am planning international protection", "Enter the priority date to see the usual foreign-filing and PCT national-phase dates.", "Priority date"),
+    ]
+    cards = "".join(
+        f'''<article class="cpi-tool" data-calc="{k}"><span class="cpi-tool-ic">{icon(ic)}</span><h2>{esc(h)}</h2><p>{esc(d)}</p>
+        <label>{esc(lab)}<input type="date" data-in autocomplete="off"></label><div class="cpi-tool-out" data-out aria-live="polite"><p class="cpi-fine">Pick a date to see the result.</p></div></article>'''
+        for k, ic, h, d, lab in tools)
+    body = page_hero(c_html, "Deadline tools", "Know your dates, <em>before they know you.</em>", "Four quick calculators. They run in your browser: nothing you enter is stored or sent.", actions=False, slug="deadlines") + f'''
+    <section class="cpi-section cpi-tool-wrap" data-deadlines>
+      <div class="cpi-tool-grid">{cards}</div>
+      <p class="cpi-fine cpi-tool-note">These are general guides based on common US and PCT rules. If a date falls on a weekend or federal holiday it can move to the next business day, and exceptions apply. Check your own dates with a professional before relying on them. {esc(TECH_NOTE)}</p>
+    </section>
+    {cta_band("default")}'''
+    desc = "Free date calculators for founders: provisional conversion deadline, US inventor grace period, publication date and PCT national-phase dates. Runs in your browser."
+    ld = [c_ld, {"@context": "https://schema.org", "@type": "WebApplication", "name": "US patent deadline calculators", "url": SITE + "/tools/deadlines", "applicationCategory": "BusinessApplication", "operatingSystem": "Any", "description": desc, "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"}, "provider": {"@id": SITE + "/#organization"}}]
+    write("tools/deadlines", shell("tools/deadlines", "Patent Deadline Calculators", desc, body, jsonld=ld, scripts='\n<script src="/assets/deadlines.js" defer></script>'))
+    register("tools/deadlines", "Deadline tools", desc, body)
+
+
+def build_glossary():
+    c_html, c_ld = crumbs([("Home", ""), ("Glossary", "glossary")])
+    items = sorted(GLOSSARY, key=lambda g: g["term"].lower())
+    dl = "".join(f'<div class="cpi-gloss-item" id="{re.sub(r"[^a-z]+", "-", g["term"].lower()).strip("-")}"><dt>{esc(g["term"])}</dt><dd>{esc(g["def"])}</dd></div>' for g in items)
+    body = page_hero(c_html, "Glossary", "Patent terms, <em>in plain English.</em>", "Short definitions of the words founders meet first.", actions=False, slug="glossary") + f'''
+    <section class="cpi-section cpi-detail"><div class="cpi-prose"><dl class="cpi-gloss">{dl}</dl><p class="cpi-fine">{esc(TECH_NOTE)}</p></div>
+    <aside class="cpi-side-card"><h3>Still a bit unclear?</h3><p>Ask us one question and a person will reply.</p><button type="button" class="cpi-button-lime" data-helper-open="ask" data-helper-topic="Glossary">Ask us one question {icon("arrow-right")}</button></aside></section>
+    {cta_band("default")}'''
+    desc = "Plain-English definitions of provisional application, priority date, prior art, claims, office action, PCT and other patent terms."
+    ld = [c_ld, {"@context": "https://schema.org", "@type": "DefinedTermSet", "name": "Patent terms for founders", "url": SITE + "/glossary",
+                 "hasDefinedTerm": [{"@type": "DefinedTerm", "name": g["term"], "description": g["def"], "inDefinedTermSet": SITE + "/glossary"} for g in items]}]
+    write("glossary", shell("glossary", "Patent Glossary for Founders", desc, body, jsonld=ld))
+    register("glossary", "Glossary", desc, body)
+    js = "window.CPI_GLOSSARY=" + json.dumps([{"t": g["term"], "m": g["match"], "d": g["def"]} for g in GLOSSARY], ensure_ascii=False) + ";\n"
+    open(os.path.join(OUT, "assets", "glossary.js"), "w", encoding="utf-8", newline="\n").write(js)
+
+
 def build_meta_files():
     sm = ['<?xml version="1.0" encoding="UTF-8"?>', '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">']
     for p in PAGES:
@@ -573,6 +688,8 @@ Nothing on this site is legal advice and no outcome is guaranteed. Contact: {EMA
 - [Book a consultation]({SITE}/book)
 - [Insights]({SITE}/insights): practical notes on patents for deep-tech founders
 - [Patent showcase]({SITE}/patent-showcase)
+- [Deadline calculators]({SITE}/tools/deadlines): provisional conversion, US grace period, publication and PCT dates, computed in the browser
+- [Glossary]({SITE}/glossary): plain-English patent terms
 - [Terms and privacy]({SITE}/terms)
 """
     open(os.path.join(OUT, "llms.txt"), "w", encoding="utf-8", newline="\n").write(llms)
@@ -632,6 +749,8 @@ def main():
     build_insights()
     build_showcase()
     build_quiz()
+    build_deadlines()
+    build_glossary()
     build_book()
     build_legal()
     build_404()

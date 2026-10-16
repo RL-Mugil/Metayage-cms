@@ -68,3 +68,5 @@ backend/.phpunit.result.cache
 /.verify-cleanup.*
 /.zoho-stale-invoices-backup.csv
 /Zoho-Portal-Reconciliation.xlsx
+tools/cpi-site/.shots/
+__pycache__/

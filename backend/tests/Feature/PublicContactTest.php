@@ -38,6 +38,20 @@ class PublicContactTest extends TestCase
             ->assertStatus(422)->assertJsonValidationErrors(['source']);
     }
 
+    public function test_one_question_helper_needs_only_an_email_and_a_question(): void
+    {
+        config(['mail.default' => 'array']);
+        $payload = ['email' => 'visitor@example.com', 'message' => 'Do I need a provisional before a demo?', 'source' => 'canpatentit-ask',
+            'stage' => '/services/provisional-applications', 'website' => '', 'elapsed_ms' => 9000];
+
+        $this->postJson('/api/public/contact', $payload)->assertCreated();
+        $this->assertDatabaseHas('site_enquiries', ['email' => 'visitor@example.com', 'name' => 'Website visitor', 'source' => 'canpatentit', 'stage' => '/services/provisional-applications']);
+
+        // The name is only optional for the helper; every other source still requires it.
+        $this->postJson('/api/public/contact', array_merge($payload, ['source' => 'canpatentit']))
+            ->assertStatus(422)->assertJsonValidationErrors(['name']);
+    }
+
     public function test_cors_allows_canpatentit_origin(): void
     {
         $this->call('OPTIONS', '/api/public/contact', [], [], [], [

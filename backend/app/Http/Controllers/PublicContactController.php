@@ -18,13 +18,13 @@ class PublicContactController extends Controller
     public function store(Request $request, TurnstileVerificationService $turnstile): JsonResponse
     {
         $data = $request->validate([
-            'name'         => ['required', 'string', 'min:2', 'max:100'],
+            'name'         => ['required_unless:source,canpatentit-ask', 'nullable', 'string', 'min:2', 'max:100'],
             'email'        => ['required', 'email:rfc', 'max:150'],
             'organization' => ['nullable', 'string', 'max:150'],
             'message'      => ['required', 'string', 'min:10', 'max:2000'],
             'stage'        => ['nullable', 'string', 'max:60'],
             'domain'       => ['nullable', 'string', 'max:80'],
-            'source'       => ['nullable', 'string', 'in:myipstrategy,canpatentit,canpatentit-quiz'],
+            'source'       => ['nullable', 'string', 'in:myipstrategy,canpatentit,canpatentit-quiz,canpatentit-ask'],
             'answers'      => ['nullable', 'array', 'max:12'],
             'answers.*'    => ['nullable', 'string', 'max:60'],
             'website'      => ['nullable', 'string', 'max:255'],
@@ -44,15 +44,17 @@ class PublicContactController extends Controller
 
         // Strip CR/LF so user input can never inject mail headers.
         $clean = fn (?string $v): string => trim(preg_replace('/[\r\n]+/', ' ', (string) $v));
-        $name = $clean($data['name']);
+        // The one-question helper only asks for an email so a person can reply; the name is optional there.
+        $name = $clean($data['name'] ?? '') ?: 'Website visitor';
         $org = $clean($data['organization'] ?? '');
 
         $stage = $clean($data['stage'] ?? '');
         $domain = $clean($data['domain'] ?? '');
         $isQuiz = ($data['source'] ?? '') === 'canpatentit-quiz';
-        $isCpi = $isQuiz || ($data['source'] ?? '') === 'canpatentit';
+        $isAsk = ($data['source'] ?? '') === 'canpatentit-ask';
+        $isCpi = $isQuiz || $isAsk || ($data['source'] ?? '') === 'canpatentit';
 
-        $body = ($isQuiz ? 'New CanPatentIt self-check result' : ($isCpi ? 'New CanPatentIt tech assessment' : 'New website enquiry'))."\n\n"
+        $body = ($isQuiz ? 'New CanPatentIt self-check result' : ($isAsk ? 'New CanPatentIt question' : ($isCpi ? 'New CanPatentIt tech assessment' : 'New website enquiry')))."\n\n"
             ."Name: {$name}\n"
             ."Email: {$data['email']}\n"
             .'Organization: '.($org !== '' ? $org : '-')."\n"
@@ -83,9 +85,11 @@ class PublicContactController extends Controller
             }
             $subject = $isQuiz
                 ? 'CanPatentIt self-check — '.$name
-                : ($isCpi
+                : ($isAsk
+                    ? 'CanPatentIt question — '.$name
+                    : ($isCpi
                     ? 'CanPatentIt tech assessment — '.($org !== '' ? $org : $name)
-                    : 'Website enquiry from '.$name);
+                    : 'Website enquiry from '.$name));
             Mail::raw($body, function ($m) use ($recipient, $data, $name, $subject) {
                 $m->to($recipient)
                     ->replyTo($data['email'], $name)

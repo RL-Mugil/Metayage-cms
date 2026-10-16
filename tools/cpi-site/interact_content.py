@@ -1,0 +1,115 @@
+# Copy for the interactive parts of canpatentit.com (journey, scenarios, glossary, myths).
+# General US patent facts only. No prices, success rates or invented statistics.
+
+# Stages of a US patent. `service` links to the matching service page.
+JOURNEY = [
+    {"id": "idea", "short": "Idea & search", "title": "Idea and prior-art check", "service": "patentability-prior-art",
+     "lead": "Before you spend on a filing, learn what has already been published and where your approach is different.",
+     "what": "We talk through how the technology works, then look at patents and papers that come close.",
+     "timing": "Ideally before any public demo, paper, pitch or launch.",
+     "we": "A patentability and prior-art search that turns patent data into a clear recommendation."},
+    {"id": "provisional", "short": "Provisional", "title": "Provisional application", "service": "provisional-applications",
+     "lead": "A provisional application secures an early filing date for what it describes while you keep building.",
+     "what": "A technical disclosure is filed. It is not examined and never becomes a patent by itself.",
+     "timing": "It expires after 12 months, so a full application has to follow within that window.",
+     "we": "A disclosure written around your real invention, with alternatives and ranges that support later claims."},
+    {"id": "nonprovisional", "short": "Non-provisional", "title": "Non-provisional application", "service": "us-patent-prosecution",
+     "lead": "The full application, with claims, is what the US patent office examines.",
+     "what": "The specification, drawings and claims are filed so the USPTO can examine the invention.",
+     "timing": "Filed within 12 months of a provisional if you want to keep its filing date.",
+     "we": "Claims and a specification shaped around the product, the market and likely questions from an examiner."},
+    {"id": "examination", "short": "Examination", "title": "Examination", "service": "us-patent-prosecution",
+     "lead": "An examiner compares your claims with the prior art and decides what can be allowed.",
+     "what": "The application waits in a queue, then an examiner reviews it and reports back.",
+     "timing": "Timing varies with the technology area and the patent office's workload.",
+     "we": "We keep the technology, the business plan and the budget in view while the application is examined."},
+    {"id": "action", "short": "Office action", "title": "Office action and response", "service": "us-patent-prosecution",
+     "lead": "Most applications receive objections or rejections first. A good response is part of the process, not the end of it.",
+     "what": "The examiner issues a written action. You respond with arguments, amended claims or an interview.",
+     "timing": "The action sets a response deadline, commonly three months and extendable for a fee.",
+     "we": "Responses that protect what matters most and explain the technology clearly to the examiner."},
+    {"id": "granted", "short": "Granted", "title": "Allowance and grant", "service": "ip-strategy-diligence",
+     "lead": "When claims are allowed and fees are paid, the patent is granted. Keeping it and using it well comes next.",
+     "what": "The patent issues. Granted US utility patents need maintenance fees to stay in force.",
+     "timing": "Maintenance fees fall due about 3.5, 7.5 and 11.5 years after grant.",
+     "we": "Portfolio planning that stands up to investor questions, product decisions and growth."},
+]
+
+# "What's happening for you?" - tap cards. Each has three short lines and a next step.
+SCENARIOS = [
+    {"id": "demo", "label": "I'm about to demo or launch", "icon": "sparkles",
+     "meaning": "A public demo, pitch or launch can count as a public disclosure.",
+     "consider": "In many countries that can limit patent rights, so it is worth deciding what to file first.",
+     "next": "Consider a provisional application before you go public.",
+     "links": [("provisional-applications", "Provisional applications"), ("tools/deadlines", "Check your dates")]},
+    {"id": "raise", "label": "I'm raising a round", "icon": "gauge",
+     "meaning": "Investors tend to ask what you own, what is protectable and where the risks are.",
+     "consider": "Clear answers help the conversation more than a long list of filings.",
+     "next": "Prepare a short, honest picture of your IP position.",
+     "links": [("ip-strategy-diligence", "IP strategy & diligence")]},
+    {"id": "publish", "label": "I want to publish or open-source", "icon": "file-search",
+     "meaning": "Your own paper or code release can become prior art against you.",
+     "consider": "The US gives inventors a 12-month grace period; many other countries give none.",
+     "next": "Decide what to protect before you publish.",
+     "links": [("patentability-prior-art", "Patentability & prior art"), ("tools/deadlines", "Check your dates")]},
+    {"id": "competitor", "label": "A competitor filed something similar", "icon": "search",
+     "meaning": "A published application is only relevant for what it actually claims and discloses.",
+     "consider": "The dates matter: what counts is who filed first and what was public when.",
+     "next": "Read what is really claimed before reacting.",
+     "links": [("patentability-prior-art", "Patentability & prior art")]},
+    {"id": "explore", "label": "I'm just exploring", "icon": "lock",
+     "meaning": "That is a good place to start. You do not need a polished pitch.",
+     "consider": "A few plain questions can show whether a patent is even the right tool.",
+     "next": "Try the self-check, or ask us one question.",
+     "links": [("patentability-check", "Patentability self-check")]},
+]
+
+# Terms explained on hover/tap and on /glossary. `match` lists the phrases that trigger the tooltip.
+GLOSSARY = [
+    {"term": "Provisional application", "match": ["provisional application", "provisional patent application", "provisional"],
+     "def": "A US filing that secures an early date for what it describes. It is not examined and expires after 12 months."},
+    {"term": "Non-provisional application", "match": ["non-provisional", "nonprovisional"],
+     "def": "The full US application, with claims, that the patent office examines."},
+    {"term": "Priority date", "match": ["priority date"],
+     "def": "The earliest filing date a later application can rely on."},
+    {"term": "Prior art", "match": ["prior art"],
+     "def": "Anything made public before your priority date that can be used to judge whether an invention is new and non-obvious."},
+    {"term": "Claims", "match": ["claims"],
+     "def": "The numbered statements at the end of a patent that define exactly what is protected."},
+    {"term": "Office action", "match": ["office action"],
+     "def": "A written report from the patent examiner, usually raising objections or rejections that you can answer."},
+    {"term": "Freedom to operate", "match": ["freedom-to-operate", "freedom to operate"],
+     "def": "An analysis of whether making or selling a product may infringe other people's patents."},
+    {"term": "PCT", "match": ["PCT"],
+     "def": "The Patent Cooperation Treaty route: one international application that later enters national phases. It is not an international patent."},
+    {"term": "Grace period", "match": ["grace period"],
+     "def": "Time after your own public disclosure in which you can still file. The US allows 12 months; many countries allow none."},
+    {"term": "Maintenance fees", "match": ["maintenance fees", "maintenance fee"],
+     "def": "Fees that keep a granted US utility patent in force, due about 3.5, 7.5 and 11.5 years after grant."},
+]
+
+# Myth or fact? Answers mirror the FAQ wording so the legal position stays consistent.
+MYTHS = [
+    {"myth": "A provisional application is a patent.",
+     "fact": "It is not examined and never becomes a patent by itself. It holds a filing date for 12 months."},
+    {"myth": "There is one international patent.",
+     "fact": "Patents are national or regional. The Paris Convention and the PCT help you plan, but each country grants its own."},
+    {"myth": "I can publish first and file later, anywhere.",
+     "fact": "The US allows a 12-month grace period for your own disclosure, but many countries allow none."},
+    {"myth": "Owning a patent means I can freely sell my product.",
+     "fact": "A patent lets you exclude others. It does not guarantee you are free from other people's patents."},
+    {"myth": "A search guarantees a patent will be granted.",
+     "fact": "A search informs your decision. Examination by the patent office is separate and no outcome can be guaranteed."},
+]
+
+# Context-aware closing strip. {topic} is filled per page.
+NEXT_STEP = {
+    "service": ("Wondering whether this fits what you're building?", "Ask us one question about {topic}"),
+    "area": ("Building in {topic}?", "Ask what is realistic to protect"),
+    "about": ("Curious how we would approach your technology?", "Ask us one question"),
+    "services": ("Not sure which service you need?", "Ask us one question"),
+    "faq": ("Did not find your answer?", "Ask us one question"),
+    "showcase": ("Looking at these and thinking about your own?", "Ask us one question"),
+    "insights": ("Something here made you think of your own technology?", "Ask us one question"),
+    "default": ("Tell us what you're building and we'll suggest a sensible next step.", "Ask us one question"),
+}
