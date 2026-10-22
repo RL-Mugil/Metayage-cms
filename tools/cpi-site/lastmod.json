@@ -1,0 +1,86 @@
+{
+ "/": {
+  "date": "2026-10-16",
+  "hash": "69ddc014b2332408"
+ },
+ "about": {
+  "date": "2026-10-16",
+  "hash": "1e917da7abac7d7e"
+ },
+ "book": {
+  "date": "2026-10-16",
+  "hash": "b62fdc49647a2c3d"
+ },
+ "faq": {
+  "date": "2026-10-16",
+  "hash": "68b2ba193772298d"
+ },
+ "glossary": {
+  "date": "2026-10-16",
+  "hash": "3e0842c2e009c3d2"
+ },
+ "insights": {
+  "date": "2026-10-16",
+  "hash": "b5dfd01d8bb6b6d8"
+ },
+ "patent-showcase": {
+  "date": "2026-10-16",
+  "hash": "efee4d9bf1c5247a"
+ },
+ "patentability-check": {
+  "date": "2026-10-16",
+  "hash": "d45f822d074203a1"
+ },
+ "services": {
+  "date": "2026-10-16",
+  "hash": "c9763fc2a265de52"
+ },
+ "services/ip-strategy-diligence": {
+  "date": "2026-10-16",
+  "hash": "5802ea3fbc87ae26"
+ },
+ "services/patentability-prior-art": {
+  "date": "2026-10-16",
+  "hash": "e9f3599fc14387a7"
+ },
+ "services/provisional-applications": {
+  "date": "2026-10-16",
+  "hash": "ddfe5804d809ae6f"
+ },
+ "services/us-patent-prosecution": {
+  "date": "2026-10-16",
+  "hash": "cb323c561550db39"
+ },
+ "site-map": {
+  "date": "2026-10-16",
+  "hash": "4ebdbbecfbf9a423"
+ },
+ "technology/ai-machine-learning": {
+  "date": "2026-10-16",
+  "hash": "c5ac84dfc2169903"
+ },
+ "technology/climate-energy": {
+  "date": "2026-10-16",
+  "hash": "37f1274112836226"
+ },
+ "technology/enterprise-software-security": {
+  "date": "2026-10-16",
+  "hash": "83bbcec8f9e5ad96"
+ },
+ "technology/medtech-biotechnology": {
+  "date": "2026-10-16",
+  "hash": "9d958bf3367b502e"
+ },
+ "technology/semiconductors-quantum": {
+  "date": "2026-10-16",
+  "hash": "79f4f53937c5b3c4"
+ },
+ "terms": {
+  "date": "2026-10-16",
+  "hash": "205383c8559643bc"
+ },
+ "tools/deadlines": {
+  "date": "2026-10-16",
+  "hash": "e19b75e482e96418"
+ }
+}

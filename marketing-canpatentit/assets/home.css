@@ -110,3 +110,27 @@
   .cpi-fact, .cpi-principles article, .cpi-step-num, .cpi-service-item::before { transition: none; }
   .cpi-fact:hover, .cpi-principles article:hover, .cpi-step:hover .cpi-step-num { transform: none; }
 }
+
+/* Compact assessment form */
+.cpi-assessment-layout { gap: 64px; padding-block: 64px 68px; align-items: start; }
+.cpi-assessment-copy h2 { margin-top: 18px; font-size: clamp(44px, 5vw, 62px); line-height: 1.02; }
+.cpi-assessment-copy > p { margin-top: 18px; }
+.cpi-assessment-aside { margin-top: 28px; }
+.cpi-form-wrap { padding: 20px 26px 22px; }
+.cpi-form { gap: 12px; }
+.cpi-form-top { padding-bottom: 10px; }
+.cpi-field-pair { gap: 12px; }
+.cpi-field-trio { display: grid; grid-template-columns: 1.1fr 1fr 1fr; gap: 12px; }
+.cpi-form label { gap: 5px; }
+.cpi-form input, .cpi-form select { height: 38px; padding: 8px 11px; }
+.cpi-form textarea { min-height: 66px; padding: 9px 11px; }
+.cpi-select-wrap svg { top: 12px; }
+.cpi-field-error:empty { display: none; }
+.cpi-form-foot { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
+.cpi-form-foot .cpi-button-lime { min-height: 44px; margin-left: auto; }
+.cpi-form-hint { margin: -4px 0 0; color: color-mix(in oklab, var(--cpi-ink) 58%, transparent); font-size: 10px; line-height: 1.5; }
+.cpi-form-disclosure { margin: 0; }
+.cpi-form-status:empty { display: none; }
+@media (max-width: 1100px) { .cpi-field-trio { grid-template-columns: 1fr 1fr; } .cpi-field-trio > label:first-child { grid-column: 1 / -1; } }
+@media (max-width: 900px) { .cpi-assessment-layout { gap: 32px; padding-block: 52px 56px; } }
+@media (max-width: 560px) { .cpi-field-pair, .cpi-field-trio { grid-template-columns: 1fr; } .cpi-form-wrap { padding: 18px 16px; } .cpi-form-foot .cpi-button-lime { width: 100%; justify-content: center; } }

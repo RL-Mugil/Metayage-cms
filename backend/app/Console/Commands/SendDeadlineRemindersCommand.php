@@ -90,7 +90,8 @@ class SendDeadlineRemindersCommand extends Command
         $reminder->title       = $title;
         $reminder->description = $description;
         $reminder->category    = $category;
-        $reminder->due_date    = $dueDate;
+        // reminders.due_date is NOT NULL. Open-ended nags (e.g. a skipped document upload) pass no date: they are due today.
+        $reminder->due_date    = $dueDate ?? Carbon::today()->toDateString();
         $reminder->scope       = 'self';
         if (! $reminder->exists) {
             $reminder->completed = false; // don't un-complete something the user cleared

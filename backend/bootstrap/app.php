@@ -49,11 +49,7 @@ return Application::configure(basePath: dirname(__DIR__))
                 return;
             }
             try {
-                app(\App\Services\OpsAlertService::class)->alert(
-                    'Server error: '.class_basename($e),
-                    $e->getMessage().PHP_EOL.PHP_EOL.$e->getFile().':'.$e->getLine().PHP_EOL.request()->method().' '.request()->fullUrl().PHP_EOL.now()->toDateTimeString().' (server time)',
-                    $e::class.'|'.$e->getFile().':'.$e->getLine(),
-                );
+                app(\App\Services\OpsAlertService::class)->alertException($e, app()->runningInConsole() ? '' : request()->method().' '.request()->fullUrl());
             } catch (\Throwable) {
                 // never let alerting failures surface
             }

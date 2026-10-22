@@ -41,7 +41,15 @@ class AppServiceProvider extends ServiceProvider
     {
         User::observe(UserObserver::class);
 
-        // A queue job that exhausts its retries alerts the system admins and directors (once per job class per hour).
+        // When a scheduled command finishes successfully, whatever it had been failing with is over (this is what lets
+        // the system send a "recovered" email for a problem that was in the morning report).
+        \Illuminate\Support\Facades\Event::listen(\Illuminate\Console\Events\ScheduledTaskFinished::class, function (\Illuminate\Console\Events\ScheduledTaskFinished $event): void {
+            if (($event->task->exitCode ?? 1) === 0 && is_string($event->task->command) && preg_match("~'artisan' ([^\s']+)~", $event->task->command, $m)) {
+                $this->app->make(\App\Services\OpsIncidentService::class)->commandSucceeded($m[1]);
+            }
+        });
+
+        // A queue job that exhausts its retries is recorded as a problem for the morning report (it sends no email itself).
         if ($this->app->environment('production')) {
             \Illuminate\Support\Facades\Queue::failing(function (\Illuminate\Queue\Events\JobFailed $event): void {
                 $this->app->make(\App\Services\OpsAlertService::class)->alert(

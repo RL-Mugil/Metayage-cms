@@ -194,7 +194,7 @@
     var hp = el('input'); hp.name = 'website'; hp.tabIndex = -1; hp.autocomplete = 'off';
     var honey = el('div', 'cpi-honeypot'); honey.setAttribute('aria-hidden', 'true'); honey.appendChild(hp);
     var ts = el('div'); ts.id = 'cpi-helper-ts';
-    var fine = el('p', 'cpi-helper-fine', 'A real person reads this and replies by email. Please keep confidential details out for now. We use your email only to reply.');
+    var fine = el('p', 'cpi-helper-fine', 'A real person reads this and replies by email within one working day. Please keep confidential details out for now. We use your email only to reply.');
     var send = el('button', 'cpi-helper-send', 'Send my question'); send.type = 'submit';
     var status = el('p', 'cpi-helper-status'); status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite');
     form.appendChild(back);
@@ -205,7 +205,7 @@
 
     var done = el('div', 'cpi-helper-view'); done.hidden = true;
     done.appendChild(el('p', 'cpi-helper-hi', 'Thank you.'));
-    done.appendChild(el('p', 'cpi-helper-sub', 'Your question is with our team. We will reply by email.'));
+    done.appendChild(el('p', 'cpi-helper-sub', 'Your question is with our team. We will reply by email within one working day.'));
     var again = el('button', 'cpi-helper-action'); again.type = 'button'; again.setAttribute('data-go', 'menu'); again.appendChild(el('span', '', 'Back to options')); done.appendChild(again);
 
     panel.appendChild(close); panel.appendChild(menu); panel.appendChild(form); panel.appendChild(done);

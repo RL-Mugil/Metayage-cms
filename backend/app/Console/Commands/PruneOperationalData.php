@@ -34,6 +34,7 @@ class PruneOperationalData extends Command
             'job_batches'            => fn ($q) => $q->whereNotNull('finished_at')->where('finished_at', '<', $ts),
             'personal_access_tokens' => fn ($q) => $q->whereNotNull('expires_at')->where('expires_at', '<', $cutoff),
             'sessions'               => fn ($q) => $q->where('last_activity', '<', $ts),
+            'ops_incidents'          => fn ($q) => $q->where('status', 'resolved')->where('resolved_at', '<', $cutoff),
         ];
 
         $total = 0;

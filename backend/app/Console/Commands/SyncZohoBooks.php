@@ -19,6 +19,8 @@ class SyncZohoBooks extends Command
         }
         $result = $sync->run(null, (bool) $this->option('evening'), (bool) $this->option('scheduled'), (bool) $this->option('emergency'), (bool) $this->option('addon'));
         $this->line($result['message']);
-        return $result['ok'] ? self::SUCCESS : self::FAILURE;
+        // "paused" (daily allowance used, not eligible for the evening run) and "busy" are normal, expected states: only a
+        // real failure should make the scheduled task fail and appear in the health report.
+        return in_array($result['status'], ['ok', 'paused', 'busy'], true) ? self::SUCCESS : self::FAILURE;
     }
 }

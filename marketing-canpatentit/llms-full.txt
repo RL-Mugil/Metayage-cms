@@ -1,0 +1,121 @@
+# CanPatentIt: full text
+
+> US patent strategy for deep-technology founders, engineers and investors. A brand of Metayage Private Limited (founded 2006). General information only; not legal advice and no outcome is guaranteed.
+
+## Services
+
+### Patentability & Prior Art Search (https://canpatentit.com/services/patentability-prior-art)
+Before you spend on a filing, find out where your idea sits among what has already been published and patented.
+
+**Patent information, made usable.** Patent applications are generally published about 18 months after the earliest filing date, so a large body of technical information sits in patent databases. It is valuable for research, due diligence and competitive intelligence, but it is written mainly for lawyers and takes specialist search skills to find. We translate that material into plain observations and recommendations. No search is exhaustive and none can promise an outcome at the patent office. What it can do is replace guesswork with context before you commit budget.
+
+**Four kinds of search.** Patentability search. Checks whether an invention looks patentable and how to write the application well. We examine each distinctive element worldwide and deliver the relevant documents, a short review of each, and a comparison of your features against the existing work. State-of-the-art search. A broad view of a technology area, sorted by the problems being solved, who is filing and the strengths and weaknesses of each approach. Useful for steering R&D and spotting partners. Freedom-to-operate (FTO) search. Looks at whether a product or process may overlap with patents in a target market before launch, covering all the features and combinations in the product, not only the new ones. Invalidity search. Looks for anything published before a patent’s filing date that could affect its validity. Used when a patent is challenged, before a partnership or merger, or when you face an infringement claim.
+
+**How it works.** Technical conversation. We start with how the system works and what you believe is different. Disclosure. Under a confidentiality agreement you share an invention disclosure with the details we need. Search. We search patent databases and technical literature using the concepts of your approach, not only keywords. Findings and next step. We recommend whether to file, what to emphasise, or what to build or disclose differently.
+
+### Provisional Patent Applications (https://canpatentit.com/services/provisional-applications)
+A provisional application can secure an early filing date while you keep building, testing and raising.
+
+**What a provisional does.** A US provisional application establishes a filing date for what it adequately describes. It is not examined and does not become a patent by itself. To keep the benefit of that date you generally need to file a non-provisional application within twelve months. Its value depends on the quality of the disclosure. A thin description protects little, so we build it from your real architecture, variants and fallback positions.
+
+**What we put into it.** The core system, method or composition, described in enough technical detail to support later claims Alternative implementations and ranges, so the filing is not narrower than your thinking Figures and flow diagrams that match how engineers explain the work Early claim-style statements to anchor what matters commercially Good claims define the scope of protection, and the description must let a skilled person carry out the invention without undue experimentation. Both are written for the requirements of the office that will examine them.
+
+**Choosing the filing route.** Provisional application. Suits an invention still taking shape. It sets a priority date and gives twelve months to file a complete application. Complete (non-provisional) application. The standard filing for a fully developed invention, with a detailed specification and claims. Paris Convention route. Gives twelve months from the first filing to file in other countries and claim that date. It is simpler but needs faster decisions. PCT route. A single international application that keeps the option of entering many countries open for roughly 30 months from the priority date. It gives more planning time but involves more steps and cost.
+
+### US Patent Prosecution (https://canpatentit.com/services/us-patent-prosecution)
+Prosecution is where claims meet an examiner. Good strategy keeps the technology, the business and the budget in view.
+
+**From filing to decision.** After a non-provisional application is filed it is examined at the US Patent and Trademark Office. Examiners commonly issue office actions raising objections or rejections, and the application proceeds through responses, interviews and sometimes appeals or continuations. Each step is a chance to refine the claims toward what actually protects your product and your position with investors and partners.
+
+**How we approach it.** Claims with intent. Claim sets drafted around your product and likely competitors, not only the first idea. Technical responses. Office action responses that engage with the references and the engineering, studying each objection to tailor the strategy. Where an interview with the examiner would help, we arrange one. Portfolio thinking. Continuations and related filings planned alongside the roadmap. Clear updates. Plain-language status and decisions you can act on.
+
+**Issue and upkeep.** Winning allowance is not the end. Issue fees must be paid on time, and US maintenance fees fall due at 3.5, 7.5 and 11.5 years after grant. Missed payments can cause a patent to lapse or an application to be abandoned. We track every deadline with docketing software and reminders, so decisions never arrive as surprises.
+
+**Beyond the US.** Patents are territorial: a US patent applies only in the US. If your markets, manufacturing or competitors are elsewhere, we help you plan foreign filings against the Paris Convention and PCT deadlines. Through our parent company, Metayage , international prosecution is coordinated with local associate firms chosen for the technology and your budget.
+
+### IP Strategy & Diligence (https://canpatentit.com/services/ip-strategy-diligence)
+IP should support the business: what you own, what is protectable, where the risks are, and what to do next.
+
+**Strategy that follows the roadmap.** We help you decide what to protect, what to keep as a trade secret, what to publish, and in what order, with the product, the market and the runway in view. Think of it as an extended in-house IP department: patent filing, investor preparation, freedom-to-operate analysis, technology transfer and IP training, without building a full team. The aim is a portfolio that tells a coherent story rather than a pile of unrelated filings. And if a patent would not be valuable, patentable or enforceable, we will say so up front.
+
+**What diligence covers.** Freedom to operate. Run before you make or sell a product in a country, to avoid costly infringement disputes. A patentable invention can still infringe someone else’s dominant patent. Patent scope assessment. A patent’s value lies in its claims. We explain in plain language what they cover and what they do not, and whether they are broad enough to hold off competitors. Patentability and validity. For pending applications, how likely grant is. For granted patents, how vulnerable they are to challenge. Ownership verification. Whether the company owns the IP it relies on or only uses it. A clear chain of title, backed by agreements and recorded with the patent office, avoids later disputes. Trademark diligence. Searches for conflicts, confirmation of registration status and ownership, and a look at protection in key markets.
+
+**If a freedom-to-operate search finds overlap.** Redesign so at least one claim limitation is absent, supported by a legal opinion Negotiate a licence with the patent owner before launch Cross-license, where you hold overlapping patents of your own Skipping the search leaves you weaker in negotiations and exposed to litigation. A full freedom-to-operate opinion is a distinct, scoped piece of work; we will tell you when one is warranted.
+
+**How a diligence engagement runs.** Setup. A confidentiality agreement with the investor and the startup. The startup shares filings and documents and completes a short questionnaire: target markets, product components and process steps, what was developed in-house, and competitors. Analysis. Patentability, validity and freedom-to-operate searches as needed. Findings. Analyses of the key patents, observations and recommendations, with calls to walk through them and answer questions.
+
+## Technology areas
+
+### Patents for AI & Machine Learning (https://canpatentit.com/technology/ai-machine-learning)
+AI inventions often sit between software, math and hardware. Framing them well matters.
+
+### Patents for Semiconductors & Quantum (https://canpatentit.com/technology/semiconductors-quantum)
+Hardware inventions reward careful claim structure, and the details of the process often are the invention.
+
+### Patents for MedTech & Biotechnology (https://canpatentit.com/technology/medtech-biotechnology)
+Regulated, research-driven technology needs IP that fits clinical, regulatory and funding timelines.
+
+### Patents for Climate & Energy (https://canpatentit.com/technology/climate-energy)
+Energy technology moves from lab to field. Your IP plan should move with it.
+
+### Patents for Enterprise Software & Security (https://canpatentit.com/technology/enterprise-software-security)
+Software patents hinge on the technical improvement. We help you describe it in a way that holds up.
+
+## The US patent journey
+
+1. **Idea and prior-art check.** Before you spend on a filing, learn what has already been published and where your approach is different. What happens: We talk through how the technology works, then look at patents and papers that come close. Timing: Ideally before any public demo, paper, pitch or launch.
+2. **Provisional application.** A provisional application secures an early filing date for what it describes while you keep building. What happens: A technical disclosure is filed. It is not examined and never becomes a patent by itself. Timing: It expires after 12 months, so a full application has to follow within that window.
+3. **Non-provisional application.** The full application, with claims, is what the US patent office examines. What happens: The specification, drawings and claims are filed so the USPTO can examine the invention. Timing: Filed within 12 months of a provisional if you want to keep its filing date.
+4. **Examination.** An examiner compares your claims with the prior art and decides what can be allowed. What happens: The application waits in a queue, then an examiner reviews it and reports back. Timing: Timing varies with the technology area and the patent office's workload.
+5. **Office action and response.** Most applications receive objections or rejections first. A good response is part of the process, not the end of it. What happens: The examiner issues a written action. You respond with arguments, amended claims or an interview. Timing: The action sets a response deadline, commonly three months and extendable for a fee.
+6. **Allowance and grant.** When claims are allowed and fees are paid, the patent is granted. Keeping it and using it well comes next. What happens: The patent issues. Granted US utility patents need maintenance fees to stay in force. Timing: Maintenance fees fall due about 3.5, 7.5 and 11.5 years after grant.
+
+## Glossary
+
+- **Provisional application**: A US filing that secures an early date for what it describes. It is not examined and expires after 12 months.
+- **Non-provisional application**: The full US application, with claims, that the patent office examines.
+- **Priority date**: The earliest filing date a later application can rely on.
+- **Prior art**: Anything made public before your priority date that can be used to judge whether an invention is new and non-obvious.
+- **Claims**: The numbered statements at the end of a patent that define exactly what is protected.
+- **Office action**: A written report from the patent examiner, usually raising objections or rejections that you can answer.
+- **Freedom to operate**: An analysis of whether making or selling a product may infringe other people's patents.
+- **PCT**: The Patent Cooperation Treaty route: one international application that later enters national phases. It is not an international patent.
+- **Grace period**: Time after your own public disclosure in which you can still file. The US allows 12 months; many countries allow none.
+- **Maintenance fees**: Fees that keep a granted US utility patent in force, due about 3.5, 7.5 and 11.5 years after grant.
+
+## Myth or fact
+
+- Myth: A provisional application is a patent. Fact: It is not examined and never becomes a patent by itself. It holds a filing date for 12 months.
+- Myth: There is one international patent. Fact: Patents are national or regional. The Paris Convention and the PCT help you plan, but each country grants its own.
+- Myth: I can publish first and file later, anywhere. Fact: The US allows a 12-month grace period for your own disclosure, but many countries allow none.
+- Myth: Owning a patent means I can freely sell my product. Fact: A patent lets you exclude others. It does not guarantee you are free from other people's patents.
+- Myth: A search guarantees a patent will be granted. Fact: A search informs your decision. Examination by the patent office is separate and no outcome can be guaranteed.
+
+## Frequently asked questions
+
+**What is CanPatentIt?** CanPatentIt is a US patent strategy brand of Metayage Private Limited for deep-technology founders, engineers and investors. We help you decide what to protect and how, from first idea to funding diligence.
+
+**Is the information on this site legal advice?** No. The site gives general information only. Using it, taking the self-check or booking a call does not create an attorney-client relationship. An engagement begins only when we agree in writing.
+
+**Can you promise my invention will be patented?** No one can. Patent offices decide, and outcomes depend on the facts and the prior art. We can help you make informed decisions and present your invention well.
+
+**When should I contact you?** Ideally before you publish, demo, pitch publicly or launch, because public disclosure can affect your rights. Early conversations are often the cheapest way to avoid problems.
+
+**What should I bring to a first conversation?** Just a description of the problem you solve and how your approach works. A rough diagram or draft deck helps. Keep very sensitive details high-level until we have agreed how to exchange confidential material.
+
+**What is a provisional patent application?** A US filing that secures an early date for what it describes. It is not examined and expires after twelve months, so a non-provisional filing is needed to continue.
+
+**Is there an international patent?** No. Patents are national or regional. The Paris Convention and the PCT help you plan, but fees and examination apply country by country.
+
+**Do I need to live in the US to file a US patent?** No. Anyone can apply regardless of nationality or residence, although your home country may require permission before you file abroad.
+
+**What is the difference between a patentability search and a freedom-to-operate search?** A patentability search focuses on what is unique in your invention. A freedom-to-operate search covers every feature and combination in the product you sell. Neither replaces the other.
+
+**Can I infringe others' patents while selling my own patented product?** Yes, potentially. A patent on one feature does not cover the rest of the product, which others may hold patents on.
+
+**Which technologies do you work with?** AI and machine learning, semiconductors and quantum, MedTech and biotechnology, climate and energy, and enterprise software and security.
+
+**How do fees work?** Scope and fees depend on the work. We discuss them openly before anything starts. This site does not list prices.
+
+**How is my information handled?** Details you send through our forms are used to respond to you. See the Privacy Policy for specifics.
+

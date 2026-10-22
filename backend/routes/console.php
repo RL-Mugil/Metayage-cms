@@ -37,6 +37,12 @@ Schedule::command('zoho:poll')->cron('2-59/5 * * * *')->timezone('Asia/Kolkata')
 Schedule::command('zoho:reconcile-deleted')->hourlyAt(17)->timezone('Asia/Kolkata')->withoutOverlapping(30)->onOneServer();
 Schedule::command('zoho:sync --evening')->cron('*/5 23 * * *')->timezone('Asia/Kolkata')->withoutOverlapping(65)->onOneServer();
 
+// Operational monitoring: a heartbeat so the morning report can tell the scheduler is alive, a sweep that marks quiet problems
+// as recovered (and emails a recovery notice only for problems that were already reported), and the ONE daily health report.
+Schedule::call(fn () => \Illuminate\Support\Facades\Cache::put('ops:scheduler:beat', now()->timestamp, 900))->everyMinute()->name('ops-heartbeat');
+Schedule::command('ops:incidents-sweep')->everyTenMinutes()->withoutOverlapping()->onOneServer();
+Schedule::command('ops:daily-report')->dailyAt('06:00')->timezone('Asia/Kolkata')->withoutOverlapping()->onOneServer();
+
 // Remove article images that no article references any more (stray uploads older than an hour).
 
 Schedule::command('cpi:prune-images')->dailyAt('04:30')->timezone('Asia/Kolkata')->onOneServer();

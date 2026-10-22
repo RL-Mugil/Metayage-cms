@@ -41,7 +41,8 @@ class PollZohoBooks extends Command
             foreach ([$resource] as $resource) {
                 $cursor = DB::table('zoho_poll_cursors')->where(['scope' => $zoho->scope(), 'resource' => $resource])->first();
                 DB::table('zoho_poll_cursors')->updateOrInsert(['scope' => $zoho->scope(), 'resource' => $resource], ['last_run_at' => $runAt, 'updated_at' => $runAt, 'created_at' => $cursor?->created_at ?? $runAt]);
-                $query = ['page' => 1, 'sort_column' => 'last_modified_time', 'sort_order' => 'D'];
+                // Only the newest 25 records are used, so ask for 25 (the default page of 200 is ~470 KB and was timing out).
+                $query = ['page' => 1, 'sort_column' => 'last_modified_time', 'sort_order' => 'D', 'per_page' => 25];
                 $data = $zoho->listPage($resource, $query);
                 // Polling is for near-real-time changes; the nightly resumable sync
                 // remains responsible for historical backfill. This cap also keeps a
@@ -72,6 +73,7 @@ class PollZohoBooks extends Command
                     'last_success_at' => $failed === 0 ? now() : ($cursor?->last_success_at), 'last_error' => $failed ? 'One or more records failed; see audit log.' : null, 'updated_at' => now(),
                 ]);
             }
+            Cache::forget('zoho_poll_fail_streak');
             DB::table('integration_logs')->insert(['slug' => 'zoho', 'event_type' => 'poll', 'status' => $failed ? 'partial' : 'ok',
                 'summary' => "Zoho poll processed {$processed} record(s).", 'payload' => json_encode(['processed' => $processed, 'failed' => $failed]), 'created_at' => now(), 'updated_at' => now()]);
             AuditLog::create(['user_id' => null, 'action' => 'zoho_poll_completed', 'subject_type' => 'ZohoPoll',
@@ -85,11 +87,21 @@ class PollZohoBooks extends Command
                 return self::SUCCESS;
             }
             report($error);
-            DB::table('integration_logs')->insert(['slug' => 'zoho', 'event_type' => 'poll', 'status' => 'paused', 'summary' => $error->getMessage(), 'payload' => null, 'created_at' => now(), 'updated_at' => now()]);
+            DB::table('integration_logs')->insert(['slug' => 'zoho', 'event_type' => 'poll', 'status' => 'paused', 'summary' => mb_substr($error->getMessage(), 0, 250), 'payload' => null, 'created_at' => now(), 'updated_at' => now()]);
+            return self::SUCCESS;
+        } catch (\Illuminate\Http\Client\ConnectionException $error) {
+            // Zoho answered too slowly or the network blinked. The next poll is five minutes away, so this only becomes
+            // an alert if it keeps happening (six polls in a row, about half an hour). The run itself is not a failure.
+            $streak = (int) Cache::get('zoho_poll_fail_streak', 0) + 1;
+            Cache::put('zoho_poll_fail_streak', $streak, now()->addHour());
+            if ($streak === 6) {
+                report($error);
+            }
+            DB::table('integration_logs')->insert(['slug' => 'zoho', 'event_type' => 'poll', 'status' => 'fail', 'summary' => mb_substr($error->getMessage(), 0, 250), 'payload' => null, 'created_at' => now(), 'updated_at' => now()]);
             return self::SUCCESS;
         } catch (Throwable $error) {
             report($error);
-            DB::table('integration_logs')->insert(['slug' => 'zoho', 'event_type' => 'poll', 'status' => 'fail', 'summary' => $error->getMessage(), 'payload' => null, 'created_at' => now(), 'updated_at' => now()]);
+            DB::table('integration_logs')->insert(['slug' => 'zoho', 'event_type' => 'poll', 'status' => 'fail', 'summary' => mb_substr($error->getMessage(), 0, 250), 'payload' => null, 'created_at' => now(), 'updated_at' => now()]);
             AuditLog::create(['user_id' => null, 'action' => 'zoho_poll_failed', 'subject_type' => 'ZohoPoll', 'metadata' => ['scope' => $zoho->scope(), 'message' => $error->getMessage()], 'ip_address' => null, 'user_agent' => 'scheduler']);
             return self::FAILURE;
         } finally {

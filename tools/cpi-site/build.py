@@ -17,10 +17,12 @@ OUT = os.path.join(ROOT, "marketing-canpatentit")
 sys.path.insert(0, HERE)
 from content import SERVICES, AREAS, FAQS, TECH_NOTE, RELATED_SERVICES, SHOWCASE_URL  # noqa: E402
 from interact_content import JOURNEY, SCENARIOS, GLOSSARY, MYTHS, NEXT_STEP  # noqa: E402
+from guide_content import GUIDE, GUIDE_APPROVED  # noqa: E402
 
 SITE = "https://canpatentit.com"
 EMAIL = "mugilvannan@myipstrategy.com"
-TODAY = "2026-10-14"
+TODAY = "2026-10-16"
+INDEXNOW_KEY = "7c1e5b9a4d2f48a6b3e0c8d1f5a7924e"  # public by design: served at /<key>.txt so IndexNow can verify ownership
 esc = html.escape
 
 
@@ -58,6 +60,34 @@ def icon(name, cls="i"):
 
 
 PAGES = []  # {path, title, desc, text} for sitemap + search
+
+# Search-result titles and descriptions, tuned for the phrases people type ("can patent it", "can I patent my idea").
+SEO = {
+    "": {"title": "CanPatentIt: Can You Patent It? Patent Strategy for Founders",
+         "desc": "Can you patent it? CanPatentIt helps deep-tech founders with US patent strategy: prior-art searches, provisional applications, prosecution and IP diligence."},
+    "about": {"title": "About Us: Technical US Patent Strategy",
+              "desc": "CanPatentIt is a Metayage brand offering US patent strategy for deep-tech founders and investors. How we work, who we help and what we will not do."},
+    "services": {"title": "US Patent Services for Deep Tech Founders",
+                 "desc": "US patent services for deep-tech founders: patentability and prior-art searches, provisional applications, prosecution, and IP strategy for diligence."},
+    "insights": {"title": "Patent Insights for Deep Tech Founders",
+                 "desc": "Practical articles on US patent strategy for deep-tech founders, engineers and investors: provisional applications, prior art, timing and diligence."},
+    "patent-showcase": {"title": "Patent Showcase: Examples by Technology Area",
+                        "desc": "A selection of patents by technology domain and country, shown as examples of the work done by Metayage and CanPatentIt for deep-tech inventors."},
+    "patentability-check": {"title": "Patentability Self-Check: Can You Patent It?",
+                            "desc": "Can you patent it? A short self-check that gives plain-language guidance on whether and what to protect, with sensible next steps for founders."},
+    "book": {"title": "Book a US Patent Strategy Consultation",
+             "desc": "Pick a time to talk through your technology and the next sensible step in US patent strategy with CanPatentIt. We start with the engineering, not a pitch."},
+    "terms": {"title": "Terms of Use and Privacy Policy",
+              "desc": "Terms of use, privacy policy and cookie information for the CanPatentIt website, including how enquiry details are used and how long they are kept."},
+    "faq": {"title": "Patent FAQ: Plain Answers for Founders",
+            "desc": "Answers to common questions about US patent strategy, provisional applications, public disclosure, international protection and how CanPatentIt works."},
+    "technology/ai-machine-learning": {"desc": "US patent strategy for AI and machine learning: models, inference, vision systems and data pipelines. Protect what makes your approach different."},
+    "technology/medtech-biotechnology": {"desc": "US patent strategy for MedTech and biotechnology: diagnostics, biosensors, devices and computational biology, from prior art to prosecution."},
+    "technology/climate-energy": {"desc": "US patent strategy for climate and energy technology: storage, electric vehicles, grid systems, materials and electrification, from first filing to diligence."},
+    "technology/semiconductors-quantum": {"desc": "US patent strategy for semiconductors and quantum: chip architecture, materials, fabrication and communication hardware, from first filing to diligence."},
+    "technology/enterprise-software-security": {"desc": "US patent strategy for enterprise software and security: cloud systems, cryptography, blockchain and network infrastructure, from first filing to diligence."},
+}
+LENGTH_WARNINGS = []
 
 
 def url_for(path):
@@ -98,7 +128,7 @@ def footer():
     <div class="cpi-footer-cols">
       <div><h3>Services</h3><ul>{svc}</ul></div>
       <div><h3>Technology</h3><ul>{tech}</ul></div>
-      <div><h3>Explore</h3><ul><li><a href="/about">About</a></li><li><a href="/insights">Insights</a></li><li><a href="/patent-showcase">Patent showcase</a></li><li><a href="/faq">FAQ</a></li><li><a href="/patentability-check">Patentability self-check</a></li><li><a href="/tools/deadlines">Deadline tools</a></li><li><a href="/glossary">Glossary</a></li></ul></div>
+      <div><h3>Explore</h3><ul><li><a href="/about">About</a></li><li><a href="/insights">Insights</a></li><li><a href="/patent-showcase">Patent showcase</a></li><li><a href="/faq">FAQ</a></li><li><a href="/patentability-check">Patentability self-check</a></li><li><a href="/tools/deadlines">Deadline tools</a></li><li><a href="/glossary">Glossary</a></li><li><a href="/site-map">Site map</a></li></ul></div>
       <div><h3>Legal</h3><ul><li><a href="/terms">Terms &amp; Privacy</a></li><li><a href="#" data-cookie-settings>Cookie settings</a></li><li><a href="mailto:{EMAIL}">{EMAIL}</a></li></ul></div>
     </div>
     <div class="cpi-footer-bottom"><span>© <span id="year">2026</span> CanPatentIt</span><span>US patent strategy for deep technology</span></div>
@@ -107,9 +137,13 @@ def footer():
 
 
 def shell(path, title, desc, body, current=None, extra_head="", jsonld=None, noindex=False, scripts="", og_image=None):
+    over = SEO.get(path, {})
+    title, desc = over.get("title", title), over.get("desc", desc)
     og = og_image or f"{SITE}/assets/og-image.png"
     canon = SITE + url_for(path)
     full_title = title if title.startswith("CanPatentIt") else f"{title} | CanPatentIt"
+    if not noindex and "@@" not in full_title and (len(full_title) > 65 or len(desc) < 110 or len(desc) > 165):
+        LENGTH_WARNINGS.append(f"{path or 'home'}: title {len(full_title)} chars, description {len(desc)} chars")
     ld = ""
     for obj in jsonld or []:
         ld += f'\n  <script type="application/ld+json">{json.dumps(obj, ensure_ascii=False)}</script>'
@@ -126,6 +160,7 @@ def shell(path, title, desc, body, current=None, extra_head="", jsonld=None, noi
   <link rel="canonical" href="{canon}">
   <link rel="alternate" hreflang="en-us" href="{canon}">
   <link rel="alternate" hreflang="x-default" href="{canon}">
+  <link rel="icon" href="/favicon.ico" sizes="any">
   <link rel="icon" type="image/png" href="/assets/favicon.png">
   <link rel="apple-touch-icon" href="/assets/favicon.png">
   <meta property="og:type" content="website">
@@ -184,7 +219,10 @@ def strip_tags(s):
 
 
 def register(path, title, desc, body):
-    PAGES.append({"path": path, "title": title, "desc": desc, "text": strip_tags(body)[:600]})
+    import hashlib
+    text = strip_tags(body)
+    PAGES.append({"path": path, "title": title, "desc": desc, "text": text[:600],
+                  "hash": hashlib.sha1((title + "|" + desc + "|" + text).encode("utf-8")).hexdigest()[:16]})
 
 
 def write(path, content):
@@ -319,6 +357,9 @@ def detail_page(kind, item, siblings):
     ld = [c_ld]
     if kind == "service":
         ld.append({"@context": "https://schema.org", "@type": "Service", "name": item["title"], "description": item["desc"], "provider": {"@type": "ProfessionalService", "name": "CanPatentIt", "url": SITE}, "areaServed": "US"})
+    else:
+        ld.append({"@context": "https://schema.org", "@type": "Service", "name": f"US patent strategy for {item['short']}", "serviceType": "Patent strategy", "description": item["desc"],
+                   "provider": {"@type": "ProfessionalService", "@id": SITE + "/#organization", "name": "CanPatentIt", "url": SITE}, "areaServed": "US", "audience": {"@type": "Audience", "audienceType": "Deep-technology founders, engineers and investors"}})
     faq_ld_tag = "<!--cpi:faqld--><script type=\"application/ld+json\">" + json.dumps(faq_ld(item["faq"]), ensure_ascii=False) + "</script><!--/cpi:faqld-->"
     write(path, shell(path, item["title"], item["desc"], body, jsonld=ld, extra_head="  " + faq_ld_tag))
     register(path, item["title"], item["desc"], body)
@@ -374,7 +415,8 @@ def build_home():
     org = {"@type": "ProfessionalService", "@id": SITE + "/#organization", "name": "CanPatentIt", "url": SITE + "/", "logo": SITE + "/assets/logo.png",
            "image": SITE + "/assets/og-image.png", "email": EMAIL,
            "description": "CanPatentIt is a US patent strategy service for deep-technology founders, engineers and investors: patentability and prior-art searches, provisional applications, US patent prosecution, and IP strategy for funding diligence.",
-           "slogan": "Build something worth defending.", "areaServed": "US", "serviceType": [x["short"] for x in SERVICES],
+           "slogan": "Build something worth defending.", "areaServed": "US", "alternateName": ["Can Patent It", "CanPatentIt.com"],
+           "contactPoint": {"@type": "ContactPoint", "contactType": "customer support", "email": EMAIL, "availableLanguage": "English"}, "serviceType": [x["short"] for x in SERVICES],
            "knowsAbout": [x["short"] for x in AREAS] + ["US patent law", "Provisional patent applications", "Prior art searching", "Patent prosecution"],
            "parentOrganization": {"@type": "Organization", "name": "Metayage Private Limited", "url": "https://metayage.com", "foundingDate": "2006"},
            "sameAs": ["https://metayage.com"],
@@ -382,7 +424,7 @@ def build_home():
                {"@type": "Offer", "itemOffered": {"@type": "Service", "name": x["title"], "description": x["desc"], "url": f"{SITE}/services/{x['slug']}"}} for x in SERVICES]}}
     ld = [{"@context": "https://schema.org", "@graph": [
               org,
-              {"@type": "WebSite", "@id": SITE + "/#website", "url": SITE + "/", "name": "CanPatentIt", "inLanguage": "en-US", "publisher": {"@id": SITE + "/#organization"}},
+              {"@type": "WebSite", "@id": SITE + "/#website", "url": SITE + "/", "name": "CanPatentIt", "alternateName": ["Can Patent It", "CanPatentIt.com"], "inLanguage": "en-US", "publisher": {"@id": SITE + "/#organization"}},
               {"@type": "WebPage", "@id": SITE + "/#webpage", "url": SITE + "/", "name": "US Patent Strategy for Deep Tech Founders | CanPatentIt", "description": desc,
                "isPartOf": {"@id": SITE + "/#website"}, "about": {"@id": SITE + "/#organization"}, "inLanguage": "en-US"},
               {"@type": "HowTo", "name": "How to protect a deep-tech invention with a US patent", "description": "The path from first idea to a granted US patent.",
@@ -492,7 +534,7 @@ def build_showcase():
 def build_insights():
     c_html, c_ld = crumbs([("Home", ""), ("Insights", "insights")])
     body = page_hero(c_html, "Insights", "Practical notes on <em>deep-tech IP.</em>", "Short articles for founders, engineers and investors. General information, not legal advice.", slug="insights") + '''
-    <section class="cpi-section cpi-insights-wrap"><div class="cpi-insights-bar" id="insights-bar" hidden><p class="cpi-fine" id="insights-count"></p><div class="cpi-view-toggle" role="group" aria-label="Choose layout"><button type="button" id="view-grid" aria-pressed="true" aria-label="Grid view" title="Grid view"></button><button type="button" id="view-list" aria-pressed="false" aria-label="List view" title="List view"></button></div></div><div id="insights-list" class="cpi-post-grid" aria-live="polite"><p class="cpi-fine">Loading articles…</p></div><nav class="cpi-pager" id="insights-pager" aria-label="Pagination" hidden></nav><noscript><p class="cpi-fine">Enable JavaScript to see the article list.</p></noscript></section>
+    <section class="cpi-section cpi-insights-wrap"><div class="cpi-insights-bar" id="insights-bar" hidden><p class="cpi-fine" id="insights-count"></p><div class="cpi-view-toggle" role="group" aria-label="Choose layout"><button type="button" id="view-grid" aria-pressed="true" aria-label="Grid view" title="Grid view"></button><button type="button" id="view-list" aria-pressed="false" aria-label="List view" title="List view"></button></div></div><div id="insights-list" class="cpi-post-grid" aria-live="polite"><!--cpi:articles--><p class="cpi-fine">Loading articles…</p><!--/cpi:articles--></div><nav class="cpi-pager" id="insights-pager" aria-label="Pagination" hidden></nav><noscript><p class="cpi-fine">Enable JavaScript to see the article list.</p></noscript></section>
     ''' + cta_band("insights")
     desc = "Practical articles on US patent strategy for deep-tech founders, engineers and investors."
     write("insights", shell("insights", "Insights", desc, body, jsonld=[c_ld], scripts='\n<script src="/assets/insights.js" defer></script>'))
@@ -515,8 +557,10 @@ def build_book():
     body = page_hero(c_html, "Book a consultation", "Let’s talk about <em>your technology.</em>", "Choose a time that suits you. Times are shown in your own time zone.", actions=False, slug="book") + f'''
     <section class="cpi-section cpi-book-wrap">
       <div class="cpi-book" id="book" aria-live="polite">
-        <div class="cpi-book-step"><h2>1. Pick a day</h2><div id="book-days" class="cpi-days"><p class="cpi-fine">Loading availability…</p></div></div>
-        <div class="cpi-book-step"><h2>2. Pick a time</h2><p class="cpi-fine" id="book-tz"></p><div id="book-slots" class="cpi-slots"><p class="cpi-fine">Choose a day first.</p></div></div>
+        <div class="cpi-book-step"><h2>1. Pick a day</h2><div class="cpi-tz" id="tz-box"><p class="cpi-fine" id="book-tz"></p><button type="button" class="cpi-tz-change" id="tz-change" aria-expanded="false" aria-controls="tz-panel">Change time zone</button>
+          <div class="cpi-tz-panel" id="tz-panel" hidden><label for="tz-input">Time zone<input id="tz-input" list="tz-list" autocomplete="off" placeholder="Start typing a city or zone, e.g. Europe/London"></label><datalist id="tz-list"></datalist>
+          <button type="button" class="cpi-ghost-btn" id="tz-device">Use my device time zone</button><p class="cpi-fine">Detected from your browser. We do not ask for or store your location.</p></div></div><div id="book-days" class="cpi-days"><p class="cpi-fine">Loading availability…</p></div></div>
+        <div class="cpi-book-step"><h2>2. Pick a time</h2><div id="book-slots" class="cpi-slots"><p class="cpi-fine">Choose a day first.</p></div></div>
         <form class="cpi-form cpi-book-form" id="book-form" novalidate hidden>
           <h2>3. Your details</h2>
           <p class="cpi-fine" id="book-chosen"></p>
@@ -536,8 +580,47 @@ def build_book():
       <aside class="cpi-side-card"><h3>Prefer email?</h3><p>Write to <a href="mailto:{EMAIL}">{EMAIL}</a> or use the <a href="/#assessment">short enquiry form</a>.</p><h3>Before the call</h3><p>No preparation is needed. A description of the problem and how your approach works is plenty.</p><p class="cpi-fine">{esc(TECH_NOTE)} A call does not create an attorney–client relationship.</p></aside>
     </section>'''
     desc = "Book a consultation to talk through your technology and sensible next steps for US patent protection."
-    write("book", shell("book", "Book a Consultation", desc, body, jsonld=[c_ld], scripts='\n<script src="/assets/booking.js" defer></script>'))
+    write("book", shell("book", "Book a Consultation", desc, body, jsonld=[c_ld], scripts='\n<script src="/assets/booking-common.js" defer></script>\n<script src="/assets/booking.js" defer></script>'))
     register("book", "Book a consultation", desc, body)
+
+
+def build_manage():
+    """Where the emailed link goes: see, move or cancel a booking. Not indexed, not in the sitemap."""
+    c_html, c_ld = crumbs([("Home", ""), ("Manage your booking", "booking/manage")])
+    body = page_hero(c_html, "Your consultation", "Manage your <em>booking.</em>", "Move the call to a time that suits you, or cancel it. Times are shown in your own time zone.", actions=False, slug="manage") + f'''
+    <section class="cpi-section cpi-manage-wrap">
+      <div class="cpi-manage" id="manage" aria-live="polite">
+        <div id="mg-zone" hidden><div class="cpi-tz" id="mg-tz-box"><p class="cpi-fine" id="mg-tz"></p><button type="button" class="cpi-tz-change" id="mg-tz-change" aria-expanded="false" aria-controls="mg-tz-panel">Change time zone</button>
+          <div class="cpi-tz-panel" id="mg-tz-panel" hidden><label for="mg-tz-input">Time zone<input id="mg-tz-input" list="mg-tz-list" autocomplete="off" placeholder="Start typing a city or zone, e.g. Europe/London"></label><datalist id="mg-tz-list"></datalist>
+          <button type="button" class="cpi-ghost-btn" id="mg-tz-device">Use my device time zone</button><p class="cpi-fine">Detected from your browser. We do not ask for or store your location.</p></div></div></div>
+        <p class="cpi-fine" id="manage-loading">Loading your booking…</p>
+        <div id="manage-invalid" hidden><h2>This link is not valid</h2><p>The booking could not be found. Please use the link from your confirmation email, or book a new time.</p><a class="cpi-button-lime" href="/book">Book a time {icon("arrow-right")}</a></div>
+        <div id="manage-view" hidden>
+          <h2 id="manage-title">Your consultation</h2>
+          <div class="cpi-tile" id="manage-tile"></div>
+          <div id="manage-join" class="cpi-manage-join"></div>
+          <div class="cpi-manage-actions" id="manage-actions"><button type="button" class="cpi-button-lime" id="m-resched">Reschedule {icon("arrow-right")}</button><button type="button" class="cpi-ghost-btn" id="m-cancel">Cancel the call</button></div>
+          <p class="cpi-fine" id="manage-note"></p>
+          <div id="manage-rebook" hidden><a class="cpi-button-lime" href="/book">Book a new time {icon("arrow-right")}</a></div>
+        </div>
+        <div id="manage-resched" hidden>
+          <h2>Choose a new time</h2>
+          <div id="m-days" class="cpi-days"></div><div id="m-slots" class="cpi-slots"></div>
+          <p class="cpi-fine" id="m-chosen"></p>
+          <div class="cpi-manage-actions"><button type="button" class="cpi-button-lime" id="m-confirm" disabled>Confirm the new time {icon("arrow-right")}</button><button type="button" class="cpi-ghost-btn" id="m-back">Back</button></div>
+          <p class="cpi-form-status" id="m-status" role="status" aria-live="polite"></p>
+        </div>
+        <div id="manage-cancel" hidden>
+          <h2>Cancel this consultation?</h2><p>We will let the team know and send you a confirmation. You can book another time at any point.</p>
+          <div class="cpi-manage-actions"><button type="button" class="cpi-button-lime" id="m-cancel-yes">Yes, cancel it</button><button type="button" class="cpi-ghost-btn" id="m-cancel-no">Keep it</button></div>
+          <p class="cpi-form-status" id="m-cancel-status" role="status" aria-live="polite"></p>
+        </div>
+        <div id="manage-done" hidden><div class="cpi-success-icon">{icon("check")}</div><h2 id="done-title"></h2><p id="done-text"></p><div class="cpi-manage-actions"><button type="button" class="cpi-ghost-btn" id="m-done-view">View booking</button><a class="cpi-text-link" href="/book">Book another time {icon("arrow-right")}</a></div></div>
+      </div>
+      <aside class="cpi-side-card"><h3>Need a hand?</h3><p>Write to <a href="mailto:{EMAIL}">{EMAIL}</a> and we will sort it out.</p><p class="cpi-fine">The link in your email is private to you. Anyone who has it can change this booking.</p></aside>
+    </section>'''
+    write("booking/manage", shell("booking/manage", "Manage Your Booking", "Move or cancel your CanPatentIt consultation.", body, jsonld=[c_ld], noindex=True,
+                                  scripts='\n<script src="/assets/booking-common.js" defer></script>\n<script src="/assets/manage.js" defer></script>'))
 
 
 def legal_page(path, title, desc, inner):
@@ -606,6 +689,29 @@ def build_article_shell():
         f.write(out)
 
 
+def build_sitemap_page():
+    """A plain HTML site map for visitors (the XML sitemaps are for search engines)."""
+    c_html, c_ld = crumbs([("Home", ""), ("Site map", "site-map")])
+    def links(items):
+        return "<ul>" + "".join(f'<li><a href="{u}">{esc(t)}</a></li>' for u, t in items) + "</ul>"
+    groups = [
+        ("Main pages", [("/", "Home"), ("/about", "About"), ("/services", "Services"), ("/faq", "FAQ"), ("/book", "Book a consultation")]),
+        ("Services", [(f"/services/{x['slug']}", x["title"]) for x in SERVICES]),
+        ("Technology areas", [(f"/technology/{x['slug']}", x["title"]) for x in AREAS]),
+        ("Tools and learning", [("/patentability-check", "Patentability self-check"), ("/tools/deadlines", "Deadline calculators"), ("/glossary", "Glossary"), ("/insights", "Insights (articles)"), ("/patent-showcase", "Patent showcase")]),
+        ("Legal", [("/terms", "Terms of use and privacy policy")]),
+    ]
+    if GUIDE_APPROVED:
+        groups[3][1].append((f"/guides/{GUIDE['slug']}", "Can I patent my idea? (guide)"))
+    cols = "".join(f'<section class="cpi-prose-sec"><h2>{esc(h)}</h2>{links(i)}</section>' for h, i in groups)
+    body = page_hero(c_html, "Site map", "Everything on <em>CanPatentIt.</em>", "Every public page in one place.", actions=False, slug="site-map") + f'''
+    <section class="cpi-section cpi-detail"><div class="cpi-prose cpi-sitemap">{cols}<p class="cpi-fine">Search engines read our machine-readable <a href="/sitemap.xml">XML sitemap</a>.</p></div></section>
+    {cta_band("default")}'''
+    desc = "A complete list of the pages on CanPatentIt: services, technology areas, patent tools, glossary, insights, FAQ and legal information."
+    write("site-map", shell("site-map", "Site Map", desc, body, jsonld=[c_ld]))
+    register("site-map", "Site map", desc, body)
+
+
 def build_deadlines():
     c_html, c_ld = crumbs([("Home", ""), ("Deadline tools", "tools/deadlines")])
     tools = [
@@ -647,14 +753,86 @@ def build_glossary():
     open(os.path.join(OUT, "assets", "glossary.js"), "w", encoding="utf-8", newline="\n").write(js)
 
 
+def build_guides():
+    if not GUIDE_APPROVED:
+        return
+    g = GUIDE
+    path = "guides/" + g["slug"]
+    c_html, c_ld = crumbs([("Home", ""), (g["title"].split("?")[0] + "?", path)])
+    secs = "".join(f'<section class="cpi-prose-sec"><h2>{esc(h)}</h2>{b}</section>' for h, b in g["sections"])
+    body = page_hero(c_html, "Guide", "Can I patent <em>my idea?</em>", g["lead"], slug="guide") + f'''
+    <section class="cpi-section cpi-detail"><div class="cpi-prose"><p class="cpi-fine">By the CanPatentIt team &middot; <time datetime="{g["date"]}">16 October 2026</time></p>{secs}{faq_block(g["faq"], "Quick answers")}<p class="cpi-fine">{esc(TECH_NOTE)}</p></div>
+    <aside class="cpi-side-card"><h3>Not sure where you stand?</h3><p>Try the self-check, or ask us one question and a person will reply.</p><a class="cpi-text-link" href="/patentability-check">Patentability self-check {icon("arrow-right")}</a><a class="cpi-text-link" href="/tools/deadlines">Deadline tools {icon("arrow-right")}</a></aside></section>
+    {cta_band("default")}'''
+    ld = [c_ld, faq_ld(g["faq"]), {"@context": "https://schema.org", "@type": "Article", "headline": g["title"], "description": g["desc"], "datePublished": g["date"], "dateModified": g["date"],
+                                   "author": {"@type": "Organization", "name": "CanPatentIt", "url": SITE + "/"}, "publisher": {"@type": "Organization", "name": "CanPatentIt", "logo": {"@type": "ImageObject", "url": SITE + "/assets/logo.png"}},
+                                   "mainEntityOfPage": SITE + "/" + path, "inLanguage": "en-US"}]
+    write(path, shell(path, g["title"], g["desc"], body, jsonld=ld))
+    register(path, g["title"], g["desc"], body)
+
+
+def build_full_llms():
+    """One markdown file with the substance of the site, for AI tools that want everything in a single request."""
+    out = ["# CanPatentIt: full text", "", "> US patent strategy for deep-technology founders, engineers and investors. A brand of Metayage Private Limited (founded 2006). General information only; not legal advice and no outcome is guaranteed.", ""]
+    out += ["## Services", ""]
+    for x in SERVICES:
+        out += [f"### {x['title']} ({SITE}/services/{x['slug']})", x["lead"], ""]
+        for h, b in x["sections"]:
+            out += [f"**{h}.** {strip_tags(b)}", ""]
+    out += ["## Technology areas", ""]
+    for x in AREAS:
+        out += [f"### {x['title']} ({SITE}/technology/{x['slug']})", x["lead"], ""]
+    out += ["## The US patent journey", ""]
+    for i, j in enumerate(JOURNEY):
+        out += [f"{i + 1}. **{j['title']}.** {j['lead']} What happens: {j['what']} Timing: {j['timing']}"]
+    out += ["", "## Glossary", ""]
+    for x in GLOSSARY:
+        out += [f"- **{x['term']}**: {x['def']}"]
+    out += ["", "## Myth or fact", ""]
+    for m in MYTHS:
+        out += [f"- Myth: {m['myth']} Fact: {m['fact']}"]
+    out += ["", "## Frequently asked questions", ""]
+    for q, a in FAQS:
+        out += [f"**{q}** {a}", ""]
+    if GUIDE_APPROVED:
+        out += [f"## {GUIDE['title']} ({SITE}/guides/{GUIDE['slug']})", GUIDE["lead"], ""]
+        for h, b in GUIDE["sections"]:
+            out += [f"**{h}.** {strip_tags(b)}", ""]
+    open(os.path.join(OUT, "llms-full.txt"), "w", encoding="utf-8", newline="\n").write("\n".join(out) + "\n")
+    open(os.path.join(OUT, INDEXNOW_KEY + ".txt"), "w", encoding="ascii", newline="\n").write(INDEXNOW_KEY)
+
+
+def page_lastmods():
+    """Honest <lastmod> dates: a page's date moves only when its own visible content changes (tracked in lastmod.json)."""
+    store_path = os.path.join(HERE, "lastmod.json")
+    try:
+        store = json.load(open(store_path, encoding="utf-8"))
+    except (OSError, ValueError):
+        store = {}
+    out = {}
+    for p in PAGES:
+        old = store.get(p["path"] or "/")
+        out[p["path"]] = old["date"] if old and old.get("hash") == p["hash"] else TODAY
+        store[p["path"] or "/"] = {"hash": p["hash"], "date": out[p["path"]]}
+    with open(store_path, "w", encoding="utf-8", newline="\n") as f:
+        json.dump(store, f, indent=1, sort_keys=True)
+        f.write("\n")
+    return out
+
+
 def build_meta_files():
+    mods = page_lastmods()
     sm = ['<?xml version="1.0" encoding="UTF-8"?>', '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">']
     for p in PAGES:
         pr = "1.0" if p["path"] == "" else ("0.3" if p["path"] == "terms" else "0.7")
-        sm.append(f'  <url><loc>{SITE}{url_for(p["path"])}</loc><lastmod>{TODAY}</lastmod><priority>{pr}</priority></url>')
+        sm.append(f'  <url><loc>{SITE}{url_for(p["path"])}</loc><lastmod>{mods[p["path"]]}</lastmod><priority>{pr}</priority></url>')
     sm.append("</urlset>")
     open(os.path.join(OUT, "sitemap-pages.xml"), "w", encoding="utf-8", newline="\n").write("\n".join(sm) + "\n")
-    idx = f'<?xml version="1.0" encoding="UTF-8"?>\n<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n  <sitemap><loc>{SITE}/sitemap-pages.xml</loc></sitemap>\n  <sitemap><loc>{SITE}/insights/sitemap-insights.xml</loc></sitemap>\n  <sitemap><loc>{SITE}/patent-showcase/sitemap-patents.xml</loc></sitemap>\n</sitemapindex>\n'
+    newest = max(mods.values())
+    idx = (f'<?xml version="1.0" encoding="UTF-8"?>\n<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+           f'  <sitemap><loc>{SITE}/sitemap-pages.xml</loc><lastmod>{newest}</lastmod></sitemap>\n'
+           f'  <sitemap><loc>{SITE}/insights/sitemap-insights.xml</loc></sitemap>\n'
+           f'  <sitemap><loc>{SITE}/patent-showcase/sitemap-patents.xml</loc></sitemap>\n</sitemapindex>\n')
     open(os.path.join(OUT, "sitemap.xml"), "w", encoding="utf-8", newline="\n").write(idx)
     bots = ["GPTBot", "OAI-SearchBot", "ChatGPT-User", "ClaudeBot", "Claude-User", "Claude-SearchBot", "PerplexityBot", "Google-Extended", "Applebot-Extended", "CCBot", "Bingbot"]
     block = "Allow: /\nDisallow: /login\nDisallow: /admin\n"
@@ -691,6 +869,9 @@ Nothing on this site is legal advice and no outcome is guaranteed. Contact: {EMA
 - [Deadline calculators]({SITE}/tools/deadlines): provisional conversion, US grace period, publication and PCT dates, computed in the browser
 - [Glossary]({SITE}/glossary): plain-English patent terms
 - [Terms and privacy]({SITE}/terms)
+
+## Optional
+- [Full text of this site in one file]({SITE}/llms-full.txt)
 """
     open(os.path.join(OUT, "llms.txt"), "w", encoding="utf-8", newline="\n").write(llms)
     index = [{"url": url_for(p["path"]), "title": p["title"], "desc": p["desc"], "text": p["text"]} for p in PAGES if p["path"] != "terms"]
@@ -709,6 +890,8 @@ def check_links():
             text = open(os.path.join(root, fn), encoding="utf-8").read()
             for href in re.findall(r'href="(/[^"#?]*)', text):
                 if href.startswith("/assets/") or href.startswith("/insights/") or href.rstrip("/") in pages or href == "/":
+                    continue
+                if os.path.isfile(os.path.join(OUT, href.lstrip("/"))):   # static root files such as /favicon.ico
                     continue
                 bad.append((fn, href))
     return bad
@@ -751,14 +934,20 @@ def main():
     build_quiz()
     build_deadlines()
     build_glossary()
+    build_sitemap_page()
+    build_guides()
     build_book()
+    build_manage()
     build_legal()
     build_404()
     build_article_shell()
     build_meta_files()
+    build_full_llms()
     version_assets()
     bad = check_links()
     print(f"{len(PAGES)} pages built into {OUT}")
+    for w in LENGTH_WARNINGS:
+        print("SEO length warning:", w)
     if bad:
         print("BROKEN LINKS:", bad)
         sys.exit(1)

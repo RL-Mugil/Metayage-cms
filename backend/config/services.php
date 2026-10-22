@@ -59,6 +59,12 @@ return [
         'recipient' => env('CONTACT_RECIPIENT'),
     ],
 
+    // Operational alert emails (errors, failed jobs, Zoho reconcile) go to this one address only. System admins and
+    // directors still get the in-app notification but are never emailed automatically.
+    'ops_alerts' => [
+        'email' => env('OPS_ALERT_EMAIL', 'mugilvannan@myipstrategy.com'),
+    ],
+
     'turnstile' => [
         'site_key'   => env('TURNSTILE_SITE_KEY'),
         'secret_key' => env('TURNSTILE_SECRET_KEY'),

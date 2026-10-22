@@ -94,6 +94,20 @@ class CpiSiteTest extends TestCase
         $this->assertDatabaseHas('site_enquiries', ['type' => 'booking', 'email' => 'asha@example.com']);
     }
 
+    public function test_booking_sends_a_designed_confirmation_to_the_visitor_and_a_notification_to_the_team(): void
+    {
+        \Illuminate\Support\Facades\Mail::fake();
+        [, $slot] = $this->firstSlot();
+
+        $this->postJson('/api/public/cpi/book', $this->bookingPayload($slot, ['topic' => 'About to demo at a trade fair']))->assertCreated();
+
+        \Illuminate\Support\Facades\Mail::assertSent(\App\Mail\CpiBookingMail::class, fn ($m) => $m->kind === 'confirmation' && $m->hasTo('asha@example.com')
+            && str_contains($m->htmlBody, 'Your consultation is confirmed') && str_contains($m->htmlBody, 'What to expect') && str_contains($m->plainBody, 'confirmed for'));
+        \Illuminate\Support\Facades\Mail::assertSent(\App\Mail\CpiBookingMail::class, fn ($m) => $m->kind === 'notification' && $m->hasTo('inbox@example.com')
+            && $m->hasReplyTo('asha@example.com') && str_contains($m->htmlBody, 'About to demo at a trade fair') && str_contains($m->htmlBody, 'mailto:asha@example.com'));
+        \Illuminate\Support\Facades\Mail::assertSent(\App\Mail\CpiBookingMail::class, 2);
+    }
+
     public function test_slot_outside_availability_is_refused(): void
     {
         $sunday = CarbonImmutable::now('UTC')->next('Sunday')->setTime(10, 0)->format('Y-m-d\TH:i:s\Z');
@@ -191,6 +205,24 @@ class CpiSiteTest extends TestCase
         $notImage = UploadedFile::fake()->createWithContent('evil.png', '<?php echo 1;');
 
         $this->post('/api/cpi-admin/images', ['image' => $notImage], $h + ['Accept' => 'application/json'])->assertStatus(422);
+    }
+
+    public function test_insights_page_lists_published_articles_as_plain_links_for_crawlers(): void
+    {
+        File::put($this->siteDir.'/insights.html', '<div id="insights-list"><!--cpi:articles--><p>Loading articles</p><!--/cpi:articles--></div>');
+        $h = $this->adminHeaders();
+        $id = $this->postJson('/api/cpi-admin/articles', [
+            'title' => 'Why file early', 'excerpt' => 'Timing $1 matters.', 'body_html' => '<p>Hello world</p>',
+        ], $h)->assertCreated()->json('id');
+        $this->postJson("/api/cpi-admin/articles/{$id}/publish", [], $h)->assertOk();
+
+        $html = File::get($this->siteDir.'/insights.html');
+        $this->assertStringContainsString('<a href="/insights/why-file-early">Why file early</a>', $html);
+        $this->assertStringContainsString('Timing $1 matters.', $html, 'replacement text is inserted literally');
+        $this->assertStringNotContainsString('Loading articles', $html);
+
+        $this->postJson("/api/cpi-admin/articles/{$id}/unpublish", [], $h)->assertOk();
+        $this->assertStringContainsString('No articles yet', File::get($this->siteDir.'/insights.html'));
     }
 
     public function test_article_keeps_only_own_uploaded_images_and_publishes_with_cover(): void

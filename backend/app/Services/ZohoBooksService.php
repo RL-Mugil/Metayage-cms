@@ -131,7 +131,7 @@ class ZohoBooksService
         // Reserve before authentication so an exhausted budget makes no network calls.
         // OAuth is a separate Accounts request; each Books operation reserves one call.
         $write = $draft !== null || in_array($method, ['DELETE', 'POST'], true);
-        app(ZohoApiBudget::class)->reserve($this->scope(), $this->background, $write, $this->eveningDate, $this->emergency, $this->addon);
+        app(ZohoApiBudget::class)->reserve($this->scope(), $this->background, $write, $this->eveningDate, $this->emergency, $this->addon, $this->polling);
         try {
             $token = $this->getAccessToken();
         } catch (\Throwable $error) {

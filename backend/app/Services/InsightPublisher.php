@@ -353,6 +353,29 @@ class InsightPublisher
             $xml .= '  <url><loc>https://canpatentit.com/insights/'.e($r->slug).'</loc><lastmod>'.($r->updated_at ?? now())->format('Y-m-d').'</lastmod></url>'."\n";
         }
         File::put($dir.'/sitemap-insights.xml', $xml.'</urlset>'."\n");
+
+        $this->writeStaticArticleList($rows);
+    }
+
+    /**
+     * The insights page builds its list with JavaScript, so crawlers and AI tools that do not run scripts would see no
+     * articles. Write a plain list of links into the page between the cpi:articles markers; insights.js replaces it with
+     * the cards as soon as it runs.
+     */
+    private function writeStaticArticleList($rows): void
+    {
+        $file = self::sitePath().'/insights.html';
+        if (! File::exists($file)) {
+            return;
+        }
+        $items = $rows->map(fn ($r) => '<li><a href="/insights/'.e($r->slug).'">'.e($r->title).'</a>'
+            .($r->excerpt ? '<p>'.e($r->excerpt).'</p>' : '').'</li>')->implode('');
+        $list = $rows->isEmpty() ? '<p class="cpi-fine">No articles yet. Check back soon.</p>' : '<ul class="cpi-seo-list">'.$items.'</ul>';
+        $html = File::get($file);
+        $new = preg_replace_callback('~<!--cpi:articles-->.*?<!--/cpi:articles-->~s', fn () => '<!--cpi:articles-->'.$list.'<!--/cpi:articles-->', $html, 1);
+        if ($new !== null && $new !== $html) {
+            File::put($file, $new);
+        }
     }
 
     public function render(CpiArticle $a): string

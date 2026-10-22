@@ -182,7 +182,7 @@ class IntegrationController extends Controller
         DB::table('integration_logs')->insert([
             'slug' => $slug, 'event_type' => 'test',
             'status' => $ok ? 'ok' : 'fail',
-            'summary' => $message,
+            'summary' => mb_substr($message, 0, 250),
             'payload' => null, 'created_at' => now(), 'updated_at' => now(),
         ]);
 

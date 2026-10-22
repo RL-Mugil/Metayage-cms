@@ -38,6 +38,10 @@ Route::prefix('public/cpi')->group(function () {
     Route::get('/days', [\App\Http\Controllers\CpiBookingController::class, 'days'])->middleware('throttle:60,1');
     Route::get('/slots', [\App\Http\Controllers\CpiBookingController::class, 'slots'])->middleware('throttle:60,1');
     Route::post('/book', [\App\Http\Controllers\CpiBookingController::class, 'book'])->middleware(['throttle:public-contact', 'throttle:5,1']);
+    Route::get('/range', [\App\Http\Controllers\CpiBookingController::class, 'range'])->middleware('throttle:60,1');
+    Route::get('/manage/{id}/{token}', [\App\Http\Controllers\CpiBookingController::class, 'manage'])->whereNumber('id')->middleware('throttle:30,1');
+    Route::post('/manage/{id}/{token}/reschedule', [\App\Http\Controllers\CpiBookingController::class, 'rescheduleByVisitor'])->whereNumber('id')->middleware('throttle:10,1');
+    Route::post('/manage/{id}/{token}/cancel', [\App\Http\Controllers\CpiBookingController::class, 'cancelByVisitor'])->whereNumber('id')->middleware('throttle:10,1');
     Route::get('/cancel/{id}/{token}', [\App\Http\Controllers\CpiBookingController::class, 'cancelPage'])->whereNumber('id')->middleware('throttle:30,1');
     Route::post('/cancel/{id}/{token}', [\App\Http\Controllers\CpiBookingController::class, 'cancel'])->whereNumber('id')->middleware('throttle:10,1');
 });
@@ -72,6 +76,9 @@ Route::middleware(['auth:sanctum', \Laravel\Sanctum\Http\Middleware\CheckAbiliti
     Route::delete('/articles/{id}', [\App\Http\Controllers\CpiArticleController::class, 'destroy'])->whereNumber('id');
     Route::get('/bookings', [\App\Http\Controllers\CpiBookingController::class, 'adminIndex']);
     Route::post('/bookings/{id}/cancel', [\App\Http\Controllers\CpiBookingController::class, 'adminCancel'])->whereNumber('id');
+    Route::get('/booking-options', [\App\Http\Controllers\CpiBookingController::class, 'adminOptions']);
+    Route::post('/bookings/{id}/reschedule', [\App\Http\Controllers\CpiBookingController::class, 'adminReschedule'])->whereNumber('id');
+    Route::put('/bookings/{id}/staff', [\App\Http\Controllers\CpiBookingController::class, 'adminAssignStaff'])->whereNumber('id');
     Route::put('/availability', [\App\Http\Controllers\CpiBookingController::class, 'saveAvailability']);
 });
 Route::get('/public/pages/{slug}', [\App\Http\Controllers\SiteAdminController::class, 'publicPage'])->middleware('throttle:60,1');

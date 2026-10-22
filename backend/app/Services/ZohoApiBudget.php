@@ -17,9 +17,9 @@ class ZohoApiBudget
     public const NIGHTLY_LIMIT = self::DAILY_LIMIT - self::MANUAL_RESERVE - self::POLL_LIMIT;
     public const ADDON_MAX = 450;
 
-    public function reserve(string $scope, bool $background, bool $write = false, ?string $eveningDate = null, bool $emergency = false, bool $addon = false): void
+    public function reserve(string $scope, bool $background, bool $write = false, ?string $eveningDate = null, bool $emergency = false, bool $addon = false, bool $polling = false): void
     {
-        DB::transaction(function () use ($scope, $background, $write, $eveningDate, $emergency, $addon) {
+        DB::transaction(function () use ($scope, $background, $write, $eveningDate, $emergency, $addon, $polling) {
             if ($eveningDate !== null) $this->assertEvening($scope, $eveningDate);
             $today = now('Asia/Kolkata')->toDateString();
             DB::table('zoho_api_budgets')->insertOrIgnore(['scope' => $scope, 'budget_date' => $today, 'calls' => 0, 'updated_at' => now()]);
@@ -28,7 +28,9 @@ class ZohoApiBudget
                 throw new ZohoBudgetExhausted('Zoho has requested a cooldown. Saved progress is retained.', (int) ceil(now()->diffInSeconds(Carbon::parse($row->blocked_until))));
             }
             $calls = $row->budget_date === $today ? (int) $row->calls : 0;
-            $isPoll = $background && app(ZohoBooksService::class)->polling;
+            // The caller says whether this is the 5-minute poll. (It used to look the flag up on a fresh service object, which was
+            // always false, so every poll was charged to the nightly pool and could be starved by the nightly sync.)
+            $isPoll = $background && $polling;
             $column = $addon ? 'addon_calls' : ($emergency ? 'emergency_calls' : ($eveningDate !== null ? 'evening_calls' : ($write ? 'write_calls' : ($isPoll ? 'poll_calls' : ($background ? 'automatic_calls' : 'manual_read_calls')))));
             $limit = $addon ? min(self::ADDON_MAX, (int) $row->addon_limit) : ($emergency ? self::MANUAL_RESERVE : ($eveningDate !== null ? self::MANUAL_RESERVE : ($write ? self::WRITE_LIMIT : ($isPoll ? self::POLL_LIMIT : ($background ? self::NIGHTLY_LIMIT : self::MANUAL_READ_LIMIT)))));
             $used = $row->budget_date === $today ? (int) $row->{$column} : 0;

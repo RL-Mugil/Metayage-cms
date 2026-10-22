@@ -232,6 +232,9 @@ class ZohoMirrorSync
      * next unchecked record after a pause. With $mustFinish the budget running out pauses the sync (the priority
      * batch); without it the pass just stops quietly, because it only uses what the lists left over.
      */
+    /** Calls of the nightly pool the spare pass must leave unused (hourly reconcile, add-ons, manual follow-up). */
+    private const SPARE_CHECK_HEADROOM = 250;
+
     private function checkDeletions(int $limit, bool $mustFinish): void
     {
         $scope = $this->zoho->scope();
@@ -239,8 +242,13 @@ class ZohoMirrorSync
             ->orderByRaw('snapshot.detail_synced_at ASC NULLS FIRST')->orderBy('mirror.id')
             ->limit($limit)->get(['mirror.zoho_id', 'mirror.zoho_type']);
 
+        $checked = 0;
         foreach ($due as $row) {
             $this->checkDuration();
+            // The spare pass only uses what is left after the lists and the hourly deleted-records check have what they need.
+            if (! $mustFinish && $checked++ % 20 === 0 && app(ZohoApiBudget::class)->status($scope)['pools']['automatic']['used'] >= ZohoApiBudget::NIGHTLY_LIMIT - self::SPARE_CHECK_HEADROOM) {
+                return;
+            }
             $resource = $row->zoho_type === 'invoice' ? 'invoices' : 'estimates';
             try {
                 $record = $this->readDetail($resource, (string) $row->zoho_id, true, 'api_check');
@@ -482,7 +490,7 @@ class ZohoMirrorSync
     {
         try {
             DB::table('integration_logs')->insert(['slug' => 'zoho', 'event_type' => 'sync', 'status' => $status,
-                'summary' => $message, 'payload' => null, 'created_at' => now(), 'updated_at' => now()]);
+                'summary' => mb_substr($message, 0, 250), 'payload' => null, 'created_at' => now(), 'updated_at' => now()]);
             AuditLog::create([
                 'user_id' => auth()->id(), 'action' => 'zoho_sync_run', 'subject_type' => 'ZohoSync',
                 'metadata' => ['status' => $status, 'message' => $message, 'scope' => $this->zoho->scope(),

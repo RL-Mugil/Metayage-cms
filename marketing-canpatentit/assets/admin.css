@@ -77,3 +77,8 @@ a.adm-btn { display: inline-flex; align-items: center; text-decoration: none; co
 .adm-figinfo strong { font-size: 12px; }
 .adm-linkinfo { overflow-wrap: anywhere; margin: 0; }
 @media (max-width: 700px) { .adm-figrow { grid-template-columns: 70px 1fr; } .adm-figrow .adm-btn { justify-self: start; } }
+.adm-editor-row > td { background: color-mix(in oklab, var(--cpi-mist) 60%, #fff); }
+.adm-editor { display: grid; gap: 10px; padding: 6px 2px; }
+.adm-editor select, .adm-editor input[type="datetime-local"] { min-height: 34px; font-size: 13px; }
+.adm-check { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.adm-check input[type="checkbox"] { width: 16px; height: 16px; }

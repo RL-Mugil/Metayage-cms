@@ -5,7 +5,9 @@
 #
 # - A check must fail 2 runs in a row before an alert (no flapping), then re-alerts every 30 minutes while it
 #   stays down, and sends one RECOVERED message.
-# - Alerts go to every active super_admin (system admins) and partner (directors): in-app notification + email
+# - Problems are recorded quietly (ipflow_alert.py -> ops_incidents). The Laravel scheduler emails ONE morning report at
+#   06:00 IST (ops:daily-report), and a recovery email is sent only when a problem that was in a report clears up.
+#   Mail goes to ALERT_EMAIL (/etc/ipflow-monitor.env, default mugilvannan@myipstrategy.com), never to directors.
 #   (see ipflow_alert.py).
 # - Every run pings a healthchecks.io-style URL (HEALTHCHECK_URL in /etc/ipflow-monitor.env). If the whole server
 #   stops, that service notices the missing ping and emails you.
@@ -177,7 +179,7 @@ backup_ok() {
 }
 
 if [ "$MODE" = "--test-alert" ]; then
-  send_alert "TEST: monitor alert delivery" "This is a test of the IPFlow monitor. If you can read this, alerts reach the system admins and directors by email and in-app notification."
+  send_alert "TEST: monitor alert delivery" "This is a test of the IPFlow monitor. If you can read this, this goes straight to the ops address. Real problems are recorded quietly and appear in the morning report."
   exit 0
 fi
 

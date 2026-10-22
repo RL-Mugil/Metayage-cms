@@ -33,3 +33,6 @@ Nothing on this site is legal advice and no outcome is guaranteed. Contact: mugi
 - [Deadline calculators](https://canpatentit.com/tools/deadlines): provisional conversion, US grace period, publication and PCT dates, computed in the browser
 - [Glossary](https://canpatentit.com/glossary): plain-English patent terms
 - [Terms and privacy](https://canpatentit.com/terms)
+
+## Optional
+- [Full text of this site in one file](https://canpatentit.com/llms-full.txt)

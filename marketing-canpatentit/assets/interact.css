@@ -165,3 +165,28 @@ body:has(#cookie-banner:not([hidden])) .cpi-helper { bottom: 118px; }
   .cpi-j-panel:not([hidden]), .cpi-scn-panel:not([hidden]), .cpi-helper-panel:not([hidden]), .cpi-helper.nudge .cpi-helper-btn { animation: none; }
   .cpi-myth-face, .cpi-j-tabs::after, .cpi-helper { transition: none; }
 }
+
+/* Booking: time zone control and the manage page */
+.cpi-tz { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; margin: 0 0 14px; }
+.cpi-tz > p { margin: 0; }
+.cpi-tz-change { padding: 0; border: 0; background: none; color: var(--cpi-blue-ink, var(--cpi-blue)); font: inherit; font-size: 12px; font-weight: 700; text-decoration: underline; cursor: pointer; }
+.cpi-tz-panel { flex: 1 1 100%; display: grid; gap: 10px; justify-items: start; padding: 14px 16px; margin-top: 6px; background: var(--cpi-card); border: 1px solid var(--cpi-line); border-radius: 8px; }
+.cpi-tz-panel[hidden] { display: none; }
+.cpi-tz-panel label { display: grid; gap: 6px; width: min(100%, 380px); font-size: 12px; font-weight: 600; }
+.cpi-tz-panel input { min-height: 42px; padding: 0 12px; border: 1px solid color-mix(in oklab, var(--cpi-ink) 28%, transparent); border-radius: 4px; background: var(--cpi-paper); color: var(--cpi-ink); font: inherit; font-size: 14px; }
+.cpi-manage-wrap { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 56px; padding-block: 56px 80px; align-items: start; }
+.cpi-manage { display: grid; gap: 22px; }
+.cpi-manage h2 { font-size: 22px; font-weight: 600; margin: 0; }
+.cpi-manage [hidden] { display: none !important; }
+.cpi-manage > div:not([hidden]) { display: grid; gap: 18px; }
+.cpi-manage-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 14px 20px; }
+.cpi-manage-join { display: flex; }
+.cpi-manage button:disabled { opacity: .55; cursor: not-allowed; }
+.cpi-tile { display: flex; align-items: center; gap: 20px; padding: 18px 20px; background: color-mix(in oklab, var(--cpi-mist) 70%, var(--cpi-card)); border: 1px solid var(--cpi-line); border-radius: 12px; }
+.cpi-tile-cal { flex: none; width: 76px; overflow: hidden; border: 1px solid var(--cpi-line); border-radius: 10px; background: var(--cpi-card); text-align: center; }
+.cpi-tile-mon { background: var(--cpi-blue); color: #fff; padding: 5px 0; font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+.cpi-tile-day { padding: 6px 0 8px; font-size: 32px; font-weight: 700; line-height: 1; }
+.cpi-tile-date { font-size: 18px; font-weight: 650; }
+.cpi-tile-time { margin-top: 4px; font-size: 15px; font-weight: 600; color: var(--cpi-blue-ink, var(--cpi-blue)); }
+.cpi-tile-zone { margin-top: 2px; font-size: 12px; color: color-mix(in oklab, var(--cpi-ink) 62%, transparent); }
+@media (max-width: 900px) { .cpi-manage-wrap { grid-template-columns: 1fr; gap: 40px; } }
