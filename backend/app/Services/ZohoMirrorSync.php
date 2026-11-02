@@ -226,19 +226,21 @@ class ZohoMirrorSync
         }
     }
 
+    /** Calls of the nightly pool the spare pass must leave unused (hourly reconcile, add-ons, manual follow-up). */
+    private const SPARE_CHECK_HEADROOM = 250;
+
     /**
      * Read the invoices and quotes that have not been checked today (see ZohoDeletionChecks), oldest first, never
      * checked first. Each read refreshes the mirror row and stamps detail_synced_at, so the check resumes from the
      * next unchecked record after a pause. With $mustFinish the budget running out pauses the sync (the priority
      * batch); without it the pass just stops quietly, because it only uses what the lists left over.
      */
-    /** Calls of the nightly pool the spare pass must leave unused (hourly reconcile, add-ons, manual follow-up). */
-    private const SPARE_CHECK_HEADROOM = 250;
-
     private function checkDeletions(int $limit, bool $mustFinish): void
     {
         $scope = $this->zoho->scope();
+        // Records of projects that exist in the portal are checked first; the rest take what is left.
         $due = app(ZohoDeletionChecks::class)->due($scope)
+            ->orderByRaw(app(ZohoPortalPriority::class)->mirrorRank('mirror'))
             ->orderByRaw('snapshot.detail_synced_at ASC NULLS FIRST')->orderBy('mirror.id')
             ->limit($limit)->get(['mirror.zoho_id', 'mirror.zoho_type']);
 
@@ -274,9 +276,10 @@ class ZohoMirrorSync
 
     private function hydratePending(bool $emergency = false): void
     {
-        // Oldest incomplete records first so the historical backlog makes progress.
+        // Invoices and quotes of projects that exist in the portal come first; then, oldest incomplete records first so
+        // the historical backlog of everything else makes progress with whatever allowance is left.
         $failures = 0;
-        $pending = $this->pending();
+        $pending = $this->pending()->orderByRaw(app(ZohoPortalPriority::class)->snapshotRank('zoho_snapshots'));
         if ($emergency) {
             $pending->orderByRaw("CASE resource WHEN 'invoices' THEN 0 WHEN 'estimates' THEN 1 WHEN 'customerpayments' THEN 2 WHEN 'creditnotes' THEN 3 ELSE 4 END");
         }

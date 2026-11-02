@@ -34,6 +34,7 @@ class ZohoDeletionChecks
         $due = $this->due($scope)->count();
         return ['mode' => 'api_checks', 'total' => $total, 'due' => $due,
             'checked_today' => $total - $due, 'priority_checks' => self::PRIORITY_CHECKS,
+            'portal_projects' => app(ZohoPortalPriority::class)->status($scope),
             'oldest_checked_at' => $this->records($scope)->min('snapshot.detail_synced_at')];
     }
 }
