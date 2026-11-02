@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\AuditLog;
 use App\Models\CpiAvailabilityRule;
 use App\Models\CpiBlackout;
 use App\Mail\CpiBookingMail;
@@ -80,13 +81,31 @@ class CpiBookingService
             return [];
         }
 
+        $rules = CpiAvailabilityRule::where('weekday', $day->dayOfWeek)->orderBy('start_time')->get();
+        if ($rules->isEmpty()) {
+            return [];
+        }
+
+        return $this->openStarts($day, $cfg, $rules, $this->takenStarts($day->utc()->subDay(), $day->utc()->addDays(2)));
+    }
+
+    /**
+     * Open slot starts (UTC ISO) for one day, given that day's weekly rules and the already-booked starts. Pure computation:
+     * the callers load the rules and bookings (once per day, or once for the whole window).
+     *
+     * @param  iterable<CpiAvailabilityRule>  $rules
+     * @param  list<string>  $taken
+     * @return list<string>
+     */
+    private function openStarts(CarbonImmutable $day, array $cfg, iterable $rules, array $taken): array
+    {
         $earliest = CarbonImmutable::now('UTC')->addHours($cfg['min_notice_hours']);
         $latest = CarbonImmutable::now('UTC')->addDays($cfg['horizon_days'])->endOfDay();
         $length = $cfg['slot_minutes'];
         $step = $length + $cfg['buffer_minutes'];
 
         $slots = [];
-        foreach (CpiAvailabilityRule::where('weekday', $day->dayOfWeek)->orderBy('start_time')->get() as $rule) {
+        foreach ($rules as $rule) {
             [$sh, $sm] = array_map('intval', explode(':', $rule->start_time));
             [$eh, $em] = array_map('intval', explode(':', $rule->end_time));
             $cursor = $day->setTime($sh, $sm);
@@ -99,15 +118,15 @@ class CpiBookingService
                 $cursor = $cursor->addMinutes($step);
             }
         }
-        if (! $slots) {
-            return [];
-        }
-
-        $taken = CpiBooking::where('status', 'confirmed')
-            ->whereBetween('start_utc', [$day->utc()->subDay(), $day->utc()->addDays(2)])
-            ->get()->map(fn ($b) => $b->start_utc->utc()->format('Y-m-d\TH:i:s\Z'))->all();
 
         return array_values(array_diff(array_keys($slots), $taken));
+    }
+
+    /** @return list<string> start times (UTC ISO) of confirmed bookings between two instants */
+    private function takenStarts(CarbonImmutable $from, CarbonImmutable $to): array
+    {
+        return CpiBooking::where('status', 'confirmed')->whereBetween('start_utc', [$from, $to])
+            ->get()->map(fn ($b) => $b->start_utc->utc()->format('Y-m-d\TH:i:s\Z'))->all();
     }
 
     /** Dates (booking timezone) in the booking window that still have at least one open slot. */
@@ -166,6 +185,7 @@ class CpiBookingService
                     'payload' => ['booking_id' => (string) $booking->id, 'start_utc' => $start->toIso8601String()],
                     'ip_address' => $ip, 'user_agent' => mb_substr((string) $userAgent, 0, 255), 'mail_status' => 'pending',
                 ]);
+                $this->audit('cpi_booking_create', $booking, ['start' => $start->toIso8601String()], ['ip' => $ip, 'ua' => $userAgent]);
 
                 return $booking;
             });
@@ -175,6 +195,7 @@ class CpiBookingService
         if (! $booking) {
             return null;
         }
+        Cache::forget('cpi_slots_range');   // the slot just taken must not be offered again from the cached list
 
         $this->sendEmails($booking, $token);
 
@@ -187,9 +208,21 @@ class CpiBookingService
         $build = function (): array {
             $cfg = self::settings();
             $today = CarbonImmutable::now($cfg['timezone'])->startOfDay();
+            $last = $today->addDays($cfg['horizon_days']);
+
+            // Rules, blackouts and bookings are loaded once for the whole window (not once per day).
+            $rules = CpiAvailabilityRule::orderBy('start_time')->get()->groupBy('weekday');
+            $blackouts = CpiBlackout::whereBetween('day', [$today->format('Y-m-d'), $last->format('Y-m-d')])->get()
+                ->map(fn ($b) => $b->day->format('Y-m-d'))->all();
+            $taken = $this->takenStarts($today->utc()->subDay(), $last->utc()->addDays(2));
+
             $all = [];
             for ($i = 0; $i <= $cfg['horizon_days']; $i++) {
-                $all = array_merge($all, $this->slotsForDate($today->addDays($i)->format('Y-m-d')));
+                $day = $today->addDays($i);
+                if (in_array($day->format('Y-m-d'), $blackouts, true) || ! $rules->has($day->dayOfWeek)) {
+                    continue;
+                }
+                $all = array_merge($all, $this->openStarts($day, $cfg, $rules->get($day->dayOfWeek), $taken));
             }
             sort($all);
 
@@ -223,7 +256,7 @@ class CpiBookingService
      *
      * @return array{ok: bool, error?: string, booking?: CpiBooking}
      */
-    public function reschedule(CpiBooking $b, string $newStart, string $by, ?string $rawToken = null, bool $anyTime = false): array
+    public function reschedule(CpiBooking $b, string $newStart, string $by, ?string $rawToken = null, bool $anyTime = false, array $actor = []): array
     {
         $cfg = self::settings();
         $new = CarbonImmutable::parse($newStart)->utc();
@@ -241,27 +274,34 @@ class CpiBookingService
 
         $old = $b->start_utc->copy();
         try {
-            $moved = DB::transaction(function () use ($b, $new, $cfg, $by, $rawToken, $old) {
+            $moved = DB::transaction(function () use ($b, $new, $cfg, $by, $rawToken, $old, $anyTime, $actor) {
+                // Re-read under a row lock: a cancel (or another move) that landed since this request started must win.
+                $current = CpiBooking::whereKey($b->id)->lockForUpdate()->first();
+                if (! $current || $current->status !== 'confirmed') {
+                    return 'cancelled';
+                }
                 if (CpiBooking::where('status', 'confirmed')->where('start_utc', $new)->where('id', '!=', $b->id)->lockForUpdate()->exists()) {
-                    return false;
+                    return 'taken';
                 }
-                $b->update([
+                $current->update([
                     'start_utc' => $new, 'end_utc' => $new->addMinutes($cfg['slot_minutes']), 'rescheduled_from_utc' => $old,
-                    'sequence' => $b->sequence + 1, 'reschedule_count' => $b->reschedule_count + 1, 'last_rescheduled_by' => $by,
+                    'sequence' => $current->sequence + 1, 'reschedule_count' => $current->reschedule_count + 1, 'last_rescheduled_by' => $by,
                 ]);
-                // Later emails must carry the same manage link. Older bookings stored only a hash: keep the visitor's own
-                // token if they used it, otherwise issue a fresh one (an admin move on an old booking).
-                if (! $b->manage_token_enc) {
-                    $b->storeManageToken($rawToken ?: Str::random(40));
+                // Later emails carry the same manage link. A booking that stored only a hash keeps working with the link it
+                // already has: store the visitor's own token if they used it, but never replace it with a new one (that
+                // would kill the links in the visitor's earlier emails).
+                if (! $current->manage_token_enc && $rawToken) {
+                    $current->storeManageToken($rawToken);
                 }
+                $this->audit('cpi_booking_reschedule', $current, ['from' => $old->toIso8601String(), 'to' => $new->toIso8601String(), 'by' => $by, 'any_time' => $anyTime], $actor);
 
-                return true;
+                return 'ok';
             });
         } catch (QueryException) {
-            $moved = false;
+            $moved = 'taken';
         }
-        if (! $moved) {
-            return ['ok' => false, 'error' => 'taken'];
+        if ($moved !== 'ok') {
+            return ['ok' => false, 'error' => $moved];
         }
 
         Cache::forget('cpi_slots_range');
@@ -271,9 +311,22 @@ class CpiBookingService
         return ['ok' => true, 'booking' => $b];
     }
 
-    public function cancel(CpiBooking $booking, string $by = 'visitor'): void
+    public function cancel(CpiBooking $booking, string $by = 'visitor', array $actor = []): void
     {
-        $booking->update(['status' => 'cancelled', 'sequence' => $booking->sequence + 1]);
+        $cancelled = DB::transaction(function () use ($booking, $by, $actor) {
+            $current = CpiBooking::whereKey($booking->id)->lockForUpdate()->first();
+            if (! $current || $current->status !== 'confirmed') {
+                return false;   // already cancelled by someone else: nothing to do, nobody is emailed twice
+            }
+            $current->update(['status' => 'cancelled', 'sequence' => $current->sequence + 1]);
+            $this->audit('cpi_booking_cancel', $current, ['by' => $by], $actor);
+
+            return true;
+        });
+        if (! $cancelled) {
+            return;
+        }
+        $booking->refresh();
         Cache::forget('cpi_slots_range');
         $c = $this->mailContext($booking);
         $team = config('services.contact.recipient');
@@ -295,7 +348,7 @@ class CpiBookingService
      * @param  list<int>  $userIds
      * @return array{added: list<int>, removed: list<int>}
      */
-    public function assignStaff(CpiBooking $b, array $userIds, ?User $by = null): array
+    public function assignStaff(CpiBooking $b, array $userIds, ?User $by = null, array $actor = []): array
     {
         $eligible = self::eligibleStaff()->pluck('id')->all();
         $wanted = array_values(array_unique(array_map('intval', array_intersect($userIds, $eligible))));
@@ -306,8 +359,11 @@ class CpiBookingService
             return ['added' => [], 'removed' => []];
         }
 
-        $b->staff()->sync($wanted);
-        $b->update(['sequence' => $b->sequence + 1]);   // the attendee list changed
+        DB::transaction(function () use ($b, $wanted, $added, $removed, $actor) {
+            $b->staff()->sync($wanted);
+            $b->update(['sequence' => $b->sequence + 1]);   // the attendee list changed
+            $this->audit('cpi_booking_staff', $b, ['added' => $added, 'removed' => $removed], $actor);
+        });
         $b = $b->fresh();
         $c = $this->mailContext($b);
 
@@ -411,6 +467,36 @@ class CpiBookingService
         array_push($lines, 'END:VEVENT', 'END:VCALENDAR');
 
         // RFC 5545: lines longer than 75 octets are folded onto continuation lines that start with a space.
-        return implode("\r\n", array_map(fn (string $l) => rtrim(chunk_split($l, 73, "\r\n "), "\r\n "), $lines))."\r\n";
+        return implode("\r\n", array_map(self::foldLine(...), $lines))."\r\n";
+    }
+
+    /** Fold at 75 octets without ever cutting a multi-byte character, and without touching real trailing spaces. */
+    private static function foldLine(string $line): string
+    {
+        if (strlen($line) <= 75) {
+            return $line;
+        }
+        $out = '';
+        $current = '';
+        $limit = 75;
+        foreach (mb_str_split($line, 1, 'UTF-8') as $char) {
+            if (strlen($current) + strlen($char) > $limit) {
+                $out .= $current."\r\n ";
+                $current = '';
+                $limit = 74;   // the leading space of a continuation line counts as an octet
+            }
+            $current .= $char;
+        }
+
+        return $out.$current;
+    }
+
+    /** One audit row, written inside the caller's transaction. $actor: user_id, ip, ua (empty for a visitor using their own link). */
+    private function audit(string $action, CpiBooking $b, array $metadata, array $actor): void
+    {
+        AuditLog::create([
+            'user_id' => $actor['user_id'] ?? null, 'action' => $action, 'subject_type' => CpiBooking::class, 'subject_id' => $b->id,
+            'metadata' => $metadata, 'ip_address' => $actor['ip'] ?? null, 'user_agent' => isset($actor['ua']) ? mb_substr((string) $actor['ua'], 0, 255) : null,
+        ]);
     }
 }

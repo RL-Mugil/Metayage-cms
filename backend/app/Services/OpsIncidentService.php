@@ -35,12 +35,14 @@ class OpsIncidentService
     public function record(string $fingerprint, string $title, string $meaning, string $impact, string $action, ?string $technical, int $quietMinutes = 360, ?string $scope = null, string $source = 'app'): OpsIncident
     {
         $now = now();
+        // The column is string(191): a longer key would make the insert fail. Keep a readable prefix plus a hash for uniqueness.
+        if (mb_strlen($fingerprint) > 180) {
+            $fingerprint = mb_substr($fingerprint, 0, 140).'|'.md5($fingerprint);
+        }
         $incident = OpsIncident::where('fingerprint', $fingerprint)->first();
 
         if ($incident && $incident->status === 'open') {
-            $incident->update(['occurrences' => $incident->occurrences + 1, 'last_seen_at' => $now, 'technical' => $technical ? mb_substr($technical, 0, 1000) : $incident->technical]);
-
-            return $incident;
+            return $this->countOccurrence($incident, $technical, $now);
         }
 
         // First time, or it is back after having recovered: a new episode.
@@ -50,7 +52,25 @@ class OpsIncidentService
             'quiet_minutes' => $quietMinutes, 'status' => 'open', 'resolved_at' => null, 'reported_at' => null, 'recovery_mailed_at' => null,
         ];
 
-        return $incident ? tap($incident)->update($values) : OpsIncident::create(['fingerprint' => $fingerprint] + $values);
+        if ($incident) {
+            return tap($incident)->update($values);
+        }
+
+        try {
+            return OpsIncident::create(['fingerprint' => $fingerprint] + $values);
+        } catch (\Illuminate\Database\UniqueConstraintViolationException) {
+            // A parallel worker recorded the same problem between our check and our insert: count this one against it.
+            return $this->countOccurrence(OpsIncident::where('fingerprint', $fingerprint)->firstOrFail(), $technical, $now);
+        }
+    }
+
+    /** Atomic increment, so simultaneous repeats are all counted. */
+    private function countOccurrence(OpsIncident $incident, ?string $technical, \Illuminate\Support\Carbon $now): OpsIncident
+    {
+        OpsIncident::where('id', $incident->id)->update(['occurrences' => \Illuminate\Support\Facades\DB::raw('occurrences + 1'), 'last_seen_at' => $now]
+            + ($technical ? ['technical' => mb_substr($technical, 0, 1000)] : []));
+
+        return $incident->refresh();
     }
 
     /** Resolve one problem by fingerprint, or everything raised by one scheduled command. Returns the incidents that were open. */

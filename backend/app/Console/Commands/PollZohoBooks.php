@@ -88,17 +88,20 @@ class PollZohoBooks extends Command
             }
             report($error);
             DB::table('integration_logs')->insert(['slug' => 'zoho', 'event_type' => 'poll', 'status' => 'paused', 'summary' => mb_substr($error->getMessage(), 0, 250), 'payload' => null, 'created_at' => now(), 'updated_at' => now()]);
-            return self::SUCCESS;
+            // A reported problem must not exit 0: a successful exit resolves the incident that report() just recorded.
+            return self::FAILURE;
         } catch (\Illuminate\Http\Client\ConnectionException $error) {
             // Zoho answered too slowly or the network blinked. The next poll is five minutes away, so this only becomes
             // an alert if it keeps happening (six polls in a row, about half an hour). The run itself is not a failure.
             $streak = (int) Cache::get('zoho_poll_fail_streak', 0) + 1;
             Cache::put('zoho_poll_fail_streak', $streak, now()->addHour());
-            if ($streak === 6) {
+            $outage = $streak >= 6;
+            if ($outage) {
+                // Keep the incident open for as long as the outage lasts: a successful exit would resolve it at once.
                 report($error);
             }
             DB::table('integration_logs')->insert(['slug' => 'zoho', 'event_type' => 'poll', 'status' => 'fail', 'summary' => mb_substr($error->getMessage(), 0, 250), 'payload' => null, 'created_at' => now(), 'updated_at' => now()]);
-            return self::SUCCESS;
+            return $outage ? self::FAILURE : self::SUCCESS;
         } catch (Throwable $error) {
             report($error);
             DB::table('integration_logs')->insert(['slug' => 'zoho', 'event_type' => 'poll', 'status' => 'fail', 'summary' => mb_substr($error->getMessage(), 0, 250), 'payload' => null, 'created_at' => now(), 'updated_at' => now()]);

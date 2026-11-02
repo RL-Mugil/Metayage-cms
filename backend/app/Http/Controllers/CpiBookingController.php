@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\AuditLog;
 use App\Models\CpiAvailabilityRule;
 use App\Models\CpiBlackout;
 use App\Models\CpiBooking;
@@ -106,6 +105,12 @@ class CpiBookingController extends Controller
         ]);
     }
 
+    /** Who is acting, for the audit trail written inside the service's transaction. */
+    private function actor(Request $request): array
+    {
+        return ['user_id' => $request->user()?->id, 'ip' => $request->ip(), 'ua' => $request->userAgent()];
+    }
+
     public function rescheduleByVisitor(Request $request, int $id, string $token): JsonResponse
     {
         $b = $this->match($id, $token);
@@ -114,16 +119,16 @@ class CpiBookingController extends Controller
         }
         $start = (string) $request->validate(['start' => ['required', 'date']])['start'];
 
-        return $this->rescheduleResponse($this->service->reschedule($b, $start, 'visitor', $token));
+        return $this->rescheduleResponse($this->service->reschedule($b, $start, 'visitor', $token, false, $this->actor($request)));
     }
 
-    public function cancelByVisitor(int $id, string $token): JsonResponse
+    public function cancelByVisitor(Request $request, int $id, string $token): JsonResponse
     {
         $b = $this->match($id, $token);
         if (! $b || $b->status !== 'confirmed') {
             return response()->json(['message' => 'There is nothing to cancel: this booking is already cancelled or the link is not valid.'], 404);
         }
-        $this->service->cancel($b, 'visitor');
+        $this->service->cancel($b, 'visitor', $this->actor($request));
 
         return response()->json(['message' => 'Cancelled.']);
     }
@@ -155,11 +160,11 @@ class CpiBookingController extends Controller
         return $b ? redirect()->away('https://canpatentit.com/booking/manage?action=cancel#'.$id.'.'.$token) : $this->plainPage('Nothing to cancel', 'This booking is already cancelled or the link is not valid.', 'https://canpatentit.com/book', 'Book a new time');
     }
 
-    public function cancel(int $id, string $token): Response
+    public function cancel(Request $request, int $id, string $token): Response
     {
         $b = $this->match($id, $token);
         if ($b && $b->status === 'confirmed') {
-            $this->service->cancel($b, 'visitor');
+            $this->service->cancel($b, 'visitor', $this->actor($request));
 
             return $this->plainPage('Cancelled', 'Your consultation has been cancelled. You can book another time at any point.', 'https://canpatentit.com/book', 'Book a new time');
         }
@@ -212,8 +217,7 @@ class CpiBookingController extends Controller
         Gate::authorize('manage-site');
         $b = CpiBooking::findOrFail($id);
         if ($b->status === 'confirmed') {
-            $this->service->cancel($b, 'admin');
-            AuditLog::create(['user_id' => $request->user()->id, 'action' => 'cpi_booking_cancel', 'subject_type' => CpiBooking::class, 'subject_id' => $b->id, 'metadata' => [], 'ip_address' => $request->ip(), 'user_agent' => $request->userAgent()]);
+            $this->service->cancel($b, 'admin', $this->actor($request));
         }
 
         return response()->json($b->fresh()->load('staff:id,name,email'));
@@ -224,13 +228,8 @@ class CpiBookingController extends Controller
         Gate::authorize('manage-site');
         $b = CpiBooking::findOrFail($id);
         $data = $request->validate(['start' => ['required', 'date'], 'any_time' => ['sometimes', 'boolean']]);
-        $old = $b->start_utc->utc()->toIso8601String();
 
-        $r = $this->service->reschedule($b, $data['start'], 'admin', null, (bool) ($data['any_time'] ?? false));
-        if ($r['ok']) {
-            AuditLog::create(['user_id' => $request->user()->id, 'action' => 'cpi_booking_reschedule', 'subject_type' => CpiBooking::class, 'subject_id' => $b->id,
-                'metadata' => ['from' => $old, 'to' => $r['booking']->start_utc->utc()->toIso8601String(), 'any_time' => (bool) ($data['any_time'] ?? false)], 'ip_address' => $request->ip(), 'user_agent' => $request->userAgent()]);
-        }
+        $r = $this->service->reschedule($b, $data['start'], 'admin', null, (bool) ($data['any_time'] ?? false), $this->actor($request));
 
         return $r['ok'] ? response()->json($r['booking']->load('staff:id,name,email')) : $this->rescheduleResponse($r);
     }
@@ -241,10 +240,7 @@ class CpiBookingController extends Controller
         $b = CpiBooking::findOrFail($id);
         $data = $request->validate(['user_ids' => ['present', 'array', 'max:20'], 'user_ids.*' => ['integer']]);
 
-        $result = $this->service->assignStaff($b, $data['user_ids'], $request->user());
-        if ($result['added'] || $result['removed']) {
-            AuditLog::create(['user_id' => $request->user()->id, 'action' => 'cpi_booking_staff', 'subject_type' => CpiBooking::class, 'subject_id' => $b->id, 'metadata' => $result, 'ip_address' => $request->ip(), 'user_agent' => $request->userAgent()]);
-        }
+        $this->service->assignStaff($b, $data['user_ids'], $request->user(), $this->actor($request));
 
         return response()->json($b->fresh()->load('staff:id,name,email'));
     }
