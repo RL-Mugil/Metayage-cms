@@ -101,6 +101,11 @@ class ZohoMirrorSync
                 // Finish the cycle only after details/PDFs too. A paused hydration run
                 // must resume that backlog before starting another scan from page one.
                 $this->rebuildOpeningBalanceMirror();
+                try {
+                    app(ZohoClientLinker::class)->linkByName($this->zoho->scope());   // local data only, no API calls
+                } catch (Throwable $linkError) {
+                    report($linkError);
+                }
                 DB::table('zoho_sync_progress')->where([
                     'scope' => $this->zoho->scope(), 'resource' => '__cycle',
                 ])->update(['completed_at' => now(), 'pause_reason' => null, 'evening_eligible_date' => null]);
@@ -450,6 +455,41 @@ class ZohoMirrorSync
             $snapshot = $this->remember($resource, $record);
             if ($snapshot) $this->saveDetail($snapshot, $record);
         });
+    }
+
+    /**
+     * A customer created in Zoho after the last nightly scan is not in the mirror yet. This reads up to three active
+     * customers whose name contains the search (one list call plus one detail call each) from the manual lane,
+     * and saves them so the quote draft can use them. Started by an explicit click, never by typing.
+     */
+    public function fetchCustomers(string $search): int
+    {
+        $search = trim($search);
+        abort_unless(mb_strlen($search) >= 3, 422, 'Type at least three letters of the customer name.');
+        $this->zoho->background = false;
+        $data = $this->zoho->listPage('contacts', ['contact_name_contains' => $search, 'per_page' => 25]);
+        $saved = 0;
+        foreach ($data['contacts'] as $contact) {
+            if ($saved >= 3) {
+                break;
+            }
+            if (($contact['contact_type'] ?? '') !== 'customer' || ($contact['status'] ?? '') !== 'active' || empty($contact['contact_id'])) {
+                continue;
+            }
+            $record = $this->readDetail('contacts', (string) $contact['contact_id']);
+            if ($record === null) {
+                continue;
+            }
+            DB::transaction(function () use ($record): void {
+                $snapshot = $this->remember('contacts', $record);
+                if ($snapshot) {
+                    $this->saveDetail($snapshot, $record);
+                }
+            });
+            $saved++;
+        }
+
+        return $saved;
     }
 
     private function mirrorRecord(string $resource, array $record): void

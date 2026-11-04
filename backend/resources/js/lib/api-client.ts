@@ -1154,9 +1154,10 @@ export const api = {
   async zohoRefreshRecord(id: number): Promise<{ ok: boolean; message: string }> {
     return this.request(`/integrations/zoho/records/${id}/sync`, { method: 'POST' })
   },
-  async zohoQuotePreview(kind: 'standard' | 'in', id: number, search: string, customerId: string): Promise<ZohoQuotePreview> {
+  async zohoQuotePreview(kind: 'standard' | 'in', id: number, search: string, customerId: string, lookup = false): Promise<ZohoQuotePreview> {
     const query = new URLSearchParams({ search })
     if (customerId) query.set('customer_id', customerId)
+    if (lookup) query.set('lookup', '1')
     return this.request(`/integrations/zoho/quotes/${kind}/${id}?${query}`)
   },
   async zohoSendQuote(kind: 'standard' | 'in', id: number, customerId: string, version: string): Promise<{ state: string; estimate_id: string; message: string }> {

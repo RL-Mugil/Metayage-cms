@@ -37,6 +37,7 @@ class ZohoQuoteWriter
                     'state' => 'sending', 'payload' => json_encode($draft['payload'], JSON_THROW_ON_ERROR),
                 ]);
                 $this->audit($export, 'zoho_quote_send_started');
+                app(ZohoClientLinker::class)->linkChosen($quote->client, $customerId);   // remembered for the next quote
                 return [$export, true];
             });
             if (! $dispatch) {

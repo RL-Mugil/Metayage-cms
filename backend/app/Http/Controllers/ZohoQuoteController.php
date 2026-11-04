@@ -15,16 +15,29 @@ use Illuminate\Validation\ValidationException;
 
 class ZohoQuoteController extends Controller
 {
-    public function preview(Request $request, string $kind, int $id, ZohoBooksService $zoho, ZohoQuoteDraft $drafts): ZohoSyncResource
+    public function preview(Request $request, string $kind, int $id, ZohoBooksService $zoho, ZohoQuoteDraft $drafts, ZohoMirrorSync $mirror): ZohoSyncResource
     {
         $this->authorize('create', ZohoQuoteExport::class);
-        $input = $request->validate(['search' => 'nullable|string|max:100', 'customer_id' => ['nullable', 'string', 'regex:/^[0-9]{1,80}$/']]);
+        $input = $request->validate(['search' => 'nullable|string|max:100', 'customer_id' => ['nullable', 'string', 'regex:/^[0-9]{1,80}$/'], 'lookup' => 'nullable|boolean']);
         $quote = $drafts->source($kind, $id);
         $scope = $zoho->scope();
         $export = ZohoQuoteExport::where('scope', $scope)->where('source_type', $kind)->where('source_id', $id)->first();
         $customerId = (string) ($input['customer_id'] ?? $quote->client?->zoho_contact_id ?? '');
         $preview = null;
         $error = $zoho->isConfigured() ? null : 'Zoho Books is not configured.';
+        if ($error === null && ! empty($input['lookup']) && trim((string) ($input['search'] ?? '')) !== '') {
+            // A customer created in Zoho after the last nightly scan: read it now (manual allowance, a few calls).
+            try {
+                $mirror->fetchCustomers((string) $input['search']);
+            } catch (ZohoBudgetExhausted $exception) {
+                $error = $exception->getMessage();
+            } catch (\Illuminate\Http\Exceptions\HttpResponseException|\Symfony\Component\HttpKernel\Exception\HttpException $exception) {
+                throw $exception;
+            } catch (\Throwable $exception) {
+                report($exception);
+                $error = 'Zoho could not be reached to look up that customer. Try again shortly.';
+            }
+        }
         if ($customerId !== '' && $error === null) {
             try {
                 $preview = $drafts->build($quote, $scope, $customerId);

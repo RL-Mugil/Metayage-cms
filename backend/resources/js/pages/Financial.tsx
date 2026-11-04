@@ -846,11 +846,6 @@ export default function Financial() {
     const gst = computeIndiaGst(indiaForm);
     const selectedClient = clients.find(client => Number(client.id) === Number(indiaForm.client_id));
     const zohoCustomerId = String(selectedClient?.zoho_contact_id ?? "");
-    if (!editIndiaRec && indiaForm.type === "quote" && !zohoCustomerId) {
-      setIndiaErr("This client is not linked to an active Zoho Books customer. Link the client to Zoho before creating a quote draft.");
-      setIndiaSaving(false);
-      return;
-    }
     const payload: Partial<PatentInvoiceIn> = {
       type:                             indiaForm.type,
       project_id:                       parseInt(indiaForm.project_id),
@@ -897,7 +892,10 @@ export default function Financial() {
         const created = await api.createPatentInvoiceIn(payload);
         setIndiaRecords(prev => [created, ...prev]);
         setIndiaTotal(t => t + 1);
-        if (indiaForm.type === "quote") {
+        if (indiaForm.type === "quote" && !zohoCustomerId) {
+          // First quote for this client: the Zoho customer is chosen in the "Send to Zoho" panel, which then remembers it.
+          alert("The quote is saved in the portal. This client is not linked to a Zoho customer yet: click \"Send to Zoho\" on the quote row and pick the customer once. It is remembered for later quotes.");
+        } else if (indiaForm.type === "quote") {
           const draft = await api.zohoQuotePreview("in", created.id, "", zohoCustomerId);
           if (!draft.preview || draft.error) {
             throw new Error(draft.error ?? "The portal quote was created, but Zoho could not prepare its draft payload.");

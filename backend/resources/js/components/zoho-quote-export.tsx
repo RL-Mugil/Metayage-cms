@@ -12,11 +12,14 @@ export function ZohoQuoteExport({ kind, id }: { kind: 'standard' | 'in'; id: num
   const [search, setSearch] = useState('');
   const [customerId, setCustomerId] = useState('');
   const [confirmedVersion, setConfirmedVersion] = useState('');
+  const [lookupTerm, setLookupTerm] = useState('');   // set by the button only, so typing never makes a Zoho request
   const queryClient = useQueryClient();
   const key = ['zoho-quote', kind, id];
+  const lookup = lookupTerm !== '' && lookupTerm === search.trim();
   const { data, error, isFetching } = useQuery<ZohoQuotePreview>({
-    queryKey: [...key, search, customerId],
-    queryFn: () => api.zohoQuotePreview(kind, id, search, customerId), enabled: open, retry: false,
+    queryKey: [...key, search, customerId, lookup],
+    queryFn: () => api.zohoQuotePreview(kind, id, search, customerId, lookup), enabled: open, retry: false,
+    staleTime: lookup ? Infinity : 0,
   });
   const send = useMutation({
     retry: false,
@@ -84,7 +87,10 @@ export function ZohoQuoteExport({ kind, id }: { kind: 'standard' | 'in'; id: num
                 {data?.contacts.map(contact => <option key={contact.id} value={contact.id}>{contact.name} ({contact.id})</option>)}
               </select>
             </label>
-            <p className="text-xs text-muted-foreground">Showing up to 50 saved matches. Newly created customers become available after contact sync.</p>
+            <p className="text-xs text-muted-foreground">Showing up to 50 saved matches. The customer you pick is remembered for this client's next quotes.</p>
+            {data && data.contacts.length === 0 && search.trim().length >= 3 && !lookup
+              && <Button type="button" size="sm" variant="outline" disabled={isFetching} onClick={() => setLookupTerm(search.trim())}>
+                Not listed? Look up "{search.trim()}" in Zoho now</Button>}
             {preview && <div className="space-y-2 text-sm">
               <p>Portal client: {preview.client_name}<br />Zoho customer: {preview.customer_name}<br />Reference: {preview.payload.reference_number}</p>
               {preview.payload.line_items.map((line, index) => <p key={index}>{line.name}: {preview.currency} {line.rate.toFixed(2)}</p>)}
