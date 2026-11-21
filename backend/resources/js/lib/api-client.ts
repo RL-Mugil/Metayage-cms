@@ -9,6 +9,7 @@ import type {
 import type { MatterWorkspace, MatterWorkspaceResponse } from '@/types/matter-workspace'
 import type { ZohoQuotePreview } from '@/types/zoho'
 import type { TrademarkDetails, TrademarkInput } from '@/types/trademark'
+import type { Form1Input, Form1Prefill, IpoAddress, IpoInventorProfile, IpoServiceAddress, IpoSettings } from '@/types/ipo-forms'
 
 function getCsrfToken(): string {
   if (typeof document === 'undefined') return ''
@@ -453,6 +454,53 @@ export const api = {
   },
   async removeProjectInventor(projectId: number | string, userId: number): Promise<any> {
     return this.request(`/projects/${projectId}/inventors/${userId}`, { method: 'DELETE' })
+  },
+  // ── IPO filing forms ──
+  async getForm1(projectId: number | string): Promise<Form1Prefill> {
+    return this.request(`/projects/${projectId}/ipo-forms/form1`)
+  },
+  async saveForm1(projectId: number | string, input: Form1Input): Promise<Form1Prefill> {
+    return this.request(`/projects/${projectId}/ipo-forms/form1`, { method: 'PUT', body: JSON.stringify(input) })
+  },
+  async generateForm1(projectId: number | string, input: Form1Input): Promise<void> {
+    const response = await fetch(`/api/projects/${projectId}/ipo-forms/form1/generate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document, application/json',
+        'X-XSRF-TOKEN': getCsrfToken(),
+      },
+      credentials: 'same-origin',
+      body: JSON.stringify(input),
+    })
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({})) as { message?: string; errors?: Record<string, string[]> }
+      const fieldError = body.errors ? Object.values(body.errors)[0]?.[0] : undefined
+      throw new Error(fieldError || body.message || `Form 1 generation failed (${response.status})`)
+    }
+    const disposition = response.headers.get('Content-Disposition') ?? ''
+    const name = /filename="?([^";]+)"?/i.exec(disposition)?.[1] ?? 'Form1.docx'
+    const url = URL.createObjectURL(await response.blob())
+    const link = document.createElement('a')
+    link.href = url
+    link.download = name
+    link.click()
+    URL.revokeObjectURL(url)
+  },
+  async updateIpoApplicant(projectId: number | string, data: IpoAddress & { nationality?: string | null; contact_email?: string | null; phone?: string | null }): Promise<{ ok: boolean }> {
+    return this.request(`/projects/${projectId}/ipo-forms/applicant`, { method: 'PUT', body: JSON.stringify(data) })
+  },
+  async updateIpoInventor(projectId: number | string, userId: number, data: IpoInventorProfile): Promise<{ ok: boolean }> {
+    return this.request(`/projects/${projectId}/ipo-forms/inventors/${userId}`, { method: 'PUT', body: JSON.stringify(data) })
+  },
+  async getIpoSettings(): Promise<IpoSettings> {
+    return this.request('/settings/ipo')
+  },
+  async updateIpoService(data: IpoServiceAddress): Promise<IpoSettings> {
+    return this.request('/settings/ipo/service', { method: 'PUT', body: JSON.stringify(data) })
+  },
+  async updatePatentAgent(userId: number, data: { patent_agent_no: string | null; mobile: string | null }): Promise<{ ok: boolean }> {
+    return this.request(`/settings/ipo/agents/${userId}`, { method: 'PUT', body: JSON.stringify(data) })
   },
   async getUpcomingDeadlines(days = 90): Promise<any[]> {
     return this.request(`/docket/upcoming?days=${days}`)

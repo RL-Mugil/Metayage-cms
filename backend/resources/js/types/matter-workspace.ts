@@ -240,6 +240,7 @@ export interface MatterWorkspace {
     can_manage_docket: boolean
     can_view_financials: boolean
     can_view_audit: boolean
+    can_prepare_ipo_forms?: boolean
   }
 }
 

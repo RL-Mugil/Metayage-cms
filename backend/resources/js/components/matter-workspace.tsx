@@ -13,6 +13,7 @@ import { ProjectChat } from "@/components/project-chat"
 import { ZohoBooksPanel } from "@/components/zoho-books-panel"
 import { InventorsPanel } from "@/components/inventors-panel"
 import { IpoStatusPanel } from "@/components/ipo-status-panel"
+import { Form1Button } from "@/components/ipo/form1-dialog"
 import { TrademarkMarkPanel } from "@/components/trademark-details-fields"
 import { api } from "@/lib/api-client"
 import type {
@@ -85,6 +86,10 @@ export function MatterWorkspace({ data, projectId, tab, onTabChange }: MatterWor
   const renewals = application?.renewals ?? []
   const renewalsPaid = renewals.filter((r) => r.status === "Paid").length
   const renewalsTotal = renewals.length || 18 // years 3-20 if no schedule rows exist yet
+  // IPO Form 1 applies to Indian patent filings only.
+  const canPrepareForm1 = !!data.capabilities.can_prepare_ipo_forms
+    && (project.patent_office_code || "IN").toUpperCase() === "IN"
+    && !/trade\s*mark|copyright/i.test(project.project_type || "")
 
   return (
     <div className="min-h-full bg-background">
@@ -109,6 +114,7 @@ export function MatterWorkspace({ data, projectId, tab, onTabChange }: MatterWor
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2 pl-11 xl:pl-0">
+              {canPrepareForm1 && <Form1Button projectId={projectId} />}
               <Badge variant="outline">{project.project_type || project.case_type || "IP Matter"}</Badge>
               <Badge variant="outline">{application?.legal_status || project.status}</Badge>
               <Badge variant={project.status === "Granted" || project.status === "Completed" ? "default" : "secondary"}>{project.status}</Badge>

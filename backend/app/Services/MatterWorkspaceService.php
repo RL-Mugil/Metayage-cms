@@ -116,6 +116,7 @@ class MatterWorkspaceService
                 'can_manage_docket' => ! $isClient && $user->can('update', $project),
                 'can_view_financials' => $canViewFinancials,
                 'can_view_audit' => $canViewAudit,
+                'can_prepare_ipo_forms' => $user->can('prepareIpoForms', $project),
             ],
         ];
     }

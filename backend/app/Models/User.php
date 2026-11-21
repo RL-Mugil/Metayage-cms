@@ -15,7 +15,7 @@ use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Facades\DB;
 use Laravel\Sanctum\HasApiTokens;
 
-#[Fillable(['name', 'email', 'password', 'role', 'status', 'avatar_url', 'timezone', 'language', 'notification_prefs', 'google_calendar_token', 'google_calendar_email'])]
+#[Fillable(['name', 'email', 'password', 'role', 'status', 'avatar_url', 'timezone', 'language', 'notification_prefs', 'google_calendar_token', 'google_calendar_email', 'patent_agent_no', 'mobile'])]
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable
 {
@@ -34,6 +34,7 @@ class User extends Authenticatable
             'password'           => 'hashed',
             'notification_prefs' => 'array',
             'current_firm_id'    => 'integer',
+            'mobile'             => \App\Casts\EncryptedSafe::class,
         ];
     }
 
@@ -90,6 +91,12 @@ class User extends Authenticatable
     public function isInventor(): bool
     {
         return $this->role === 'inventor';
+    }
+
+    /** IPO-form particulars (address, nationality…) when this user is an inventor. */
+    public function inventorProfile(): \Illuminate\Database\Eloquent\Relations\HasOne
+    {
+        return $this->hasOne(InventorProfile::class);
     }
 
     /**

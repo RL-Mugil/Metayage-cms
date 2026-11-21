@@ -62,6 +62,20 @@ class ProjectPolicy
         return $this->update($user, $project);
     }
 
+    /**
+     * Prepare IPO filing forms (Form 1 …) on a case: firm staff who handle filings and
+     * can see the case. Associates and paralegals are limited to their assigned cases by
+     * view(); client-portal users, inventors, HR and finance never prepare forms.
+     */
+    public function prepareIpoForms(User $user, Project $project): bool
+    {
+        if (! in_array($user->role, ['super_admin', 'partner', 'director', 'manager', 'associate', 'paralegal'], true)) {
+            return false;
+        }
+
+        return $this->view($user, $project);
+    }
+
     public function delete(User $user, Project $project): bool
     {
         if ($user->isGalvanizer()) return $user->canAccessCircle($project->circle);

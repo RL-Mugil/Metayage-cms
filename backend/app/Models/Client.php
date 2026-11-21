@@ -27,6 +27,7 @@ class Client extends Model
         'cin_verification_status', 'cin_verified_at', 'cin_verified_name', 'cin_verified_address',
         // Location
         'nationality', 'state', 'address',
+        'address_house', 'address_street', 'city', 'country', 'pincode', 'applicant_category',
         'primary_jurisdiction', 'secondary_jurisdictions',
         // Contact
         'contact_name', 'contact_email', 'phone',

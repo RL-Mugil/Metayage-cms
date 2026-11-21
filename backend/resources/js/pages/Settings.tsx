@@ -1,7 +1,7 @@
 import { Head, usePage, router } from "@inertiajs/react";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { User, Bell, Shield, Palette, Settings as SettingsIcon, Key, Building, Loader2, Camera, Trash2, ZoomIn, ZoomOut, RotateCcw, Plus, X, Landmark, Check, Hash, Pencil, ArrowRightLeft, LayoutGrid, Wallet, ChevronUp, ChevronDown, Globe } from "lucide-react";
+import { User, Bell, Shield, Palette, Settings as SettingsIcon, Key, Building, Loader2, Camera, Trash2, ZoomIn, ZoomOut, RotateCcw, Plus, X, Landmark, Check, Hash, Pencil, ArrowRightLeft, LayoutGrid, Wallet, ChevronUp, ChevronDown, Globe, FileText } from "lucide-react";
 import AppLayout from "@/layouts/AppLayout";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api-client";
 import { SiteAdminPanel } from "@/components/site-admin-panel";
+import { IpoSettingsPanel } from "@/components/ipo/ipo-settings-panel";
 import type { ProjectTab, CodeRow, CodeRenameImpact, CodeMergeAvailable, CodeMergeImpact } from "@/types";
 
 function loadPrefs<T>(key: string, fallback: T): T {
@@ -29,7 +30,7 @@ const TIMEZONES = [
 
 const LANGUAGES = ["English", "Hindi", "Tamil", "Telugu"];
 
-type Tab = "profile" | "notifications" | "security" | "appearance" | "system" | "codes" | "projectTabs" | "finance" | "payroll" | "site";
+type Tab = "profile" | "notifications" | "security" | "appearance" | "system" | "codes" | "projectTabs" | "finance" | "payroll" | "ipo" | "site";
 
 const tabs: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: "profile",       label: "Profile",       icon: User },
@@ -41,6 +42,7 @@ const tabs: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: "projectTabs",   label: "Project Tabs",  icon: LayoutGrid },
   { id: "finance",       label: "Finance",       icon: Landmark },
   { id: "payroll",       label: "Payroll",       icon: Wallet },
+  { id: "ipo",           label: "IPO Forms",     icon: FileText },
   { id: "site",          label: "Site",          icon: Globe },
 ];
 
@@ -647,7 +649,7 @@ export default function Settings() {
   const [savingTabs, setSavingTabs] = useState(false);
 
   const visibleTabs = tabs.filter((item) => {
-    if (item.id === "system" || item.id === "finance" || item.id === "codes") return canManageSystem;
+    if (item.id === "system" || item.id === "finance" || item.id === "codes" || item.id === "ipo") return canManageSystem;
     if (item.id === "projectTabs" || item.id === "site") return isSuperAdmin;
     if (item.id === "payroll") return canManagePayroll;
     return true;
@@ -665,6 +667,7 @@ export default function Settings() {
     if (!canManageSystem && (tab === "system" || tab === "finance" || tab === "codes")) setTab("profile");
     if (!isSuperAdmin && (tab === "projectTabs" || tab === "site")) setTab("profile");
     if (!canManagePayroll && tab === "payroll") setTab("profile");
+    if (!canManageSystem && tab === "ipo") setTab("profile");
   }, [canManageSystem, isSuperAdmin, canManagePayroll, tab]);
 
   const [feeRows, setFeeRows] = useState<any[]>([]);
@@ -1627,6 +1630,7 @@ export default function Settings() {
           )}
 
           {tab === "site" && isSuperAdmin && <SiteAdminPanel />}
+          {tab === "ipo" && canManageSystem && <div className="p-8"><IpoSettingsPanel /></div>}
 
           {tab === "projectTabs" && isSuperAdmin && (
             <div className="space-y-6">

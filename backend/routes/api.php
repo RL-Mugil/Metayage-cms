@@ -195,6 +195,13 @@ Route::middleware(['auth:sanctum', 'firm.context', 'throttle:120,1'])->group(fun
     Route::post('/projects/{id}/inventors', [\App\Http\Controllers\InventorController::class, 'store']);
     Route::delete('/projects/{id}/inventors/{userId}', [\App\Http\Controllers\InventorController::class, 'destroy']);
 
+    // IPO filing forms (Form 1) — prefilled from the case, client, inventors and agents.
+    Route::get('/projects/{id}/ipo-forms/form1', [\App\Http\Controllers\Ipo\Form1Controller::class, 'show']);
+    Route::put('/projects/{id}/ipo-forms/form1', [\App\Http\Controllers\Ipo\Form1Controller::class, 'save']);
+    Route::post('/projects/{id}/ipo-forms/form1/generate', [\App\Http\Controllers\Ipo\Form1Controller::class, 'generate'])->middleware('throttle:30,1');
+    Route::put('/projects/{id}/ipo-forms/applicant', [\App\Http\Controllers\Ipo\FormPartyController::class, 'updateApplicant']);
+    Route::put('/projects/{id}/ipo-forms/inventors/{userId}', [\App\Http\Controllers\Ipo\FormPartyController::class, 'updateInventor']);
+
     // Tasks & Time tracking
     Route::get('/tasks', [TaskController::class, 'index']);
     Route::post('/tasks', [TaskController::class, 'store']);
@@ -350,6 +357,9 @@ Route::middleware(['auth:sanctum', 'firm.context', 'throttle:120,1'])->group(fun
     Route::put('/settings/project-tabs',  [\App\Http\Controllers\SettingsController::class, 'updateProjectTabs']);
     Route::put('/settings/renewal-fee-rates', [\App\Http\Controllers\SettingsController::class, 'updateRenewalFeeRates']);
     Route::put('/settings/payroll', [\App\Http\Controllers\SettingsController::class, 'updatePayrollSettings']);
+    Route::get('/settings/ipo', [\App\Http\Controllers\Ipo\IpoSettingsController::class, 'show']);
+    Route::put('/settings/ipo/service', [\App\Http\Controllers\Ipo\IpoSettingsController::class, 'updateService']);
+    Route::put('/settings/ipo/agents/{userId}', [\App\Http\Controllers\Ipo\IpoSettingsController::class, 'updateAgent']);
     Route::put('/settings/escalation-cadence', [\App\Http\Controllers\SettingsController::class, 'updateEscalationCadence']);
     Route::apiResource('fee-rate-cards', \App\Http\Controllers\FeeRateCardController::class)->except(['show']);
     Route::post('/settings/avatar',       [\App\Http\Controllers\SettingsController::class, 'uploadAvatar']);
