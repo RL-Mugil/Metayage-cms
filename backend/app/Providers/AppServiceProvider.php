@@ -86,6 +86,7 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(IpRecord::class, IpRecordPolicy::class);
         Gate::policy(Reminder::class, ReminderPolicy::class);
         Gate::policy(Employee::class, EmployeePolicy::class);
+        Gate::policy(\App\Models\Inventor::class, \App\Policies\InventorPolicy::class);
         Gate::define('manage-site', fn (User $user): bool => $user->role === 'super_admin');
         Gate::define('approve-deadline-rules', fn (User $user): bool => in_array($user->role, ['super_admin', 'partner'], true));
         Gate::define('review-docket-deadline', fn (User $user, Project $project): bool =>

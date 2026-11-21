@@ -26,7 +26,7 @@ class ProjectPolicy
         }
 
         if ($user->isInventor()) {
-            return $project->inventors()->where('users.id', $user->id)->exists();
+            return $project->inventors()->where('inventors.user_id', $user->id)->exists();
         }
 
         // Patent Analysts, paralegals and HR see only cases they created or are

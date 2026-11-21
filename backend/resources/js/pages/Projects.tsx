@@ -19,6 +19,8 @@ import type { ProjectTab } from "@/types";
 import { statusColor } from "@/lib/utils";
 import { AnalystRoleFilter, useAnalystRoleFilter } from "@/components/analyst-role-filter";
 import { TrademarkDetailsFields } from "@/components/trademark-details-fields";
+import { InventorPicker } from "@/components/inventors/inventor-picker";
+import type { InventorRecord } from "@/types/ipo-forms";
 import {
   isTrademarkCode, isTrademarkFilingCode, validateTrademarkInput,
   type TrademarkDetails, type TrademarkInput,
@@ -1064,6 +1066,9 @@ export default function Projects() {
 
   const [showModal, setShowModal] = useState(false);
   const [editProj, setEditProj]  = useState<any>(null);
+  // Inventors named on the case being edited; null until loaded, so a failed load
+  // never sends an empty list that would unlink them.
+  const [caseInventors, setCaseInventors] = useState<InventorRecord[] | null>(null);
   const [form, setForm]          = useState<PF>(BLANK);
   const [tmForm, setTmForm]      = useState<TrademarkInput>(BLANK_TRADEMARK);
   const [tmFile, setTmFile]      = useState<File | null>(null);
@@ -1271,7 +1276,7 @@ export default function Projects() {
       : BLANK_TRADEMARK);
   }
 
-  function openCreate() { setForm(BLANK); resetTrademark(); setEditProj(null); setSaveErr(""); setShowModal(true); }
+  function openCreate() { setForm(BLANK); resetTrademark(); setCaseInventors([]); setEditProj(null); setSaveErr(""); setShowModal(true); }
 
   async function openEdit(p: any) {
     // IPO-status fields live on the linked PatentApplication, not on the
@@ -1287,6 +1292,11 @@ export default function Projects() {
       try { trademark = await api.getProjectTrademark(p.id); } catch { /* not linked yet — starts blank */ }
     }
     resetTrademark(trademark);
+    let inventors: InventorRecord[] | null = null;
+    if (!isTrademarkCode(p.service_code)) {
+      try { inventors = await api.getProjectInventors(p.id); } catch { /* left unchanged on save */ }
+    }
+    setCaseInventors(inventors);
 
     setForm({
       record_mode:         "existing",
@@ -1351,6 +1361,7 @@ export default function Projects() {
       patent_engineer_id:   form.patent_engineer_id   ? parseInt(form.patent_engineer_id)   : null,
       project_type: form.case_type,
       circle: form.circle || null,
+      ...(caseInventors !== null && !isTrademark ? { inventor_ids: caseInventors.map((inventor) => inventor.id) } : {}),
     };
 
     // Granted/Refused/Abandoned need the real event date — same prompt the status
@@ -2228,10 +2239,10 @@ export default function Projects() {
                   </div>
                   {!isTrademarkCode(form.service_code) && (<>
                   <div>
-                    <FLbl>Inventor Name</FLbl>
+                    <FLbl>Title of Invention</FLbl>
                     <input value={form.invention_title}
                       onChange={(e) => sf("invention_title", e.target.value)}
-                      placeholder="e.g. Rajesh Kumar, Priya Sharma"
+                      placeholder="Optional until the title is finalised"
                       className={fInp} />
                   </div>
                   <div>
@@ -2243,6 +2254,16 @@ export default function Projects() {
                   </div>
                   </>)}
                 </div>
+                {!isTrademarkCode(form.service_code) && (
+                  <div className="mt-3 rounded border border-border/70 bg-muted/20 p-3">
+                    <div className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-2">
+                      Inventors <span className="ml-1 normal-case tracking-normal font-normal">(in the order they appear on Form 1)</span>
+                    </div>
+                    {caseInventors === null
+                      ? <p className="text-xs text-muted-foreground">Inventors could not be loaded; they are left unchanged.</p>
+                      : <InventorPicker value={caseInventors} onChange={setCaseInventors} />}
+                  </div>
+                )}
                 {isTrademarkCode(form.service_code) && (
                   <div className="mt-3 rounded border border-border/70 bg-muted/20 p-3">
                     <div className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-2">

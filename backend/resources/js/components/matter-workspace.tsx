@@ -13,7 +13,7 @@ import { ProjectChat } from "@/components/project-chat"
 import { ZohoBooksPanel } from "@/components/zoho-books-panel"
 import { InventorsPanel } from "@/components/inventors-panel"
 import { IpoStatusPanel } from "@/components/ipo-status-panel"
-import { Form1Button } from "@/components/ipo/form1-dialog"
+import { FormsWorkspace } from "@/components/ipo/forms-workspace"
 import { TrademarkMarkPanel } from "@/components/trademark-details-fields"
 import { api } from "@/lib/api-client"
 import type {
@@ -23,7 +23,7 @@ import type {
   WorkspaceTimelineItem,
 } from "@/types/matter-workspace"
 
-type WorkspaceTab = "overview" | "lifecycle" | "deadlines" | "family" | "documents" | "discussion" | "tasks" | "costs" | "audit"
+type WorkspaceTab = "overview" | "lifecycle" | "deadlines" | "family" | "documents" | "forms" | "discussion" | "tasks" | "costs" | "audit"
 
 interface MatterWorkspaceProps {
   data: WorkspaceData
@@ -38,6 +38,7 @@ const TAB_DEFS: Array<{ id: WorkspaceTab; label: string; icon: typeof Activity }
   { id: "deadlines", label: "Deadlines", icon: CalendarClock },
   { id: "family", label: "Family", icon: Users },
   { id: "documents", label: "Documents", icon: FileText },
+  { id: "forms", label: "Forms", icon: FileSignature },
   { id: "discussion", label: "Discussion", icon: MessageSquare },
   { id: "tasks", label: "Tasks", icon: ListChecks },
   { id: "costs", label: "Costs", icon: CircleDollarSign },
@@ -67,9 +68,14 @@ function timelineLabel(item: WorkspaceTimelineItem): string {
 
 export function MatterWorkspace({ data, projectId, tab, onTabChange }: MatterWorkspaceProps) {
   const { project, application, deadline_summary: summary } = data
+  // IPO filing forms apply to Indian patent cases only.
+  const canPrepareForms = !!data.capabilities.can_prepare_ipo_forms
+    && (project.patent_office_code || "IN").toUpperCase() === "IN"
+    && !/trade\s*mark|copyright/i.test(project.project_type || "")
   const visibleTabs = TAB_DEFS.filter(({ id }) => {
     if (id === "costs") return data.capabilities.can_view_financials
     if (id === "audit") return data.capabilities.can_view_audit
+    if (id === "forms") return canPrepareForms
     return true
   })
   const completedStages = data.stages.filter((stage) => stage.status === "Completed").length
@@ -86,10 +92,6 @@ export function MatterWorkspace({ data, projectId, tab, onTabChange }: MatterWor
   const renewals = application?.renewals ?? []
   const renewalsPaid = renewals.filter((r) => r.status === "Paid").length
   const renewalsTotal = renewals.length || 18 // years 3-20 if no schedule rows exist yet
-  // IPO Form 1 applies to Indian patent filings only.
-  const canPrepareForm1 = !!data.capabilities.can_prepare_ipo_forms
-    && (project.patent_office_code || "IN").toUpperCase() === "IN"
-    && !/trade\s*mark|copyright/i.test(project.project_type || "")
 
   return (
     <div className="min-h-full bg-background">
@@ -114,7 +116,6 @@ export function MatterWorkspace({ data, projectId, tab, onTabChange }: MatterWor
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2 pl-11 xl:pl-0">
-              {canPrepareForm1 && <Form1Button projectId={projectId} />}
               <Badge variant="outline">{project.project_type || project.case_type || "IP Matter"}</Badge>
               <Badge variant="outline">{application?.legal_status || project.status}</Badge>
               <Badge variant={project.status === "Granted" || project.status === "Completed" ? "default" : "secondary"}>{project.status}</Badge>
@@ -254,6 +255,8 @@ export function MatterWorkspace({ data, projectId, tab, onTabChange }: MatterWor
         {tab === "documents" && (
           <DocumentsWorkspace initial={data.documents} projectId={projectId} canDelete={data.capabilities.can_update} />
         )}
+
+        {tab === "forms" && canPrepareForms && <FormsWorkspace projectId={projectId} />}
 
         {tab === "discussion" && (
           <ProjectChat projectId={projectId} />

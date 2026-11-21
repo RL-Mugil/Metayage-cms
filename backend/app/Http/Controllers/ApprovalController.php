@@ -112,7 +112,7 @@ class ApprovalController extends Controller
     {
         $user = $request->user();
 
-        $clientIds = Project::whereHas('inventors', fn ($q) => $q->where('users.id', $user->id))
+        $clientIds = Project::whereHas('inventors', fn ($q) => $q->where('inventors.user_id', $user->id))
             ->whereNotNull('client_id')
             ->distinct()
             ->pluck('client_id');
@@ -650,7 +650,7 @@ class ApprovalController extends Controller
                 if ($approval->kind !== 'technical') {
                     return response()->json(['message' => 'Only your portal admin can approve or reject a budget approval.'], 403);
                 }
-                $inventorClientIds = Project::whereHas('inventors', fn ($q) => $q->where('users.id', $user->id))
+                $inventorClientIds = Project::whereHas('inventors', fn ($q) => $q->where('inventors.user_id', $user->id))
                     ->whereNotNull('client_id')
                     ->pluck('client_id');
                 if (! $inventorClientIds->contains($approval->client_id)) {

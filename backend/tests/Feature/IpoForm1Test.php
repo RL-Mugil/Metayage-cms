@@ -3,7 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Client;
-use App\Models\InventorProfile;
+use App\Models\Inventor;
 use App\Models\IpoFormInput;
 use App\Models\Project;
 use App\Models\User;
@@ -25,7 +25,7 @@ class IpoForm1Test extends TestCase
 
     private User $agent;
 
-    private User $inventor;
+    private Inventor $inventor;
 
     protected function setUp(): void
     {
@@ -45,13 +45,12 @@ class IpoForm1Test extends TestCase
             'patent_office_code' => 'IN', 'status' => 'Open', 'patent_engineer_id' => $this->paralegal->id,
         ]);
 
-        $this->inventor = $this->user('inventor', 'inv@acme.test', 'Ravi Kumar');
-        $this->project->inventors()->attach($this->inventor->id);
-        InventorProfile::create([
-            'user_id' => $this->inventor->id, 'full_name' => 'KUMAR Ravi', 'nationality' => 'Indian',
+        $this->inventor = Inventor::create([
+            'full_name' => 'KUMAR Ravi', 'nationality' => 'Indian',
             'country_of_residence' => 'India', 'address_house' => '4', 'address_street' => 'Lake View',
             'city' => 'Chennai', 'state' => 'Tamil Nadu', 'country' => 'India', 'pincode' => '600001',
         ]);
+        $this->project->syncInventors([$this->inventor->id]);
 
         $this->agent = $this->user('partner', 'agent@firm.test', 'Arjun Mehta');
         $this->agent->update(['patent_agent_no' => 'IN/PA-1234', 'mobile' => '9000000001']);
@@ -128,8 +127,8 @@ class IpoForm1Test extends TestCase
 
     public function test_one_inventor_declaration_block_per_inventor(): void
     {
-        $second = $this->user('inventor', 'second@acme.test', 'Priya Nair');
-        $this->project->inventors()->attach($second->id);
+        $second = Inventor::create(['full_name' => 'Priya Nair']);
+        $this->project->syncInventors([$this->inventor->id, $second->id]);
         Sanctum::actingAs($this->paralegal);
 
         $xml = $this->documentXml($this->postJson("/api/projects/{$this->project->id}/ipo-forms/form1/generate", $this->input())->assertOk());
@@ -173,12 +172,9 @@ class IpoForm1Test extends TestCase
         $this->putJson("/api/projects/{$this->project->id}/ipo-forms/applicant", ['city' => 'Mysuru', 'pincode' => '570001'])->assertOk();
         $this->assertSame('Mysuru', $this->client->fresh()->city);
 
-        $this->putJson("/api/projects/{$this->project->id}/ipo-forms/inventors/{$this->inventor->id}", ['city' => 'Madurai', 'age' => 41])->assertOk();
-        $this->assertSame('Madurai', $this->inventor->inventorProfile()->first()->city);
-        $this->assertSame('41', (string) $this->inventor->inventorProfile()->first()->age);
-
-        $stranger = $this->user('inventor', 'other@x.test');
-        $this->putJson("/api/projects/{$this->project->id}/ipo-forms/inventors/{$stranger->id}", ['city' => 'X'])->assertNotFound();
+        $this->putJson("/api/inventors/{$this->inventor->id}", ['full_name' => 'KUMAR Ravi', 'city' => 'Madurai', 'age' => 41])->assertOk();
+        $this->assertSame('Madurai', $this->inventor->fresh()->city);
+        $this->assertSame('41', (string) $this->inventor->fresh()->age);
     }
 
     public function test_unauthorised_roles_cannot_prepare_form1(): void
@@ -191,7 +187,7 @@ class IpoForm1Test extends TestCase
             $this->user('paralegal', 'unassigned@firm.test'),
             $this->user('finance', 'fin@firm.test'),
             $this->user('hr', 'hr@firm.test'),
-            $this->inventor,
+            $this->user('inventor', 'inv@acme.test'),
             $clientUser,
         ] as $user) {
             Sanctum::actingAs($user);

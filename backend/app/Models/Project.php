@@ -117,10 +117,24 @@ class Project extends Model
         return $this->belongsTo(User::class, 'docket_reviewer_id');
     }
 
-    /** inventor-role Users listed as inventor-of-record on this case (see project_inventors). */
+    /** Inventors named on this case, in filing order (project_inventors.sequence). */
     public function inventors(): \Illuminate\Database\Eloquent\Relations\BelongsToMany
     {
-        return $this->belongsToMany(User::class, 'project_inventors', 'project_id', 'user_id')->withTimestamps();
+        return $this->belongsToMany(Inventor::class, 'project_inventors')
+            ->withPivot('sequence')->withTimestamps()->orderByPivot('sequence');
+    }
+
+    /** Replace the case's inventors with these ids, keeping the given order. */
+    public function syncInventors(array $inventorIds): void
+    {
+        $ids = array_values(array_unique(array_map('intval', $inventorIds)));
+        // Only inventors visible in the current firm (Inventor's firm scope) can be linked.
+        $allowed = Inventor::whereIn('id', $ids)->pluck('id')->all();
+        $ordered = [];
+        foreach (array_values(array_intersect($ids, $allowed)) as $position => $id) {
+            $ordered[$id] = ['sequence' => $position];
+        }
+        $this->inventors()->sync($ordered);
     }
 
     public function partner(): BelongsTo

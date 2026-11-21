@@ -235,7 +235,7 @@ class ActionItemService
      */
     public function inventorActionFeed(int $userId, int $windowDays = 35): Collection
     {
-        $base = Project::whereHas('inventors', fn ($q) => $q->where('users.id', $userId));
+        $base = Project::whereHas('inventors', fn ($q) => $q->where('inventors.user_id', $userId));
         return $this->windowAndSort($this->forBase($base, null), $windowDays);
     }
 

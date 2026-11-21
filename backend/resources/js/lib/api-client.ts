@@ -9,7 +9,7 @@ import type {
 import type { MatterWorkspace, MatterWorkspaceResponse } from '@/types/matter-workspace'
 import type { ZohoQuotePreview } from '@/types/zoho'
 import type { TrademarkDetails, TrademarkInput } from '@/types/trademark'
-import type { Form1Input, Form1Prefill, IpoAddress, IpoInventorProfile, IpoServiceAddress, IpoSettings } from '@/types/ipo-forms'
+import type { Form1Input, Form1Prefill, InventorInput, InventorRecord, IpoAddress, IpoServiceAddress, IpoSettings } from '@/types/ipo-forms'
 
 function getCsrfToken(): string {
   if (typeof document === 'undefined') return ''
@@ -445,15 +445,24 @@ export const api = {
   async approveRenewalQuote(invoiceId: number | string): Promise<any> {
     return this.request(`/pending-payments/${invoiceId}/approve-quote`, { method: 'POST' })
   },
-  // ── Inventor role (Phase 3) ──
-  async getProjectInventors(projectId: number | string): Promise<any[]> {
+  // ── Inventors (firm-wide records, reused across cases) ──
+  async searchInventors(search: string): Promise<InventorRecord[]> {
+    return this.request(`/inventors?search=${encodeURIComponent(search)}`)
+  },
+  async createInventor(data: InventorInput): Promise<InventorRecord> {
+    return this.request('/inventors', { method: 'POST', body: JSON.stringify(data) })
+  },
+  async updateInventor(id: number, data: InventorInput): Promise<InventorRecord> {
+    return this.request(`/inventors/${id}`, { method: 'PUT', body: JSON.stringify(data) })
+  },
+  async grantInventorPortal(id: number, data: { email: string; password: string }): Promise<{ ok: boolean }> {
+    return this.request(`/inventors/${id}/portal-access`, { method: 'POST', body: JSON.stringify(data) })
+  },
+  async getProjectInventors(projectId: number | string): Promise<InventorRecord[]> {
     return this.request(`/projects/${projectId}/inventors`)
   },
-  async addProjectInventor(projectId: number | string, data: { name: string; email: string; password?: string }): Promise<any> {
-    return this.request(`/projects/${projectId}/inventors`, { method: 'POST', body: JSON.stringify(data) })
-  },
-  async removeProjectInventor(projectId: number | string, userId: number): Promise<any> {
-    return this.request(`/projects/${projectId}/inventors/${userId}`, { method: 'DELETE' })
+  async setProjectInventors(projectId: number | string, inventorIds: number[]): Promise<InventorRecord[]> {
+    return this.request(`/projects/${projectId}/inventors`, { method: 'PUT', body: JSON.stringify({ inventor_ids: inventorIds }) })
   },
   // ── IPO filing forms ──
   async getForm1(projectId: number | string): Promise<Form1Prefill> {
@@ -489,9 +498,6 @@ export const api = {
   },
   async updateIpoApplicant(projectId: number | string, data: IpoAddress & { nationality?: string | null; contact_email?: string | null; phone?: string | null }): Promise<{ ok: boolean }> {
     return this.request(`/projects/${projectId}/ipo-forms/applicant`, { method: 'PUT', body: JSON.stringify(data) })
-  },
-  async updateIpoInventor(projectId: number | string, userId: number, data: IpoInventorProfile): Promise<{ ok: boolean }> {
-    return this.request(`/projects/${projectId}/ipo-forms/inventors/${userId}`, { method: 'PUT', body: JSON.stringify(data) })
   },
   async getIpoSettings(): Promise<IpoSettings> {
     return this.request('/settings/ipo')

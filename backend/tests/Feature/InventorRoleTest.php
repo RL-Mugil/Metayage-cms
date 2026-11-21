@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Client;
+use App\Models\Inventor;
 use App\Models\Project;
 use App\Models\ProjectStage;
 use App\Models\User;
@@ -11,9 +12,8 @@ use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
 /**
- * Inventor role (Phase 3) — scoped by the project_inventors pivot, not by any
- * one Client, since an inventor can be inventor-of-record across multiple
- * different clients' cases (e.g. an outside professor).
+ * Inventor portal role — an inventor record (inventors) given a login (user_id) sees
+ * only the cases it is named on, across clients (e.g. an outside professor).
  */
 class InventorRoleTest extends TestCase
 {
@@ -36,41 +36,45 @@ class InventorRoleTest extends TestCase
         ]);
     }
 
-    public function test_staff_can_add_inventor_creating_a_new_login(): void
+    public function test_manager_gives_an_inventor_portal_access(): void
     {
-        $client = $this->client();
-        $project = Project::create([
-            'project_code' => '397M001INPRV', 'docket_number' => '397M001INPRV',
-            'client_id' => $client->id, 'project_type' => 'Patent', 'project_name' => 'Test Invention',
-            'status' => 'Open', 'assigned_manager_id' => null,
-        ]);
-        $manager = $this->manager();
-        $project->update(['assigned_manager_id' => $manager->id]);
-        Sanctum::actingAs($manager);
+        $inventor = Inventor::create(['full_name' => 'GARG Sachin']);
+        Sanctum::actingAs($this->manager());
 
-        $response = $this->postJson("/api/projects/{$project->id}/inventors", [
-            'name' => 'Prof. Sachin Garg', 'email' => 'sachin@iiit.test', 'password' => 'password123',
+        $response = $this->postJson("/api/inventors/{$inventor->id}/portal-access", [
+            'email' => 'sachin@iiit.test', 'password' => 'password123',
         ])->assertCreated()->json();
 
         $this->assertDatabaseHas('users', ['email' => 'sachin@iiit.test', 'role' => 'inventor']);
-        $this->assertDatabaseHas('project_inventors', ['project_id' => $project->id, 'user_id' => $response['inventor']['id']]);
+        $this->assertSame($response['user']['id'], $inventor->fresh()->user_id);
+
+        // A second login for the same inventor is refused.
+        $this->postJson("/api/inventors/{$inventor->id}/portal-access", [
+            'email' => 'other@iiit.test', 'password' => 'password123',
+        ])->assertStatus(422);
     }
 
-    public function test_adding_existing_non_inventor_email_is_rejected(): void
+    public function test_portal_access_with_an_existing_email_is_rejected(): void
     {
-        $client = $this->client();
-        $project = Project::create([
-            'project_code' => '397M001INPRV', 'docket_number' => '397M001INPRV',
-            'client_id' => $client->id, 'project_type' => 'Patent', 'project_name' => 'Test Invention',
-            'status' => 'Open', 'assigned_manager_id' => null,
-        ]);
-        $manager = $this->manager();
-        $project->update(['assigned_manager_id' => $manager->id]);
-        Sanctum::actingAs($manager);
+        $inventor = Inventor::create(['full_name' => 'GARG Sachin']);
+        Sanctum::actingAs($this->manager());
 
-        $this->postJson("/api/projects/{$project->id}/inventors", [
-            'name' => 'Manager', 'email' => 'manager@firm.test', 'password' => 'password123',
+        $this->postJson("/api/inventors/{$inventor->id}/portal-access", [
+            'email' => 'manager@firm.test', 'password' => 'password123',
         ])->assertStatus(422);
+        $this->assertNull($inventor->fresh()->user_id);
+    }
+
+    public function test_paralegal_cannot_give_portal_access(): void
+    {
+        $inventor = Inventor::create(['full_name' => 'GARG Sachin']);
+        Sanctum::actingAs(User::create([
+            'name' => 'Para', 'email' => 'para@firm.test', 'password' => bcrypt('password'), 'role' => 'paralegal', 'status' => 'Active',
+        ]));
+
+        $this->postJson("/api/inventors/{$inventor->id}/portal-access", [
+            'email' => 'sachin@iiit.test', 'password' => 'password123',
+        ])->assertForbidden();
     }
 
     public function test_inventor_only_sees_own_cases_across_clients_and_dashboard_scopes_by_pivot(): void
@@ -91,13 +95,16 @@ class InventorRoleTest extends TestCase
             'status' => 'Open',
         ]);
 
-        $inventor = User::create([
+        $login = User::create([
             'name' => 'Prof. Sachin Garg', 'email' => 'sachin@iiit.test',
             'password' => bcrypt('password'), 'role' => 'inventor', 'status' => 'Active',
         ]);
-        $ownCase->inventors()->attach($inventor->id);
+        $record = Inventor::create(['full_name' => 'GARG Sachin', 'user_id' => $login->id]);
+        $ownCase->syncInventors([$record->id]);
+        // An inventor without a login on the other case gives this user no access to it.
+        $otherCase->syncInventors([Inventor::create(['full_name' => 'Someone Else'])->id]);
 
-        Sanctum::actingAs($inventor);
+        Sanctum::actingAs($login);
 
         // Dashboard scoped to only the inventor's own case.
         $metrics = $this->getJson('/api/dashboard/metrics')->assertOk()->json()['metrics'];
@@ -111,6 +118,11 @@ class InventorRoleTest extends TestCase
 
         // Direct view of the other case is forbidden.
         $this->getJson("/api/projects/{$otherCase->id}")->assertForbidden();
+
+        // On their own case they see co-inventor names, never addresses or phone numbers.
+        $this->getJson("/api/projects/{$ownCase->id}/inventors")->assertOk()
+            ->assertJsonPath('0.full_name', 'GARG Sachin')->assertJsonMissingPath('0.city')->assertJsonMissingPath('0.phone');
+        $this->getJson("/api/projects/{$otherCase->id}/inventors")->assertForbidden();
 
         // Restricted to the dashboard + own-case pages only.
         $this->get('/financial')->assertRedirect('/');

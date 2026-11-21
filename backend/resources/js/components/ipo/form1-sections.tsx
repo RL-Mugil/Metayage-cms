@@ -1,12 +1,12 @@
 import { useState } from "react"
-import { CheckCircle2, Loader2, Pencil, Plus, Trash2, TriangleAlert } from "lucide-react"
+import { Loader2, Pencil, Plus, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { api } from "@/lib/api-client"
 import { AddressFields, Field, GENDERS, selectClass, TextField } from "@/components/ipo/party-fields"
 import type {
-  Form1Client, Form1Input, Form1Inventor, IpoApplicantCategory, IpoApplicationRef, IpoApplicationType,
-  IpoCoApplicant, IpoConventionRow, IpoGender, IpoInventorProfile, IpoSubType,
+  Form1Client, Form1Input, IpoApplicantCategory, IpoApplicationRef, IpoApplicationType,
+  IpoCoApplicant, IpoConventionRow, IpoGender, IpoSubType,
 } from "@/types/ipo-forms"
 
 type Patch = (patch: Partial<Form1Input>) => void
@@ -48,7 +48,7 @@ function syncDeclarations(current: string[], type: IpoApplicationType, sub: IpoS
   return [...kept, ...typed]
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+export function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="space-y-3 rounded-md border border-border p-3">
       <h3 className="text-sm font-semibold">{title}</h3>
@@ -271,90 +271,6 @@ function CoApplicantForm({ value, onSave, onCancel }: { value: IpoCoApplicant; o
         <Button type="button" size="sm" disabled={!row.name.trim()} onClick={() => onSave(row)}>Done</Button>
         <Button type="button" size="sm" variant="outline" onClick={onCancel}>Cancel</Button>
       </div>
-    </div>
-  )
-}
-
-export function InventorSection({ projectId, inventors, input, patch, onSaved }: {
-  projectId: number
-  inventors: Form1Inventor[]
-  input: Form1Input
-  patch: Patch
-  onSaved: () => void
-}) {
-  const [editing, setEditing] = useState<number | null>(null)
-  return (
-    <Section title="Inventor(s)">
-      {inventors.length === 0 && <p className="text-sm text-muted-foreground">No inventors on this case. Add them on the case overview first.</p>}
-      {inventors.map((inventor) => (
-        <div key={inventor.user_id} className="space-y-2 rounded border border-border/60 p-2 text-sm">
-          <div className="flex items-start justify-between gap-2">
-            <div>
-              <p className="flex items-center gap-1.5 font-medium">
-                {inventor.complete ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" /> : <TriangleAlert className="h-3.5 w-3.5 text-amber-500" />}
-                {inventor.profile?.full_name || inventor.name}
-              </p>
-              <p className="text-xs text-muted-foreground">{inventor.profile ? addressLine(inventor.profile) : "No particulars recorded yet"}</p>
-            </div>
-            <Button type="button" size="sm" variant="ghost" onClick={() => setEditing(editing === inventor.user_id ? null : inventor.user_id)}>
-              <Pencil className="mr-1 h-3.5 w-3.5" />Edit
-            </Button>
-          </div>
-          {editing === inventor.user_id && (
-            <InventorForm projectId={projectId} inventor={inventor} onDone={() => { setEditing(null); onSaved() }} />
-          )}
-        </div>
-      ))}
-      <label className="flex items-center gap-2 text-sm">
-        <input type="checkbox" checked={input.inventors_same_as_applicants} onChange={(event) => patch({ inventors_same_as_applicants: event.target.checked })} />
-        All inventors are the same as the applicant(s)
-      </label>
-    </Section>
-  )
-}
-
-function InventorForm({ projectId, inventor, onDone }: { projectId: number; inventor: Form1Inventor; onDone: () => void }) {
-  const [profile, setProfile] = useState<IpoInventorProfile>({
-    full_name: inventor.name, nationality: "Indian", country: "India", country_of_residence: "India",
-    ...(inventor.profile ?? {}),
-  })
-  const [saving, setSaving] = useState(false)
-
-  async function save() {
-    setSaving(true)
-    try {
-      await api.updateIpoInventor(projectId, inventor.user_id, {
-        ...profile,
-        age: profile.age === "" || profile.age === null || profile.age === undefined ? null : Number(profile.age),
-        gender: profile.gender || null,
-      })
-      toast.success("Inventor particulars saved. They are reused on every case for this inventor.")
-      onDone()
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not save the inventor.")
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <div className="space-y-2 border-t border-border pt-2">
-      <div className="grid gap-2 sm:grid-cols-3">
-        <TextField label="Name in full (family name first)" value={profile.full_name} onChange={(text) => setProfile({ ...profile, full_name: text })} />
-        <TextField label="Nationality" value={profile.nationality} onChange={(text) => setProfile({ ...profile, nationality: text })} />
-        <TextField label="Country of residence" value={profile.country_of_residence} onChange={(text) => setProfile({ ...profile, country_of_residence: text })} />
-        <Field label="Gender (optional)">
-          <select className={selectClass} value={profile.gender ?? ""} onChange={(event) => setProfile({ ...profile, gender: (event.target.value || null) as IpoGender | null })}>
-            <option value="">-</option>
-            {GENDERS.map((gender) => <option key={gender} value={gender}>{gender}</option>)}
-          </select>
-        </Field>
-        <TextField label="Age (optional)" type="number" value={profile.age} onChange={(text) => setProfile({ ...profile, age: text })} />
-      </div>
-      <AddressFields value={profile} onChange={setProfile} />
-      <Button type="button" size="sm" disabled={saving} onClick={save}>
-        {saving && <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />}Save inventor
-      </Button>
     </div>
   )
 }

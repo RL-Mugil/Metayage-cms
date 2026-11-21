@@ -191,16 +191,18 @@ Route::middleware(['auth:sanctum', 'firm.context', 'throttle:120,1'])->group(fun
     Route::post('/pending-payments/{id}/status-note', [\App\Http\Controllers\RenewalActionController::class, 'postStatusNote']);
 
     // Inventor role (Phase 3) — staff manage a case's inventors here.
-    Route::get('/projects/{id}/inventors', [\App\Http\Controllers\InventorController::class, 'index']);
-    Route::post('/projects/{id}/inventors', [\App\Http\Controllers\InventorController::class, 'store']);
-    Route::delete('/projects/{id}/inventors/{userId}', [\App\Http\Controllers\InventorController::class, 'destroy']);
+    Route::get('/inventors', [\App\Http\Controllers\InventorController::class, 'index']);
+    Route::post('/inventors', [\App\Http\Controllers\InventorController::class, 'store']);
+    Route::put('/inventors/{id}', [\App\Http\Controllers\InventorController::class, 'update']);
+    Route::post('/inventors/{id}/portal-access', [\App\Http\Controllers\InventorController::class, 'grantPortalAccess']);
+    Route::get('/projects/{id}/inventors', [\App\Http\Controllers\InventorController::class, 'forProject']);
+    Route::put('/projects/{id}/inventors', [\App\Http\Controllers\InventorController::class, 'syncProject']);
 
     // IPO filing forms (Form 1) — prefilled from the case, client, inventors and agents.
     Route::get('/projects/{id}/ipo-forms/form1', [\App\Http\Controllers\Ipo\Form1Controller::class, 'show']);
     Route::put('/projects/{id}/ipo-forms/form1', [\App\Http\Controllers\Ipo\Form1Controller::class, 'save']);
     Route::post('/projects/{id}/ipo-forms/form1/generate', [\App\Http\Controllers\Ipo\Form1Controller::class, 'generate'])->middleware('throttle:30,1');
     Route::put('/projects/{id}/ipo-forms/applicant', [\App\Http\Controllers\Ipo\FormPartyController::class, 'updateApplicant']);
-    Route::put('/projects/{id}/ipo-forms/inventors/{userId}', [\App\Http\Controllers\Ipo\FormPartyController::class, 'updateInventor']);
 
     // Tasks & Time tracking
     Route::get('/tasks', [TaskController::class, 'index']);

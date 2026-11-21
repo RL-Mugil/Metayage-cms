@@ -22,7 +22,7 @@ class DocketWorklistService
         } elseif ($user->isGalvanizer()) {
             $query->whereHas('project', fn ($project) => $project->whereIn('circle', $user->galvanizerCircleCodes()));
         } elseif ($user->isInventor()) {
-            $query->whereHas('project.inventors', fn ($inventor) => $inventor->whereKey($user->id));
+            $query->whereHas('project.inventors', fn ($inventor) => $inventor->where('inventors.user_id', $user->id));
         }
 
         if (! empty($filters['horizon_days'])) $query->whereDate('due_date', '<=', now()->addDays(min((int) $filters['horizon_days'], 365)));

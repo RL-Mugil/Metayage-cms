@@ -50,19 +50,21 @@ export interface Form1Input {
   office?: string | null
 }
 
-export interface IpoInventorProfile extends IpoAddress {
-  full_name?: string | null
+/** Name and Form 1 particulars of an inventor, as sent when creating or editing one. */
+export interface InventorInput extends IpoAddress {
+  full_name: string
   gender?: IpoGender | null
   age?: number | string | null
   nationality?: string | null
   country_of_residence?: string | null
+  email?: string | null
+  phone?: string | null
 }
 
-export interface Form1Inventor {
-  user_id: number
-  name: string
-  email: string
-  profile: IpoInventorProfile | null
+/** A firm-wide inventor record, reusable across cases. */
+export interface InventorRecord extends InventorInput {
+  id: number
+  has_portal_access: boolean
   complete: boolean
 }
 
@@ -98,7 +100,7 @@ export interface IpoServiceAddress {
 export interface Form1Prefill {
   input: Form1Input
   client: Form1Client | null
-  inventors: Form1Inventor[]
+  inventors: InventorRecord[]
   agent_options: IpoAgentOption[]
   service: IpoServiceAddress
   resolved_office: string | null

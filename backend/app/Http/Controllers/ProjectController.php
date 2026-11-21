@@ -129,7 +129,7 @@ class ProjectController extends Controller
         } elseif ($user->seesOnlyOwnCases()) {
             $query->where($this->analystWhereClause($user, $request->input('role_filter')));
         } elseif ($user->isInventor()) {
-            $query->whereHas('inventors', fn ($q) => $q->where('users.id', $user->id));
+            $query->whereHas('inventors', fn ($q) => $q->where('inventors.user_id', $user->id));
         }
 
         if ($request->filled('search')) {
@@ -369,7 +369,16 @@ class ProjectController extends Controller
             }
         }
 
-        $project = \DB::transaction(fn () => $this->createProjectWithCodes($validated));
+        $inventorIds = $validated['inventor_ids'] ?? null;
+        unset($validated['inventor_ids']);
+        $project = \DB::transaction(function () use ($validated, $inventorIds) {
+            $project = $this->createProjectWithCodes($validated);
+            if ($inventorIds !== null) {
+                $project->syncInventors($inventorIds);
+            }
+
+            return $project;
+        });
 
         // Audit Log
         AuditLog::create([
@@ -377,7 +386,7 @@ class ProjectController extends Controller
             'action' => 'create',
             'subject_type' => 'Project',
             'subject_id' => $project->id,
-            'metadata' => ['project_name' => $project->project_name, 'project_code' => $project->project_code],
+            'metadata' => ['project_name' => $project->project_name, 'project_code' => $project->project_code, 'inventor_ids' => $inventorIds],
             'ip_address' => $request->ip(),
             'user_agent' => $request->userAgent(),
         ]);
@@ -645,6 +654,21 @@ class ProjectController extends Controller
         // Granted/Refused/Abandoned status-change popup) and discard before mass-assignment.
         $statusEventDate = $validated['status_event_date'] ?? null;
         unset($validated['status_event_date']);
+
+        // Inventors live on the project_inventors link, not on the project row.
+        if (array_key_exists('inventor_ids', $validated)) {
+            $inventorIds = $validated['inventor_ids'] ?? [];
+            unset($validated['inventor_ids']);
+            DB::transaction(function () use ($request, $project, $inventorIds, $user) {
+                $project->syncInventors($inventorIds);
+                AuditLog::create([
+                    'user_id' => $user->id, 'action' => 'set_project_inventors',
+                    'subject_type' => 'Project', 'subject_id' => $project->id,
+                    'metadata' => ['inventor_ids' => $inventorIds],
+                    'ip_address' => $request->ip(), 'user_agent' => $request->userAgent(),
+                ]);
+            });
+        }
 
         if (array_key_exists('patent_office_code', $validated) || array_key_exists('service_code', $validated)) {
             $validated = array_merge($validated, app(DocketNumberService::class)->recanonicalize(

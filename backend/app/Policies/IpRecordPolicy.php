@@ -12,7 +12,7 @@ class IpRecordPolicy
     public function view(User $user, IpRecord $record): bool
     {
         if ($user->isClientRole()) return $record->client->isVisibleToUser($user);
-        if ($user->isInventor()) return $record->projects()->whereHas('inventors', fn ($query) => $query->whereKey($user->id))->exists();
+        if ($user->isInventor()) return $record->projects()->whereHas('inventors', fn ($query) => $query->where('inventors.user_id', $user->id))->exists();
         return true;
     }
 

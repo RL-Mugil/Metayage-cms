@@ -93,21 +93,21 @@ class User extends Authenticatable
         return $this->role === 'inventor';
     }
 
-    /** IPO-form particulars (address, nationality…) when this user is an inventor. */
-    public function inventorProfile(): \Illuminate\Database\Eloquent\Relations\HasOne
+    /** The inventor record this login gives portal access to (role `inventor`). */
+    public function inventorRecord(): \Illuminate\Database\Eloquent\Relations\HasOne
     {
-        return $this->hasOne(InventorProfile::class);
+        return $this->hasOne(Inventor::class);
     }
 
     /**
-     * Cases this user is inventor-of-record on (via project_inventors). Unlike
-     * every other portal role, an inventor is not scoped to one Client —
-     * they can be inventor across multiple different clients' cases (e.g. an
-     * outside professor), so this is keyed by user_id directly, not Client::forUser().
+     * Cases this user is inventor-of-record on: their inventor record
+     * (inventors.user_id) linked through project_inventors. Unlike every other
+     * portal role, an inventor is not scoped to one Client — they can be
+     * inventor across multiple clients' cases (e.g. an outside professor).
      */
-    public function projectsAsInventor(): BelongsToMany
+    public function projectsAsInventor(): \Illuminate\Database\Eloquent\Builder
     {
-        return $this->belongsToMany(Project::class, 'project_inventors', 'user_id', 'project_id')->withTimestamps();
+        return Project::whereHas('inventors', fn ($q) => $q->where('inventors.user_id', $this->id));
     }
 
     /** Staff who see only cases they created or are assigned to (Project::scopeAssignedTo). */

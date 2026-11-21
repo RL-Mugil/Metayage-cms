@@ -43,6 +43,8 @@ class UpdateProjectRequest extends FormRequest
             'project_name'          => 'sometimes|required|string|max:255',
             'case_type'             => 'nullable|string|max:100',
             'invention_title'       => 'nullable|string',
+            'inventor_ids'          => 'nullable|array|max:50',
+            'inventor_ids.*'        => 'integer|exists:inventors,id',
             'technology_field'      => 'nullable|string',
             'application_number'    => 'nullable|string|max:100',
             'patent_office_code'    => ['sometimes', 'required', 'string', 'regex:/^[A-Za-z0-9]{2}$/'],

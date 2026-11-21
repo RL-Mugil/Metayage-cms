@@ -4,7 +4,6 @@ namespace App\Http\Controllers\Ipo;
 
 use App\Http\Controllers\Controller;
 use App\Models\AuditLog;
-use App\Models\InventorProfile;
 use App\Models\Project;
 use App\Services\Ipo\Form1DataBuilder;
 use Illuminate\Http\JsonResponse;
@@ -13,9 +12,9 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
 /**
- * Lets whoever prepares a case's IPO forms complete the applicant's filing address and
- * the inventors' particulars from the form dialog. Only these filing fields can be
- * changed here; the rest of the client record still needs client-edit rights.
+ * Lets whoever prepares a case's IPO forms complete the applicant's filing address from
+ * the Forms tab. Only these filing fields can be changed here; the rest of the client
+ * record still needs client-edit rights. (Inventors are edited via InventorController.)
  */
 class FormPartyController extends Controller
 {
@@ -44,30 +43,6 @@ class FormPartyController extends Controller
         DB::transaction(function () use ($request, $project, $validated) {
             $project->client->update($validated);
             $this->audit($request, 'ipo_applicant_updated', 'Client', $project->client->id, [
-                'project_id' => $project->id, 'fields' => array_keys($validated),
-            ]);
-        });
-
-        return response()->json(['ok' => true]);
-    }
-
-    public function updateInventor(Request $request, $id, $userId): JsonResponse
-    {
-        $project = Project::findOrFail($id);
-        $this->authorize('prepareIpoForms', $project);
-        $inventor = $project->inventors()->where('users.id', $userId)->firstOrFail();
-
-        $validated = $request->validate(self::ADDRESS_RULES + [
-            'full_name'            => 'nullable|string|max:255',
-            'gender'               => 'nullable|in:Male,Female,Others,Prefer not to disclose',
-            'age'                  => 'nullable|integer|min:1|max:120',
-            'nationality'          => 'nullable|string|max:100',
-            'country_of_residence' => 'nullable|string|max:100',
-        ]);
-
-        DB::transaction(function () use ($request, $project, $inventor, $validated) {
-            InventorProfile::updateOrCreate(['user_id' => $inventor->id], $validated);
-            $this->audit($request, 'ipo_inventor_profile_updated', 'User', $inventor->id, [
                 'project_id' => $project->id, 'fields' => array_keys($validated),
             ]);
         });

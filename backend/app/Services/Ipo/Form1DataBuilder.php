@@ -3,6 +3,7 @@
 namespace App\Services\Ipo;
 
 use App\Models\Client;
+use App\Models\Inventor;
 use App\Models\IpoFormInput;
 use App\Models\Project;
 use App\Models\User;
@@ -89,7 +90,7 @@ class Form1DataBuilder
         return [
             'input'           => $input,
             'client'          => $this->clientDetails($project->client),
-            'inventors'       => $this->inventorRows($project),
+            'inventors'       => array_column($this->inventorRows($project), 'summary'),
             'agent_options'   => $this->agentOptions(),
             'service'         => $form['service'],
             'resolved_office' => $form['office'],
@@ -262,29 +263,19 @@ class Form1DataBuilder
         ];
     }
 
-    /** Each inventor on the case with their saved profile and the printable form row. */
+    /** Each inventor on the case, in filing order: the API summary and the printable form row. */
     private function inventorRows(Project $project): array
     {
-        return $project->inventors()->with('inventorProfile')->orderBy('project_inventors.id')->get()
-            ->map(function (User $user) {
-                $profile = $user->inventorProfile;
-                $fields = $profile ? $profile->only([
-                    'full_name', 'gender', 'age', 'nationality', 'country_of_residence',
-                    'address_house', 'address_street', 'city', 'state', 'country', 'pincode',
-                ]) : [];
-                $form = $this->blankParty($fields);
-                $form['name'] = ($fields['full_name'] ?? '') ?: $user->name;
-                $form['natural_person'] = true;
+        return $project->inventors()->get()->map(function (Inventor $inventor) {
+            $form = $this->blankParty($inventor->only([
+                'gender', 'age', 'nationality', 'country_of_residence',
+                'address_house', 'address_street', 'city', 'state', 'country', 'pincode',
+            ]));
+            $form['name'] = $inventor->full_name;
+            $form['natural_person'] = true;
 
-                return [
-                    'user_id'  => $user->id,
-                    'name'     => $user->name,
-                    'email'    => $user->email,
-                    'profile'  => $fields ?: null,
-                    'complete' => $this->addressGaps('', $form, false) === [],
-                    'form'     => $form,
-                ];
-            })->values()->all();
+            return ['summary' => $inventor->toSummary(), 'form' => $form];
+        })->values()->all();
     }
 
     private function agentOptions(): array
