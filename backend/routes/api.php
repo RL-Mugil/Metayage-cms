@@ -194,6 +194,7 @@ Route::middleware(['auth:sanctum', 'firm.context', 'throttle:120,1'])->group(fun
     Route::get('/inventors', [\App\Http\Controllers\InventorController::class, 'index']);
     Route::post('/inventors', [\App\Http\Controllers\InventorController::class, 'store']);
     Route::put('/inventors/{id}', [\App\Http\Controllers\InventorController::class, 'update']);
+    Route::delete('/inventors/{id}', [\App\Http\Controllers\InventorController::class, 'destroy']);
     Route::post('/inventors/{id}/portal-access', [\App\Http\Controllers\InventorController::class, 'grantPortalAccess']);
     Route::get('/projects/{id}/inventors', [\App\Http\Controllers\InventorController::class, 'forProject']);
     Route::put('/projects/{id}/inventors', [\App\Http\Controllers\InventorController::class, 'syncProject']);

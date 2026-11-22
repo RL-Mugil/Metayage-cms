@@ -2261,7 +2261,7 @@ export default function Projects() {
                     </div>
                     {caseInventors === null
                       ? <p className="text-xs text-muted-foreground">Inventors could not be loaded; they are left unchanged.</p>
-                      : <InventorPicker value={caseInventors} onChange={setCaseInventors} />}
+                      : <InventorPicker value={caseInventors} onChange={setCaseInventors} clientId={form.client_id} />}
                   </div>
                 )}
                 {isTrademarkCode(form.service_code) && (

@@ -473,8 +473,16 @@ export const api = {
     return this.request(`/pending-payments/${invoiceId}/approve-quote`, { method: 'POST' })
   },
   // ── Inventors (firm-wide records, reused across cases) ──
-  async searchInventors(search: string): Promise<InventorRecord[]> {
-    return this.request(`/inventors?search=${encodeURIComponent(search)}`)
+  /** A client's inventors (all, or filtered by search), or a search across other clients / the firm. */
+  async searchInventors(options: { clientId?: number | null; search?: string; otherClients?: boolean }): Promise<InventorRecord[]> {
+    const params = new URLSearchParams()
+    if (options.clientId) params.set('client_id', String(options.clientId))
+    if (options.search) params.set('search', options.search)
+    if (options.otherClients) params.set('other_clients', '1')
+    return this.request(`/inventors?${params.toString()}`)
+  },
+  async deleteInventor(id: number): Promise<{ ok: boolean }> {
+    return this.request(`/inventors/${id}`, { method: 'DELETE' })
   },
   async createInventor(data: InventorInput): Promise<InventorRecord> {
     return this.request('/inventors', { method: 'POST', body: JSON.stringify(data) })
@@ -482,7 +490,7 @@ export const api = {
   async updateInventor(id: number, data: InventorInput): Promise<InventorRecord> {
     return this.request(`/inventors/${id}`, { method: 'PUT', body: JSON.stringify(data) })
   },
-  async grantInventorPortal(id: number, data: { email: string; password: string }): Promise<{ ok: boolean }> {
+  async grantInventorPortal(id: number, data: { password: string; email?: string }): Promise<{ ok: boolean }> {
     return this.request(`/inventors/${id}/portal-access`, { method: 'POST', body: JSON.stringify(data) })
   },
   async getProjectInventors(projectId: number | string): Promise<InventorRecord[]> {

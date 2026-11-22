@@ -50,7 +50,7 @@ class InventorTest extends TestCase
             'full_name' => 'SHARMA Priya', 'gender' => 'Female', 'age' => 34, 'nationality' => 'Indian',
             'country_of_residence' => 'India', 'address_house' => '7B', 'address_street' => 'Park Street',
             'city' => 'Kolkata', 'state' => 'West Bengal', 'country' => 'India', 'pincode' => '700016',
-            'email' => 'priya@acme.test', 'phone' => '9000011111',
+            'email' => 'priya@acme.test', 'phone' => '9000011111', 'client_id' => $this->client->id,
         ], $overrides);
     }
 
@@ -79,8 +79,9 @@ class InventorTest extends TestCase
     {
         Sanctum::actingAs($this->paralegal);
 
-        $this->postJson('/api/inventors', ['full_name' => 'Only A Name'])->assertCreated()->assertJsonPath('complete', false);
-        $this->postJson('/api/inventors', ['city' => 'Pune'])->assertStatus(422);   // name is required
+        $this->postJson('/api/inventors', ['full_name' => 'Only A Name', 'client_id' => $this->client->id])->assertCreated()->assertJsonPath('complete', false);
+        $this->postJson('/api/inventors', ['city' => 'Pune', 'client_id' => $this->client->id])->assertStatus(422);   // name is required
+        $this->postJson('/api/inventors', ['full_name' => 'No Client'])->assertStatus(422);                         // client is required
     }
 
     public function test_case_form_sets_inventors_in_order_and_they_are_reused_across_cases(): void
@@ -122,6 +123,48 @@ class InventorTest extends TestCase
         $this->assertSame([$inventor->id], Project::findOrFail($id)->inventors()->pluck('inventors.id')->all());
     }
 
+    public function test_client_list_shows_only_that_clients_inventors_and_other_clients_can_be_searched(): void
+    {
+        $other = Client::create([
+            'client_code' => '269M', 'client_type' => 'organization', 'legal_name' => 'Beta', 'company_name' => 'Beta',
+            'nationality' => 'India', 'status' => 'Active',
+        ]);
+        $mine = Inventor::create($this->particulars());
+        $theirs = Inventor::create($this->particulars(['full_name' => 'SHARMA Professor', 'client_id' => $other->id]));
+        Sanctum::actingAs($this->paralegal);
+
+        $this->getJson("/api/inventors?client_id={$this->client->id}")->assertOk()
+            ->assertJsonCount(1)->assertJsonPath('0.id', $mine->id)->assertJsonPath('0.client_code', '397M')->assertJsonPath('0.case_count', 0);
+        $this->getJson("/api/inventors?client_id={$this->client->id}&other_clients=1&search=sharma")->assertOk()
+            ->assertJsonCount(1)->assertJsonPath('0.id', $theirs->id)->assertJsonPath('0.client_code', '269M');
+    }
+
+    public function test_inventor_on_a_case_cannot_be_deleted_until_unlinked(): void
+    {
+        $inventor = Inventor::create($this->particulars());
+        $case = $this->project('397M001INPAT');
+        $case->syncInventors([$inventor->id]);
+        Sanctum::actingAs($this->paralegal);
+
+        $this->deleteJson("/api/inventors/{$inventor->id}")->assertStatus(422)->assertJsonPath('cases.0', '397M001INPAT');
+        $this->assertDatabaseHas('inventors', ['id' => $inventor->id]);
+
+        $case->syncInventors([]);
+        $this->deleteJson("/api/inventors/{$inventor->id}")->assertOk();
+        $this->assertDatabaseMissing('inventors', ['id' => $inventor->id]);
+        $this->assertDatabaseHas('audit_logs', ['action' => 'delete_inventor', 'subject_id' => $inventor->id]);
+    }
+
+    public function test_deleting_an_inventor_deactivates_their_portal_login(): void
+    {
+        $login = $this->user('inventor', 'priya@acme.test');
+        $inventor = Inventor::create($this->particulars(['user_id' => $login->id]));
+        Sanctum::actingAs($this->paralegal);
+
+        $this->deleteJson("/api/inventors/{$inventor->id}")->assertOk();
+        $this->assertSame('Inactive', $login->fresh()->status);
+    }
+
     public function test_unauthorised_roles_cannot_manage_inventors(): void
     {
         $inventor = Inventor::create($this->particulars());
@@ -132,6 +175,7 @@ class InventorTest extends TestCase
             $this->getJson('/api/inventors')->assertForbidden();
             $this->postJson('/api/inventors', $this->particulars())->assertForbidden();
             $this->putJson("/api/inventors/{$inventor->id}", ['full_name' => 'X'])->assertForbidden();
+            $this->deleteJson("/api/inventors/{$inventor->id}")->assertForbidden();
             $this->putJson("/api/projects/{$case->id}/inventors", ['inventor_ids' => [$inventor->id]])->assertForbidden();
         }
 

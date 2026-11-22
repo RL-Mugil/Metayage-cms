@@ -62,7 +62,7 @@ export function Form1Panel({ projectId }: { projectId: number }) {
       <ApplicantSection projectId={projectId} client={data.client} input={input} patch={patch} onSaved={refresh} />
 
       <Section title="Inventor(s)">
-        <InventorPicker value={data.inventors} onChange={(next) => inventors.mutate(next)} />
+        <InventorPicker value={data.inventors} onChange={(next) => inventors.mutate(next)} clientId={data.client?.id} />
         <p className="text-xs text-muted-foreground">Changes to the inventor list are saved to the case straight away.</p>
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={input.inventors_same_as_applicants} onChange={(event) => patch({ inventors_same_as_applicants: event.target.checked })} />

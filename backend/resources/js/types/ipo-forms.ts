@@ -52,6 +52,7 @@ export interface Form1Input {
 
 /** Name and Form 1 particulars of an inventor, as sent when creating or editing one. */
 export interface InventorInput extends IpoAddress {
+  client_id?: number | null
   full_name: string
   gender?: IpoGender | null
   age?: number | string | null
@@ -64,6 +65,9 @@ export interface InventorInput extends IpoAddress {
 /** A firm-wide inventor record, reusable across cases. */
 export interface InventorRecord extends InventorInput {
   id: number
+  client_code?: string | null
+  client_name?: string | null
+  case_count?: number
   has_portal_access: boolean
   complete: boolean
 }

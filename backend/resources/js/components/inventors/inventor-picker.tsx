@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { useQuery } from "@tanstack/react-query"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { ArrowDown, ArrowUp, CheckCircle2, Loader2, Pencil, Plus, Search, TriangleAlert, X } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -8,32 +8,40 @@ import { api } from "@/lib/api-client"
 import { AddressFields, Field, GENDERS, selectClass, TextField } from "@/components/ipo/party-fields"
 import type { InventorInput, InventorRecord, IpoGender } from "@/types/ipo-forms"
 
-function place(inventor: InventorRecord): string {
+export function place(inventor: InventorRecord): string {
   return [inventor.city, inventor.state, inventor.country].filter(Boolean).join(", ") || "No address yet"
 }
 
 /**
- * Ordered list of a case's inventors. Staff pick existing (firm-wide) inventors by
- * search or add a new one with every IPO Form 1 particular. Editing an inventor here
- * updates their record everywhere they are named.
+ * Ordered list of a case's inventors. Staff pick from the case client's inventors (or
+ * search other clients for a shared inventor) or add a new one under the client with
+ * every IPO Form 1 particular. Editing an inventor updates them on every case.
  */
-export function InventorPicker({ value, onChange, disabled = false }: {
+export function InventorPicker({ value, onChange, clientId, disabled = false }: {
   value: InventorRecord[]
   onChange: (next: InventorRecord[]) => void
+  clientId?: number | string | null
   disabled?: boolean
 }) {
+  const queryClient = useQueryClient()
+  const client = clientId ? Number(clientId) : null
   const [term, setTerm] = useState("")
+  const [otherClients, setOtherClients] = useState(false)
   // null: nothing open; "new": adding; a number: editing that inventor.
   const [editing, setEditing] = useState<"new" | number | null>(null)
   const search = term.trim()
-  const { data: results = [], isFetching } = useQuery<InventorRecord[]>({
-    queryKey: ["inventor-search", search],
-    queryFn: () => api.searchInventors(search),
-    enabled: search.length >= 2,
+  const { data: options = [], isFetching } = useQuery<InventorRecord[]>({
+    queryKey: ["inventor-options", client, otherClients, search],
+    queryFn: () => api.searchInventors({ clientId: client, search: search || undefined, otherClients }),
+    enabled: client !== null && (!otherClients || search.length >= 2),
     staleTime: 30_000,
   })
   const chosen = new Set(value.map((inventor) => inventor.id))
-  const matches = results.filter((inventor) => !chosen.has(inventor.id))
+  const available = options.filter((inventor) => !chosen.has(inventor.id))
+  const refreshLists = () => {
+    void queryClient.invalidateQueries({ queryKey: ["inventor-options"] })
+    void queryClient.invalidateQueries({ queryKey: ["client-inventors"] })
+  }
 
   const move = (index: number, step: -1 | 1) => {
     const next = [...value]
@@ -42,6 +50,9 @@ export function InventorPicker({ value, onChange, disabled = false }: {
     onChange(next)
   }
   const replace = (record: InventorRecord) => onChange(value.map((inventor) => (inventor.id === record.id ? record : inventor)))
+  const emptyMessage = otherClients
+    ? `No inventor at another client matches "${search}".`
+    : search ? `No inventor of this client matches "${search}".` : "No other inventors for this client yet. Use New inventor to add one."
 
   return (
     <div className="space-y-2">
@@ -67,31 +78,42 @@ export function InventorPicker({ value, onChange, disabled = false }: {
             )}
           </div>
           {editing === inventor.id && (
-            <InventorForm initial={inventor} onCancel={() => setEditing(null)} onSaved={(record) => { replace(record); setEditing(null) }} />
+            <InventorForm initial={inventor} onCancel={() => setEditing(null)} onSaved={(record) => { replace(record); setEditing(null); refreshLists() }} />
           )}
         </div>
       ))}
 
-      {!disabled && editing !== "new" && (
+      {!disabled && client === null && <p className="text-xs text-muted-foreground">Select the client first to pick its inventors.</p>}
+
+      {!disabled && client !== null && editing !== "new" && (
         <div className="space-y-1">
-          <div className="flex gap-2">
-            <div className="relative flex-1">
+          <div className="flex flex-wrap gap-2">
+            <div className="relative min-w-[12rem] flex-1">
               <Search className="pointer-events-none absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
-              <Input value={term} onChange={(event) => setTerm(event.target.value)} placeholder="Search existing inventors by name or email" className="h-9 pl-8 text-sm" />
+              <Input value={term} onChange={(event) => setTerm(event.target.value)}
+                placeholder={otherClients ? "Search other clients' inventors by name or email" : "Filter this client's inventors"}
+                className="h-9 pl-8 text-sm" />
               {isFetching && <Loader2 className="absolute right-2.5 top-2.5 h-3.5 w-3.5 animate-spin text-muted-foreground" />}
             </div>
             <Button type="button" size="sm" variant="outline" className="h-9" onClick={() => setEditing("new")}>
               <Plus className="mr-1 h-3.5 w-3.5" />New inventor
             </Button>
           </div>
-          {search.length >= 2 && !isFetching && (
-            <div className="rounded-md border border-border bg-background">
-              {matches.length === 0
-                ? <p className="px-3 py-2 text-xs text-muted-foreground">No other inventor matches “{search}”. Use “New inventor” to add them.</p>
-                : matches.map((inventor) => (
+          <label className="flex items-center gap-2 text-xs text-muted-foreground">
+            <input type="checkbox" checked={otherClients} onChange={(event) => setOtherClients(event.target.checked)} />
+            Search other clients (for an inventor shared between clients)
+          </label>
+          {(!otherClients || search.length >= 2) && !isFetching && (
+            <div className="max-h-48 overflow-y-auto rounded-md border border-border bg-background">
+              {available.length === 0
+                ? <p className="px-3 py-2 text-xs text-muted-foreground">{emptyMessage}</p>
+                : available.map((inventor) => (
                   <button key={inventor.id} type="button" className="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-sm hover:bg-muted"
                     onClick={() => { onChange([...value, inventor]); setTerm("") }}>
-                    <span className="truncate"><span className="font-medium">{inventor.full_name}</span> <span className="text-xs text-muted-foreground">{place(inventor)}</span></span>
+                    <span className="truncate">
+                      <span className="font-medium">{inventor.full_name}</span>{" "}
+                      <span className="text-xs text-muted-foreground">{otherClients && inventor.client_code ? `${inventor.client_code} · ` : ""}{place(inventor)}</span>
+                    </span>
                     <Plus className="h-3.5 w-3.5 shrink-0 text-gold" />
                   </button>
                 ))}
@@ -100,16 +122,16 @@ export function InventorPicker({ value, onChange, disabled = false }: {
         </div>
       )}
 
-      {editing === "new" && (
-        <InventorForm initial={{ full_name: term.trim(), nationality: "Indian", country: "India", country_of_residence: "India" }}
+      {editing === "new" && client !== null && (
+        <InventorForm initial={{ client_id: client, full_name: term.trim(), nationality: "Indian", country: "India", country_of_residence: "India" }}
           onCancel={() => setEditing(null)}
-          onSaved={(record) => { onChange([...value, record]); setEditing(null); setTerm("") }} />
+          onSaved={(record) => { onChange([...value, record]); setEditing(null); setTerm(""); refreshLists() }} />
       )}
     </div>
   )
 }
 
-/** Every Form 1 particular for one inventor; saves the firm-wide record. */
+/** Every Form 1 particular for one inventor; saves the inventor record under its client. */
 export function InventorForm({ initial, onSaved, onCancel }: {
   initial: InventorInput & { id?: number }
   onSaved: (record: InventorRecord) => void
@@ -156,8 +178,8 @@ export function InventorForm({ initial, onSaved, onCancel }: {
       </div>
       <AddressFields value={draft} onChange={setDraft} />
       <div className="grid gap-2 sm:grid-cols-2">
-        <TextField label="Email (optional)" type="email" value={draft.email} onChange={set("email")} />
-        <TextField label="Phone (optional)" value={draft.phone} onChange={set("phone")} />
+        <TextField label="Email (also the portal login)" type="email" value={draft.email} onChange={set("email")} />
+        <TextField label="Phone" value={draft.phone} onChange={set("phone")} />
       </div>
       <div className="flex gap-2">
         <Button type="button" size="sm" disabled={saving} onClick={save}>

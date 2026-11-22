@@ -21,6 +21,8 @@ class SaveInventorRequest extends FormRequest
     public function rules(): array
     {
         return [
+            // Every inventor is managed under a client; it can be moved on edit.
+            'client_id'            => ($this->route('id') === null ? 'required' : 'sometimes').'|integer|exists:clients,id',
             'full_name'            => 'required|string|max:255',
             'gender'               => 'nullable|in:Male,Female,Others,Prefer not to disclose',
             'age'                  => 'nullable|integer|min:1|max:120',

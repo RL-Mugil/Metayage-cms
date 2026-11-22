@@ -28,6 +28,11 @@ class InventorPolicy
         return $this->viewAny($user);
     }
 
+    public function delete(User $user, Inventor $inventor): bool
+    {
+        return $this->viewAny($user);
+    }
+
     /** Giving an inventor a portal login: firm leadership only. */
     public function grantPortalAccess(User $user, Inventor $inventor): bool
     {

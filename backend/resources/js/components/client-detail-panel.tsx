@@ -4,8 +4,12 @@ import { usePage } from "@inertiajs/react";
 import { X, Loader2, ShieldCheck } from "lucide-react";
 import { api } from "@/lib/api-client";
 import { ProjectDetailPanel } from "@/components/project-detail-panel";
+import { ClientInventors } from "@/components/inventors/client-inventors";
 
 const ENTITY_VERIFY_ROLES = ["super_admin", "partner", "manager", "galvanizer"];
+// Staff who manage inventors (InventorPolicy) and who may give them a portal login.
+const INVENTOR_ROLES = ["super_admin", "partner", "director", "manager", "associate", "paralegal", "galvanizer"];
+const INVENTOR_PORTAL_ROLES = ["super_admin", "partner", "director", "manager"];
 
 function verifyBadgeClass(status: string | undefined) {
   if (status === "Verified") return "bg-green-100 text-green-700 border-green-200";
@@ -26,11 +30,14 @@ interface Props {
   onClose: () => void;
 }
 
-type Tab = "cases" | "invoices" | "ledger";
+type Tab = "cases" | "invoices" | "ledger" | "inventors";
 
 export function ClientDetailPanel({ clientId, onClose }: Props) {
   const { props } = usePage() as any;
-  const canVerifyEntity = ENTITY_VERIFY_ROLES.includes(props.auth?.user?.role ?? "");
+  const role = props.auth?.user?.role ?? "";
+  const canVerifyEntity = ENTITY_VERIFY_ROLES.includes(role);
+  const canManageInventors = INVENTOR_ROLES.includes(role);
+  const tabs: Tab[] = canManageInventors ? ["cases", "invoices", "ledger", "inventors"] : ["cases", "invoices", "ledger"];
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<Tab>("cases");
@@ -135,14 +142,14 @@ export function ClientDetailPanel({ clientId, onClose }: Props) {
 
         {/* Tabs */}
         <div className="flex border-b border-border flex-shrink-0 px-6">
-          {(["cases", "invoices", "ledger"] as Tab[]).map((t) => (
+          {tabs.map((t) => (
             <button key={t} onClick={() => setTab(t)}
               className={`px-4 py-2.5 text-xs font-medium capitalize border-b-2 transition-colors ${
                 tab === t
                   ? "border-primary text-primary"
                   : "border-transparent text-muted-foreground hover:text-foreground"
               }`}>
-              {t === "cases" ? "Cases" : t === "invoices" ? "Invoices" : "Ledger"}
+              {t === "cases" ? "Cases" : t === "invoices" ? "Invoices" : t === "ledger" ? "Ledger" : "Inventors"}
             </button>
           ))}
         </div>
@@ -271,6 +278,12 @@ export function ClientDetailPanel({ clientId, onClose }: Props) {
               )}
 
               {/* Ledger */}
+              {tab === "inventors" && canManageInventors && (
+                <div className="p-6">
+                  <ClientInventors clientId={clientId} canGrantPortal={INVENTOR_PORTAL_ROLES.includes(role)} />
+                </div>
+              )}
+
               {tab === "ledger" && (
                 <div className="p-6">
                   {data.ledger.length === 0 ? (

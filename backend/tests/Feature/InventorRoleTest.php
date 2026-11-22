@@ -54,6 +54,19 @@ class InventorRoleTest extends TestCase
         ])->assertStatus(422);
     }
 
+    public function test_portal_access_uses_the_inventors_saved_email(): void
+    {
+        $inventor = Inventor::create(['full_name' => 'GARG Sachin', 'email' => 'sachin@iiit.test']);
+        $noEmail = Inventor::create(['full_name' => 'No Email']);
+        Sanctum::actingAs($this->manager());
+
+        $this->postJson("/api/inventors/{$inventor->id}/portal-access", ['password' => 'password123'])->assertCreated();
+        $this->assertDatabaseHas('users', ['email' => 'sachin@iiit.test', 'role' => 'inventor', 'id' => $inventor->fresh()->user_id]);
+
+        $this->postJson("/api/inventors/{$noEmail->id}/portal-access", ['password' => 'password123'])
+            ->assertStatus(422)->assertJsonValidationErrors(['email']);
+    }
+
     public function test_portal_access_with_an_existing_email_is_rejected(): void
     {
         $inventor = Inventor::create(['full_name' => 'GARG Sachin']);

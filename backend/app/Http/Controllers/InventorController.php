@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\SaveInventorRequest;
 use App\Models\AuditLog;
+use App\Models\Client;
 use App\Models\Inventor;
 use App\Models\Project;
 use App\Models\User;
@@ -19,31 +20,48 @@ use Illuminate\Support\Facades\Hash;
  */
 class InventorController extends Controller
 {
+    /**
+     * With client_id: that client's inventors (all of them, filtered by search). With
+     * other_clients=1 as well: search every other client's inventors. Without client_id:
+     * a firm-wide search. Searches return at most 20 rows.
+     */
     public function index(Request $request): JsonResponse
     {
         $this->authorize('viewAny', Inventor::class);
         $search = trim((string) $request->query('search', ''));
+        $clientId = $request->integer('client_id') ?: null;
+        $others = $request->boolean('other_clients');
 
-        $inventors = Inventor::query()
-            ->when($search !== '', function ($query) use ($search) {
-                $like = '%'.str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $search).'%';
-                $query->where(fn ($q) => $q->where('full_name', 'ilike', $like)->orWhere('email', 'ilike', $like));
-            })
-            ->orderBy('full_name')->limit(20)->get();
+        $query = Inventor::query()->with('client:id,client_code,legal_name,company_name')->withCount('projects');
+        if ($clientId && ! $others) {
+            $query->where('client_id', $clientId);
+        } elseif ($clientId) {
+            $query->where(fn ($q) => $q->where('client_id', '!=', $clientId)->orWhereNull('client_id'));
+        }
+        if ($search !== '') {
+            $like = '%'.str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $search).'%';
+            $query->where(fn ($q) => $q->where('full_name', 'ilike', $like)->orWhere('email', 'ilike', $like));
+        }
+        if (! $clientId || $others || $search !== '') {
+            $query->limit(20);
+        }
 
-        return response()->json($inventors->map->toSummary()->values());
+        return response()->json($query->orderBy('full_name')->get()->map->toSummary()->values());
     }
 
     public function store(SaveInventorRequest $request): JsonResponse
     {
+        $client = Client::findOrFail($request->validated('client_id'));
+        $this->authorize('view', $client);
+
         $inventor = DB::transaction(function () use ($request) {
             $inventor = Inventor::create($request->validated() + ['created_by_id' => $request->user()->id]);
-            $this->audit($request, 'create_inventor', $inventor->id, ['full_name' => $inventor->full_name]);
+            $this->audit($request, 'create_inventor', $inventor->id, ['full_name' => $inventor->full_name, 'client_id' => $inventor->client_id]);
 
             return $inventor;
         });
 
-        return response()->json($inventor->toSummary(), 201);
+        return response()->json($inventor->fresh('client')->toSummary(), 201);
     }
 
     public function update(SaveInventorRequest $request, $id): JsonResponse
@@ -54,7 +72,32 @@ class InventorController extends Controller
             $this->audit($request, 'update_inventor', $inventor->id, ['fields' => array_keys($request->validated())]);
         });
 
-        return response()->json($inventor->fresh()->toSummary());
+        return response()->json($inventor->fresh('client')->toSummary());
+    }
+
+    /** Deletes an inventor who is on no case; a portal login they had is deactivated. */
+    public function destroy(Request $request, $id): JsonResponse
+    {
+        $inventor = Inventor::findOrFail($id);
+        $this->authorize('delete', $inventor);
+
+        $dockets = $inventor->projects()->get()->map(fn (Project $p) => $p->docket_number ?: $p->project_code)->filter()->values();
+        if ($dockets->isNotEmpty()) {
+            return response()->json([
+                'message' => 'Remove this inventor from these cases first: '.$dockets->implode(', ').'.',
+                'cases'   => $dockets,
+            ], 422);
+        }
+
+        DB::transaction(function () use ($request, $inventor) {
+            if ($inventor->user_id) {
+                User::whereKey($inventor->user_id)->update(['status' => 'Inactive']);
+            }
+            $this->audit($request, 'delete_inventor', $inventor->id, ['full_name' => $inventor->full_name, 'client_id' => $inventor->client_id, 'user_id' => $inventor->user_id]);
+            $inventor->delete();
+        });
+
+        return response()->json(['ok' => true]);
     }
 
     /**
@@ -101,10 +144,14 @@ class InventorController extends Controller
         $inventor = Inventor::findOrFail($id);
         $this->authorize('grantPortalAccess', $inventor);
         abort_if($inventor->user_id !== null, 422, 'This inventor already has portal access.');
+        // The inventor's saved email is their login unless another one is given.
+        if (blank($request->input('email')) && filled($inventor->email)) {
+            $request->merge(['email' => $inventor->email]);
+        }
         $validated = $request->validate([
             'email'    => 'required|email|max:255|unique:users,email',
             'password' => 'required|string|min:8|max:100',
-        ]);
+        ], ['email.required' => "Add the inventor's email first."]);
 
         $user = DB::transaction(function () use ($request, $inventor, $validated) {
             $user = User::create([

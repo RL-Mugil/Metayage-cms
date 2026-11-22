@@ -21,7 +21,7 @@ class Inventor extends Model
     public const REQUIRED_FIELDS = ['full_name', 'nationality', 'city', 'country', 'pincode'];
 
     protected $fillable = [
-        'firm_id', 'full_name', 'gender', 'age', 'nationality', 'country_of_residence',
+        'firm_id', 'client_id', 'full_name', 'gender', 'age', 'nationality', 'country_of_residence',
         'address_house', 'address_street', 'city', 'state', 'country', 'pincode',
         'email', 'phone', 'user_id', 'created_by_id',
     ];
@@ -38,6 +38,12 @@ class Inventor extends Model
     public function projects(): BelongsToMany
     {
         return $this->belongsToMany(Project::class, 'project_inventors')->withPivot('sequence')->withTimestamps();
+    }
+
+    /** The client this inventor is managed under (the client panel's Inventors tab). */
+    public function client(): BelongsTo
+    {
+        return $this->belongsTo(Client::class);
     }
 
     public function user(): BelongsTo
@@ -65,6 +71,10 @@ class Inventor extends Model
     {
         return [
             'id'                   => $this->id,
+            'client_id'            => $this->client_id,
+            'client_code'          => $this->client?->client_code,
+            'client_name'          => $this->client ? ($this->client->legal_name ?: $this->client->company_name) : null,
+            'case_count'           => $this->projects_count ?? $this->projects()->count(),
             'full_name'            => $this->full_name,
             'gender'               => $this->gender,
             'age'                  => $this->age,
