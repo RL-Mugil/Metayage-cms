@@ -68,10 +68,9 @@ function timelineLabel(item: WorkspaceTimelineItem): string {
 
 export function MatterWorkspace({ data, projectId, tab, onTabChange }: MatterWorkspaceProps) {
   const { project, application, deadline_summary: summary } = data
-  // IPO filing forms apply to Indian patent cases only.
+  // IPO filing forms are offered on every Indian (IN) case, whatever its type.
   const canPrepareForms = !!data.capabilities.can_prepare_ipo_forms
     && (project.patent_office_code || "IN").toUpperCase() === "IN"
-    && !/trade\s*mark|copyright/i.test(project.project_type || "")
   const visibleTabs = TAB_DEFS.filter(({ id }) => {
     if (id === "costs") return data.capabilities.can_view_financials
     if (id === "audit") return data.capabilities.can_view_audit
