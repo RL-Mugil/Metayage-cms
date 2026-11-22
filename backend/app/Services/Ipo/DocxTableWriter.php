@@ -7,14 +7,16 @@ use RuntimeException;
 use ZipArchive;
 
 /**
- * Minimal WordprocessingML (.docx) writer for the IPO forms: one bordered table on a
- * fixed 24-column grid, so every row's spans add up to 24 and the form reads as one
- * continuous box, like the official layout. Built on ZipArchive (no extra
- * Composer dependency); the output opens in Word and LibreOffice and stays editable.
+ * Minimal WordprocessingML (.docx) writer for the IPO forms. Form boxes are bordered
+ * tables on a fixed 24-column grid, so every row's spans add up to 24 and a form
+ * reads as one continuous box, like the official layout. Paragraphs and page breaks
+ * can follow a table (e.g. the specification body after the Form 2 cover). Built on
+ * ZipArchive (no extra Composer dependency); the output opens in Word and stays editable.
  *
- * Cell spec: ['text' => string|string[], 'span' => int, 'bold' => bool,
+ * Cell spec: ['text' => string|string[], 'span' => int, 'bold' => bool, 'strike' => bool,
  *             'shade' => bool, 'vmerge' => 'restart'|'continue', 'align' => 'center']
- * A string[] text renders one paragraph per line. Within a line, **…** marks bold runs.
+ * A string[] text renders one paragraph per line. Within a line, **…** marks bold
+ * runs and ~~…~~ marks struck-out runs.
  */
 class DocxTableWriter
 {
@@ -24,7 +26,10 @@ class DocxTableWriter
 
     private const FONT = 'Times New Roman';
 
-    /** @var string[] */
+    /** @var string[] finished body blocks (tables, paragraphs, page breaks) in order */
+    private array $blocks = [];
+
+    /** @var string[] rows of the table being built */
     private array $rows = [];
 
     /** @param array<int, array<string, mixed>> $cells */
@@ -46,8 +51,26 @@ class DocxTableWriter
         return $this->row([['text' => $text, 'span' => self::GRID, 'bold' => $bold, 'shade' => $shade]]);
     }
 
+    /** A paragraph outside any table; ends the current table. Size is in points. */
+    public function paragraph(string $text, bool $bold = false, ?string $align = null, ?int $size = null): self
+    {
+        $this->closeTable();
+        $this->blocks[] = $this->para($text, $bold, $align, false, $size, 120);
+
+        return $this;
+    }
+
+    public function pageBreak(): self
+    {
+        $this->closeTable();
+        $this->blocks[] = '<w:p><w:r><w:br w:type="page"/></w:r></w:p>';
+
+        return $this;
+    }
+
     public function save(string $path): void
     {
+        $this->closeTable();
         $zip = new ZipArchive;
         if ($zip->open($path, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
             throw new RuntimeException('Could not create the DOCX file.');
@@ -58,6 +81,21 @@ class DocxTableWriter
         $zip->addFromString('word/styles.xml', $this->styles());
         $zip->addFromString('word/document.xml', $this->document());
         $zip->close();
+    }
+
+    private function closeTable(): void
+    {
+        if ($this->rows === []) {
+            return;
+        }
+        $grid = str_repeat('<w:gridCol w:w="'.self::COL_TWIPS.'"/>', self::GRID);
+        $border = 'w:val="single" w:sz="4" w:space="0" w:color="000000"';
+        // Child order inside tblPr is fixed by the schema (tblW, tblBorders, tblLayout, tblCellMar); Word rejects other orders.
+        $this->blocks[] = '<w:tbl><w:tblPr><w:tblW w:w="'.(self::GRID * self::COL_TWIPS).'" w:type="dxa"/>'
+            .'<w:tblBorders><w:top '.$border.'/><w:left '.$border.'/><w:bottom '.$border.'/><w:right '.$border.'/><w:insideH '.$border.'/><w:insideV '.$border.'/></w:tblBorders>'
+            .'<w:tblLayout w:type="fixed"/><w:tblCellMar><w:left w:w="70" w:type="dxa"/><w:right w:w="70" w:type="dxa"/></w:tblCellMar></w:tblPr>'
+            .'<w:tblGrid>'.$grid.'</w:tblGrid>'.implode('', $this->rows).'</w:tbl>';
+        $this->rows = [];
     }
 
     private function cell(array $cell): string
@@ -80,24 +118,30 @@ class DocxTableWriter
         }
         $paragraphs = '';
         foreach ($lines as $line) {
-            $paragraphs .= $this->paragraph((string) $line, ! empty($cell['bold']), $cell['align'] ?? null);
+            $paragraphs .= $this->para((string) $line, ! empty($cell['bold']), $cell['align'] ?? null, ! empty($cell['strike']));
         }
 
         return '<w:tc><w:tcPr>'.$props.'</w:tcPr>'.$paragraphs.'</w:tc>';
     }
 
-    private function paragraph(string $line, bool $bold, ?string $align): string
+    private function para(string $line, bool $bold, ?string $align, bool $strike = false, ?int $size = null, int $after = 20): string
     {
-        $pPr = '<w:pPr><w:spacing w:before="20" w:after="20"/>'.($align ? '<w:jc w:val="'.$align.'"/>' : '').'</w:pPr>';
+        $pPr = '<w:pPr><w:spacing w:before="20" w:after="'.$after.'"/>'.($align ? '<w:jc w:val="'.$align.'"/>' : '').'</w:pPr>';
         $runs = '';
-        // Split on **…** so callers can bold a heading inside a longer cell.
-        foreach (preg_split('/(\*\*.*?\*\*)/u', $line, -1, PREG_SPLIT_DELIM_CAPTURE | PREG_SPLIT_NO_EMPTY) ?: [] as $part) {
+        // **…** bolds and ~~…~~ strikes part of a line.
+        foreach (preg_split('/(\*\*.*?\*\*|~~.*?~~)/u', $line, -1, PREG_SPLIT_DELIM_CAPTURE | PREG_SPLIT_NO_EMPTY) ?: [] as $part) {
             $isBold = $bold;
-            if (str_starts_with($part, '**') && str_ends_with($part, '**') && strlen($part) > 4) {
+            $isStrike = $strike;
+            if (strlen($part) > 4 && str_starts_with($part, '**') && str_ends_with($part, '**')) {
                 $part = substr($part, 2, -2);
                 $isBold = true;
+            } elseif (strlen($part) > 4 && str_starts_with($part, '~~') && str_ends_with($part, '~~')) {
+                $part = substr($part, 2, -2);
+                $isStrike = true;
             }
-            $runs .= '<w:r>'.($isBold ? '<w:rPr><w:b/></w:rPr>' : '').'<w:t xml:space="preserve">'.$this->escape($part).'</w:t></w:r>';
+            // rPr child order is fixed by the schema: b, strike, sz.
+            $rPr = ($isBold ? '<w:b/>' : '').($isStrike ? '<w:strike/>' : '').($size ? '<w:sz w:val="'.($size * 2).'"/>' : '');
+            $runs .= '<w:r>'.($rPr !== '' ? '<w:rPr>'.$rPr.'</w:rPr>' : '').'<w:t xml:space="preserve">'.$this->escape($part).'</w:t></w:r>';
         }
 
         return '<w:p>'.$pPr.$runs.'</w:p>';
@@ -113,17 +157,9 @@ class DocxTableWriter
 
     private function document(): string
     {
-        $grid = str_repeat('<w:gridCol w:w="'.self::COL_TWIPS.'"/>', self::GRID);
-        $border = 'w:val="single" w:sz="4" w:space="0" w:color="000000"';
-        // Child order inside tblPr is fixed by the schema (tblW, tblBorders, tblLayout, tblCellMar); Word rejects other orders.
-        $table = '<w:tbl><w:tblPr><w:tblW w:w="'.(self::GRID * self::COL_TWIPS).'" w:type="dxa"/>'
-            .'<w:tblBorders><w:top '.$border.'/><w:left '.$border.'/><w:bottom '.$border.'/><w:right '.$border.'/><w:insideH '.$border.'/><w:insideV '.$border.'/></w:tblBorders>'
-            .'<w:tblLayout w:type="fixed"/><w:tblCellMar><w:left w:w="70" w:type="dxa"/><w:right w:w="70" w:type="dxa"/></w:tblCellMar></w:tblPr>'
-            .'<w:tblGrid>'.$grid.'</w:tblGrid>'.implode('', $this->rows).'</w:tbl>';
-
         return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
             .'<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>'
-            .$table.'<w:p/>'
+            .implode('', $this->blocks).'<w:p/>'
             .'<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1134" w:right="1134" w:bottom="1134" w:left="1134" w:header="567" w:footer="567" w:gutter="0"/></w:sectPr>'
             .'</w:body></w:document>';
     }

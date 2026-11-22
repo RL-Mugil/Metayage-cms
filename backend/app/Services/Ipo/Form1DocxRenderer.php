@@ -269,7 +269,7 @@ class Form1DocxRenderer
         }
 
         $agent = $form['agents'][0] ?? null;
-        $signatory = $agent ? $agent['name'].' (IN/PA-'.preg_replace('/^IN\/?PA[-\s]*/i', '', (string) $agent['patent_agent_no']).')' : '';
+        $signatory = Form1DataBuilder::signatory($agent);
         $doc->full([
             '# In case of a complete specification, if the applicant desires to adopt the drawings filed with his provisional specification as the drawings or part of the drawings for the complete specification under rule 13(4), the number of such pages filed with the provisional specification are required to be mentioned here.',
             '',

@@ -202,6 +202,7 @@ Route::middleware(['auth:sanctum', 'firm.context', 'throttle:120,1'])->group(fun
     Route::get('/projects/{id}/ipo-forms/form1', [\App\Http\Controllers\Ipo\Form1Controller::class, 'show']);
     Route::put('/projects/{id}/ipo-forms/form1', [\App\Http\Controllers\Ipo\Form1Controller::class, 'save']);
     Route::post('/projects/{id}/ipo-forms/form1/generate', [\App\Http\Controllers\Ipo\Form1Controller::class, 'generate'])->middleware('throttle:30,1');
+    Route::post('/projects/{id}/ipo-forms/form2/generate', [\App\Http\Controllers\Ipo\Form2Controller::class, 'generate'])->middleware('throttle:30,1');
     Route::put('/projects/{id}/ipo-forms/applicant', [\App\Http\Controllers\Ipo\FormPartyController::class, 'updateApplicant']);
 
     // Tasks & Time tracking

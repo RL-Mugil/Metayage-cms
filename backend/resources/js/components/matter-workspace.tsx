@@ -256,7 +256,7 @@ export function MatterWorkspace({ data, projectId, tab, onTabChange }: MatterWor
           <DocumentsWorkspace initial={data.documents} projectId={projectId} canDelete={data.capabilities.can_update} />
         )}
 
-        {tab === "forms" && canPrepareForms && <FormsWorkspace projectId={projectId} />}
+        {tab === "forms" && canPrepareForms && <FormsWorkspace projectId={projectId} serviceCode={project.service_code} />}
 
         {tab === "discussion" && (
           <ProjectChat projectId={projectId} />

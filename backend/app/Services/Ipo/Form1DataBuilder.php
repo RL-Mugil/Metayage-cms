@@ -181,6 +181,25 @@ class Form1DataBuilder
         }
     }
 
+    /** "Name (IN/PA-1234)" for the agent who signs, or '' when none is chosen. */
+    public static function signatory(?array $agent): string
+    {
+        if (! $agent) {
+            return '';
+        }
+
+        return $agent['name'].' (IN/PA-'.preg_replace('/^IN\/?PA[-\s]*/i', '', (string) $agent['patent_agent_no']).')';
+    }
+
+    /** One-line postal address: house, street, city, state - pin code, country. */
+    public static function addressLine(array $party): string
+    {
+        $state = trim(implode(' - ', array_filter([$party['state'] ?? null, $party['pincode'] ?? null], fn ($v) => filled($v))));
+        $parts = [$party['address_house'] ?? null, $party['address_street'] ?? null, $party['city'] ?? null, $state, $party['country'] ?? null];
+
+        return implode(', ', array_filter($parts, fn ($v) => filled($v)));
+    }
+
     private function defaultCategory(?Client $client): string
     {
         return $client?->client_type === 'individual' ? 'natural_person' : 'other_than_natural';

@@ -17,6 +17,33 @@ function getCsrfToken(): string {
   return match ? decodeURIComponent(match[1]) : ''
 }
 
+/** POSTs to an IPO form generator and saves the returned DOCX under the server's filename. */
+async function downloadIpoForm(endpoint: string, body: unknown, fallbackName: string): Promise<void> {
+  const response = await fetch(`/api${endpoint}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document, application/json',
+      'X-XSRF-TOKEN': getCsrfToken(),
+    },
+    credentials: 'same-origin',
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({})) as { message?: string; errors?: Record<string, string[]> }
+    const fieldError = data.errors ? Object.values(data.errors)[0]?.[0] : undefined
+    throw new Error(fieldError || data.message || `Form generation failed (${response.status})`)
+  }
+  const disposition = response.headers.get('Content-Disposition') ?? ''
+  const name = /filename="?([^";]+)"?/i.exec(disposition)?.[1] ?? fallbackName
+  const url = URL.createObjectURL(await response.blob())
+  const link = document.createElement('a')
+  link.href = url
+  link.download = name
+  link.click()
+  URL.revokeObjectURL(url)
+}
+
 export type { User, Client, Project, Task, Invoice, Employee, PaginatedResponse, SearchResult, Quotation, AuditLog, PatentInvoiceIn, ProjectTab, CodeRow, CodeRenameImpact, CodeRenameResult, CodeMergeAvailable, CodeMergeImpact, CodeMergeResult }
 
 export type LegalSlug = 'privacy' | 'terms'
@@ -472,29 +499,10 @@ export const api = {
     return this.request(`/projects/${projectId}/ipo-forms/form1`, { method: 'PUT', body: JSON.stringify(input) })
   },
   async generateForm1(projectId: number | string, input: Form1Input): Promise<void> {
-    const response = await fetch(`/api/projects/${projectId}/ipo-forms/form1/generate`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document, application/json',
-        'X-XSRF-TOKEN': getCsrfToken(),
-      },
-      credentials: 'same-origin',
-      body: JSON.stringify(input),
-    })
-    if (!response.ok) {
-      const body = await response.json().catch(() => ({})) as { message?: string; errors?: Record<string, string[]> }
-      const fieldError = body.errors ? Object.values(body.errors)[0]?.[0] : undefined
-      throw new Error(fieldError || body.message || `Form 1 generation failed (${response.status})`)
-    }
-    const disposition = response.headers.get('Content-Disposition') ?? ''
-    const name = /filename="?([^";]+)"?/i.exec(disposition)?.[1] ?? 'Form1.docx'
-    const url = URL.createObjectURL(await response.blob())
-    const link = document.createElement('a')
-    link.href = url
-    link.download = name
-    link.click()
-    URL.revokeObjectURL(url)
+    return downloadIpoForm(`/projects/${projectId}/ipo-forms/form1/generate`, input, 'Form1.docx')
+  },
+  async generateForm2(projectId: number | string, specification: 'provisional' | 'complete'): Promise<void> {
+    return downloadIpoForm(`/projects/${projectId}/ipo-forms/form2/generate`, { specification }, 'Form2.docx')
   },
   async updateIpoApplicant(projectId: number | string, data: IpoAddress & { nationality?: string | null; contact_email?: string | null; phone?: string | null }): Promise<{ ok: boolean }> {
     return this.request(`/projects/${projectId}/ipo-forms/applicant`, { method: 'PUT', body: JSON.stringify(data) })
