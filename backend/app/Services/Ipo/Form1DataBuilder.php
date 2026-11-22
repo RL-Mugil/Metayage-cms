@@ -63,8 +63,8 @@ class Form1DataBuilder
         return [
             'application_type'             => $type,
             'sub_type'                     => $sub,
-            // A title deliberately cleared stays blank (it is often only fixed at filing).
-            'title'                        => array_key_exists('title', $data) ? $data['title'] : $project->invention_title,
+            // A blank title falls back to the one on record for the case.
+            'title'                        => filled($data['title'] ?? null) ? $data['title'] : $this->caseTitle($project),
             'applicant_category'           => in_array($category, self::CATEGORIES, true) ? $category : $this->defaultCategory($client),
             'co_applicants'                => array_values($data['co_applicants'] ?? []),
             'inventors_same_as_applicants' => (bool) ($data['inventors_same_as_applicants'] ?? false),
@@ -179,6 +179,20 @@ class Form1DataBuilder
         } catch (\Throwable) {
             return (string) $date;
         }
+    }
+
+    /**
+     * The title on record: the case's own, else the linked patent application's (what the
+     * case page's Application Details shows; some imported cases keep it only there).
+     */
+    public function caseTitle(Project $project): ?string
+    {
+        $title = trim((string) $project->invention_title);
+        if ($title === '') {
+            $title = trim((string) $project->patentApplication?->title);
+        }
+
+        return $title !== '' ? $title : null;
     }
 
     /** "Name (IN/PA-1234)" for the agent who signs, or '' when none is chosen. */

@@ -101,6 +101,23 @@ class IpoForm2Test extends TestCase
         $this->assertStringNotContainsString('SUMMARY OF THE INVENTION', $xml);
     }
 
+    public function test_title_falls_back_to_the_patent_application(): void
+    {
+        $application = \App\Models\PatentApplication::create([
+            'client_id' => $this->client->id, 'title' => 'Perceptive Entertainment Companion System',
+            'legal_status' => 'Granted', 'jurisdiction' => 'IN',
+        ]);
+        $this->project->update(['invention_title' => null, 'patent_application_id' => $application->id]);
+        Sanctum::actingAs($this->paralegal);
+        // Form 1 details saved earlier with a blank title still pick up the title on record.
+        $this->putJson("/api/projects/{$this->project->id}/ipo-forms/form1", [
+            'application_type' => 'ordinary', 'sub_type' => 'none', 'applicant_category' => 'other_than_natural', 'title' => null,
+        ])->assertOk()->assertJsonPath('input.title', 'Perceptive Entertainment Companion System');
+
+        $xml = $this->documentXml($this->postJson("/api/projects/{$this->project->id}/ipo-forms/form2/generate", ['specification' => 'complete'])->assertOk());
+        $this->assertStringContainsString('PERCEPTIVE ENTERTAINMENT COMPANION SYSTEM', $xml);
+    }
+
     public function test_unknown_specification_type_is_rejected(): void
     {
         Sanctum::actingAs($this->paralegal);
