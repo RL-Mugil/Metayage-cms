@@ -15,6 +15,7 @@ import { InventorsPanel } from "@/components/inventors-panel"
 import { IpoStatusPanel } from "@/components/ipo-status-panel"
 import { FormsWorkspace } from "@/components/ipo/forms-workspace"
 import { TrademarkMarkPanel } from "@/components/trademark-details-fields"
+import { isTrademarkCode } from "@/types/trademark"
 import { api } from "@/lib/api-client"
 import type {
   MatterWorkspace as WorkspaceData,
@@ -38,7 +39,7 @@ const TAB_DEFS: Array<{ id: WorkspaceTab; label: string; icon: typeof Activity }
   { id: "deadlines", label: "Deadlines", icon: CalendarClock },
   { id: "family", label: "Family", icon: Users },
   { id: "documents", label: "Documents", icon: FileText },
-  { id: "forms", label: "Forms", icon: FileSignature },
+  { id: "forms", label: "Indian Patent Forms", icon: FileSignature },
   { id: "discussion", label: "Discussion", icon: MessageSquare },
   { id: "tasks", label: "Tasks", icon: ListChecks },
   { id: "costs", label: "Costs", icon: CircleDollarSign },
@@ -68,9 +69,13 @@ function timelineLabel(item: WorkspaceTimelineItem): string {
 
 export function MatterWorkspace({ data, projectId, tab, onTabChange }: MatterWorkspaceProps) {
   const { project, application, deadline_summary: summary } = data
-  // IPO filing forms are offered on every Indian (IN) case, whatever its type.
+  // Indian Patent Office forms: every IN case except trademark and copyright cases.
+  // Some imported trademark filings carry a patent project type, so the TM service code counts too.
+  const isTrademarkOrCopyright = isTrademarkCode(project.service_code)
+    || /trade\s*mark|copyright/i.test(`${project.project_type ?? ""} ${project.case_type ?? ""}`)
   const canPrepareForms = !!data.capabilities.can_prepare_ipo_forms
     && (project.patent_office_code || "IN").toUpperCase() === "IN"
+    && !isTrademarkOrCopyright
   const visibleTabs = TAB_DEFS.filter(({ id }) => {
     if (id === "costs") return data.capabilities.can_view_financials
     if (id === "audit") return data.capabilities.can_view_audit

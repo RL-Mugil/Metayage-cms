@@ -15,7 +15,7 @@ export function FormsWorkspace({ projectId, serviceCode }: { projectId: number; 
   return (
     <div className="mx-auto max-w-4xl space-y-3">
       <p className="text-xs text-muted-foreground">
-        Forms are filled from the case, client, inventors and Settings → IPO Forms. Dates, fees and signatures stay blank to complete in Word.
+        Indian Patent Office forms, filled from the case, client, inventors and Settings → IPO Forms. Dates, fees and signatures stay blank to complete in Word.
       </p>
       <Form1Card projectId={projectId} />
       <Form2Card projectId={projectId} serviceCode={serviceCode} />
