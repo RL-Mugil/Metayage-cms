@@ -468,6 +468,9 @@ class RenewalActionController extends Controller
         $user = $request->user();
         $query = PatentInvoiceIn::with(['project:id,docket_number,project_name', 'client:id,company_name,legal_name', 'proofDocument:id,file_name,storage_path'])
             ->whereNotNull('payment_status')
+            // Invoices imported from Zoho are listed in the Zoho section below (their payment is
+            // recorded in Zoho), so they are not listed twice.
+            ->where(fn ($q) => $q->where('source', 'portal')->orWhereNull('source'))
             ->orderByDesc('invoice_date');
 
         if ($user->isClientRole()) {

@@ -98,33 +98,18 @@ class FinancialController extends Controller
     {
         $user = $request->user();
         $this->authorize('viewAny', \App\Models\Invoice::class);
-        $base = Invoice::query();
 
-        if ($user->isClientRole()) {
-            $base->whereHas('client', function ($q) use ($user) {
-                $q->visibleToUser($user);
-            });
-        } elseif ($user->isGalvanizer()) {
-            $base->whereHas('project', fn ($q) => $user->applyProjectScope($q));
-        }
-
+        // The portal register (portal-raised + imported from Zoho Books) is the single source.
         $cacheKey = "financial_stats_{$user->id}_{$user->role}_v" . Cache::get('dashboard_v', 0);
-        $stats = Cache::remember($cacheKey, 300, function () use ($base) {
-            $row = (clone $base)->selectRaw("
-                COALESCE(SUM(total_amount), 0) as total_billed,
-                COALESCE(SUM(CASE WHEN status = 'Paid' THEN total_amount ELSE 0 END), 0) as total_received,
-                COALESCE(SUM(CASE WHEN status IN ('Sent', 'Overdue', 'Partially Paid') THEN balance_due ELSE 0 END), 0) as total_outstanding,
-                SUM(CASE WHEN status = 'Overdue' THEN 1 ELSE 0 END) as overdue_count,
-                SUM(CASE WHEN status = 'Draft' THEN 1 ELSE 0 END) as draft_count,
-                SUM(CASE WHEN status = 'Paid' THEN 1 ELSE 0 END) as paid_count
-            ")->first();
+        $stats = Cache::remember($cacheKey, 300, function () use ($user) {
+            $figures = app(\App\Services\FinanceFigures::class)->summary($user);
             return [
-                'total_billed' => (float) ($row?->total_billed ?? 0),
-                'total_received' => (float) ($row?->total_received ?? 0),
-                'total_outstanding' => (float) ($row?->total_outstanding ?? 0),
-                'overdue_count' => (int) ($row?->overdue_count ?? 0),
-                'draft_count' => (int) ($row?->draft_count ?? 0),
-                'paid_count' => (int) ($row?->paid_count ?? 0),
+                'total_billed' => $figures['billed'],
+                'total_received' => $figures['received'],
+                'total_outstanding' => $figures['outstanding'],
+                'overdue_count' => $figures['overdue_count'],
+                'draft_count' => $figures['draft_count'],
+                'paid_count' => $figures['paid_count'],
             ];
         });
 

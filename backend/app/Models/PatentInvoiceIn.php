@@ -26,6 +26,17 @@ class PatentInvoiceIn extends Model
         // Renewal approve -> invoice -> proof -> confirm tracking (RenewalActionController)
         'payment_status', 'proof_document_id', 'status_note', 'status_note_by_id', 'status_note_at',
         'payment_confirmed_at',
+        // Imported from Zoho Books (ZohoRegisterImporter): the register is the single source of truth.
+        'source', 'zoho_invoice_id', 'zoho_number', 'zoho_status', 'due_date',
+        'exchange_rate', 'total_bcy', 'balance_due', 'amount_split_pending',
+    ];
+
+    /** Fields Zoho owns on an imported row; the portal keeps its internal fields (fees, notes). */
+    public const ZOHO_OWNED = [
+        'type', 'status', 'invoice_date', 'due_date', 'tax_invoice_date', 'invoice_uin', 'docket_number',
+        'patent_office_fees', 'service_fees', 'other_expenses', 'discount_amount', 'discount_percentage',
+        'igst_amount', 'cgst_amount', 'sgst_amount', 'invoice_amount', 'currency', 'exchange_rate',
+        'total_bcy', 'balance_due', 'payment_status', 'zoho_status', 'zoho_number',
     ];
 
     protected $casts = [
@@ -46,7 +57,22 @@ class PatentInvoiceIn extends Model
         'net_revenue'         => 'decimal:2',
         'status_note_at'      => 'datetime',
         'payment_confirmed_at' => 'datetime',
+        'due_date'            => 'date:Y-m-d',
+        'exchange_rate'       => 'decimal:6',
+        'total_bcy'           => 'decimal:2',
+        'balance_due'         => 'decimal:2',
+        'amount_split_pending' => 'boolean',
     ];
+
+    public function isFromZoho(): bool
+    {
+        return $this->source === 'zoho';
+    }
+
+    public function zohoRecord(): BelongsTo
+    {
+        return $this->belongsTo(ZohoInvoice::class, 'zoho_invoice_id');
+    }
 
     public function project(): BelongsTo
     {

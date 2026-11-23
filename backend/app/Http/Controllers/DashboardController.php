@@ -44,16 +44,10 @@ class DashboardController extends Controller
             ]);
         }
 
-        $zohoQuery = ZohoInvoice::where('zoho_type', 'invoice')->where('client_id', $client->id);
-        $zohoOutstanding = (float) (clone $zohoQuery)
-            ->where('balance', '>', 0)
-            ->whereNotIn(DB::raw('LOWER(status)'), ['paid', 'cancelled', 'void'])
-            ->sum('balance');
-        $zohoCollectedMtd = (float) (clone $zohoQuery)
-            ->where('status', 'paid')
-            ->whereMonth('txn_date', now()->month)
-            ->whereYear('txn_date', now()->year)
-            ->sum('total');
+        // The portal register (portal-raised + imported from Zoho Books) is the single source.
+        $figures = app(\App\Services\FinanceFigures::class);
+        $zohoOutstanding = $figures->summary($user, $client->id)['outstanding'];
+        $zohoCollectedMtd = $figures->collectedInMonth($user, now(), $client->id);
         $zohoOpeningBalance = (float) ZohoOpeningBalance::where('client_id', $client->id)->sum('balance');
 
         $ledgerBalance = (float) (DB::table('client_ledger')
@@ -61,11 +55,15 @@ class DashboardController extends Controller
             ->orderByDesc('id')
             ->value('balance') ?? 0);
 
-        $pendingInvoices = Invoice::where('client_id', $client->id)
-            ->whereIn('status', ['Sent', 'Overdue', 'Partially Paid', 'Viewed'])
-            ->orderByDesc('created_at')
-            ->limit(10)
-            ->get(['id', 'invoice_code', 'total_amount', 'balance_due', 'currency', 'status', 'due_date']);
+        $pendingInvoices = $figures->rows($user, $client->id)
+            ->filter(fn (array $row) => $row['outstanding'] > 0)
+            ->sortByDesc(fn (array $row) => $row['date']?->timestamp ?? 0)
+            ->take(10)
+            ->map(fn (array $row) => [
+                'id' => $row['id'], 'invoice_code' => $row['number'], 'total_amount' => $row['invoice_amount'],
+                'balance_due' => $row['balance_due'] ?? $row['outstanding'], 'currency' => $row['currency'],
+                'status' => $row['status'] === 'overdue' ? 'Overdue' : 'Sent', 'due_date' => $row['due_date']?->toDateString(),
+            ])->values();
 
         // client_finance needs to see what's coming due and what it'll cost —
         // scoped to finance_relevant (renewal) items only, never drafting/
@@ -232,24 +230,19 @@ class DashboardController extends Controller
             // Zoho Books figures — sourced from the local zoho_invoices mirror (kept fresh by
             // the zoho:sync command), not a live call. Supplements, doesn't replace, the
             // Invoice-based figures below (Zoho is a separate, unreconciled system of record).
-            $zohoQuery = \App\Models\ZohoInvoice::where('zoho_type', 'invoice');
+            // One source: the portal register (portal-raised + imported from Zoho Books).
+            // Zoho opening balances (amounts owed before the books moved to Zoho) stay separate.
+            $figures = app(\App\Services\FinanceFigures::class);
+            $summary = $figures->summary($user);
+            $zohoOutstanding = $summary['outstanding'];
+            $openingQuery = ZohoOpeningBalance::query();
             if ($user->isClientRole()) {
-                $zohoQuery->where('client_id', optional(Client::forUser($user))->id ?? 0);
+                $openingQuery->where('client_id', optional(Client::forUser($user))->id ?? 0);
             } elseif ($user->isGalvanizer()) {
-                $zohoQuery->whereHas('project', fn ($q) => $user->applyProjectScope($q));
+                $openingQuery->whereIn('client_id', Project::query()->where(fn ($q) => $user->applyProjectScope($q))->select('client_id'));
             }
-            $zohoOutstanding = (float) (clone $zohoQuery)
-                ->where('balance', '>', 0)
-                ->whereNotIn(DB::raw('LOWER(status)'), ['paid', 'cancelled', 'void'])
-                ->sum('balance');
-            $zohoOpeningBalance = (float) ZohoOpeningBalance::query()
-                ->whereIn('client_id', (clone $zohoQuery)->select('client_id')->distinct())
-                ->sum('balance');
-            $zohoCollectedMtd = (float) (clone $zohoQuery)
-                ->where('status', 'paid')
-                ->whereMonth('txn_date', now()->month)
-                ->whereYear('txn_date', now()->year)
-                ->sum('total');
+            $zohoOpeningBalance = (float) $openingQuery->sum('balance');
+            $zohoCollectedMtd = $figures->collectedInMonth($user, now());
 
             $wipQuery = TimeEntry::where('status', 'Approved')->where('billable', true);
             if ($user->isClientRole()) {
@@ -259,14 +252,8 @@ class DashboardController extends Controller
             }
             $wipAmount = $wipQuery->sum(\DB::raw('duration_hours * 150'));
 
-            $invoiceAgg = (clone $invoicesQuery)->selectRaw("
-                COALESCE(SUM(CASE WHEN status != 'Draft' THEN total_amount ELSE 0 END), 0) as invoiced,
-                COALESCE(SUM(CASE WHEN status = 'Paid' THEN total_amount ELSE 0 END), 0) as paid,
-                COALESCE(SUM(CASE WHEN status = 'Partially Paid' THEN total_amount - balance_due ELSE 0 END), 0) as partial_paid
-            ")->first();
-
-            $invoicedAmount = (float) $invoiceAgg->invoiced;
-            $receivedAmount = (float) $invoiceAgg->paid + (float) $invoiceAgg->partial_paid;
+            $invoicedAmount = $summary['billed'];
+            $receivedAmount = $summary['received'];
         }
 
         // Interactive action feed — client/client_admin only. Renewals-first, urgency,
@@ -325,18 +312,8 @@ class DashboardController extends Controller
             ->whereYear('created_at', $lastMonth->year)
             ->count();
 
-        $receivedThisMonth = $canSeeFinancials
-            ? (clone $invoicesQuery)->whereMonth('updated_at', $thisMonth)
-                ->whereYear('updated_at', $thisYear)
-                ->where('status', 'Paid')
-                ->sum('total_amount')
-            : 0;
-        $receivedLastMonth = $canSeeFinancials
-            ? (clone $invoicesQuery)->whereMonth('updated_at', $lastMonth->month)
-                ->whereYear('updated_at', $lastMonth->year)
-                ->where('status', 'Paid')
-                ->sum('total_amount')
-            : 0;
+        $receivedThisMonth = $canSeeFinancials ? app(\App\Services\FinanceFigures::class)->collectedInMonth($user, now()) : 0;
+        $receivedLastMonth = $canSeeFinancials ? app(\App\Services\FinanceFigures::class)->collectedInMonth($user, $lastMonth->copy()) : 0;
 
         $fmtDelta = function (int $curr, int $prev, string $unit = '') {
             $diff = $curr - $prev;

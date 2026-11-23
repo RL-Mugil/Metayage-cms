@@ -16,8 +16,11 @@ class FinancialAnalyticsService
 {
     public function build(User $user): array
     {
-        $portalInvoices = Invoice::query()->where('currency', 'INR')->with('payments')->get();
-        $portalQuotes = Quotation::query()->where('currency', 'INR')->get();
+        // Portal figures: the register (portal-raised + imported from Zoho Books) and older
+        // invoices, all in INR. The Zoho column below is kept as a reconciliation check.
+        $portalRows = app(FinanceFigures::class)->rows($user);
+        $portalQuotes = \App\Models\PatentInvoiceIn::query()->where('type', 'quote')->where('status', '!=', 'Cancelled')->get(['id', 'client_id', 'project_id', 'status', 'invoice_uin'])
+            ->concat(Quotation::query()->where('currency', 'INR')->get());
         $zohoInvoices = ZohoInvoice::query()->where('zoho_type', 'invoice')->where('currency', 'INR')->get();
         $zohoQuotes = ZohoInvoice::query()->where('zoho_type', 'quote')->where('currency', 'INR')->get();
         $zohoOpeningBalances = ZohoOpeningBalance::query()->where('currency', 'INR')->get();
@@ -25,36 +28,35 @@ class FinancialAnalyticsService
         if ($user->isClientRole()) {
             $client = \App\Models\Client::forUser($user);
             $clientId = $client?->id ?? 0;
-            $portalInvoices = $portalInvoices->where('client_id', $clientId)->values();
             $portalQuotes = $portalQuotes->where('client_id', $clientId)->values();
             $zohoInvoices = $zohoInvoices->where('client_id', $clientId)->values();
             $zohoQuotes = $zohoQuotes->where('client_id', $clientId)->values();
             $zohoOpeningBalances = $zohoOpeningBalances->where('client_id', $clientId)->values();
         } elseif ($user->isGalvanizer()) {
             $projectIds = Project::query()->where(fn ($q) => $user->applyProjectScope($q))->pluck('id');
-            $portalInvoices = $portalInvoices->whereIn('project_id', $projectIds)->values();
             $portalQuotes = $portalQuotes->whereIn('project_id', $projectIds)->values();
             $zohoInvoices = $zohoInvoices->whereIn('project_id', $projectIds)->values();
             $zohoQuotes = $zohoQuotes->whereIn('project_id', $projectIds)->values();
             $zohoOpeningBalances = $zohoOpeningBalances->whereIn('client_id', Project::whereIn('id', $projectIds)->pluck('client_id'))->values();
         }
 
-        $portalPaid = $portalInvoices->sum(fn ($i) => $i->payments->where('status', 'Completed')->sum('amount'));
-        $portalBilled = (float) $portalInvoices->sum('total_amount');
-        $portalOutstanding = (float) $portalInvoices->sum('balance_due');
+        $portalBilled = (float) $portalRows->sum('billed');
+        $portalOutstanding = (float) $portalRows->sum('outstanding');
+        $portalPaid = max(0, $portalBilled - $portalOutstanding);
+        $portalInvoices = $portalRows->map(fn (array $row) => (object) $row);
         $zohoBilled = (float) $zohoInvoices->sum('total');
         $zohoCollected = (float) $zohoInvoices->sum(fn ($i) => max(0, (float) $i->total - (float) ($i->balance ?? $i->total)));
         $zohoOutstanding = (float) $zohoInvoices->sum('balance');
         $zohoOpeningBalance = (float) $zohoOpeningBalances->sum('balance');
 
-        $portalPrefixes = $portalQuotes->where('status', 'Accepted')->count();
+        $portalPrefixes = $portalQuotes->filter(fn ($q) => $q->status === 'Accepted')->count();
         $zohoInvoicePrefixes = $zohoInvoices->map(fn ($r) => substr(strtoupper((string) $r->number), 0, 9))->filter()->unique();
         $zohoConverted = $zohoQuotes->filter(fn ($q) => $zohoInvoicePrefixes->contains(substr(strtoupper((string) $q->number), 0, 9)))->count();
 
         return [
             'currency' => 'INR',
             'generated_at' => now()->toIso8601String(),
-            'portal' => $this->source($portalInvoices, $portalQuotes, $portalBilled, $portalPaid, $portalOutstanding, $portalPrefixes, $this->monthlyPortal($portalInvoices)),
+            'portal' => $this->source($portalInvoices, $portalQuotes, $portalBilled, $portalPaid, $portalOutstanding, $portalPrefixes, $this->monthlyPortal($portalRows)),
             'zoho' => $this->source($zohoInvoices, $zohoQuotes, $zohoBilled, $zohoCollected, $zohoOutstanding, $zohoConverted, $this->monthlyZoho($zohoInvoices), $zohoOpeningBalance),
             'comparison' => [
                 'portal_invoice_count' => $portalInvoices->count(),
@@ -92,15 +94,15 @@ class FinancialAnalyticsService
         ];
     }
 
-    private function monthlyPortal(Collection $invoices): array
+    /** Billed and collected per month of the invoice date (INR). */
+    private function monthlyPortal(Collection $rows): array
     {
         $months = $this->months();
-        foreach ($invoices as $invoice) {
-            $key = optional($invoice->issue_date)->format('Y-m');
-            if (isset($months[$key])) $months[$key]['billed'] += (float) $invoice->total_amount;
-            foreach ($invoice->payments->where('status', 'Completed') as $payment) {
-                $paymentKey = optional($payment->payment_date)->format('Y-m');
-                if (isset($months[$paymentKey])) $months[$paymentKey]['collected'] += (float) $payment->amount;
+        foreach ($rows as $row) {
+            $key = optional($row['date'])->format('Y-m');
+            if (isset($months[$key])) {
+                $months[$key]['billed'] += (float) $row['billed'];
+                $months[$key]['collected'] += max(0, (float) $row['billed'] - (float) $row['outstanding']);
             }
         }
         return array_values(array_map(fn ($row) => ['month' => $row['month'], 'billed' => round($row['billed'], 2), 'collected' => round($row['collected'], 2)], $months));

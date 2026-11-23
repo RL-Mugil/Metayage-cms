@@ -87,6 +87,29 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(Reminder::class, ReminderPolicy::class);
         Gate::policy(Employee::class, EmployeePolicy::class);
         Gate::policy(\App\Models\Inventor::class, \App\Policies\InventorPolicy::class);
+
+        // Zoho Books → the portal's Indian Patents (UIN) register, the single source of truth:
+        // every time the mirror saves a record (5-minute poll, nightly sync, manual link) or a
+        // record's detail (line items) arrives, the register row is created or refreshed.
+        $importZoho = function (\App\Models\ZohoInvoice $record): void {
+            \Illuminate\Support\Facades\DB::afterCommit(fn () => rescue(
+                fn () => app(\App\Services\ZohoRegisterImporter::class)->import($record->fresh() ?? \App\Models\ZohoInvoice::withTrashed()->find($record->id) ?? $record),
+                null, true
+            ));
+        };
+        \App\Models\ZohoInvoice::saved($importZoho);
+        \App\Models\ZohoInvoice::deleted($importZoho);
+        \App\Models\ZohoSnapshot::saved(function (\App\Models\ZohoSnapshot $snapshot) use ($importZoho): void {
+            if (! in_array($snapshot->resource, ['invoices', 'estimates'], true) || ! $snapshot->wasChanged('detail')) {
+                return;
+            }
+            $record = \App\Models\ZohoInvoice::withTrashed()->where('scope', $snapshot->scope)
+                ->where('zoho_type', $snapshot->resource === 'estimates' ? 'quote' : 'invoice')
+                ->where('zoho_id', $snapshot->remote_id)->first();
+            if ($record) {
+                $importZoho($record);
+            }
+        });
         Gate::define('manage-site', fn (User $user): bool => $user->role === 'super_admin');
         Gate::define('approve-deadline-rules', fn (User $user): bool => in_array($user->role, ['super_admin', 'partner'], true));
         Gate::define('review-docket-deadline', fn (User $user, Project $project): bool =>

@@ -1,0 +1,315 @@
+<?php
+
+namespace App\Services;
+
+use App\Models\Client;
+use App\Models\PatentInvoiceIn;
+use App\Models\Project;
+use App\Models\ZohoInvoice;
+use App\Models\ZohoQuoteExport;
+use App\Models\ZohoSnapshot;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+
+/**
+ * Imports Zoho Books invoices and quotes into the portal's Indian Patents (UIN) register
+ * (patent_invoices_in), the single source of truth every dashboard reads. Staff keep raising
+ * them in Zoho; each mirror save (5-minute poll, nightly sync) re-imports the record.
+ *
+ * One register row per Zoho record (key: zoho_invoice_id). A portal quote already pushed to
+ * Zoho, or a portal row with the same UIN and type, is linked instead of duplicated. Zoho
+ * owns the amounts, dates and status of an imported row; the portal keeps its internal
+ * fields (attorney / consultant / referral fees, net revenue, remarks).
+ */
+class ZohoRegisterImporter
+{
+    /** Line items that are Patent Office / government fees. */
+    public const OFFICE_FEE_WORDS = ['official fee', 'office fee', 'govt', 'government', 'statutory', 'uspto', 'ipo fee', 'patent office', 'filing fee', 'form ', 'epo', 'wipo', 'pct fee', 'renewal fee', 'annuity', 'maintenance fee', 'issue fee', 'examination fee'];
+
+    /** Line items that are disbursements / out-of-pocket expenses. */
+    public const EXPENSE_WORDS = ['expense', 'out of pocket', 'out-of-pocket', 'courier', 'postage', 'translation', 'notar', 'legalis', 'apostille', 'disbursement', 'stamp', 'bank charge', 'travel', 'certified cop'];
+
+    /** @var array<string, int>|null client_code => id */
+    private ?array $clientsByCode = null;
+
+    /** @var array<string, int>|null zoho_contact_id => id */
+    private ?array $clientsByContact = null;
+
+    /** Unclassified line-item names seen in this run (for the dry-run report). */
+    public array $unclassified = [];
+
+    /**
+     * @return array{action: string, row: ?PatentInvoiceIn} action: created | updated | linked | cancelled | skipped
+     */
+    public function import(ZohoInvoice $mirror, bool $dryRun = false): array
+    {
+        $type = $mirror->zoho_type === 'quote' ? 'quote' : 'invoice';
+        $existing = PatentInvoiceIn::where('zoho_invoice_id', $mirror->id)->first();
+
+        if ($mirror->trashed()) {
+            if ($existing && ! $dryRun) {
+                $existing->update(['status' => 'Cancelled', 'zoho_status' => 'deleted']);
+            }
+
+            return ['action' => $existing ? 'cancelled' : 'skipped', 'row' => $existing];
+        }
+
+        $clientId = $this->clientFor($mirror);
+        $project = $mirror->project_id ? Project::find($mirror->project_id) : null;
+        $clientId ??= $project?->client_id;
+        if (! $dryRun && $clientId && ! $mirror->client_id) {
+            // Improves the Zoho list too (ZohoInvoice has no events that re-import here: quiet update).
+            $mirror->forceFill(['client_id' => $clientId])->saveQuietly();
+        }
+
+        $action = $existing ? 'updated' : 'created';
+        $row = $existing ?? $this->portalRowFor($mirror, $type);
+        if (! $existing && $row) {
+            $action = 'linked';
+        }
+
+        $attrs = $this->attributes($mirror, $type, $clientId, $project);
+        if ($dryRun) {
+            return ['action' => $action, 'row' => $row];
+        }
+
+        if ($row) {
+            // A portal-raised row keeps its own UIN/fees; it gains the Zoho link, status and balance.
+            if ($row->source !== 'zoho' && $action === 'linked') {
+                $attrs = array_intersect_key($attrs, array_flip(['zoho_invoice_id', 'zoho_number', 'zoho_status', 'balance_due', 'payment_status', 'due_date', 'total_bcy', 'exchange_rate']));
+            }
+            $row->update($attrs);
+        } else {
+            $row = PatentInvoiceIn::create($attrs + ['source' => 'zoho']);
+        }
+
+        return ['action' => $action, 'row' => $row];
+    }
+
+    /** Imports every mirrored record; returns counts (and totals) for the command's report. */
+    public function importAll(bool $dryRun = false, ?callable $progress = null): array
+    {
+        $report = ['created' => 0, 'updated' => 0, 'linked' => 0, 'cancelled' => 0, 'skipped' => 0,
+            'no_client' => 0, 'no_case' => 0, 'split_pending' => 0,
+            'totals' => ['invoice' => 0.0, 'quote' => 0.0]];
+        ZohoInvoice::withTrashed()->orderBy('id')->chunkById(200, function ($records) use (&$report, $dryRun, $progress) {
+            foreach ($records as $mirror) {
+                try {
+                    $result = $dryRun ? $this->import($mirror, true) : DB::transaction(fn () => $this->import($mirror));
+                } catch (\Throwable $e) {
+                    Log::warning('Zoho register import failed', ['zoho_invoice_id' => $mirror->id, 'error' => $e->getMessage()]);
+                    $report['skipped']++;
+
+                    continue;
+                }
+                $report[$result['action']]++;
+                if (! $mirror->trashed()) {
+                    $report['totals'][$mirror->zoho_type === 'quote' ? 'quote' : 'invoice'] += (float) $mirror->total;
+                    $attrs = $this->attributes($mirror, $mirror->zoho_type === 'quote' ? 'quote' : 'invoice', $this->clientFor($mirror) ?? Project::whereKey($mirror->project_id)->value('client_id'), null);
+                    $report['no_client'] += $attrs['client_id'] ? 0 : 1;
+                    $report['no_case'] += $attrs['project_id'] ? 0 : 1;
+                    $report['split_pending'] += $attrs['amount_split_pending'] ? 1 : 0;
+                }
+                $progress && $progress();
+            }
+        });
+        arsort($this->unclassified);
+        $report['unclassified_items'] = array_slice($this->unclassified, 0, 40, true);
+
+        return $report;
+    }
+
+    /** The register fields for a mirrored Zoho record (amounts split from its snapshot detail). */
+    private function attributes(ZohoInvoice $mirror, string $type, ?int $clientId, ?Project $project): array
+    {
+        $number = strtoupper(trim((string) $mirror->number));
+        $uin = $this->parseUin($number);
+        $detail = $this->detail($mirror);
+        $split = $this->split($detail, (float) $mirror->total);
+        $total = (float) $mirror->total;
+        $balance = $mirror->balance !== null ? (float) $mirror->balance : null;
+        $rate = isset($detail['exchange_rate']) && (float) $detail['exchange_rate'] > 0 ? (float) $detail['exchange_rate'] : 1.0;
+        $zohoStatus = strtolower((string) $mirror->status);
+        $client = $clientId ? Client::find($clientId) : null;
+
+        $attrs = [
+            'type' => $type,
+            'status' => $this->status($type, $zohoStatus),
+            'zoho_invoice_id' => $mirror->id,
+            'zoho_number' => $mirror->number,
+            'zoho_status' => $mirror->status,
+            'project_id' => $project?->id ?? $mirror->project_id,
+            'client_id' => $clientId,
+            'docket_number' => $project?->docket_number ?? $uin['docket'],
+            'invoice_uin' => $mirror->number,
+            'invoice_date' => $mirror->txn_date,
+            'due_date' => $mirror->due_date,
+            'client_code_prefix' => $uin['client_code'],
+            'invention_number' => $uin['invention'],
+            'patent_office_code' => $project?->patent_office_code ?? $uin['office'],
+            'service_code' => $project?->service_code ?? $uin['service'],
+            'invention_title' => $project ? ($project->invention_title ?: $project->project_name) : null,
+            'client_name' => $client ? ($client->legal_name ?: $client->company_name) : ($detail['customer_name'] ?? null),
+            'currency' => $mirror->currency ?: 'INR',
+            'exchange_rate' => $rate,
+            'total_bcy' => round($total * $rate, 2),
+            'invoice_amount' => $total,
+            'balance_due' => $balance,
+            'patent_office_fees' => $split['office'],
+            'service_fees' => $split['service'],
+            'other_expenses' => $split['expenses'],
+            'discount_amount' => $split['discount'],
+            'igst_amount' => $split['igst'],
+            'cgst_amount' => $split['cgst'],
+            'sgst_amount' => $split['sgst'],
+            'amount_split_pending' => $split['pending'],
+        ];
+        if ($type === 'invoice') {
+            $attrs['payment_status'] = $this->paymentStatus($zohoStatus, $total, $balance);
+        }
+
+        return $attrs;
+    }
+
+    private function status(string $type, string $zohoStatus): string
+    {
+        if ($type === 'quote') {
+            return match ($zohoStatus) {
+                'draft' => 'Draft',
+                'accepted', 'invoiced' => 'Accepted',
+                'declined' => 'Rejected',
+                'expired', 'void' => 'Cancelled',
+                default => 'Sent',
+            };
+        }
+
+        return match ($zohoStatus) {
+            'draft' => 'Draft',
+            'void' => 'Cancelled',
+            default => 'Sent',
+        };
+    }
+
+    private function paymentStatus(string $zohoStatus, float $total, ?float $balance): string
+    {
+        if ($zohoStatus === 'paid' || ($balance !== null && $balance <= 0.009 && $total > 0 && ! in_array($zohoStatus, ['draft', 'void'], true))) {
+            return 'Confirmed';
+        }
+        if ($zohoStatus === 'partially_paid' || ($balance !== null && $balance > 0 && $balance < $total)) {
+            return 'Partially Paid';
+        }
+
+        return 'Pending';
+    }
+
+    /** "B37M001INPRV647" → client code B37M, invention 001, office IN, service PRV, docket B37M001INPRV. */
+    public function parseUin(string $number): array
+    {
+        $base = preg_replace('#/.*$#', '', $number);
+        if (preg_match('/^([A-Z0-9]{4})([A-Z0-9]{3})([A-Z]{2})([A-Z0-9]{3})/', $base, $m)) {
+            return ['client_code' => $m[1], 'invention' => $m[2], 'office' => $m[3], 'service' => $m[4], 'docket' => $m[1].$m[2].$m[3].$m[4]];
+        }
+
+        return ['client_code' => strlen($base) >= 4 ? substr($base, 0, 4) : null, 'invention' => null, 'office' => null, 'service' => null, 'docket' => null];
+    }
+
+    /** Client: the mirror's, the client linked to the Zoho customer, or the client code at the start of the number. */
+    public function clientFor(ZohoInvoice $mirror): ?int
+    {
+        if ($mirror->client_id) {
+            return (int) $mirror->client_id;
+        }
+        $this->clientsByContact ??= Client::whereNotNull('zoho_contact_id')->pluck('id', 'zoho_contact_id')->all();
+        if ($mirror->zoho_contact_id && isset($this->clientsByContact[$mirror->zoho_contact_id])) {
+            return (int) $this->clientsByContact[$mirror->zoho_contact_id];
+        }
+        $this->clientsByCode ??= Client::whereNotNull('client_code')->get(['id', 'client_code'])
+            ->mapWithKeys(fn (Client $c) => [strtoupper($c->client_code) => $c->id])->all();
+        $code = strtoupper(substr(trim((string) $mirror->number), 0, 4));
+
+        return isset($this->clientsByCode[$code]) ? (int) $this->clientsByCode[$code] : null;
+    }
+
+    /** A portal row this Zoho record already belongs to: an exported quote, or the same UIN and type. */
+    private function portalRowFor(ZohoInvoice $mirror, string $type): ?PatentInvoiceIn
+    {
+        if ($type === 'quote') {
+            $export = ZohoQuoteExport::where('scope', $mirror->scope)->where('estimate_id', (string) $mirror->zoho_id)->where('source_type', 'in')->first();
+            if ($export && ($row = PatentInvoiceIn::whereKey($export->source_id)->whereNull('zoho_invoice_id')->first())) {
+                return $row;
+            }
+        }
+
+        return PatentInvoiceIn::whereNull('zoho_invoice_id')->where('type', $type)
+            ->whereRaw('UPPER(invoice_uin) = ?', [strtoupper(trim((string) $mirror->number))])->first();
+    }
+
+    private function detail(ZohoInvoice $mirror): array
+    {
+        $snapshot = ZohoSnapshot::where('scope', $mirror->scope)->where('resource', $mirror->zoho_type === 'quote' ? 'estimates' : 'invoices')
+            ->where('remote_id', (string) $mirror->zoho_id)->first();
+        $json = $snapshot?->detail;
+
+        return $json ? (json_decode($json, true) ?: []) : [];
+    }
+
+    /**
+     * Splits a Zoho record into Patent Office fees, service fees and expenses (by line-item
+     * name) and IGST / CGST / SGST (by tax name). Without line items the total goes to
+     * service fees and the row is flagged until the detail arrives.
+     */
+    public function split(array $detail, float $total): array
+    {
+        $out = ['office' => 0.0, 'service' => 0.0, 'expenses' => 0.0, 'discount' => 0.0, 'igst' => 0.0, 'cgst' => 0.0, 'sgst' => 0.0, 'pending' => false];
+        $items = $detail['line_items'] ?? [];
+        if (! is_array($items) || $items === []) {
+            $out['service'] = $total;
+            $out['pending'] = true;
+
+            return $out;
+        }
+        foreach ($items as $item) {
+            $amount = (float) ($item['item_total'] ?? (($item['rate'] ?? 0) * ($item['quantity'] ?? 1)));
+            $text = strtolower(trim(($item['name'] ?? '').' '.($item['description'] ?? '')));
+            if ($this->matches($text, self::OFFICE_FEE_WORDS)) {
+                $out['office'] += $amount;
+            } elseif ($this->matches($text, self::EXPENSE_WORDS)) {
+                $out['expenses'] += $amount;
+            } else {
+                $out['service'] += $amount;
+                $name = trim((string) ($item['name'] ?? '')) ?: mb_substr(trim((string) ($item['description'] ?? '')), 0, 60);
+                if ($name !== '') {
+                    $this->unclassified[$name] = ($this->unclassified[$name] ?? 0) + 1;
+                }
+            }
+        }
+        foreach (($detail['taxes'] ?? []) as $tax) {
+            $name = strtoupper((string) ($tax['tax_name'] ?? ''));
+            $amount = (float) ($tax['tax_amount'] ?? 0);
+            if (str_contains($name, 'IGST')) {
+                $out['igst'] += $amount;
+            } elseif (str_contains($name, 'CGST')) {
+                $out['cgst'] += $amount;
+            } elseif (str_contains($name, 'SGST') || str_contains($name, 'UTGST')) {
+                $out['sgst'] += $amount;
+            }
+        }
+        $out['discount'] = (float) ($detail['discount_total'] ?? $detail['discount_amount'] ?? 0);
+        foreach (['office', 'service', 'expenses', 'discount', 'igst', 'cgst', 'sgst'] as $key) {
+            $out[$key] = round($out[$key], 2);
+        }
+
+        return $out;
+    }
+
+    private function matches(string $text, array $words): bool
+    {
+        foreach ($words as $word) {
+            if (str_contains($text, $word)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+}

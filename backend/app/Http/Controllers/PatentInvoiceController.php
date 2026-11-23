@@ -75,9 +75,15 @@ class PatentInvoiceController extends Controller
     {
         $user = $request->user();
         $q    = PatentInvoiceIn::with(['project:id,project_code,docket_number', 'client:id,company_name,legal_name,client_code'])
-            ->orderByDesc('created_at');
+            // Newest document first (imported Zoho records all share one created_at).
+            ->orderByRaw('invoice_date DESC NULLS LAST')->orderByDesc('id');
 
         if ($request->filled('type'))       $q->where('type',       $request->type);
+        if ($request->filled('source'))     $q->where('source',     $request->source);
+        // Imported rows still needing a look: no client matched, or the fee split not available yet.
+        if ($request->boolean('needs_attention')) {
+            $q->where(fn ($w) => $w->whereNull('client_id')->orWhere('amount_split_pending', true));
+        }
         if ($request->filled('status'))     $q->where('status',     $request->status);
         if ($request->filled('project_id')) $q->where('project_id', (int) $request->project_id);
         if ($request->filled('search')) {
@@ -236,11 +242,27 @@ class PatentInvoiceController extends Controller
             'referral_fees'                    => 'nullable|numeric|min:0',
         ]);
 
+        // Imported from Zoho: Zoho owns the amounts, dates and status (re-imported on every
+        // sync); the portal keeps its own fields (internal fees, remarks, references).
+        if ($record->isFromZoho()) {
+            $v = array_diff_key($v, array_flip(PatentInvoiceIn::ZOHO_OWNED));
+            if ($v === []) {
+                return response()->json(['message' => 'Amounts, dates and status of a Zoho record are changed in Zoho Books; they update here automatically.'], 422);
+            }
+        }
+
         DB::transaction(function () use ($v, $record, $user) {
-            // Merge with current values for recomputation
-            $merged = array_merge($record->toArray(), $v);
-            $data   = $this->computeTotals($merged);
-            $record->update($data);
+            if ($record->isFromZoho()) {
+                // Internal fees change net revenue only; the Zoho amounts stay as imported.
+                $internal = array_merge($record->only(['attorney_fees', 'consultant_fees', 'referral_fees']), array_intersect_key($v, array_flip(['attorney_fees', 'consultant_fees', 'referral_fees'])));
+                $v['net_revenue'] = round((float) ($record->total_bcy ?? $record->invoice_amount) - array_sum(array_map('floatval', $internal)), 2);
+                $record->update($v);
+            } else {
+                // Merge with current values for recomputation
+                $merged = array_merge($record->toArray(), $v);
+                $data   = $this->computeTotals($merged);
+                $record->update($data);
+            }
 
             AuditLog::create([
                 'user_id'      => $user->id,
@@ -265,6 +287,7 @@ class PatentInvoiceController extends Controller
 
         if (!in_array($user->role, ['super_admin', 'partner', 'finance', 'manager', 'galvanizer'])) abort(403);
         if ($user->isGalvanizer() && ! $this->galvanizerCanAccessRecord($user, $record)) abort(403);
+        if ($record->isFromZoho()) abort(422, 'This record comes from Zoho Books: void or delete it in Zoho and it is cancelled here automatically.');
 
         $record->update(['status' => 'Cancelled']);
 
@@ -310,7 +333,7 @@ class PatentInvoiceController extends Controller
             }
             $records = $recordsQuery->lockForUpdate()->get();
             foreach ($records as $record) {
-                if ($record->status === 'Cancelled') continue;
+                if ($record->status === 'Cancelled' || $record->isFromZoho()) continue;   // Zoho owns a Zoho record's status
                 $record->update(['status' => $newStatus]);
                 AuditLog::create([
                     'user_id'      => $user->id,
@@ -338,6 +361,7 @@ class PatentInvoiceController extends Controller
         if (in_array($user->role, ['client', 'client_admin'])) abort(403);
         if ($user->isGalvanizer() && ! $this->galvanizerCanAccessRecord($user, $record)) abort(403);
         if ($record->type !== 'quote') abort(422, 'Only quotations can be converted to invoices.');
+        if ($record->isFromZoho()) abort(422, 'Convert this quote to an invoice in Zoho Books; the invoice is imported here automatically.');
         if ($record->status === 'Cancelled') abort(422, 'Cannot convert a cancelled quotation.');
 
         $invoice = DB::transaction(function () use ($record, $user) {

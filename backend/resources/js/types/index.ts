@@ -529,8 +529,15 @@ export interface PatentInvoiceIn {
   id: number
   type: PatentInvoiceType
   status: PatentInvoiceStatus
-  project_id: number
-  client_id: number
+  /** "zoho": imported from Zoho Books (amounts, dates and status are changed in Zoho). */
+  source?: "portal" | "zoho"
+  zoho_number?: string | null
+  zoho_status?: string | null
+  balance_due?: number | string | null
+  due_date?: string | null
+  amount_split_pending?: boolean
+  project_id: number | null
+  client_id: number | null
   created_by_id?: number | null
   // UIN
   docket_number: string

@@ -1549,6 +1549,20 @@ export default function Financial() {
                               <td className="px-2 py-1.5 sticky left-[130px] bg-card z-10 font-mono text-gold font-semibold">{r.invoice_uin || r.docket_number}</td>
                               {isInternal && (() => {
                                 const zs = zohoStatusMap[String(r.invoice_uin || r.docket_number || "").toUpperCase()];
+                                if (r.source === "zoho") {
+                                  const balance = Number(r.balance_due ?? 0);
+                                  return (
+                                    <td className="px-2 py-1.5">
+                                      <div className="flex flex-col gap-0.5">
+                                        <span className="px-1.5 py-0.5 rounded text-[9px] font-medium w-fit bg-blue-500/15 text-blue-400 capitalize" title="Imported from Zoho Books — amounts, dates and status are changed in Zoho">
+                                          Zoho · {r.zoho_status || "synced"}{balance > 0 ? ` · ₹${balance.toLocaleString()}` : ""}
+                                        </span>
+                                        {!r.client_id && <span className="text-[9px] text-amber-500">Client not matched</span>}
+                                        {r.amount_split_pending && <span className="text-[9px] text-muted-foreground">Fee split pending</span>}
+                                      </div>
+                                    </td>
+                                  );
+                                }
                                 return (
                                   <td className="px-2 py-1.5">
                                     {zs ? (
