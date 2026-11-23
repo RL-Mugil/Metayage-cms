@@ -5,8 +5,9 @@ namespace App\Services\Ipo;
 /**
  * Lays out IPO Form 1 (Patents Rules, 2003, rule 20(1)) section by section on the
  * DocxTableWriter grid, from Form1DataBuilder::build() output. Office-use boxes, fees,
- * attachment counts, signatures, the date and place, and declaration 12(ii) are left
- * blank for the paralegal to complete in Word.
+ * attachment counts, the inventors' signatures and declaration 12(ii) are left blank
+ * for the paralegal to complete in Word. The closing block carries the generation date
+ * (IST) and the first agent's stored signature.
  */
 class Form1DocxRenderer
 {
@@ -73,10 +74,10 @@ class Form1DocxRenderer
         $doc->full('3A. APPLICANT(S)', true, true);
         $doc->row([
             ['text' => 'Name in Full', 'span' => 4, 'bold' => true],
-            ['text' => 'Gender (optional, for individuals)', 'span' => 3, 'bold' => true],
+            ['text' => 'Gender', 'span' => 3, 'bold' => true],
             ['text' => 'Nationality', 'span' => 3, 'bold' => true],
             ['text' => 'Country of Residence', 'span' => 3, 'bold' => true],
-            ['text' => 'Age (optional, for natural persons)', 'span' => 3, 'bold' => true],
+            ['text' => 'Age', 'span' => 3, 'bold' => true],
             ['text' => 'Address of the Applicant', 'span' => 8, 'bold' => true],
         ]);
         foreach ($form['applicants'] as $applicant) {
@@ -150,9 +151,9 @@ class Form1DocxRenderer
         $doc->full('If “No”, furnish the details of the inventor(s)', true);
         $doc->row([
             ['text' => 'Name in Full', 'span' => 4, 'bold' => true],
-            ['text' => 'Gender (optional, for natural persons)', 'span' => 3, 'bold' => true],
+            ['text' => 'Gender', 'span' => 3, 'bold' => true],
             ['text' => 'Nationality', 'span' => 3, 'bold' => true],
-            ['text' => 'Age (optional, for natural persons)', 'span' => 3, 'bold' => true],
+            ['text' => 'Age', 'span' => 3, 'bold' => true],
             ['text' => 'Country of Residence', 'span' => 3, 'bold' => true],
             ['text' => 'Address of the Inventor', 'span' => 8, 'bold' => true],
         ]);
@@ -287,8 +288,10 @@ class Form1DocxRenderer
             '',
             'I/We hereby declare that to the best of my/our knowledge, information and belief the fact and matters stated herein are correct and I/We request that a patent may be granted to me/us for the said invention.',
             '',
-            'Dated this ………… day of ………… 20……',
+            AgentSignature::datedLine(),
             'Signature:',
+            // The signing agent's stored signature (nothing when none is uploaded in HRMS).
+            ['image' => AgentSignature::imageFor($agent)],
             'Name: '.$signatory,
             $agent ? 'Agent for the Applicant(s)' : '',
             '',

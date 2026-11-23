@@ -6,6 +6,8 @@ use App\Models\Client;
 use App\Models\Project;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Storage;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 use ZipArchive;
@@ -71,8 +73,14 @@ class IpoForm2Test extends TestCase
             'agent_user_ids' => [$this->agent->id],
         ])->assertOk();
 
+        Carbon::setTestNow(Carbon::parse('2026-11-23 05:00:00', 'UTC'));
+        Storage::fake('local');
+        Storage::disk('local')->put('patent-agent-signatures/sig.png', base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='));
+        $this->agent->forceFill(['patent_agent_signature_path' => 'patent-agent-signatures/sig.png'])->save();
+
         $response = $this->postJson("/api/projects/{$this->project->id}/ipo-forms/form2/generate", ['specification' => 'complete'])->assertOk();
         $this->assertStringContainsString('Form2_397M001INCPT.docx', $response->headers->get('Content-Disposition'));
+        Carbon::setTestNow();
 
         $xml = $this->documentXml($response);
         foreach ([
@@ -84,6 +92,8 @@ class IpoForm2Test extends TestCase
             $this->assertStringContainsString(htmlspecialchars($expected, ENT_XML1 | ENT_QUOTES), $xml, "Missing: {$expected}");
         }
         $this->assertStringContainsString('<w:strike/>', $xml);
+        $this->assertStringContainsString('Dated this 23rd day of November 2026', $xml);
+        $this->assertSame(1, substr_count($xml, '<w:drawing>'));
         $this->assertDatabaseHas('audit_logs', ['action' => 'ipo_form2_generated', 'subject_id' => $this->project->id]);
     }
 

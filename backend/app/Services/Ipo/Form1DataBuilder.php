@@ -315,7 +315,10 @@ class Form1DataBuilder
     {
         return User::whereNotNull('patent_agent_no')->where('patent_agent_no', '!=', '')
             ->where('status', 'Active')->orderBy('name')->get()
-            ->map(fn (User $user) => ['id' => $user->id, 'name' => $user->name, 'patent_agent_no' => $user->patent_agent_no, 'mobile' => self::agentMobile($user)])
+            ->map(fn (User $user) => [
+                'id' => $user->id, 'name' => $user->name, 'patent_agent_no' => $user->patent_agent_no, 'mobile' => self::agentMobile($user),
+                'has_signature' => filled($user->patent_agent_signature_path),
+            ])
             ->all();
     }
 
@@ -336,7 +339,11 @@ class Form1DataBuilder
 
         // Keep the order the paralegal picked them in.
         return collect($ids)->map(fn (int $id) => $users->get($id))->filter()
-            ->map(fn (User $user) => ['name' => $user->name, 'patent_agent_no' => $user->patent_agent_no, 'mobile' => self::agentMobile($user)])
+            // signature_path stays server-side: build() output only feeds the DOCX renderers.
+            ->map(fn (User $user) => [
+                'name' => $user->name, 'patent_agent_no' => $user->patent_agent_no, 'mobile' => self::agentMobile($user),
+                'signature_path' => $user->patent_agent_signature_path,
+            ])
             ->values()->all();
     }
 

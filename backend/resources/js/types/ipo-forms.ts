@@ -90,6 +90,7 @@ export interface IpoAgentOption {
   name: string
   patent_agent_no: string
   mobile?: string | null
+  has_signature?: boolean
 }
 
 export interface IpoServiceAddress {
@@ -122,6 +123,8 @@ export interface IpoPatentAgent {
   mobile: string | null
   employee_code: string | null
   designation: string | null
+  /** A signature image is uploaded in HRMS → Employees → Edit. */
+  has_signature: boolean
 }
 
 export interface IpoSettings {

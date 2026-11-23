@@ -72,7 +72,7 @@ export function Form1Panel({ projectId }: { projectId: number }) {
 
       <Section title="Authorised patent agent(s)">
         {data.agent_options.length === 0 ? (
-          <p className="text-xs text-muted-foreground">No agents have an IN/PA number yet. An admin can add them in Settings → IPO Forms.</p>
+          <p className="text-xs text-muted-foreground">No employee is marked as a Registered Patent Agent yet (HRMS → Employees → Edit).</p>
         ) : data.agent_options.map((agent) => (
           <label key={agent.id} className="flex items-center gap-2 text-sm">
             <input type="checkbox" checked={input.agent_user_ids.includes(agent.id)} onChange={(event) => patch({
@@ -81,8 +81,12 @@ export function Form1Panel({ projectId }: { projectId: number }) {
             <span className="font-medium">{agent.name}</span>
             <span className="font-mono text-xs text-muted-foreground">{agent.patent_agent_no}</span>
             {agent.mobile && <span className="text-xs text-muted-foreground">{agent.mobile}</span>}
+            {agent.has_signature === false && <span className="text-xs text-amber-600">no signature image</span>}
           </label>
         ))}
+        <p className="text-xs text-muted-foreground">
+          The first agent ticked signs the form; the date is filled in (IST) when it is generated.
+        </p>
         <p className="text-xs text-muted-foreground">
           Address for service: {[data.service.name, data.service.address].filter(Boolean).join(", ") || "not set (Settings → IPO Forms)"}
         </p>

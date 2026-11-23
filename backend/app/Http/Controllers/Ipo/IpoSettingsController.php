@@ -41,6 +41,7 @@ class IpoSettingsController extends Controller
                         'mobile'          => Form1DataBuilder::agentMobile($user),
                         'employee_code'   => $employee?->employee_code,
                         'designation'     => $employee?->designation?->title,
+                        'has_signature'   => filled($user->patent_agent_signature_path),
                     ];
                 })->all(),
         ]);

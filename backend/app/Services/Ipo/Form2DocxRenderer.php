@@ -110,9 +110,12 @@ class Form2DocxRenderer
     private function signature(DocxTableWriter $doc, ?array $agent): void
     {
         $doc->paragraph('')
-            ->paragraph('Dated this …………… day of …………… 20……')
-            ->paragraph('Signature:')
-            ->paragraph('Name: '.Form1DataBuilder::signatory($agent))
+            ->paragraph(AgentSignature::datedLine())
+            ->paragraph('Signature:');
+        if ($image = AgentSignature::imageFor($agent)) {
+            $doc->image($image);
+        }
+        $doc->paragraph('Name: '.Form1DataBuilder::signatory($agent))
             ->paragraph($agent ? 'Agent for the Applicant(s)' : '');
     }
 }

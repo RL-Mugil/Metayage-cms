@@ -15,7 +15,8 @@ use ZipArchive;
  *
  * Cell spec: ['text' => string|string[], 'span' => int, 'bold' => bool, 'strike' => bool,
  *             'shade' => bool, 'vmerge' => 'restart'|'continue', 'align' => 'center']
- * A string[] text renders one paragraph per line. Within a line, **…** marks bold
+ * A string[] text renders one paragraph per line; a line may instead be
+ * ['image' => ['bytes', 'ext', 'width', 'height']] for an inline picture. Within a line, **…** marks bold
  * runs and ~~…~~ marks struck-out runs.
  */
 class DocxTableWriter
@@ -31,6 +32,11 @@ class DocxTableWriter
 
     /** @var string[] rows of the table being built */
     private array $rows = [];
+
+    /** @var array<int, array{name: string, bytes: string, rid: string}> embedded pictures (word/media) */
+    private array $media = [];
+
+    private const EMU_PER_CM = 360000;
 
     /** @param array<int, array<string, mixed>> $cells */
     public function row(array $cells): self
@@ -60,6 +66,18 @@ class DocxTableWriter
         return $this;
     }
 
+    /**
+     * An inline picture (e.g. a signature) as a paragraph outside any table. $image is
+     * ['bytes' => string, 'ext' => 'png'|'jpeg', 'width' => px, 'height' => px].
+     */
+    public function image(array $image, float $maxWidthCm = 4.0, float $maxHeightCm = 2.0): self
+    {
+        $this->closeTable();
+        $this->blocks[] = '<w:p><w:pPr><w:spacing w:before="20" w:after="20"/></w:pPr>'.$this->drawing($image, $maxWidthCm, $maxHeightCm).'</w:p>';
+
+        return $this;
+    }
+
     public function pageBreak(): self
     {
         $this->closeTable();
@@ -77,7 +95,12 @@ class DocxTableWriter
         }
         $zip->addFromString('[Content_Types].xml', $this->contentTypes());
         $zip->addFromString('_rels/.rels', $this->packageRels());
-        $zip->addFromString('word/_rels/document.xml.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>');
+        $rels = '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>';
+        foreach ($this->media as $item) {
+            $rels .= '<Relationship Id="'.$item['rid'].'" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/'.$item['name'].'"/>';
+            $zip->addFromString('word/media/'.$item['name'], $item['bytes']);
+        }
+        $zip->addFromString('word/_rels/document.xml.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'.$rels.'</Relationships>');
         $zip->addFromString('word/styles.xml', $this->styles());
         $zip->addFromString('word/document.xml', $this->document());
         $zip->close();
@@ -118,6 +141,14 @@ class DocxTableWriter
         }
         $paragraphs = '';
         foreach ($lines as $line) {
+            // A line given as ['image' => spec|null] is a picture (e.g. a signature); null leaves nothing.
+            if (is_array($line)) {
+                if (! empty($line['image'])) {
+                    $paragraphs .= '<w:p><w:pPr><w:spacing w:before="20" w:after="20"/></w:pPr>'.$this->drawing($line['image']).'</w:p>';
+                }
+
+                continue;
+            }
             $paragraphs .= $this->para((string) $line, ! empty($cell['bold']), $cell['align'] ?? null, ! empty($cell['strike']));
         }
 
@@ -147,6 +178,31 @@ class DocxTableWriter
         return '<w:p>'.$pPr.$runs.'</w:p>';
     }
 
+    /** A run holding an inline picture, scaled to fit the box while keeping its aspect ratio. */
+    private function drawing(array $image, float $maxWidthCm = 4.0, float $maxHeightCm = 2.0): string
+    {
+        $n = count($this->media) + 1;
+        $ext = ($image['ext'] ?? 'png') === 'png' ? 'png' : 'jpeg';
+        $rid = 'rId'.($n + 1);   // rId1 is the styles part
+        $this->media[] = ['name' => 'image'.$n.'.'.$ext, 'bytes' => (string) $image['bytes'], 'rid' => $rid];
+
+        $width = max(1, (int) ($image['width'] ?? 1));
+        $height = max(1, (int) ($image['height'] ?? 1));
+        $scale = min($maxWidthCm / $width, $maxHeightCm / $height);
+        $cx = (int) round($width * $scale * self::EMU_PER_CM);
+        $cy = (int) round($height * $scale * self::EMU_PER_CM);
+        $id = 100 + $n;
+
+        return '<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0">'
+            .'<wp:extent cx="'.$cx.'" cy="'.$cy.'"/><wp:docPr id="'.$id.'" name="Picture '.$n.'"/>'
+            .'<wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr>'
+            .'<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic>'
+            .'<pic:nvPicPr><pic:cNvPr id="'.$id.'" name="image'.$n.'.'.$ext.'"/><pic:cNvPicPr/></pic:nvPicPr>'
+            .'<pic:blipFill><a:blip r:embed="'.$rid.'"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>'
+            .'<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="'.$cx.'" cy="'.$cy.'"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>'
+            .'</pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>';
+    }
+
     private function escape(string $text): string
     {
         // Strip characters XML 1.0 forbids (stray control bytes pasted from other systems).
@@ -158,7 +214,11 @@ class DocxTableWriter
     private function document(): string
     {
         return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-            .'<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>'
+            .'<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
+            .' xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"'
+            .' xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"'
+            .' xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"'
+            .' xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><w:body>'
             .implode('', $this->blocks).'<w:p/>'
             .'<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1134" w:right="1134" w:bottom="1134" w:left="1134" w:header="567" w:footer="567" w:gutter="0"/></w:sectPr>'
             .'</w:body></w:document>';
@@ -179,6 +239,8 @@ class DocxTableWriter
             .'<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
             .'<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
             .'<Default Extension="xml" ContentType="application/xml"/>'
+            .'<Default Extension="png" ContentType="image/png"/>'
+            .'<Default Extension="jpeg" ContentType="image/jpeg"/>'
             .'<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>'
             .'<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>'
             .'</Types>';

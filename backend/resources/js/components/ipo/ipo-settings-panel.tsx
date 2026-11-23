@@ -28,7 +28,7 @@ export function IpoSettingsPanel() {
             These can be picked as the authorised agent on Form 1 and sign Form 2. Mark an employee as a Registered Patent Agent
             (with their IN/PA No.) in{" "}
             <Link href="/hrms/employees" className="font-medium text-gold hover:underline">HRMS → Employees → Edit</Link>.
-            Their mobile comes from the employee record.
+            Their mobile and signature image come from the employee record.
           </p>
         </div>
         {data.agents.length === 0 ? (
@@ -42,6 +42,7 @@ export function IpoSettingsPanel() {
                   <th className="px-3 py-2 font-medium">Designation</th>
                   <th className="px-3 py-2 font-medium">IN/PA No.</th>
                   <th className="px-3 py-2 font-medium">Mobile</th>
+                  <th className="px-3 py-2 font-medium">Signature</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -54,6 +55,7 @@ export function IpoSettingsPanel() {
                     <td className="px-3 py-2 text-muted-foreground">{agent.designation || "—"}</td>
                     <td className="px-3 py-2 font-mono">{agent.patent_agent_no}</td>
                     <td className="px-3 py-2">{agent.mobile || <span className="text-amber-600">Add in HRMS</span>}</td>
+                    <td className="px-3 py-2">{agent.has_signature ? <span className="text-emerald-600">✓ Uploaded</span> : <span className="text-amber-600">Add in HRMS</span>}</td>
                   </tr>
                 ))}
               </tbody>

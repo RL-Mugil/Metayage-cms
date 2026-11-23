@@ -7,6 +7,8 @@ use App\Models\Employee;
 use App\Models\Project;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
@@ -101,5 +103,83 @@ class EmployeePatentAgentTest extends TestCase
 
         $this->putJson("/api/hrms/employees/{$this->employee->id}", ['is_patent_agent' => true, 'patent_agent_no' => 'IN/PA-1234'])->assertForbidden();
         $this->assertNull($this->login->fresh()->patent_agent_no);
+    }
+
+    private function signatureFile(string $name = 'sign.png'): UploadedFile
+    {
+        // A real 1×1 PNG, so the image and mimetype rules see genuine image bytes.
+        return UploadedFile::fake()->createWithContent($name, base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='));
+    }
+
+    public function test_hr_uploads_views_replaces_and_removes_an_agent_signature(): void
+    {
+        Storage::fake('local');
+        $this->login->update(['patent_agent_no' => 'IN/PA-1234']);
+        Sanctum::actingAs($this->hr);
+        $url = "/api/hrms/employees/{$this->employee->id}/agent-signature";
+
+        $this->get($url)->assertNotFound();
+        $this->post($url, ['signature' => $this->signatureFile()], ['Accept' => 'application/json'])->assertCreated();
+        $first = $this->login->fresh()->patent_agent_signature_path;
+        $this->assertNotNull($first);
+        Storage::disk('local')->assertExists($first);
+        $this->assertDatabaseHas('audit_logs', ['action' => 'patent_agent_signature_updated', 'subject_id' => $this->employee->id]);
+        $this->get($url)->assertOk();
+
+        // The stored path never leaks through the employee API.
+        $this->getJson('/api/hrms/employees')->assertOk()->assertDontSee('patent-agent-signatures');
+
+        // Settings → IPO Forms shows it as uploaded.
+        Sanctum::actingAs($this->login);
+        $this->getJson('/api/settings/ipo')->assertOk()->assertJsonPath('agents.0.has_signature', true);
+
+        // Replacing deletes the old file.
+        Sanctum::actingAs($this->hr);
+        $this->post($url, ['signature' => $this->signatureFile('new.png')], ['Accept' => 'application/json'])->assertCreated();
+        Storage::disk('local')->assertMissing($first);
+
+        $this->deleteJson($url)->assertOk();
+        $this->assertNull($this->login->fresh()->patent_agent_signature_path);
+        $this->assertDatabaseHas('audit_logs', ['action' => 'patent_agent_signature_removed', 'subject_id' => $this->employee->id]);
+    }
+
+    public function test_signature_must_be_png_or_jpg_of_2mb_or_less(): void
+    {
+        Storage::fake('local');
+        $this->login->update(['patent_agent_no' => 'IN/PA-1234']);
+        Sanctum::actingAs($this->hr);
+        $url = "/api/hrms/employees/{$this->employee->id}/agent-signature";
+
+        $this->post($url, ['signature' => UploadedFile::fake()->create('sign.pdf', 10, 'application/pdf')], ['Accept' => 'application/json'])->assertStatus(422);
+        $this->post($url, ['signature' => UploadedFile::fake()->create('sign.png', 2049, 'image/png')], ['Accept' => 'application/json'])->assertStatus(422);
+        $this->assertNull($this->login->fresh()->patent_agent_signature_path);
+    }
+
+    public function test_signature_needs_a_saved_patent_agent_and_an_employee_editor(): void
+    {
+        Storage::fake('local');
+        $url = "/api/hrms/employees/{$this->employee->id}/agent-signature";
+
+        Sanctum::actingAs($this->hr);
+        $this->post($url, ['signature' => $this->signatureFile()], ['Accept' => 'application/json'])->assertStatus(422);
+
+        $this->login->update(['patent_agent_no' => 'IN/PA-1234']);
+        Sanctum::actingAs($this->user('paralegal', 'para@firm.test', 'Para'));
+        $this->post($url, ['signature' => $this->signatureFile()], ['Accept' => 'application/json'])->assertForbidden();
+        $this->get($url)->assertForbidden();
+        $this->deleteJson($url)->assertForbidden();
+    }
+
+    public function test_unticking_the_agent_removes_the_signature(): void
+    {
+        Storage::fake('local');
+        $this->login->update(['patent_agent_no' => 'IN/PA-1234']);
+        Sanctum::actingAs($this->hr);
+        $this->post("/api/hrms/employees/{$this->employee->id}/agent-signature", ['signature' => $this->signatureFile()], ['Accept' => 'application/json'])->assertCreated();
+        $path = $this->login->fresh()->patent_agent_signature_path;
+
+        $this->putJson("/api/hrms/employees/{$this->employee->id}", ['is_patent_agent' => false, 'patent_agent_no' => null])->assertOk();
+        $this->assertNull($this->login->fresh()->patent_agent_signature_path);
+        Storage::disk('local')->assertMissing($path);
     }
 }

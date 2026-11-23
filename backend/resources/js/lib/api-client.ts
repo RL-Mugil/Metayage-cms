@@ -393,6 +393,33 @@ export const api = {
     }
     return ((await response.json()) as { data: TrademarkDetails }).data
   },
+  // ── Registered Patent Agent signature (HRMS → Employees → Edit; PNG/JPG up to 2 MB) ──
+  /** Object URL of the stored signature, or null when none is uploaded (caller revokes it). */
+  async agentSignatureObjectUrl(employeeId: number): Promise<string | null> {
+    const response = await fetch(`/api/hrms/employees/${employeeId}/agent-signature`, { credentials: 'same-origin', headers: { Accept: 'image/*' } })
+    if (response.status === 404) return null
+    if (!response.ok) throw new Error('Could not load the signature')
+    return URL.createObjectURL(await response.blob())
+  },
+  async uploadAgentSignature(employeeId: number, file: File): Promise<{ has_signature: boolean }> {
+    const formData = new FormData()
+    formData.append('signature', file)
+    const response = await fetch(`/api/hrms/employees/${employeeId}/agent-signature`, {
+      method: 'POST',
+      headers: { 'X-XSRF-TOKEN': getCsrfToken(), Accept: 'application/json' },
+      credentials: 'same-origin',
+      body: formData,
+    })
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}))
+      const errors = (err as { errors?: Record<string, string[]> }).errors
+      throw new Error(errors?.signature?.[0] || (err as { message?: string }).message || 'Signature upload failed')
+    }
+    return (await response.json()) as { has_signature: boolean }
+  },
+  async deleteAgentSignature(employeeId: number): Promise<{ has_signature: boolean }> {
+    return this.request(`/hrms/employees/${employeeId}/agent-signature`, { method: 'DELETE' })
+  },
   /** Object URL for an access-checked document (caller must URL.revokeObjectURL it). */
   async documentObjectUrl(path: string): Promise<string> {
     const response = await fetch(`/api/documents/view?path=${encodeURIComponent(path)}`, { credentials: 'same-origin' })

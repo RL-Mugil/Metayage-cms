@@ -7,6 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { api, downloadCSV } from "@/lib/api-client";
+import { AgentSignatureField } from "@/components/hrms/agent-signature-field";
 import { statusColor } from "@/lib/utils";
 
 const DEPTS = ["Legal", "Operations", "HR", "Finance", "Engineering", "Business Development", "Administration"];
@@ -384,6 +385,12 @@ export default function HRMSEmployees() {
                           onChange={e => setForm(p => ({ ...p, patent_agent_no: e.target.value }))} className={`${inp} font-mono`} />
                         <p className="mt-1 text-xs text-muted-foreground">Listed in Settings → IPO Forms and printed on the Indian Patent Forms, with the mobile above.</p>
                       </div>
+                    )}
+                    {form.is_patent_agent && editEmp?.user_id && (
+                      <AgentSignatureField employeeId={editEmp.id} savedAsAgent={!!editEmp.user?.patent_agent_no} />
+                    )}
+                    {form.is_patent_agent && !editEmp && (
+                      <p className="mt-2 text-xs text-muted-foreground">Save the employee first, then add the signature image.</p>
                     )}
                   </div>
                   <div>

@@ -221,6 +221,10 @@ Route::middleware(['auth:sanctum', 'firm.context', 'throttle:120,1'])->group(fun
     Route::post('/hrms/invitations', [HRMSController::class, 'inviteMember']);
     Route::put('/hrms/employees/{id}', [HRMSController::class, 'updateEmployee']);
     Route::put('/hrms/employees/{id}/portal-access', [HRMSController::class, 'updatePortalAccess']);
+    // Registered Patent Agent's signature image for the IPO forms (private; PNG/JPG up to 2 MB).
+    Route::get('/hrms/employees/{id}/agent-signature', [\App\Http\Controllers\PatentAgentSignatureController::class, 'show']);
+    Route::post('/hrms/employees/{id}/agent-signature', [\App\Http\Controllers\PatentAgentSignatureController::class, 'store'])->middleware('throttle:30,1');
+    Route::delete('/hrms/employees/{id}/agent-signature', [\App\Http\Controllers\PatentAgentSignatureController::class, 'destroy']);
     Route::delete('/hrms/employees/{id}', [HRMSController::class, 'deleteEmployee']);
     Route::get('/hrms/attendance', [AttendanceController::class, 'index']);
     Route::post('/hrms/clock-in', [AttendanceController::class, 'clockIn']);

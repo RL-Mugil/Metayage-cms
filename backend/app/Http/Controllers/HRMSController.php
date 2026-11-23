@@ -266,6 +266,10 @@ class HRMSController extends Controller
 
         DB::transaction(function () use ($request, $login, $employee, $number) {
             $login->update(['patent_agent_no' => $number]);
+            if (! $number) {
+                // No longer an agent: their signature must not stay available to the forms.
+                \App\Services\Ipo\AgentSignature::remove($login);
+            }
             AuditLog::create([
                 'user_id'      => $request->user()->id,
                 'action'       => 'patent_agent_updated',

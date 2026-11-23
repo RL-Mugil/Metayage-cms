@@ -8,7 +8,9 @@ use App\Models\IpoFormInput;
 use App\Models\Project;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 use ZipArchive;
@@ -26,6 +28,9 @@ class IpoForm1Test extends TestCase
     private User $agent;
 
     private Inventor $inventor;
+
+    /** A 1×1 PNG standing in for a signature image. */
+    private const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
 
     protected function setUp(): void
     {
@@ -123,6 +128,37 @@ class IpoForm1Test extends TestCase
         $this->assertStringContainsString('☐ I am/we are the true &amp; first inventor(s).', $xml);
         $this->assertSame('small_entity', $this->client->fresh()->applicant_category);
         $this->assertDatabaseHas('audit_logs', ['action' => 'ipo_form1_generated', 'subject_id' => $this->project->id]);
+    }
+
+    public function test_closing_block_carries_ist_date_and_agent_signature_and_short_labels(): void
+    {
+        // 20:00 UTC on the 22nd is already the 23rd in India.
+        Carbon::setTestNow(Carbon::parse('2026-11-22 20:00:00', 'UTC'));
+        Storage::fake('local');
+        Storage::disk('local')->put('patent-agent-signatures/sig.png', base64_decode(self::PNG));
+        $this->agent->forceFill(['patent_agent_signature_path' => 'patent-agent-signatures/sig.png'])->save();
+        Sanctum::actingAs($this->paralegal);
+
+        $response = $this->postJson("/api/projects/{$this->project->id}/ipo-forms/form1/generate", $this->input())->assertOk();
+        $xml = $this->documentXml($response);
+        $this->assertStringContainsString('Dated this 23rd day of November 2026', $xml);
+        $this->assertSame(1, substr_count($xml, '<w:drawing>'));
+        $this->assertStringContainsString('>Gender<', $xml);
+        $this->assertStringContainsString('>Age<', $xml);
+        $this->assertStringNotContainsString('optional, for', $xml);
+
+        $zip = new ZipArchive;
+        $zip->open($response->baseResponse->getFile()->getPathname());
+        $this->assertSame(base64_decode(self::PNG), $zip->getFromName('word/media/image1.png'));
+        $this->assertStringContainsString('Target="media/image1.png"', $zip->getFromName('word/_rels/document.xml.rels'));
+        $zip->close();
+
+        // No signature uploaded: the date is still filled, and no picture is placed.
+        $this->agent->forceFill(['patent_agent_signature_path' => null])->save();
+        $xml = $this->documentXml($this->postJson("/api/projects/{$this->project->id}/ipo-forms/form1/generate", $this->input())->assertOk());
+        $this->assertStringContainsString('Dated this 23rd day of November 2026', $xml);
+        $this->assertStringNotContainsString('<w:drawing>', $xml);
+        Carbon::setTestNow();
     }
 
     public function test_one_inventor_declaration_block_per_inventor(): void
