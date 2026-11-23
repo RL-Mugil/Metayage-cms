@@ -24,6 +24,8 @@ const blankForm = {
   date_of_birth: "", differently_abled_type: "", current_address: "", permanent_address: "",
   aadhaar_ssn_encrypted: "", pan_tax_id: "", uan_pf_number: "", esi_number: "",
   nps_number: "", bank_account_number: "", bank_name: "", bank_ifsc_code: "",
+  // Registered Patent Agent: saved on the employee's login and listed in Settings → IPO Forms.
+  is_patent_agent: false, patent_agent_no: "",
 };
 const HR_CRUD_ROLES = ["super_admin", "partner", "hr", "finance"];
 // Salary/payroll data — director (partner), accountant (finance), and
@@ -225,6 +227,8 @@ export default function HRMSEmployees() {
       bank_account_number: e.bank_account_number || "",
       bank_name: e.bank_name || "",
       bank_ifsc_code: e.bank_ifsc_code || "",
+      is_patent_agent: !!e.user?.patent_agent_no,
+      patent_agent_no: e.user?.patent_agent_no || "",
     });
     setSaveError("");
     setShowModal(true);
@@ -232,6 +236,7 @@ export default function HRMSEmployees() {
 
   async function handleSave() {
     if (!form.full_name.trim() || !form.work_email.trim()) { setSaveError("Name and email are required."); return; }
+    if (form.is_patent_agent && !form.patent_agent_no.trim()) { setSaveError("Enter the IN/PA No. of the Registered Patent Agent."); return; }
     setSaving(true); setSaveError("");
     try {
       // Nullable validation rules (digits:12, PAN/IFSC regex) reject an empty string —
@@ -254,6 +259,7 @@ export default function HRMSEmployees() {
         bank_account_number: blankToNull(form.bank_account_number),
         bank_name: blankToNull(form.bank_name),
         bank_ifsc_code: blankToNull(form.bank_ifsc_code),
+        patent_agent_no: form.is_patent_agent ? blankToNull(form.patent_agent_no) : null,
       };
       if (editEmp) {
         const updated = await api.updateEmployee(editEmp.id, payload as any);
@@ -361,6 +367,24 @@ export default function HRMSEmployees() {
                   <div>
                     <Lbl>Mobile Number</Lbl>
                     <input value={form.mobile} onChange={e => setForm(p => ({ ...p, mobile: e.target.value }))} className={inp} />
+                  </div>
+                  <div className="col-span-4 rounded border border-border/70 bg-muted/20 p-3">
+                    <label className={`flex items-center gap-2 text-sm ${editEmp && !editEmp.user_id ? "opacity-60" : ""}`}>
+                      <input type="checkbox" checked={form.is_patent_agent} disabled={!!editEmp && !editEmp.user_id}
+                        onChange={e => setForm(p => ({ ...p, is_patent_agent: e.target.checked }))} />
+                      Registered Patent Agent
+                    </label>
+                    {editEmp && !editEmp.user_id && (
+                      <p className="mt-1 text-xs text-muted-foreground">Give this employee a portal login first.</p>
+                    )}
+                    {form.is_patent_agent && (
+                      <div className="mt-2 max-w-xs">
+                        <Lbl>IN/PA No.</Lbl>
+                        <input value={form.patent_agent_no} placeholder="IN/PA-1234"
+                          onChange={e => setForm(p => ({ ...p, patent_agent_no: e.target.value }))} className={`${inp} font-mono`} />
+                        <p className="mt-1 text-xs text-muted-foreground">Listed in Settings → IPO Forms and printed on the Indian Patent Forms, with the mobile above.</p>
+                      </div>
+                    )}
                   </div>
                   <div>
                     <Lbl>Gender</Lbl>
@@ -628,7 +652,12 @@ export default function HRMSEmployees() {
                             </div>
                           )}
                           <div>
-                            <div className="font-medium">{e.user?.name || e.full_name || "—"}</div>
+                            <div className="font-medium">
+                              {e.user?.name || e.full_name || "—"}
+                              {e.user?.patent_agent_no && (
+                                <span className="ml-1.5 rounded bg-gold/15 px-1.5 py-0.5 text-[10px] font-medium text-gold" title={e.user.patent_agent_no}>Patent Agent</span>
+                              )}
+                            </div>
                             <div className="text-xs text-muted-foreground">{e.user?.email || e.work_email}</div>
                           </div>
                         </div>

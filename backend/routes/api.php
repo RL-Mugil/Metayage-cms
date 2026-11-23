@@ -363,7 +363,6 @@ Route::middleware(['auth:sanctum', 'firm.context', 'throttle:120,1'])->group(fun
     Route::put('/settings/payroll', [\App\Http\Controllers\SettingsController::class, 'updatePayrollSettings']);
     Route::get('/settings/ipo', [\App\Http\Controllers\Ipo\IpoSettingsController::class, 'show']);
     Route::put('/settings/ipo/service', [\App\Http\Controllers\Ipo\IpoSettingsController::class, 'updateService']);
-    Route::put('/settings/ipo/agents/{userId}', [\App\Http\Controllers\Ipo\IpoSettingsController::class, 'updateAgent']);
     Route::put('/settings/escalation-cadence', [\App\Http\Controllers\SettingsController::class, 'updateEscalationCadence']);
     Route::apiResource('fee-rate-cards', \App\Http\Controllers\FeeRateCardController::class)->except(['show']);
     Route::post('/settings/avatar',       [\App\Http\Controllers\SettingsController::class, 'uploadAvatar']);

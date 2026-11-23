@@ -4,16 +4,17 @@ namespace App\Http\Controllers\Ipo;
 
 use App\Http\Controllers\Controller;
 use App\Models\AuditLog;
+use App\Models\Employee;
 use App\Models\User;
 use App\Services\Ipo\Form1DataBuilder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\Rule;
 
 /**
- * Settings → IPO Forms: the firm's address for service in India (Form 1 section 7) and
- * each patent agent's IN/PA number and mobile (section 6). Admins and partners only.
+ * Settings → IPO Forms: the firm's address for service in India (Form 1 section 7), and
+ * the list of Registered Patent Agents (section 6), who are marked in HRMS → Employees.
+ * Admins and partners only.
  */
 class IpoSettingsController extends Controller
 {
@@ -27,11 +28,21 @@ class IpoSettingsController extends Controller
         return response()->json([
             'service' => collect(Form1DataBuilder::SERVICE_KEYS)
                 ->mapWithKeys(fn (string $key) => [$key => $rows['ipo_service_'.$key] ?? ''])->all(),
-            'staff'   => User::whereIn('role', User::STAFF_ROLES)->where('status', 'Active')->orderBy('name')->get()
-                ->map(fn (User $user) => [
-                    'id' => $user->id, 'name' => $user->name, 'role' => $user->role,
-                    'patent_agent_no' => $user->patent_agent_no, 'mobile' => $user->mobile,
-                ])->all(),
+            // Employees marked as Registered Patent Agent in HRMS → Employees (read-only here).
+            'agents'  => User::whereNotNull('patent_agent_no')->where('patent_agent_no', '!=', '')
+                ->where('status', 'Active')->orderBy('name')->get()
+                ->map(function (User $user) {
+                    $employee = Employee::with('designation:id,title')->where('user_id', $user->id)->first();
+
+                    return [
+                        'id'              => $user->id,
+                        'name'            => $user->name,
+                        'patent_agent_no' => $user->patent_agent_no,
+                        'mobile'          => Form1DataBuilder::agentMobile($user),
+                        'employee_code'   => $employee?->employee_code,
+                        'designation'     => $employee?->designation?->title,
+                    ];
+                })->all(),
         ]);
     }
 
@@ -59,26 +70,6 @@ class IpoSettingsController extends Controller
         });
 
         return $this->show($request);
-    }
-
-    public function updateAgent(Request $request, $userId): JsonResponse
-    {
-        $this->denyUnlessAdmin($request);
-        $user = User::whereIn('role', User::STAFF_ROLES)->findOrFail($userId);
-        // Normalise first so the uniqueness check sees the stored form (upper case, trimmed).
-        $number = trim((string) $request->input('patent_agent_no', ''));
-        $request->merge(['patent_agent_no' => $number === '' ? null : strtoupper($number)]);
-        $validated = $request->validate([
-            'patent_agent_no' => ['nullable', 'string', 'max:30', Rule::unique('users', 'patent_agent_no')->ignore($user->id)],
-            'mobile'          => 'nullable|string|max:20',
-        ]);
-
-        DB::transaction(function () use ($request, $user, $validated) {
-            $user->update($validated);
-            $this->audit($request, 'patent_agent_updated', 'User', $user->id, ['patent_agent_no' => $validated['patent_agent_no']]);
-        });
-
-        return response()->json(['ok' => true]);
     }
 
     private function denyUnlessAdmin(Request $request): void

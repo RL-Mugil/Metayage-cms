@@ -14,6 +14,15 @@ class StoreEmployeeRequest extends FormRequest
         return $this->user()->can('create', \App\Models\Employee::class);
     }
 
+    /** IN/PA numbers are stored trimmed and in upper case ("in/pa-1234" → "IN/PA-1234"). */
+    protected function prepareForValidation(): void
+    {
+        if ($this->has('patent_agent_no')) {
+            $number = strtoupper(trim((string) $this->input('patent_agent_no')));
+            $this->merge(['patent_agent_no' => $number === '' ? null : $number]);
+        }
+    }
+
     public function rules(): array
     {
         return [
@@ -23,6 +32,10 @@ class StoreEmployeeRequest extends FormRequest
             'work_email'        => 'required|email',
             'phone'             => 'nullable|string|max:20',
             'mobile'            => 'nullable|string|max:20',
+            // Registered Patent Agent: stored on the employee's login (users.patent_agent_no),
+            // which the IPO forms read. See HRMSController::syncPatentAgent().
+            'is_patent_agent'   => 'sometimes|boolean',
+            'patent_agent_no'   => 'nullable|required_if:is_patent_agent,true|string|max:30',
             'gender'            => 'nullable|string|max:30',
             'differently_abled_type' => 'nullable|string|max:60',
             'current_address'   => 'nullable|string|max:500',

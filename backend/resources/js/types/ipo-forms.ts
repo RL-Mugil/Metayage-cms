@@ -114,15 +114,17 @@ export interface Form1Prefill {
   missing: string[]
 }
 
-export interface IpoStaffAgent {
+/** An employee marked as Registered Patent Agent in HRMS (listed read-only in Settings). */
+export interface IpoPatentAgent {
   id: number
   name: string
-  role: string
-  patent_agent_no: string | null
+  patent_agent_no: string
   mobile: string | null
+  employee_code: string | null
+  designation: string | null
 }
 
 export interface IpoSettings {
   service: IpoServiceAddress
-  staff: IpoStaffAgent[]
+  agents: IpoPatentAgent[]
 }

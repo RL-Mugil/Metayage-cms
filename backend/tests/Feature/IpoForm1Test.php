@@ -200,13 +200,14 @@ class IpoForm1Test extends TestCase
     {
         Sanctum::actingAs($this->paralegal);
         $this->getJson('/api/settings/ipo')->assertForbidden();
-        $this->putJson("/api/settings/ipo/agents/{$this->paralegal->id}", ['patent_agent_no' => 'IN/PA-9'])->assertForbidden();
 
         Sanctum::actingAs($this->agent);
         $this->putJson('/api/settings/ipo/service', ['name' => 'Metayage', 'email' => 'new@firm.test'])
             ->assertOk()->assertJsonPath('service.email', 'new@firm.test');
-        $this->putJson("/api/settings/ipo/agents/{$this->paralegal->id}", ['patent_agent_no' => 'in/pa-5678', 'mobile' => '9111111111'])->assertOk();
-        $this->assertSame('IN/PA-5678', $this->paralegal->fresh()->patent_agent_no);
-        $this->putJson("/api/settings/ipo/agents/{$this->paralegal->id}", ['patent_agent_no' => 'IN/PA-1234'])->assertStatus(422);
+
+        // Settings lists only the registered patent agents (marked in HRMS); it no longer edits them.
+        $this->getJson('/api/settings/ipo')->assertOk()
+            ->assertJsonCount(1, 'agents')->assertJsonPath('agents.0.patent_agent_no', 'IN/PA-1234');
+        $this->putJson("/api/settings/ipo/agents/{$this->paralegal->id}", ['patent_agent_no' => 'IN/PA-9'])->assertStatus(404);
     }
 }

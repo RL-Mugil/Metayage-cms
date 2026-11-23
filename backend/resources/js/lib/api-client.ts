@@ -521,9 +521,6 @@ export const api = {
   async updateIpoService(data: IpoServiceAddress): Promise<IpoSettings> {
     return this.request('/settings/ipo/service', { method: 'PUT', body: JSON.stringify(data) })
   },
-  async updatePatentAgent(userId: number, data: { patent_agent_no: string | null; mobile: string | null }): Promise<{ ok: boolean }> {
-    return this.request(`/settings/ipo/agents/${userId}`, { method: 'PUT', body: JSON.stringify(data) })
-  },
   async getUpcomingDeadlines(days = 90): Promise<any[]> {
     return this.request(`/docket/upcoming?days=${days}`)
   },

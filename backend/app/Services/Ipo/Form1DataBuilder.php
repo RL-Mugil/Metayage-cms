@@ -315,8 +315,16 @@ class Form1DataBuilder
     {
         return User::whereNotNull('patent_agent_no')->where('patent_agent_no', '!=', '')
             ->where('status', 'Active')->orderBy('name')->get()
-            ->map(fn (User $user) => ['id' => $user->id, 'name' => $user->name, 'patent_agent_no' => $user->patent_agent_no, 'mobile' => $user->mobile])
+            ->map(fn (User $user) => ['id' => $user->id, 'name' => $user->name, 'patent_agent_no' => $user->patent_agent_no, 'mobile' => self::agentMobile($user)])
             ->all();
+    }
+
+    /** An agent's mobile: their HRMS employee record first, else their login's own. */
+    public static function agentMobile(User $user): ?string
+    {
+        $mobile = \App\Models\Employee::where('user_id', $user->id)->value('mobile');
+
+        return filled($mobile) ? $mobile : $user->mobile;
     }
 
     private function agentsByIds(array $ids): array
@@ -328,7 +336,7 @@ class Form1DataBuilder
 
         // Keep the order the paralegal picked them in.
         return collect($ids)->map(fn (int $id) => $users->get($id))->filter()
-            ->map(fn (User $user) => ['name' => $user->name, 'patent_agent_no' => $user->patent_agent_no, 'mobile' => $user->mobile])
+            ->map(fn (User $user) => ['name' => $user->name, 'patent_agent_no' => $user->patent_agent_no, 'mobile' => self::agentMobile($user)])
             ->values()->all();
     }
 

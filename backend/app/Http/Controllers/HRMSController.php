@@ -56,7 +56,7 @@ class HRMSController extends Controller
         $user = $request->user();
         $this->authorize('viewAny', \App\Models\Employee::class);
 
-        $query = Employee::with(['department', 'designation', 'user:id,name,email,role,status,avatar_url']);
+        $query = Employee::with(['department', 'designation', 'user:id,name,email,role,status,avatar_url,patent_agent_no']);
 
         if ($request->filled('employment_status')) {
             $query->where('employment_status', $request->employment_status);
@@ -121,6 +121,12 @@ class HRMSController extends Controller
     {
         $user = $request->user();
         $validated = $request->validated();
+
+        // Reject a duplicate IN/PA number before anything is created.
+        $agentNumber = ($validated['is_patent_agent'] ?? false) ? ($validated['patent_agent_no'] ?? null) : null;
+        if ($agentNumber && User::where('patent_agent_no', $agentNumber)->exists()) {
+            return response()->json(['message' => "IN/PA No. {$agentNumber} is already recorded for another employee."], 422);
+        }
 
         // HR may create employee records but never sets payroll-sensitive
         // fields — silently dropped rather than rejecting the whole request.
@@ -217,6 +223,10 @@ class HRMSController extends Controller
             return $employee;
         });
 
+        if ($response = $this->syncPatentAgent($request, $employee, $validated)) {
+            return $response;
+        }
+
         AuditLog::create([
             'user_id'      => $user->id,
             'action'       => 'create_employee',
@@ -226,7 +236,48 @@ class HRMSController extends Controller
             'user_agent'   => $request->userAgent(),
         ]);
 
-        return response()->json($employee->load(['department', 'designation', 'user:id,name,email,role,status,avatar_url']), 201);
+        return response()->json($employee->load(['department', 'designation', 'user:id,name,email,role,status,avatar_url,patent_agent_no']), 201);
+    }
+
+    /**
+     * "Registered Patent Agent" on the employee form: sets or clears the IN/PA number on
+     * the employee's login (users.patent_agent_no), which Settings → IPO Forms lists and
+     * the IPO forms print. Returns an error response, or null when done or not asked.
+     */
+    private function syncPatentAgent(Request $request, Employee $employee, array $validated): ?\Illuminate\Http\JsonResponse
+    {
+        if (! array_key_exists('is_patent_agent', $validated)) {
+            return null;
+        }
+        $number = $validated['is_patent_agent'] ? ($validated['patent_agent_no'] ?? null) : null;
+        $login = $employee->user_id ? User::find($employee->user_id) : null;
+
+        if (! $login) {
+            return $number
+                ? response()->json(['message' => 'Give this employee a portal login before marking them as a Registered Patent Agent.'], 422)
+                : null;
+        }
+        if ($number && User::where('patent_agent_no', $number)->where('id', '!=', $login->id)->exists()) {
+            return response()->json(['message' => "IN/PA No. {$number} is already recorded for another employee."], 422);
+        }
+        if ($login->patent_agent_no === $number) {
+            return null;
+        }
+
+        DB::transaction(function () use ($request, $login, $employee, $number) {
+            $login->update(['patent_agent_no' => $number]);
+            AuditLog::create([
+                'user_id'      => $request->user()->id,
+                'action'       => 'patent_agent_updated',
+                'subject_type' => 'Employee',
+                'subject_id'   => $employee->id,
+                'metadata'     => ['user_id' => $login->id, 'patent_agent_no' => $number],
+                'ip_address'   => $request->ip(),
+                'user_agent'   => $request->userAgent(),
+            ]);
+        });
+
+        return null;
     }
 
     public function inviteMember(Request $request)
@@ -309,6 +360,12 @@ class HRMSController extends Controller
         }
         unset($validated['department_name'], $validated['designation_title']);
 
+        // Registered Patent Agent first: its checks can reject the save before anything is written.
+        if ($response = $this->syncPatentAgent($request, $employee, $validated)) {
+            return $response;
+        }
+        unset($validated['is_patent_agent'], $validated['patent_agent_no']);
+
         // Sync work_email to the linked login account — but never steal an
         // email already used by another account.
         if (!empty($validated['work_email']) && $employee->user && $validated['work_email'] !== $employee->user->email) {
@@ -341,7 +398,7 @@ class HRMSController extends Controller
             }
         }
 
-        return response()->json($employee->load(['department', 'designation', 'user:id,name,email,role,status,avatar_url']));
+        return response()->json($employee->load(['department', 'designation', 'user:id,name,email,role,status,avatar_url,patent_agent_no']));
     }
 
     /**
