@@ -85,7 +85,7 @@ class ZohoExportImportTest extends TestCase
         // The same file again: identical, nothing added.
         $again = $this->preview([$this->invoiceFile()]);
         $this->assertSame(1, $again['reports'][0]['identical']);
-        $this->assertSame(['count' => 1, 'billed' => 16300.0, 'outstanding' => 16300.0, 'collected' => 0.0], $again['reconciliation']['invoices']['portal']);
+        $this->assertEquals(['count' => 1, 'billed' => 16300, 'outstanding' => 16300, 'collected' => 0], $again['reconciliation']['invoices']['portal']);
 
         // Zoho marked it paid: updated in place.
         $paid = $this->preview([$this->invoiceFile('Closed', '0')]);
