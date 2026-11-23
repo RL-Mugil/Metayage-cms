@@ -43,6 +43,8 @@ export function DocketDeadlines({ projectId }: { projectId: number | string }) {
   };
 
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [projectId]);
+  // A US case pays maintenance fees (3.5 / 7.5 / 11.5 years), not annual renewals.
+  const isUs = (docket?.rule_engine?.jurisdiction ?? docket?.application?.jurisdiction) === "US";
 
   async function recordEvent() {
     if (!evtType || !evtDate) return;
@@ -194,13 +196,15 @@ export function DocketDeadlines({ projectId }: { projectId: number | string }) {
         </div>
         {evtType === "renewal_fee_paid" && (
           <div>
-            <label className="text-[10px] text-muted-foreground block mb-1">Paid through year</label>
+            <label className="text-[10px] text-muted-foreground block mb-1">{isUs ? "Maintenance fee paid" : "Paid through year"}</label>
             <select value={renewalPaidYear} onChange={(e) => setRenewalPaidYear(e.target.value)}
               className="rounded-md border border-border bg-background px-2 py-1.5 text-xs">
-              <option value="">Select year…</option>
-              {Array.from({ length: 18 }, (_, i) => i + 3).map((year) => (
-                <option key={year} value={year}>{year}</option>
-              ))}
+              <option value="">{isUs ? "Select fee…" : "Select year…"}</option>
+              {isUs
+                ? [4, 8, 12].map((year) => <option key={year} value={year}>{year - 0.5} years</option>)
+                : Array.from({ length: 18 }, (_, i) => i + 3).map((year) => (
+                  <option key={year} value={year}>{year}</option>
+                ))}
             </select>
           </div>
         )}
@@ -297,8 +301,10 @@ export function DocketDeadlines({ projectId }: { projectId: number | string }) {
       {((docket.renewals ?? []).length > 0 || (canManage && docket.application)) && (
         <div>
           <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
-            Renewal Schedule
-            {docket.application?.jurisdiction === "IN" && " (S.53 / Rule 80 — years 3–20 auto-generated on grant)"}
+            {isUs ? "Maintenance Fees" : "Renewal Schedule"}
+            {isUs
+              ? " (35 USC 41(b): 3.5 / 7.5 / 11.5 years from grant; window opens 6 months before, 6-month grace with surcharge)"
+              : docket.application?.jurisdiction === "IN" && " (S.53 / Rule 80 — years 3–20 auto-generated on grant)"}
           </h4>
           {(docket.renewals ?? []).length > 0 && (
             <div className="grid grid-cols-6 gap-1.5">
@@ -306,7 +312,7 @@ export function DocketDeadlines({ projectId }: { projectId: number | string }) {
                 const overdue = r.status === "Unpaid" && new Date(r.due_date) < new Date();
                 return (
                   <button key={r.id}
-                    title={`Year ${r.renewal_year} — due ${fmtDate(r.due_date)} (${r.status}). Click to mark ${r.status === "Paid" ? "Unpaid" : "Paid"}.`}
+                    title={`${r.label ?? `Year ${r.renewal_year}`} — due ${fmtDate(r.due_date)}${r.window_opens_on ? `, window opens ${fmtDate(r.window_opens_on)}, grace ends ${fmtDate(r.grace_ends_on)}` : ""} (${r.status}). Click to mark ${r.status === "Paid" ? "Unpaid" : "Paid"}.`}
                     onClick={() => canManage && setRenewalStatus(r.id, r.status === "Paid" ? "Unpaid" : "Paid")}
                     disabled={!canManage}
                     className={`rounded-md border px-1.5 py-1.5 text-center transition-colors ${
@@ -315,7 +321,7 @@ export function DocketDeadlines({ projectId }: { projectId: number | string }) {
                       overdue ? "border-red-500/40 bg-red-500/10 text-red-600" :
                       "border-border bg-muted/20 text-foreground hover:border-blue-400"
                     }`}>
-                    <div className="text-[10px] font-bold">Y{r.renewal_year}</div>
+                    <div className="text-[10px] font-bold">{r.label ? `${r.renewal_year - 0.5}y` : `Y${r.renewal_year}`}</div>
                     <div className="text-[8px] font-mono">{fmtDate(r.due_date).slice(0, 5)}<br/>{fmtDate(r.due_date).slice(6)}</div>
                   </button>
                 );

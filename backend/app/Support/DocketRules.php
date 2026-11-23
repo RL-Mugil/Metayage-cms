@@ -42,6 +42,7 @@ class DocketRules
         'us_rce_filed' => 'USPTO RCE Filed',
         'us_ptab_decision' => 'PTAB Decision Received',
         'us_maintenance_window_open' => 'USPTO Maintenance Fee Window Open',
+        'us_appeal_notice_filed' => 'USPTO Notice of Appeal Filed',
         'hearing_notice'    => 'Hearing Notice Received',
         'hearing_held'      => 'Hearing Attended',
         'granted'           => 'Patent Granted',
@@ -63,14 +64,48 @@ class DocketRules
         'granted', 'refused', 'renewal_missed', 'opposition_notice',
         'us_missing_parts', 'us_restriction_requirement', 'us_nonfinal_office_action',
         'us_final_office_action', 'us_advisory_action', 'us_notice_of_allowance',
-        'us_ptab_decision', 'us_maintenance_window_open',
+        'us_ptab_decision', 'us_maintenance_window_open', 'us_appeal_notice_filed', 'us_abandoned',
+        'us_filing_receipt', 'us_patent_issued',
     ];
+
+    /** Events offered on a US case: USPTO events plus the filings, grant and fee payment. */
+    private const US_GENERAL_EVENTS = ['provisional_filed', 'application_filed', 'pct_filed', 'granted', 'renewal_fee_paid'];
+
+    /**
+     * The event types to offer for a case at this office: a US case gets USPTO events, an
+     * Indian (or other) case everything except them. Recording accepts any type.
+     *
+     * @return array<string, string>
+     */
+    public static function eventTypesFor(string $jurisdiction): array
+    {
+        $isUs = strtoupper($jurisdiction) === 'US';
+
+        return array_filter(self::EVENT_TYPES, function (string $type) use ($isUs) {
+            $usOnly = str_starts_with($type, 'us_');
+
+            return $isUs ? ($usOnly || in_array($type, self::US_GENERAL_EVENTS, true)) : ! $usOnly;
+        }, ARRAY_FILTER_USE_KEY);
+    }
+
+    /** Ruleset for US (USPTO) cases: 35 USC, 37 CFR and the MPEP. */
+    public const US_RULESET_VERSION = 'US-PAT-2026.1';
+
+    /** The office whose rules apply: the case's patent office, else the application's, else India. */
+    public static function jurisdictionOf(?\App\Models\Project $project, ?PatentApplication $app): string
+    {
+        return strtoupper((string) ($project?->patent_office_code ?: $app?->jurisdiction ?: 'IN'));
+    }
 
     /**
      * @return array<int, array{title: string, legal_basis: string, due_date: Carbon, extended_due_date: ?Carbon}>
      */
-    public static function deadlinesFor(string $eventType, Carbon $eventDate, ?PatentApplication $app = null): array
+    public static function deadlinesFor(string $eventType, Carbon $eventDate, ?PatentApplication $app = null, string $jurisdiction = 'IN'): array
     {
+        // A US case follows USPTO rules only; India's rules never apply to it.
+        if ($jurisdiction === 'US') {
+            return self::usDeadlinesFor($eventType, $eventDate, $app);
+        }
         $priority = $app?->priority_date ? Carbon::parse($app->priority_date) : null;
 
         return match ($eventType) {
@@ -176,6 +211,141 @@ class DocketRules
     }
 
     /**
+     * USPTO deadlines. Office-action style periods are a shortened statutory period
+     * extendable month by month under 37 CFR 1.136(a) up to the 6-month statutory
+     * limit (35 USC 133); the extended date is that outer limit. The issue fee and the
+     * provisional's 12 months cannot be extended.
+     *
+     * @return array<int, array{title: string, legal_basis: string, due_date: Carbon, extended_due_date: ?Carbon}>
+     */
+    public static function usDeadlinesFor(string $eventType, Carbon $eventDate, ?PatentApplication $app = null): array
+    {
+        $priority = $app?->priority_date ? Carbon::parse($app->priority_date) : null;
+        $row = fn (string $title, string $basis, Carbon $due, ?Carbon $outer = null) => [
+            'title' => $title, 'legal_basis' => $basis, 'due_date' => $due, 'extended_due_date' => $outer,
+        ];
+
+        return match ($eventType) {
+            'provisional_filed' => [$row(
+                'Non-provisional / PCT application due (claims the provisional)',
+                '35 USC 119(e) — 12 months from the provisional filing date; not extendable',
+                $eventDate->copy()->addMonths(12),
+            )],
+            'application_filed', 'us_filing_receipt' => [$row(
+                'Publication expected (18 months from earliest priority)',
+                '35 USC 122(b) — unless a non-publication request was filed',
+                ($priority ?? $eventDate)->copy()->addMonths(18),
+            )],
+            'pct_filed' => [$row(
+                'US national phase entry due',
+                '35 USC 371 / 37 CFR 1.495 — 30 months from earliest priority',
+                ($priority ?? $eventDate)->copy()->addMonths(30),
+            )],
+            'us_missing_parts' => [$row(
+                'Reply to Notice of Missing Parts due',
+                '37 CFR 1.53(f) — 2 months from the notice; extendable under 1.136(a)',
+                $eventDate->copy()->addMonths(2),
+                $eventDate->copy()->addMonths(7),
+            )],
+            'us_restriction_requirement' => [$row(
+                'Election / response to restriction requirement due',
+                '37 CFR 1.142, 1.136(a) — shortened period (usually 2 months), extendable to 6 months',
+                $eventDate->copy()->addMonths(2),
+                $eventDate->copy()->addMonths(6),
+            )],
+            'us_nonfinal_office_action' => [$row(
+                'Response to non-final office action due',
+                '35 USC 133, 37 CFR 1.134 — 3-month shortened period; extendable to 6 months with fees (1.136(a)). Miss → abandoned',
+                $eventDate->copy()->addMonths(3),
+                $eventDate->copy()->addMonths(6),
+            )],
+            'us_final_office_action' => [
+                $row(
+                    'Reply to final office action for advisory-action benefit',
+                    'MPEP 706.07(f) — replying within 2 months caps the extension at the advisory action date',
+                    $eventDate->copy()->addMonths(2),
+                ),
+                $row(
+                    'Response to final office action due (after-final reply, RCE or notice of appeal)',
+                    '35 USC 133, 37 CFR 1.113, 1.114, 41.31 — 3-month shortened period; extendable to 6 months (1.136(a)). Miss → abandoned',
+                    $eventDate->copy()->addMonths(3),
+                    $eventDate->copy()->addMonths(6),
+                ),
+            ],
+            'us_appeal_notice_filed' => [$row(
+                'Appeal brief due',
+                '37 CFR 41.37(a) — 2 months from the notice of appeal; extendable under 1.136(a)',
+                $eventDate->copy()->addMonths(2),
+                $eventDate->copy()->addMonths(7),
+            )],
+            'us_ptab_decision' => [
+                $row(
+                    'Request for rehearing at PTAB due',
+                    '37 CFR 41.52 — 2 months from the decision',
+                    $eventDate->copy()->addMonths(2),
+                ),
+                $row(
+                    'Appeal to the Federal Circuit / civil action due',
+                    '35 USC 141, 145; 37 CFR 90.3 — 63 days from the decision',
+                    $eventDate->copy()->addDays(63),
+                ),
+            ],
+            'us_notice_of_allowance' => [$row(
+                'Issue fee due',
+                '35 USC 151, 37 CFR 1.311 — 3 months from the Notice of Allowance; NOT extendable',
+                $eventDate->copy()->addMonths(3),
+            )],
+            'granted', 'us_patent_issued' => [$row(
+                'Post-grant review window closes (third parties)',
+                '35 USC 321(c) — 9 months from grant; maintenance fees are scheduled separately (3.5 / 7.5 / 11.5 years)',
+                $eventDate->copy()->addMonths(9),
+            )],
+            'us_maintenance_window_open' => [$row(
+                'Maintenance fee due (without surcharge)',
+                '35 USC 41(b), 37 CFR 1.362 — due 6 months after the window opens; 6-month grace with surcharge',
+                $eventDate->copy()->addMonths(6),
+                $eventDate->copy()->addMonths(12),
+            )],
+            'us_abandoned' => [$row(
+                'Petition to revive (unintentional delay) — file promptly',
+                '37 CFR 1.137(a); MPEP 711.03(c) — file within 2 months of the notice of abandonment',
+                $eventDate->copy()->addMonths(2),
+            )],
+            default => [],
+        };
+    }
+
+    /**
+     * US maintenance fees: 3.5, 7.5 and 11.5 years from grant (35 USC 41(b)). Each
+     * window opens 6 months before the due date; a 6-month grace period with a
+     * surcharge follows. Stored as renewal_year 4, 8 and 12 (the year it falls in).
+     *
+     * @return array<int, array{renewal_year: int, label: string, due: Carbon, window_opens: Carbon, grace_ends: Carbon}>
+     */
+    public static function usMaintenanceSchedule(Carbon $grantDate): array
+    {
+        $rows = [];
+        foreach ([3, 7, 11] as $years) {
+            $due = $grantDate->copy()->addYears($years)->addMonths(6);
+            $rows[] = [
+                'renewal_year' => $years + 1,
+                'label'        => self::maintenanceLabel($years + 1),
+                'due'          => $due,
+                'window_opens' => $due->copy()->subMonths(6),
+                'grace_ends'   => $due->copy()->addMonths(6),
+            ];
+        }
+
+        return $rows;
+    }
+
+    /** "Maintenance fee (3.5 years)" for US renewal_year 4 / 8 / 12. */
+    public static function maintenanceLabel(int $renewalYear): string
+    {
+        return 'Maintenance fee ('.($renewalYear - 0.5).' years)';
+    }
+
+    /**
      * First Form 27 due date: statement covers 3 financial years starting with
      * the FY commencing after grant; due within 6 months of the last FY end
      * (i.e. by 30 September following that FY).
@@ -261,14 +431,17 @@ class DocketRules
             if ($eventType === 'rfe_filed') {
                 $updates['rfe_filed_date'] = $eventDate;
             }
-            if ($eventType === 'granted') {
+            if ($eventType === 'us_patent_issued') {
+                $updates['legal_status'] = 'Granted';
+            }
+            if (in_array($eventType, ['granted', 'us_patent_issued'], true)) {
                 $updates['grant_date'] = $eventDate;
             }
             if ($updates) {
                 $app->update($updates);
             }
-            if ($eventType === 'granted') {
-                self::generateRenewalSchedule($app, $eventDate);
+            if (in_array($eventType, ['granted', 'us_patent_issued'], true)) {
+                self::generateRenewalSchedule($app, $eventDate, self::jurisdictionOf($project, $app));
             }
         }
 
@@ -303,7 +476,9 @@ class DocketRules
             return;
         }
 
-        foreach (self::deadlinesFor($event->event_type, Carbon::parse($event->event_date), $app) as $definition) {
+        $jurisdiction = self::jurisdictionOf($project, $app);
+        $ruleset = $jurisdiction === 'US' ? self::US_RULESET_VERSION : self::RULESET_VERSION;
+        foreach (self::deadlinesFor($event->event_type, Carbon::parse($event->event_date), $app, $jurisdiction) as $definition) {
             DocketDeadline::create([
                 'docket_event_id' => $event->id,
                 'project_id' => $project?->id,
@@ -315,8 +490,8 @@ class DocketRules
                 'statutory_due_date' => $definition['due_date'],
                 'extended_due_date' => $definition['extended_due_date'],
                 'source_type' => 'Built-in Rule',
-                'rule_code' => self::RULESET_VERSION,
-                'rule_version' => self::RULESET_VERSION,
+                'rule_code' => $ruleset,
+                'rule_version' => $ruleset,
                 'risk_level' => 'Critical',
                 'review_status' => 'Approved',
                 'status' => 'Open',
@@ -330,8 +505,26 @@ class DocketRules
      * due before grant accumulate and are payable within 3 months of grant
      * recordal (Rule 80(3)).
      */
-    public static function generateRenewalSchedule(PatentApplication $app, Carbon $grantDate): void
+    public static function generateRenewalSchedule(PatentApplication $app, Carbon $grantDate, ?string $jurisdiction = null): void
     {
+        $jurisdiction = strtoupper((string) ($jurisdiction ?: $app->projects()->value('patent_office_code') ?: $app->jurisdiction ?: 'IN'));
+        if ($jurisdiction === 'US') {
+            // US patents pay maintenance fees, not annual renewals.
+            foreach (self::usMaintenanceSchedule($grantDate) as $fee) {
+                $values = ['due_date' => $fee['due'], 'label' => $fee['label'],
+                    'window_opens_on' => $fee['window_opens'], 'grace_ends_on' => $fee['grace_ends']];
+                $row = RenewalSchedule::firstOrCreate(
+                    ['patent_application_id' => $app->id, 'renewal_year' => $fee['renewal_year']],
+                    $values + ['status' => 'Unpaid']
+                );
+                // Re-running refreshes dates but never touches Paid/Waived rows.
+                if ($row->status === 'Unpaid' && ! $row->due_date->isSameDay($fee['due'])) {
+                    $row->update($values);
+                }
+            }
+
+            return;
+        }
         if (!$app->filing_date) {
             return;
         }

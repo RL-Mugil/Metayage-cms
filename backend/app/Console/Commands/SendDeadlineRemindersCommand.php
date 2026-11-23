@@ -487,12 +487,12 @@ class SendDeadlineRemindersCommand extends Command
 
             $urgent = $days <= $leadDays;
             $title = $urgent
-                ? "Renewal payment window: {$label} (Y{$renewal->renewal_year}) — {$days}d left"
-                : "Renewal due in {$days} days: {$label} (Y{$renewal->renewal_year})";
+                ? "Renewal payment window: {$label} ({$renewal->display_label}) — {$days}d left"
+                : "Renewal due in {$days} days: {$label} ({$renewal->display_label})";
             $desc = $urgent
-                ? "Year {$renewal->renewal_year} renewal for {$label} is due in {$days} day(s) — within the "
+                ? "{$renewal->display_label} for {$label} is due in {$days} day(s) — within the "
                     . ($application?->jurisdiction === 'IN' ? 'Indian' : 'foreign attorney') . " payment lead window ({$leadDays}d). Get payment moving now."
-                : "Year {$renewal->renewal_year} renewal fee for {$label} is due in {$days} day(s).";
+                : "{$renewal->display_label} for {$label} is due in {$days} day(s).";
 
             foreach ($recipients as $uid) {
                 $this->remind(
@@ -533,8 +533,8 @@ class SendDeadlineRemindersCommand extends Command
                 $this->remind(
                     (int) $uid,
                     'renewal',
-                    "OVERDUE renewal ({$daysLate}d): {$label} (Y{$renewal->renewal_year})",
-                    "Year {$renewal->renewal_year} renewal for {$label} is {$daysLate} day(s) overdue — risk of abandonment/lapse.",
+                    "OVERDUE renewal ({$daysLate}d): {$label} ({$renewal->display_label})",
+                    "{$renewal->display_label} for {$label} is {$daysLate} day(s) overdue — risk of abandonment/lapse.",
                     $project ? "/projects/{$project->id}" : '/pending-payments',
                     ['renewal_id' => $renewal->id, 'days_overdue' => $daysLate],
                     "renewal:{$renewal->id}:{$uid}",
@@ -547,7 +547,7 @@ class SendDeadlineRemindersCommand extends Command
 
             $this->escalate(
                 "renewal:{$renewal->id}",
-                "{$label} (Y{$renewal->renewal_year}) [renewal]",
+                "{$label} ({$renewal->display_label}) [renewal]",
                 $daysLate,
                 $project ? "/projects/{$project->id}" : '/pending-payments',
                 ['renewal_id' => $renewal->id],

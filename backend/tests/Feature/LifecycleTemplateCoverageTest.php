@@ -31,6 +31,8 @@ class LifecycleTemplateCoverageTest extends TestCase
     public const US_SERVICE_CODES = [
         'PRV', 'NPV', 'NPD', 'NPP', 'NPS', 'CNS', 'DIV', 'CIP', 'OAR', 'AFT', 'RCE',
         'APP', 'ISF', 'M35', 'M75', 'M15', 'REI', 'XPR', 'REV', 'IPR', 'PGR',
+        // The firm's own codes on US cases (2026_11_27_000002).
+        'PRD', 'PIA', 'NPE', 'CON', 'FMP', 'IDS', 'TRC', 'RRT', 'NFO', 'FOA', 'QOA', 'EXI', 'APL', 'NOA', 'MFE', 'REN', 'PGV',
     ];
 
     public function test_every_india_service_code_resolves_a_lifecycle_template(): void

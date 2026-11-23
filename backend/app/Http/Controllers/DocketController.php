@@ -53,7 +53,7 @@ class DocketController extends Controller
             'events'      => $events,
             'deadlines'   => $deadlines,
             'renewals'    => $app?->renewals ?? [],
-            'event_types' => DocketRules::EVENT_TYPES,
+            'event_types' => DocketRules::eventTypesFor(DocketRules::jurisdictionOf($project, $app)),
             'rule_engine' => [
                 'jurisdiction' => strtoupper((string) ($project->patent_office_code ?: $app?->jurisdiction ?: 'IN')),
                 'approved_rules' => DeadlineRuleDefinition::where('jurisdiction', strtoupper((string) ($project->patent_office_code ?: $app?->jurisdiction ?: 'IN')))->where('status', 'Approved')->count(),
@@ -132,6 +132,10 @@ class DocketController extends Controller
         $paidThroughYear = (int) $validated['paid_through_year'];
         $user = $request->user();
 
+        if (DocketRules::jurisdictionOf($project, $app) === 'US') {
+            return $this->storeUsMaintenancePaid($request, $project, $app, $paidThroughYear, $paidDate, $validated['notes'] ?? null);
+        }
+
         $target = DB::transaction(function () use ($project, $app, $paidDate, $paidThroughYear, $validated, $user, $request) {
             $target = $this->resolveRenewalTargetProject($project, $app, $user, $request);
 
@@ -184,6 +188,69 @@ class DocketController extends Controller
                     'paid_through_year' => $paidThroughYear,
                     'paid_date'         => $paidDate->toDateString(),
                     'docket_event_id'   => $event->id,
+                    'successor_created' => $target->id !== $project->id,
+                ],
+                'ip_address' => $request->ip(),
+                'user_agent' => $request->userAgent(),
+            ]);
+
+            return $target;
+        });
+
+        return response()->json($target->fresh(['stages', 'patentApplication']));
+    }
+
+    /**
+     * US patents: maintenance fees at 3.5 / 7.5 / 11.5 years (renewal_year 4 / 8 / 12),
+     * not annual renewals. Marks the paid fee and any earlier one Paid, on the case's MFE
+     * (maintenance) engagement, created on the first payment like REN/RNF for India.
+     */
+    private function storeUsMaintenancePaid(Request $request, Project $project, PatentApplication $app, int $paidThroughYear, Carbon $paidDate, ?string $notes)
+    {
+        if (! in_array($paidThroughYear, [4, 8, 12], true)) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'paid_through_year' => 'For a US patent choose the maintenance fee paid: 3.5, 7.5 or 11.5 years (4, 8 or 12).',
+            ]);
+        }
+        $user = $request->user();
+
+        $target = DB::transaction(function () use ($request, $project, $app, $paidThroughYear, $paidDate, $notes, $user) {
+            $target = Project::where('patent_application_id', $app->id)->where('service_code', 'MFE')->first()
+                ?? app(InventionFamilyService::class)->createBranch($project, [
+                    'patent_office_code' => $project->patent_office_code,
+                    'service_code'       => 'MFE',
+                    'note'               => 'Auto-created on first maintenance fee payment',
+                    'complete_source'    => true,
+                ], $user, ['ip_address' => $request->ip(), 'user_agent' => $request->userAgent()]);
+
+            $label = DocketRules::maintenanceLabel($paidThroughYear);
+            $event = DocketRules::recordEvent('renewal_fee_paid', $paidDate, $target->id, $app->id, $notes ?? "{$label} paid", $user->id);
+
+            $schedule = $app->grant_date ? DocketRules::usMaintenanceSchedule(Carbon::parse($app->grant_date)) : [];
+            foreach ([4, 8, 12] as $year) {
+                if ($year > $paidThroughYear) {
+                    break;
+                }
+                $fee = collect($schedule)->firstWhere('renewal_year', $year);
+                $row = RenewalSchedule::firstOrCreate(
+                    ['patent_application_id' => $app->id, 'renewal_year' => $year],
+                    ['due_date' => $fee['due'] ?? $paidDate, 'status' => 'Unpaid', 'label' => DocketRules::maintenanceLabel($year),
+                        'window_opens_on' => $fee['window_opens'] ?? null, 'grace_ends_on' => $fee['grace_ends'] ?? null]
+                );
+                if (! in_array($row->status, ['Paid', 'Waived'], true)) {
+                    $row->update(['status' => 'Paid', 'paid_at' => $paidDate]);
+                }
+            }
+
+            AuditLog::create([
+                'user_id'      => $user->id,
+                'action'       => 'record_renewal_payment',
+                'subject_type' => 'Project',
+                'subject_id'   => $target->id,
+                'metadata'     => [
+                    'source_project_id' => $project->id, 'application_id' => $app->id,
+                    'paid_through_year' => $paidThroughYear, 'maintenance_fee' => $label,
+                    'paid_date' => $paidDate->toDateString(), 'docket_event_id' => $event->id,
                     'successor_created' => $target->id !== $project->id,
                 ],
                 'ip_address' => $request->ip(),

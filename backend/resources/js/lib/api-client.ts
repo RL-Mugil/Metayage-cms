@@ -1066,7 +1066,7 @@ export const api = {
   async resetLegalPage(slug: LegalSlug): Promise<{ html: string; customized: boolean }> {
     return this.request(`/settings/pages/${slug}`, { method: 'DELETE' })
   },
-  async updateDropdown(key: 'dropdown_service_codes' | 'dropdown_country_codes', items: { code: string; label: string }[]): Promise<any> {
+  async updateDropdown(key: 'dropdown_service_codes' | 'dropdown_country_codes', items: { code: string; label: string; countries?: string[] }[]): Promise<any> {
     return this.request('/settings/dropdown', { method: 'PUT', body: JSON.stringify({ key, items }) })
   },
   async getCodes(): Promise<{ service: CodeRow[]; country: CodeRow[] }> {
@@ -1782,9 +1782,13 @@ export const api = {
     const q = roleFilter && roleFilter !== 'all' ? `?role_filter=${roleFilter}` : ''
     return this.request(`/projects/lifecycle-stats${q}`)
   },
-  async getLifecycleServiceStats(roleFilter?: string): Promise<Record<string, number>> {
-    const q = roleFilter && roleFilter !== 'all' ? `?role_filter=${roleFilter}` : ''
-    return this.request(`/projects/lifecycle-service-stats${q}`)
+  /** Active cases per service code; `office` (IN, US) limits it to that patent office. */
+  async getLifecycleServiceStats(roleFilter?: string, office?: string): Promise<Record<string, number>> {
+    const params = new URLSearchParams()
+    if (roleFilter && roleFilter !== 'all') params.set('role_filter', roleFilter)
+    if (office) params.set('office', office)
+    const q = params.toString()
+    return this.request(`/projects/lifecycle-service-stats${q ? `?${q}` : ''}`)
   },
   async inspectImportSheets(file: File): Promise<{ sheets: { name: string; rows: number; is_data_sheet: boolean }[] }> {
     const formData = new FormData()

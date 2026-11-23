@@ -144,6 +144,8 @@ class CodeRenameService
             return [
                 'code' => $item['code'],
                 'label' => $item['label'],
+                // Service codes: the patent offices the code applies to ([] = every country).
+                'countries' => $item['countries'] ?? [],
                 'projects_count' => $counts[strtoupper($item['code'])] ?? 0,
             ];
         }, $this->dropdownItems($type));

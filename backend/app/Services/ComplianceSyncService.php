@@ -85,7 +85,7 @@ class ComplianceSyncService
                         'type' => 'Patent',
                         'jurisdiction' => $application->jurisdiction ?: 'Unspecified',
                         'deadline' => $renewal->due_date,
-                        'action_required' => "Pay patent renewal fee for year {$renewal->renewal_year}",
+                        'action_required' => ($renewal->isUsMaintenance() ? "Pay US {$renewal->label}" : "Pay patent renewal fee for year {$renewal->renewal_year}"),
                     ], $counts);
                 }
             });

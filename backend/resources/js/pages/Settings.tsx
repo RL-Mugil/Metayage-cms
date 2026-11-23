@@ -1,5 +1,5 @@
 import { Head, usePage, router } from "@inertiajs/react";
-import { useState, useEffect, useRef, useCallback } from "react";
+import { Fragment, useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { User, Bell, Shield, Palette, Settings as SettingsIcon, Key, Building, Loader2, Camera, Trash2, ZoomIn, ZoomOut, RotateCcw, Plus, X, Landmark, Check, Hash, Pencil, ArrowRightLeft, LayoutGrid, Wallet, ChevronUp, ChevronDown, Globe, FileText } from "lucide-react";
 import AppLayout from "@/layouts/AppLayout";
@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api-client";
+import { isAllCountries, taggedCountries, type CodeItem } from "@/lib/service-codes";
 import { SiteAdminPanel } from "@/components/site-admin-panel";
 import { IpoSettingsPanel } from "@/components/ipo/ipo-settings-panel";
 import type { ProjectTab, CodeRow, CodeRenameImpact, CodeMergeAvailable, CodeMergeImpact } from "@/types";
@@ -117,14 +118,16 @@ function AvatarDisplay({ src, name, size = "lg" }: { src?: string | null; name: 
 /** One tabular Code editor (used for both Service Codes and Country Codes). Label edits and
  *  add/delete are lightweight (whole-array replace via the parent's onSave). Changing the CODE
  *  VALUE itself only happens through the "Rename" action, which routes to a separate
- *  impact-preview + confirm flow (CodeRenameDialog) since that cascades into live data. */
+ *  impact-preview + confirm flow (CodeRenameDialog) since that cascades into live data.
+ *  Service codes are tagged to the patent offices they apply to and grouped by country;
+ *  a code tagged to several countries is listed under each (empty tags = every country). */
 function CodeTable({
   type, items, setItems, usage, newCode, setNewCode, newLabel, setNewLabel,
-  search, setSearch, addErr, setAddErr, saving, onSave, onRenameClick, canManage,
+  search, setSearch, addErr, setAddErr, saving, onSave, onRenameClick, canManage, countryOptions = [],
 }: {
   type: "service" | "country";
-  items: { code: string; label: string }[];
-  setItems: (fn: (prev: { code: string; label: string }[]) => { code: string; label: string }[]) => void;
+  items: CodeItem[];
+  setItems: (fn: (prev: CodeItem[]) => CodeItem[]) => void;
   usage: CodeRow[];
   newCode: string; setNewCode: (v: string) => void;
   newLabel: string; setNewLabel: (v: string) => void;
@@ -134,40 +137,178 @@ function CodeTable({
   onSave: () => void;
   onRenameClick: (code: string, label: string) => void;
   canManage: boolean;
+  /** Service codes: the Country Codes list, offered when tagging a code. */
+  countryOptions?: CodeItem[];
 }) {
   const [editingCode, setEditingCode] = useState<string | null>(null);
   const [editLabel, setEditLabel] = useState("");
+  // Service codes: "group" lists every country's codes under its own heading; a country code
+  // shows just that country; "*" shows the every-country codes.
+  const [countryFilter, setCountryFilter] = useState<string>("group");
+  const [tagDraft, setTagDraft] = useState<Record<string, string>>({});
+  const isService = type === "service";
 
   const usageFor = (code: string) => usage.find((u) => u.code.toUpperCase() === code.toUpperCase())?.projects_count ?? 0;
   const stripPrefix = (label: string) => label.replace(/^[A-Z0-9\-]+\s[–-]\s/, "");
+  const countryName = (code: string) => {
+    const match = countryOptions.find((c) => c.code.toUpperCase() === code);
+    return match ? stripPrefix(match.label) : code;
+  };
 
   const q = search.trim().toLowerCase();
   const filtered = q ? items.filter((x) => x.code.toLowerCase().includes(q) || x.label.toLowerCase().includes(q)) : items;
+  const usedCountries = taggedCountries(items);
+  const inCountry = (item: CodeItem, country: string) => (item.countries ?? []).some((c) => c.toUpperCase() === country);
+
+  const groups: { key: string; title: string; rows: CodeItem[] }[] = !isService
+    ? [{ key: "all", title: "", rows: filtered }]
+    : countryFilter === "group"
+      ? [
+        ...usedCountries.map((country) => ({ key: country, title: `${country} – ${countryName(country)}`, rows: filtered.filter((item) => inCountry(item, country)) })),
+        { key: "*", title: "All countries (not specific to one office)", rows: filtered.filter(isAllCountries) },
+      ].filter((group) => group.rows.length > 0)
+      : countryFilter === "*"
+        ? [{ key: "*", title: "All countries (not specific to one office)", rows: filtered.filter(isAllCountries) }]
+        : [{ key: countryFilter, title: `${countryFilter} – ${countryName(countryFilter)}`, rows: filtered.filter((item) => inCountry(item, countryFilter)) }];
+
+  const setCountries = (code: string, countries: string[]) =>
+    setItems((prev) => prev.map((x) => x.code === code ? { ...x, countries: [...new Set(countries.map((c) => c.toUpperCase()))] } : x));
+  const addTag = (item: CodeItem) => {
+    const tag = (tagDraft[item.code] ?? "").trim().toUpperCase();
+    if (!/^[A-Z0-9]{2}$/.test(tag)) return;
+    setCountries(item.code, [...(item.countries ?? []), tag]);
+    setTagDraft((prev) => ({ ...prev, [item.code]: "" }));
+  };
+  const columns = (isService ? 4 : 3) + (canManage ? 1 : 0);
+
+  const renderRow = (item: CodeItem, groupKey: string) => {
+    const count = usageFor(item.code);
+    const isEditing = editingCode === item.code;
+    return (
+      <tr key={`${groupKey}-${item.code}`} className="border-t border-border">
+        <td className="px-3 py-2 font-mono font-semibold text-gold align-top whitespace-nowrap">{item.code}</td>
+        <td className="px-3 py-2 align-top">
+          {isEditing ? (
+            <div className="flex items-center gap-1">
+              <input
+                autoFocus
+                value={editLabel}
+                onChange={(e) => setEditLabel(e.target.value)}
+                className="flex-1 h-7 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold"
+              />
+              <button className="text-green-600 hover:text-green-700" title="Save"
+                onClick={() => {
+                  setItems((prev) => prev.map((x) => x.code === item.code ? { ...x, label: `${item.code} – ${editLabel.trim()}` } : x));
+                  setEditingCode(null);
+                }}>
+                <Check className="h-3.5 w-3.5" />
+              </button>
+              <button className="text-muted-foreground hover:text-destructive" title="Cancel" onClick={() => setEditingCode(null)}>
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ) : (
+            <span>{stripPrefix(item.label)}</span>
+          )}
+        </td>
+        {isService && (
+          <td className="px-3 py-2 align-top">
+            <div className="flex flex-wrap items-center gap-1">
+              {isAllCountries(item) && <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">All countries</span>}
+              {(item.countries ?? []).map((country) => (
+                <span key={country} title={countryName(country)} className="inline-flex items-center gap-0.5 rounded border border-gold/40 bg-gold/10 px-1.5 py-0.5 font-mono text-[10px] font-semibold">
+                  {country}
+                  {canManage && (
+                    <button title={`Remove ${country}`} className="text-muted-foreground hover:text-destructive"
+                      onClick={() => setCountries(item.code, (item.countries ?? []).filter((c) => c !== country))}>
+                      <X className="h-2.5 w-2.5" />
+                    </button>
+                  )}
+                </span>
+              ))}
+              {canManage && (
+                <input
+                  value={tagDraft[item.code] ?? ""}
+                  list="service-code-country-options"
+                  maxLength={2}
+                  placeholder="+ CC"
+                  title="Type a country code (e.g. US) and press Enter"
+                  onChange={(e) => setTagDraft((prev) => ({ ...prev, [item.code]: e.target.value.toUpperCase() }))}
+                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addTag(item); } }}
+                  onBlur={() => addTag(item)}
+                  className="h-5 w-12 rounded border border-dashed border-border bg-background px-1 font-mono text-[10px] focus:outline-none focus:ring-1 focus:ring-gold"
+                />
+              )}
+            </div>
+          </td>
+        )}
+        <td className="px-3 py-2 text-right align-top">{count}</td>
+        {canManage && (
+          <td className="px-3 py-2 align-top">
+            <div className="flex items-center justify-end gap-2">
+              {!isEditing && (
+                <button title="Edit description" className="text-muted-foreground hover:text-foreground"
+                  onClick={() => { setEditingCode(item.code); setEditLabel(stripPrefix(item.label)); }}>
+                  <Pencil className="h-3.5 w-3.5" />
+                </button>
+              )}
+              <button title="Rename code (updates every project that uses it)" className="text-muted-foreground hover:text-foreground"
+                onClick={() => onRenameClick(item.code, item.label)}>
+                <ArrowRightLeft className="h-3.5 w-3.5" />
+              </button>
+              <button
+                title={count > 0 ? `Still used by ${count} project(s) — cannot delete` : "Delete"}
+                disabled={count > 0}
+                className={count > 0 ? "text-muted-foreground/40 cursor-not-allowed" : "text-muted-foreground hover:text-destructive"}
+                onClick={() => { if (count === 0) setItems((prev) => prev.filter((x) => x.code !== item.code)); }}>
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </td>
+        )}
+      </tr>
+    );
+  };
 
   return (
     <Card className="border-border">
       <CardHeader>
-        <CardTitle className="font-display">{type === "service" ? "Service Codes" : "Country / Patent Office Codes"}</CardTitle>
+        <CardTitle className="font-display">{isService ? "Service Codes" : "Country / Patent Office Codes"}</CardTitle>
         <p className="text-xs text-muted-foreground mt-1">
-          {type === "service"
-            ? "All codes listed here appear in the Service Code dropdown across the portal."
+          {isService
+            ? "Grouped by the patent office (country code) each service applies to. A case shows the codes for its Patent Office plus the all-country ones. A code can be tagged to several countries."
             : "Codes listed here appear in the Patent Office dropdown when creating a case."} {items.length} total.
         </p>
       </CardHeader>
       <CardContent className="space-y-3">
-        <div className="relative">
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search codes or descriptions…"
-            className="w-full h-8 rounded border border-border bg-background pl-3 pr-8 text-xs focus:outline-none focus:ring-1 focus:ring-gold"
-          />
-          {search && (
-            <button onClick={() => setSearch("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
-              <X className="h-3 w-3" />
-            </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative min-w-[200px] flex-1">
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search codes or descriptions…"
+              className="w-full h-8 rounded border border-border bg-background pl-3 pr-8 text-xs focus:outline-none focus:ring-1 focus:ring-gold"
+            />
+            {search && (
+              <button onClick={() => setSearch("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                <X className="h-3 w-3" />
+              </button>
+            )}
+          </div>
+          {isService && (
+            <select value={countryFilter} onChange={(e) => setCountryFilter(e.target.value)} title="Country"
+              className="h-8 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold">
+              <option value="group">Grouped by country</option>
+              {usedCountries.map((country) => <option key={country} value={country}>{country} – {countryName(country)}</option>)}
+              <option value="*">All countries (untagged)</option>
+            </select>
           )}
         </div>
+        {isService && (
+          <datalist id="service-code-country-options">
+            {countryOptions.map((c) => <option key={c.code} value={c.code.toUpperCase()}>{stripPrefix(c.label)}</option>)}
+          </datalist>
+        )}
 
         <div className="overflow-x-auto rounded-md border border-border">
           <table className="w-full text-xs">
@@ -175,73 +316,29 @@ function CodeTable({
               <tr>
                 <th className="px-3 py-2 text-left">Code</th>
                 <th className="px-3 py-2 text-left">Description</th>
+                {isService && <th className="px-3 py-2 text-left">Countries</th>}
                 <th className="px-3 py-2 text-right"># Projects</th>
                 {canManage && <th className="px-3 py-2 text-right">Actions</th>}
               </tr>
             </thead>
             <tbody>
-              {filtered.length === 0 && (
-                <tr><td colSpan={canManage ? 4 : 3} className="px-3 py-4 text-center text-muted-foreground italic">
+              {groups.every((group) => group.rows.length === 0) && (
+                <tr><td colSpan={columns} className="px-3 py-4 text-center text-muted-foreground italic">
                   {q ? `No codes match "${search}".` : "No codes yet."}
                 </td></tr>
               )}
-              {filtered.map((item) => {
-                const count = usageFor(item.code);
-                const isEditing = editingCode === item.code;
-                return (
-                  <tr key={item.code} className="border-t border-border">
-                    <td className="px-3 py-2 font-mono font-semibold text-gold align-top whitespace-nowrap">{item.code}</td>
-                    <td className="px-3 py-2 align-top">
-                      {isEditing ? (
-                        <div className="flex items-center gap-1">
-                          <input
-                            autoFocus
-                            value={editLabel}
-                            onChange={(e) => setEditLabel(e.target.value)}
-                            className="flex-1 h-7 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold"
-                          />
-                          <button className="text-green-600 hover:text-green-700" title="Save"
-                            onClick={() => {
-                              setItems((prev) => prev.map((x) => x.code === item.code ? { ...x, label: `${item.code} – ${editLabel.trim()}` } : x));
-                              setEditingCode(null);
-                            }}>
-                            <Check className="h-3.5 w-3.5" />
-                          </button>
-                          <button className="text-muted-foreground hover:text-destructive" title="Cancel" onClick={() => setEditingCode(null)}>
-                            <X className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                      ) : (
-                        <span>{stripPrefix(item.label)}</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-2 text-right align-top">{count}</td>
-                    {canManage && (
-                      <td className="px-3 py-2 align-top">
-                        <div className="flex items-center justify-end gap-2">
-                          {!isEditing && (
-                            <button title="Edit description" className="text-muted-foreground hover:text-foreground"
-                              onClick={() => { setEditingCode(item.code); setEditLabel(stripPrefix(item.label)); }}>
-                              <Pencil className="h-3.5 w-3.5" />
-                            </button>
-                          )}
-                          <button title="Rename code (updates every project that uses it)" className="text-muted-foreground hover:text-foreground"
-                            onClick={() => onRenameClick(item.code, item.label)}>
-                            <ArrowRightLeft className="h-3.5 w-3.5" />
-                          </button>
-                          <button
-                            title={count > 0 ? `Still used by ${count} project(s) — cannot delete` : "Delete"}
-                            disabled={count > 0}
-                            className={count > 0 ? "text-muted-foreground/40 cursor-not-allowed" : "text-muted-foreground hover:text-destructive"}
-                            onClick={() => { if (count === 0) setItems((prev) => prev.filter((x) => x.code !== item.code)); }}>
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
+              {groups.map((group) => (
+                <Fragment key={group.key}>
+                  {group.title && group.rows.length > 0 && (
+                    <tr className="border-t border-border bg-muted/30">
+                      <td colSpan={columns} className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                        {group.title} <span className="font-normal normal-case">({group.rows.length})</span>
                       </td>
-                    )}
-                  </tr>
-                );
-              })}
+                    </tr>
+                  )}
+                  {group.rows.map((item) => renderRow(item, group.key))}
+                </Fragment>
+              ))}
             </tbody>
           </table>
         </div>
@@ -250,11 +347,13 @@ function CodeTable({
           <>
             {/* Add new */}
             <div className="border-t border-border pt-3 space-y-2">
-              <p className="text-xs font-medium text-muted-foreground">Add new code</p>
+              <p className="text-xs font-medium text-muted-foreground">
+                Add new code{isService && countryFilter !== "group" && countryFilter !== "*" ? ` (tagged ${countryFilter}; add more countries in the table)` : ""}
+              </p>
               <div className="flex gap-2">
                 <input value={newCode}
                   onChange={(e) => { setNewCode(e.target.value.toUpperCase()); setAddErr(""); }}
-                  placeholder={type === "service" ? "CODE" : "XX"} maxLength={type === "service" ? 10 : 4}
+                  placeholder={isService ? "CODE" : "XX"} maxLength={isService ? 10 : 4}
                   className="w-24 h-8 rounded border border-border bg-background px-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-gold" />
                 <input value={newLabel} onChange={(e) => setNewLabel(e.target.value)}
                   placeholder="Description"
@@ -267,7 +366,8 @@ function CodeTable({
                     if (!lbl) { setAddErr("Enter a description."); return; }
                     const dup = items.find((x) => x.code.toUpperCase() === code);
                     if (dup) { setAddErr(`"${code}" already exists: "${dup.label}"`); return; }
-                    setItems((prev) => [...prev, { code, label: `${code} – ${lbl}` }]);
+                    const countries = isService && countryFilter !== "group" && countryFilter !== "*" ? [countryFilter] : [];
+                    setItems((prev) => [...prev, isService ? { code, label: `${code} – ${lbl}`, countries } : { code, label: `${code} – ${lbl}` }]);
                     setNewCode(""); setNewLabel(""); setAddErr("");
                   }}>
                   <Plus className="h-3 w-3" />
@@ -277,7 +377,7 @@ function CodeTable({
             </div>
 
             <Button size="sm" onClick={onSave} disabled={saving} className="bg-gold hover:bg-gold/90 text-black">
-              {saving ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : null}Save {type === "service" ? "Service" : "Country"} Codes
+              {saving ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : null}Save {isService ? "Service" : "Country"} Codes
             </Button>
           </>
         )}
@@ -625,7 +725,7 @@ export default function Settings() {
   });
   const [savingRenewalFees, setSavingRenewalFees] = useState(false);
 
-  const [svcCodes, setSvcCodes]   = useState<{code:string;label:string}[]>(sysSettings.dropdown_service_codes ?? []);
+  const [svcCodes, setSvcCodes]   = useState<CodeItem[]>(sysSettings.dropdown_service_codes ?? []);
   const [ctyCodes, setCtyCodes]   = useState<{code:string;label:string}[]>(sysSettings.dropdown_country_codes ?? []);
   const [newSvcCode,  setNewSvcCode]  = useState("");
   const [newSvcLabel, setNewSvcLabel] = useState("");
@@ -1604,7 +1704,7 @@ export default function Settings() {
                   search={svcSearch} setSearch={setSvcSearch} addErr={svcAddErr} setAddErr={setSvcAddErr}
                   saving={savingDropdown === "service"} onSave={() => saveDropdown("service")}
                   onRenameClick={(code, label) => setRenameDialog({ type: "service", code, label })}
-                  canManage={isSuperAdmin}
+                  canManage={isSuperAdmin} countryOptions={ctyCodes}
                 />
               ) : (
                 <CodeTable

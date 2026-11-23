@@ -343,7 +343,19 @@ class SettingsController extends Controller
             'items'  => 'required|array|min:1',
             'items.*.code'  => 'required|string|max:20',
             'items.*.label' => 'required|string|max:200',
+            // Service codes only: the patent offices (country codes) a code applies to; empty = all.
+            'items.*.countries'   => 'sometimes|array|max:50',
+            'items.*.countries.*' => ['string', 'regex:/^[A-Za-z0-9]{2}$/'],
         ]);
+        if ($validated['key'] === 'dropdown_service_codes') {
+            $validated['items'] = array_map(function (array $item) {
+                $item['countries'] = array_values(array_unique(array_map('strtoupper', $item['countries'] ?? [])));
+
+                return $item;
+            }, $validated['items']);
+        } else {
+            $validated['items'] = array_map(fn (array $item) => ['code' => $item['code'], 'label' => $item['label']], $validated['items']);
+        }
 
         // Block dropping a code that's still assigned to any project — matches the "no
         // orphaned mapping" pattern already enforced by updateProjectTabs(). This also means

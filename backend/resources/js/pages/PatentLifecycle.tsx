@@ -7,8 +7,12 @@ import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api-client";
 import { AnalystRoleFilter, useAnalystRoleFilter } from "@/components/analyst-role-filter";
 import { IndianPatentLifecycle } from "@/components/IndianPatentLifecycle";
+import { UsPatentLifecycle } from "@/components/UsPatentLifecycle";
 
-type LifecycleTab = "india" | "abroad";
+type LifecycleTab = "india" | "us" | "abroad";
+
+/** Patent office whose cases each tab counts. */
+const TAB_OFFICE: Partial<Record<LifecycleTab, string>> = { india: "IN", us: "US" };
 
 const TABS: { id: LifecycleTab; label: string; icon: React.ReactNode; description: string }[] = [
   {
@@ -16,6 +20,12 @@ const TABS: { id: LifecycleTab; label: string; icon: React.ReactNode; descriptio
     label: "Indian Lifecycle",
     icon: <Flag className="h-3.5 w-3.5" />,
     description: "Indian Patent Office (IPO) prosecution flowchart",
+  },
+  {
+    id: "us",
+    label: "US Lifecycle",
+    icon: <Flag className="h-3.5 w-3.5" />,
+    description: "USPTO prosecution flowchart",
   },
   {
     id: "abroad",
@@ -43,18 +53,20 @@ export default function PatentLifecycle() {
   const [projLoading, setProjLoading] = useState(false);
   const [projTotal, setProjTotal] = useState(0);
 
-  const load = (rf?: string) => {
+  const load = (rf?: string, tab: LifecycleTab = activeTab) => {
+    const office = TAB_OFFICE[tab];
+    if (!office) { setCounts({}); setLoading(false); return; }
     setLoading(true);
     const effectiveRf = isAnalyst ? (rf ?? roleFilter) : undefined;
-    api.getLifecycleServiceStats(effectiveRf)
+    api.getLifecycleServiceStats(effectiveRf, office)
       .then(setCounts)
       .catch(() => {})
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { load(roleFilter); }, [roleFilter]);
+  // Each tab counts its own office's cases (an Indian FER and a US office action are different nodes).
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(roleFilter, activeTab); }, [roleFilter, activeTab]);
 
   async function handleNodeClick(nodeId: string, label: string, serviceCodes: string[]) {
     if (!serviceCodes.length) return;
@@ -67,6 +79,8 @@ export default function PatentLifecycle() {
         service_code: serviceCodes.join(","),
         per_page: "200",
       });
+      const office = TAB_OFFICE[activeTab];
+      if (office) params.set("patent_office_code", office);
       if (isAnalyst && roleFilter !== "all") params.set("role_filter", roleFilter);
       const res = await api.getProjectsPaged(params) as any;
       const data = Array.isArray(res) ? res : res?.data ?? [];
@@ -84,7 +98,7 @@ export default function PatentLifecycle() {
       <PageHeader
         eyebrow="Practice"
         title="Patent Process Lifecycle"
-        description={`${totalActive} active cases across all jurisdictions. Click any node to drill in.`}
+        description={`${totalActive} active ${activeTab === "us" ? "US" : activeTab === "india" ? "Indian" : ""} cases. Click any node to drill in.`}
         actions={
           <div className="flex items-center gap-2">
             <AnalystRoleFilter value={roleFilter} onChange={(v) => { setRoleFilter(v); }} />
@@ -144,6 +158,17 @@ export default function PatentLifecycle() {
           )
         )}
 
+        {/* US Lifecycle tab */}
+        {activeTab === "us" && (
+          loading ? (
+            <div className="flex items-center justify-center py-24">
+              <Loader2 className="h-8 w-8 animate-spin text-gold" />
+            </div>
+          ) : (
+            <UsPatentLifecycle counts={counts} onNodeClick={handleNodeClick} />
+          )
+        )}
+
         {/* Abroad tab */}
         {activeTab === "abroad" && (
           <div className="flex flex-col items-center justify-center py-32 gap-4 text-center">
@@ -151,7 +176,7 @@ export default function PatentLifecycle() {
             <div>
               <h3 className="text-lg font-semibold text-foreground">Abroad Lifecycle</h3>
               <p className="text-sm text-muted-foreground mt-1 max-w-sm">
-                International jurisdiction lifecycle (EPO, USPTO, PCT National Phase abroad) will be added here.
+                Other jurisdictions (EPO, PCT national phase elsewhere) will be added here. The US has its own tab.
               </p>
             </div>
             <Badge variant="outline" className="text-xs text-muted-foreground">Coming Soon</Badge>

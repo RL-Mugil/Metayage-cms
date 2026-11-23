@@ -43,9 +43,14 @@ class RenewalActionController extends Controller
     private function renewalTotals(string $jurisdiction, ?string $clientTier, Collection $years): array
     {
         $tier = $clientTier === 'individual_startup_msme' ? 'discounted' : 'standard';
-        // 'REN' is what real project data actually carries; 'RNF' is the
+        // US: maintenance fees (MFE) banded at 3.5 / 7.5 / 11.5 years, stored as renewal_year
+        // 4 / 8 / 12. Elsewhere: 'REN' is what real project data actually carries; 'RNF' is the
         // dictionary name in config/project_import_codes.php — accept either.
-        $rows = FeeRateCard::where('jurisdiction', $jurisdiction)->whereIn('service_code', ['REN', 'RNF'])
+        $isUs = strtoupper($jurisdiction) === 'US';
+        if ($isUs) {
+            $years = $years->map(fn ($year) => (float) $year - 0.5);
+        }
+        $rows = FeeRateCard::where('jurisdiction', $jurisdiction)->whereIn('service_code', $isUs ? ['MFE'] : ['REN', 'RNF'])
             ->where('is_active', true)
             ->where(fn ($q) => $q->where('entity_tier', $tier)->orWhereNull('entity_tier'))
             ->get();
@@ -136,8 +141,14 @@ class RenewalActionController extends Controller
                 ->limit($years)
                 ->get();
 
+            // US maintenance fees are fixed (3.5 / 7.5 / 11.5 years); only India-style annual
+            // renewals get extra years created on demand.
+            $isUs = strtoupper((string) ($project->patent_office_code ?: $application->jurisdiction)) === 'US';
+            if ($isUs && $schedules->isEmpty()) {
+                throw \Illuminate\Validation\ValidationException::withMessages(['years' => 'No maintenance fee is due on this patent right now.']);
+            }
             $nextYear = (int) (RenewalSchedule::where('patent_application_id', $application->id)->max('renewal_year') ?? 2) + 1;
-            while ($schedules->count() < $years) {
+            while (! $isUs && $schedules->count() < $years) {
                 $schedules->push(RenewalSchedule::create([
                     'patent_application_id' => $application->id,
                     'renewal_year'           => $nextYear,
@@ -251,7 +262,7 @@ class RenewalActionController extends Controller
         }
         $project = $application->projects->first();
 
-        $totals = $this->renewalTotals($application->jurisdiction, $client->fee_entity_tier, collect([$renewal->renewal_year]));
+        $totals = $this->renewalTotals((string) ($project?->patent_office_code ?: $application->jurisdiction), $client->fee_entity_tier, collect([$renewal->renewal_year]));
         $docketForUin = $project?->docket_number ?? $application->application_number ?? "APP{$application->id}";
 
         return DB::transaction(function () use ($application, $project, $client, $renewal, $totals, $docketForUin) {
@@ -278,7 +289,7 @@ class RenewalActionController extends Controller
                 'invoice_amount'       => $totals['government_fee'] + $totals['professional_fee'],
                 'net_revenue'          => $totals['professional_fee'],
                 'currency'             => $totals['currency'],
-                'remarks'              => "Auto-generated estimate for renewal year {$renewal->renewal_year} — subject to change based on government fees and internal company policy. Not a final invoice; staff will raise the actual invoice separately.",
+                'remarks'              => "Auto-generated estimate for {$renewal->display_label} — subject to change based on government fees and internal company policy. Not a final invoice; staff will raise the actual invoice separately.",
             ]);
 
             $renewal->update(['patent_invoice_in_id' => $quote->id]);

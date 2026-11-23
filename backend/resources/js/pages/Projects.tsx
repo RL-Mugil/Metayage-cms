@@ -20,6 +20,7 @@ import { statusColor } from "@/lib/utils";
 import { AnalystRoleFilter, useAnalystRoleFilter } from "@/components/analyst-role-filter";
 import { TrademarkDetailsFields } from "@/components/trademark-details-fields";
 import { InventorPicker } from "@/components/inventors/inventor-picker";
+import { codesForOffice, type CodeItem } from "@/lib/service-codes";
 import type { InventorRecord } from "@/types/ipo-forms";
 import {
   isTrademarkCode, isTrademarkFilingCode, validateTrademarkInput,
@@ -1015,7 +1016,7 @@ export default function Projects() {
   const featLinkPred        = sysCfg.feature_link_predecessor   ?? true;
   const featLegacyCase      = sysCfg.feature_legacy_case        ?? true;
   const featLockCodeDropdown = sysCfg.feature_lock_code_dropdowns ?? true;
-  const dynamicSvcCodes   = (sysCfg.dropdown_service_codes  ?? []) as {code:string;label:string}[];
+  const dynamicSvcCodes   = (sysCfg.dropdown_service_codes  ?? []) as CodeItem[];
   const dynamicCtyCodes   = (sysCfg.dropdown_country_codes  ?? []) as {code:string;label:string}[];
   // Admin-configurable Projects-list tabs (see SettingsController::updateProjectTabs).
   // "" (no key) means the implicit "All" view — nothing pre-selected.
@@ -1244,9 +1245,12 @@ export default function Projects() {
   const officeOptions  = useMemo(() =>
     (dynamicCtyCodes.length > 0 ? dynamicCtyCodes : PATENT_OFFICES).map((o) => ({ id: o.code, label: o.label })),
   [dynamicCtyCodes]);
+  // Service codes tagged to the chosen Patent Office plus the all-country ones (Settings → Codes);
+  // an older case keeps showing the code it already has.
   const serviceOptions = useMemo(() =>
-    (dynamicSvcCodes.length > 0 ? dynamicSvcCodes : SERVICE_CODES).map((s) => ({ id: s.code, label: s.label })),
-  [dynamicSvcCodes]);
+    codesForOffice(dynamicSvcCodes.length > 0 ? dynamicSvcCodes : SERVICE_CODES, form.patent_office_code, editProj?.service_code)
+      .map((s) => ({ id: s.code, label: s.label })),
+  [dynamicSvcCodes, form.patent_office_code, editProj?.service_code]);
 
   const docketPreview = useMemo(() => {
     if (!form.client_id) return "—";

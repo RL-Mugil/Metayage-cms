@@ -570,7 +570,7 @@ class ReportsController extends Controller
                 'project_code' => $project?->project_code,
                 'client_code' => $renewal->application?->client?->client_code,
                 'application_number' => $renewal->application?->application_number,
-                'project_name' => "Renewal year {$renewal->renewal_year}",
+                'project_name' => $renewal->display_label,
                 'client' => $renewal->application?->client?->company_name,
                 'project_type' => $renewal->application?->jurisdiction,
                 'deadline' => $renewal->due_date?->toDateString(),

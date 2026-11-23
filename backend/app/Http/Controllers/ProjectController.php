@@ -183,6 +183,9 @@ class ProjectController extends Controller
             $query->whereHas('stages', fn ($q) => $q->where('stage_name', $stage)->where('status', 'In Progress'));
         }
 
+        if ($request->filled('patent_office_code')) {
+            $this->wherePatentOffice($query, (string) $request->input('patent_office_code'));
+        }
         if ($request->filled('service_code')) {
             $codes = array_map('strtoupper', array_map('trim', explode(',', $request->service_code)));
             count($codes) > 1 ? $query->whereIn('service_code', $codes) : $query->where('service_code', $codes[0]);
@@ -297,6 +300,18 @@ class ProjectController extends Controller
     }
 
     /** Count of active projects per service code (for lifecycle diagram node badges). */
+    /** Limits to one patent office; India also takes cases with no office recorded. */
+    private function wherePatentOffice($query, string $office): void
+    {
+        $office = strtoupper(trim($office));
+        $query->where(function ($q) use ($office) {
+            $q->whereRaw('UPPER(patent_office_code) = ?', [$office]);
+            if ($office === 'IN') {
+                $q->orWhereNull('patent_office_code')->orWhere('patent_office_code', '');
+            }
+        });
+    }
+
     public function lifecycleServiceStats(Request $request)
     {
         $user = $request->user();
@@ -319,6 +334,12 @@ class ProjectController extends Controller
             $q->where($this->analystWhereClause($user, $request->input('role_filter')));
         } elseif ($user->isInventor()) {
             $q->whereIn('id', $user->projectsAsInventor()->pluck('projects.id'));
+        }
+
+        // ?office=IN|US: one patent office's cases (the lifecycle page has a tab per office).
+        // Older cases with no office recorded are Indian.
+        if ($request->filled('office')) {
+            $this->wherePatentOffice($q, (string) $request->input('office'));
         }
 
         $counts = $q->selectRaw('UPPER(service_code) as svc, COUNT(*) as cnt')
@@ -543,6 +564,11 @@ class ProjectController extends Controller
             'NPV', 'NPD', 'NPP', 'NPS', 'CNS', 'DIV', 'CIP', 'OAR', 'AFT', 'RCE',
             'APP', 'ISF', 'M35', 'M75', 'M15', 'REI', 'XPR', 'REV', 'IPR', 'PGR',
         ];
+        // The firm's own US codes (Settings → Service Codes, tagged US) on a US case.
+        $usFirmSvcs = ['PRD', 'CPT', 'PIA', 'NPE', 'CON', 'FMP', 'IDS', 'TRC', 'RRT', 'NFO', 'FOA', 'QOA', 'EXI', 'APL', 'APR', 'NOA', 'MFE', 'REN', 'PGV', 'PAM', 'C46'];
+        if (strtoupper((string) $project->patent_office_code) === 'US') {
+            $prosecutionSvcs = array_merge($prosecutionSvcs, $usFirmSvcs);
+        }
         if (in_array($svc, $prosecutionSvcs, true)) {
             $syncService = app(ApplicationNumberSyncService::class);
             $prefix = $syncService->docketPrefix($project->docket_number, $project->service_code);

@@ -60,6 +60,11 @@ export interface WorkspaceRenewalInvoice {
 export interface WorkspaceRenewal {
   id: number
   renewal_year: number
+  /** US maintenance fee rows: "Maintenance fee (3.5 years)" and its payment window. */
+  label?: string | null
+  window_opens_on?: string | null
+  grace_ends_on?: string | null
+  display_label?: string
   due_date: string
   status: string
   paid_at?: string | null
