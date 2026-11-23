@@ -84,6 +84,11 @@ class UsLifecycleReapplyTest extends TestCase
         // Already on its template: left alone.
         $this->assertNull(app(LifecycleReapplyService::class)->reapply($case, 'test-2'));
 
+        // A code with no US list of its own (e.g. a trademark code) is never moved onto the generic list.
+        $trademark = Project::create(['project_code' => '401Y009USTMF', 'docket_number' => '401Y009USTMF', 'client_id' => $this->client->id,
+            'project_name' => 'Mark', 'project_type' => 'Trademark', 'patent_office_code' => 'US', 'service_code' => 'TMF', 'status' => 'Open']);
+        $this->assertNull(app(LifecycleReapplyService::class)->reapply($trademark, 'test-1'));
+
         // A granted case gets every stage completed.
         $granted = $this->createCase('US', 'NOA', '002');
         $this->onGenericUsList($granted, 2);

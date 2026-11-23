@@ -29,7 +29,10 @@ class LifecycleReapplyService
         } catch (ValidationException) {
             return null;
         }
-        if ((int) $project->jurisdiction_lifecycle_template_id === (int) $template->id || $template->stages->isEmpty()) {
+        // Only onto a list made for this service code: never move a case onto the generic
+        // office list (e.g. a trademark or misc. code that has no list of its own).
+        if ($template->service_code === '*'
+            || (int) $project->jurisdiction_lifecycle_template_id === (int) $template->id || $template->stages->isEmpty()) {
             return null;
         }
 
