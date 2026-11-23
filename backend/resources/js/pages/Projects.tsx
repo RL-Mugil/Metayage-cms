@@ -1168,7 +1168,8 @@ export default function Projects() {
   // typing a search term doesn't re-fetch the full client/user lists on every keystroke.
   const loadReferenceData = () => {
     if (isClientUser) { setClients([]); setUsers([]); return; } // 403s for client users
-    Promise.all([api.getAllClients(), api.getUsers()])
+    // Team pickers (attorney, client managers, patent engineer) list firm employees only.
+    Promise.all([api.getAllClients(), api.getStaffPickerUsers()])
       .then(([c, u]) => { setClients(c as any[]); setUsers(u as any[]); })
       .catch(() => {});
   };

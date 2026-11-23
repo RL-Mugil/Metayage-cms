@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Rules\FirmStaffUser;
 use Illuminate\Foundation\Http\FormRequest;
 
 class UpdateProjectRequest extends FormRequest
@@ -39,6 +40,10 @@ class UpdateProjectRequest extends FormRequest
 
     public function rules(): array
     {
+        // Attorney, client managers and patent engineer: firm employees only. An older case
+        // may keep a non-employee it already has until someone changes it.
+        $saved = \App\Models\Project::find($this->route('id'));
+
         return [
             'project_name'          => 'sometimes|required|string|max:255',
             'case_type'             => 'nullable|string|max:100',
@@ -51,10 +56,10 @@ class UpdateProjectRequest extends FormRequest
             'service_code'          => ['sometimes', 'required', 'string', 'regex:/^[A-Za-z0-9]{3,5}$/'],
             'filing_date'           => 'nullable|date',
             'patent_granted'        => 'nullable|boolean',
-            'assigned_partner_id'   => 'nullable|exists:users,id',
-            'assigned_manager_id'   => 'nullable|exists:users,id',
-            'secondary_manager_id'  => 'nullable|exists:users,id',
-            'patent_engineer_id'    => 'nullable|exists:users,id',
+            'assigned_partner_id'   => ['nullable', new FirmStaffUser($saved?->assigned_partner_id)],
+            'assigned_manager_id'   => ['nullable', new FirmStaffUser($saved?->assigned_manager_id)],
+            'secondary_manager_id'  => ['nullable', new FirmStaffUser($saved?->secondary_manager_id)],
+            'patent_engineer_id'    => ['nullable', new FirmStaffUser($saved?->patent_engineer_id)],
             'assigned_team'         => 'nullable|array',
             'start_date'            => 'nullable|date',
             'target_filing_date'    => 'nullable|date',

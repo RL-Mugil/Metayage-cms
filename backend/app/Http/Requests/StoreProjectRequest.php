@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Services\TrademarkMatterService;
+use App\Rules\FirmStaffUser;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -31,10 +32,10 @@ class StoreProjectRequest extends FormRequest
             'patent_office_code'    => ['required', 'string', 'regex:/^[A-Za-z0-9]{2}$/'],
             'service_code'          => ['required', 'string', 'regex:/^[A-Za-z0-9]{3,5}$/'],
             'filing_date'           => 'nullable|date',
-            'assigned_partner_id'   => 'nullable|exists:users,id',
-            'assigned_manager_id'   => 'nullable|exists:users,id',
-            'secondary_manager_id'  => 'nullable|exists:users,id',
-            'patent_engineer_id'    => 'nullable|exists:users,id',
+            'assigned_partner_id'   => ['nullable', new FirmStaffUser()],
+            'assigned_manager_id'   => ['nullable', new FirmStaffUser()],
+            'secondary_manager_id'  => ['nullable', new FirmStaffUser()],
+            'patent_engineer_id'    => ['nullable', new FirmStaffUser()],
             'assigned_team'         => 'nullable|array',
             'start_date'            => 'nullable|date',
             'target_filing_date'    => 'nullable|date',
