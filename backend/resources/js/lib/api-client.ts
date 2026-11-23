@@ -198,6 +198,28 @@ export interface FinancialAnalytics {
   comparison: { portal_invoice_count: number; zoho_invoice_count: number; linked_zoho_invoice_count: number; unlinked_zoho_invoice_count: number; portal_billed: number; zoho_billed: number; billed_difference: number; portal_outstanding: number; zoho_outstanding: number; zoho_opening_balance: number; zoho_total_receivables: number; outstanding_difference: number };
 }
 
+/** A client's portal login (Client Portal page, client panel Users tab). Access is fixed by designation. */
+export type PortalDesignation = "Manager" | "CFO" | "CTO" | "Accounts Person" | "Inventor" | "Other"
+export interface PortalUser {
+  id: number
+  name: string
+  email: string
+  phone: string | null
+  role: string
+  designation: PortalDesignation | null
+  access: string
+  is_primary: boolean
+  status: string
+  created_at: string | null
+}
+export interface NewPortalUser {
+  name: string
+  email: string
+  phone?: string
+  designation: PortalDesignation
+  password: string
+}
+
 export const api = {
   async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     const method = (options.method || 'GET').toUpperCase()
@@ -238,6 +260,8 @@ export const api = {
 
   // ── Users ──
   async getUsers(): Promise<User[]> { return this.request('/users') },
+  /** Firm staff only (Client Manager and similar pickers), never client or inventor logins. */
+  async getStaffPickerUsers(): Promise<User[]> { return this.request('/users?staff=1') },
 
   // ── Dashboard ──
   async getDashboardMetrics(roleFilter?: string): Promise<DashboardMetrics> {
@@ -1310,14 +1334,18 @@ export const api = {
   async portalBulk(action: 'enable' | 'disable' | 'delete', ids: number[]): Promise<{ ok: boolean; affected: number }> {
     return this.request('/portal/bulk', { method: 'POST', body: JSON.stringify({ action, ids }) })
   },
-  async getPortalClientUsers(clientId: number): Promise<any[]> {
+  async getPortalClientUsers(clientId: number): Promise<PortalUser[]> {
     return this.request(`/portal/clients/${clientId}/users`)
   },
-  async addPortalClientUser(clientId: number, data: { name: string; email: string; password: string }): Promise<any> {
+  async addPortalClientUser(clientId: number, data: NewPortalUser): Promise<{ ok: boolean; user: PortalUser }> {
     return this.request(`/portal/clients/${clientId}/users`, { method: 'POST', body: JSON.stringify(data) })
   },
   async removePortalClientUser(clientId: number, userId: number): Promise<{ ok: boolean }> {
     return this.request(`/portal/clients/${clientId}/users/${userId}`, { method: 'DELETE' })
+  },
+  async getPortalSettings(): Promise<{ emails_paused: boolean }> { return this.request('/portal/settings') },
+  async updatePortalSettings(data: { emails_paused: boolean }): Promise<{ emails_paused: boolean }> {
+    return this.request('/portal/settings', { method: 'PUT', body: JSON.stringify(data) })
   },
   async resetPortalUserPassword(clientId: number, userId: number, password: string): Promise<{ ok: boolean }> {
     return this.request(`/portal/clients/${clientId}/users/${userId}/reset-password`, { method: 'POST', body: JSON.stringify({ password }) })

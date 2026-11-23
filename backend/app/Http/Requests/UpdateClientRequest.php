@@ -2,7 +2,10 @@
 
 namespace App\Http\Requests;
 
+use App\Models\Client;
+use App\Models\User;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class UpdateClientRequest extends FormRequest
 {
@@ -20,6 +23,7 @@ class UpdateClientRequest extends FormRequest
         return [
             'client_type'          => 'sometimes|in:individual,organization',
             'nationality'          => 'nullable|string|max:100',
+            'country'              => 'nullable|string|max:100',
             'has_gstin'            => 'boolean',
             'gstin'                => ['nullable', 'string', 'max:15', 'regex:/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/'],
             'legal_name'           => 'sometimes|required|string|max:255',
@@ -50,15 +54,28 @@ class UpdateClientRequest extends FormRequest
             // drives SendDeadlineRemindersCommand::scanPaymentAnomalies().
             'payment_clearance_pattern'            => 'nullable|array',
             'payment_clearance_pattern.lead_days'  => 'nullable|integer|min:0|max:365',
-            'account_manager_id'   => 'nullable|exists:users,id',
+            // Only firm staff can manage a client (never a client or inventor login).
+            'account_manager_id'   => ['nullable', Rule::exists('users', 'id')->whereIn('role', User::FIRM_STAFF_ROLES)],
             'bank_name'            => 'nullable|string|max:255',
             'bank_account'         => 'nullable|string|max:50',
             'bank_ifsc'            => 'nullable|string|max:20',
-            'referred_by_code'     => 'nullable|string|max:10',
+            'referred_by_code'     => ['nullable', 'string', 'max:50', $this->referrerRule()],
             'accounts_person'      => 'nullable|string|max:255',
             'remarks'              => 'nullable|string',
             'status'               => 'nullable|string|max:50',
             'circle'               => 'nullable|in:A,B',
         ];
+    }
+
+    /** A referrer must be an existing client; a legacy code already saved on this client is kept as is. */
+    private function referrerRule(): \Closure
+    {
+        $saved = $this->route('id') ? Client::whereKey($this->route('id'))->value('referred_by_code') : null;
+
+        return function (string $attribute, mixed $value, \Closure $fail) use ($saved) {
+            if (filled($value) && $value !== $saved && ! Client::where('client_code', $value)->exists()) {
+                $fail('Pick the referring client from the list.');
+            }
+        };
     }
 }

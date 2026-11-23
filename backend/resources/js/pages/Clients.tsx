@@ -13,18 +13,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { api, downloadCSV } from "@/lib/api-client";
 import { ClientDetailPanel } from "@/components/client-detail-panel";
+import { ClientCodeCombobox } from "@/components/client-code-combobox";
+import { PORTAL_MANAGE_ROLES, PortalUserFields, blankPortalUser, portalUserProblem } from "@/components/clients/client-portal-users";
+import type { NewPortalUser } from "@/lib/api-client";
+import { isIndia, normaliseCountry, useCountries } from "@/lib/countries";
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-const INDIAN_STATES = [
-  "Andhra Pradesh","Arunachal Pradesh","Assam","Bihar","Chhattisgarh","Goa",
-  "Gujarat","Haryana","Himachal Pradesh","Jharkhand","Karnataka","Kerala",
-  "Madhya Pradesh","Maharashtra","Manipur","Meghalaya","Mizoram","Nagaland",
-  "Odisha","Punjab","Rajasthan","Sikkim","Tamil Nadu","Telangana","Tripura",
-  "Uttar Pradesh","Uttarakhand","West Bengal",
-  "Andaman & Nicobar Islands","Chandigarh","Dadra & Nagar Haveli","Daman & Diu",
-  "Delhi","Jammu & Kashmir","Ladakh","Lakshadweep","Puducherry",
-];
+/** A Foreign Company is always Export: Indian registrations (CIN, PAN, GSTIN) don't apply. */
+const FOREIGN_COMPANY = "Foreign Company";
 
 const ORG_SUBTYPES = [
   "Private Limited (Pvt Ltd)","Public Limited","LLP","Partnership Firm",
@@ -70,8 +67,8 @@ function GovFieldRow({ label, current, fetched, onUse }: { label: string; curren
   );
 }
 
-function computeGstType(nationality: string, hasGstin: boolean, clientType: string): string {
-  if (nationality.toLowerCase() !== "india") return "Export";
+function computeGstType(country: string, hasGstin: boolean, clientType: string, entitySubtype = ""): string {
+  if (!isIndia(country) || (clientType === "organization" && entitySubtype === FOREIGN_COMPANY)) return "Export";
   if (hasGstin) return "B2B";
   return clientType === "individual" ? "B2C" : "Unregistered";
 }
@@ -126,13 +123,17 @@ function fmtDate(d: string | null | undefined): string {
 type CType = "individual" | "organization";
 interface CF {
   record_mode: "new" | "existing"; client_code: string;
-  client_type: CType; nationality: string; has_gstin: boolean; gstin: string;
+  // Country (all countries) is saved as both country and nationality.
+  client_type: CType; country: string; has_gstin: boolean; gstin: string;
   legal_name: string; entity_subtype: string; fee_entity_tier: string; pan_number: string; cin_number: string;
   trade_name: string; website: string; contact_name: string; contact_email: string;
   phone: string; address: string; state: string;
   industry: string; payment_terms: string;
   account_manager_id: string; bank_name: string; bank_account: string; bank_ifsc: string;
   referred_by_code: string; accounts_person: string; remarks: string; status: string;
+  // New client only: the Accounts Person's Finance portal login, and other portal users.
+  accounts_email: string; accounts_phone: string; accounts_login: boolean; accounts_password: string;
+  portal_users: NewPortalUser[];
   // Reminders — UI-friendly text, transformed to reminder_cadence_override
   // (number[]) / payment_clearance_pattern ({lead_days}) on save. See
   // ReminderThresholdResolver::thresholdsFor()/Client.php.
@@ -140,12 +141,13 @@ interface CF {
 }
 const BLANK: CF = {
   record_mode:"new", client_code:"",
-  client_type:"organization", nationality:"India", has_gstin:false, gstin:"",
+  client_type:"organization", country:"India", has_gstin:false, gstin:"",
   legal_name:"", entity_subtype:"", fee_entity_tier:"", pan_number:"", cin_number:"", trade_name:"", website:"",
   contact_name:"", contact_email:"", phone:"", address:"", state:"",
   industry:"", payment_terms:"Net 30",
   account_manager_id:"", bank_name:"", bank_account:"", bank_ifsc:"",
   referred_by_code:"", accounts_person:"", remarks:"", status:"Active",
+  accounts_email:"", accounts_phone:"", accounts_login:false, accounts_password:"", portal_users:[],
   reminder_extra_days:"", payment_clearance_lead_days:"",
 };
 
@@ -595,11 +597,12 @@ export default function Clients() {
   const [fErr, setFErr]         = useState("");
   const [delTarget, setDelTarget] = useState<any>(null);
   const [deleting, setDeleting] = useState(false);
-  const [refQ, setRefQ]         = useState("");
   const [detailClientId, setDetailClientId] = useState<number | null>(null);
   const [entityVerifying, setEntityVerifying] = useState(false);
   const [entityVerifyMessage, setEntityVerifyMessage] = useState("");
   const canVerifyEntity = ["super_admin", "partner", "manager", "galvanizer"].includes(pageProps.auth?.user?.role ?? "");
+  const canManagePortal = PORTAL_MANAGE_ROLES.includes(pageProps.auth?.user?.role ?? "");
+  const countries = useCountries();
 
   const [verifyingRowId, setVerifyingRowId] = useState<number | null>(null);
   async function verifyEntityRow(c: any) {
@@ -658,6 +661,8 @@ export default function Clients() {
 
   useEffect(() => {
     api.getClientStats().then(setStats).catch(() => {});
+    // Client Manager: firm staff only.
+    api.getStaffPickerUsers().then(setUsers).catch(() => {});
     const params = new URLSearchParams(window.location.search);
     const openId = params.get("open");
     if (openId) {
@@ -670,22 +675,20 @@ export default function Clients() {
   useEffect(() => {
     setLoading(true);
     fetchClients(1);
-    api.getUsers().then(setUsers).catch(() => {});
   }, [search, statusF]);
 
   const isOrg    = form.client_type === "organization";
-  const isIndian = form.nationality.toLowerCase() === "india";
-  const gstType  = computeGstType(form.nationality, form.has_gstin, form.client_type);
-  const previewCode = editC?.client_code ?? nextClientCode(paginatedResult.data, form.nationality);
+  const isIndian = isIndia(form.country);
+  const isForeignCompany = isOrg && form.entity_subtype === FOREIGN_COMPANY;
+  // Export clients: Indian registrations (CIN, PAN, GSTIN) don't apply.
+  const isExport = isForeignCompany || !isIndian;
+  const gstType  = computeGstType(form.country, form.has_gstin, form.client_type, form.entity_subtype);
+  const previewCode = editC?.client_code ?? nextClientCode(paginatedResult.data, form.country);
+  const countryStates = countries.find((c) => c.name === form.country)?.states ?? [];
+  const countryKnown = !form.country || countries.length === 0 || countries.some((c) => c.name === form.country);
 
   const set = (f: keyof CF, v: any) => setForm((p) => ({ ...p, [f]: v }));
 
-  const refOptions = useMemo(() =>
-    paginatedResult.data
-      .filter((c: any) => c.client_code && /^[C-Z][0-9]{2}[MY]?$/.test(c.client_code))
-      .filter((c: any) => !refQ || (c.client_code+"|"+(c.legal_name??c.company_name??"")).toLowerCase().includes(refQ.toLowerCase()))
-      .slice(0, 10),
-    [paginatedResult.data, refQ]);
 
   function openCreate() { setForm(BLANK); setEditC(null); setFErr(""); setShowForm(true); }
 
@@ -694,7 +697,7 @@ export default function Clients() {
       record_mode:      "existing",
       client_code:      c.client_code        ?? "",
       client_type:      c.client_type       ?? "organization",
-      nationality:      c.nationality       ?? "India",
+      country:          normaliseCountry(c.country || c.nationality || "India", countries) || (c.country || c.nationality || ""),
       has_gstin:        !!c.has_gstin,
       gstin:            c.gstin             ?? "",
       legal_name:       c.legal_name        ?? c.company_name ?? "",
@@ -717,6 +720,7 @@ export default function Clients() {
       bank_ifsc:        c.bank_ifsc         ?? "",
       referred_by_code: c.referred_by_code  ?? "",
       accounts_person:  c.accounts_person   ?? "",
+      accounts_email: "", accounts_phone: "", accounts_login: false, accounts_password: "", portal_users: [],
       remarks:          c.remarks           ?? "",
       status:           c.status            ?? "Active",
       reminder_extra_days: Array.isArray(c.reminder_cadence_override) ? c.reminder_cadence_override.join(", ") : "",
@@ -730,15 +734,32 @@ export default function Clients() {
     if (!editC && form.record_mode === "existing" && !form.client_code.trim()) {
       setFErr("Existing client code is required for legacy clients."); return;
     }
+    if (!form.country.trim() || !countryKnown) { setFErr("Choose the client's country from the list."); return; }
+    if (isForeignCompany && isIndian) { setFErr("A foreign company's country cannot be India. Choose its country."); return; }
+    const newPortalUsers = editC ? [] : form.portal_users;
+    if (!editC && form.accounts_login) {
+      const problem = portalUserProblem({ designation: "Accounts Person", name: form.accounts_person || "Accounts", email: form.accounts_email, password: form.accounts_password });
+      if (problem) { setFErr(problem.replace("portal user", "Accounts Person")); return; }
+    }
+    for (const user of newPortalUsers) {
+      const problem = portalUserProblem(user);
+      if (problem) { setFErr(problem); return; }
+    }
     setSaving(true); setFErr("");
     try {
-      const { reminder_extra_days, payment_clearance_lead_days, ...formRest } = form;
+      const { reminder_extra_days, payment_clearance_lead_days, accounts_email, accounts_phone, accounts_login, accounts_password, portal_users, ...formRest } = form;
       const reminderDays = reminder_extra_days
         .split(",").map((s) => parseInt(s.trim(), 10)).filter((n) => Number.isInteger(n) && n >= 0);
       const clearanceLead = payment_clearance_lead_days.trim() ? parseInt(payment_clearance_lead_days, 10) : null;
 
       const payload = {
         ...formRest,
+        nationality: form.country,
+        // Export clients carry no Indian registrations.
+        ...(isExport ? { has_gstin: false, gstin: "", pan_number: "", cin_number: "" } : {}),
+        referred_by_code: form.referred_by_code || null,
+        ...(!editC && accounts_login ? { accounts_portal: { email: accounts_email.trim(), phone: accounts_phone.trim() || null, password: accounts_password } } : {}),
+        ...(!editC && portal_users.length ? { portal_users: portal_users.map((u) => ({ ...u, name: u.name.trim(), email: u.email.trim() })) } : {}),
         client_code: form.client_code.trim().toUpperCase() || null,
         account_manager_id: form.account_manager_id ? parseInt(form.account_manager_id) : null,
         reminder_cadence_override: reminderDays.length ? reminderDays : null,
@@ -1120,7 +1141,9 @@ export default function Clients() {
                     </div>
                     <div className="col-span-2">
                       <FLbl>CIN Number</FLbl>
-                      <input value={form.cin_number} onChange={(e)=>set("cin_number",e.target.value.toUpperCase())} className={fInp} placeholder="U12345MH2020PTC123456" maxLength={21}/>
+                      {isExport
+                        ? <input disabled value="Not applicable (Export)" className={`${fInp} text-muted-foreground`}/>
+                        : <input value={form.cin_number} onChange={(e)=>set("cin_number",e.target.value.toUpperCase())} className={fInp} placeholder="U12345MH2020PTC123456" maxLength={21}/>}
                       {editC && form.cin_number && (
                         <div className="mt-1 flex items-center gap-2 flex-wrap">
                           <Badge variant="outline" className={`text-[10px] ${verifyBadgeClass(editC.cin_verification_status)}`}>
@@ -1150,15 +1173,20 @@ export default function Clients() {
                   </>}
                   <div>
                     <FLbl>PAN Number</FLbl>
-                    <input value={form.pan_number} onChange={(e)=>set("pan_number",e.target.value.toUpperCase())} className={fInp} placeholder="ABCDE1234F" maxLength={10}/>
+                    {isExport
+                      ? <input disabled value="Not applicable (Export)" className={`${fInp} text-muted-foreground`}/>
+                      : <input value={form.pan_number} onChange={(e)=>set("pan_number",e.target.value.toUpperCase())} className={fInp} placeholder="ABCDE1234F" maxLength={10}/>}
                   </div>
                   <div>
-                    <FLbl>Nationality</FLbl>
-                    <select value={form.nationality} onChange={(e)=>set("nationality",e.target.value)} className={fInp}>
-                      {["India","USA","UK","Germany","Japan","China","Singapore","Australia","Canada",
-                        "France","Netherlands","South Korea","UAE","Switzerland","Other (Foreign)"]
-                        .map((n)=><option key={n}>{n}</option>)}
+                    <FLbl req>Country</FLbl>
+                    <select value={form.country}
+                      onChange={(e)=>setForm((p)=>({ ...p, country: e.target.value, state: "" }))}
+                      className={`${fInp} ${isForeignCompany && isIndian ? "border-destructive" : ""}`}>
+                      <option value="">Select country…</option>
+                      {!countryKnown && <option value={form.country}>{form.country} (choose from list)</option>}
+                      {countries.map((c)=><option key={c.name} value={c.name}>{c.name}</option>)}
                     </select>
+                    {isForeignCompany && isIndian && <p className="mt-0.5 text-[10px] text-destructive">A foreign company&apos;s country cannot be India.</p>}
                   </div>
                   <div className="col-span-2">
                     <FLbl>Fee Entity Tier</FLbl>
@@ -1177,10 +1205,14 @@ export default function Clients() {
                 <FSectionHeading n={editC ? 2 : 3}>GST Details</FSectionHeading>
                 <div className="grid grid-cols-4 gap-2">
                   <div className="col-span-4 flex items-center justify-between">
-                    <label className="flex items-center gap-2 cursor-pointer select-none">
-                      <input type="checkbox" checked={form.has_gstin} onChange={(e)=>set("has_gstin",e.target.checked)} className="h-4 w-4 accent-current rounded"/>
-                      <span className="text-xs">Registered under GST — has GSTIN</span>
-                    </label>
+                    {isExport ? (
+                      <span className="text-xs text-muted-foreground">GSTIN: not applicable (Export)</span>
+                    ) : (
+                      <label className="flex items-center gap-2 cursor-pointer select-none">
+                        <input type="checkbox" checked={form.has_gstin} onChange={(e)=>set("has_gstin",e.target.checked)} className="h-4 w-4 accent-current rounded"/>
+                        <span className="text-xs">Registered under GST — has GSTIN</span>
+                      </label>
+                    )}
                     <div className="flex items-center gap-2">
                       <span className="text-[10px] text-muted-foreground">Classification:</span>
                       {(() => { const gm = GST_META[gstType]; return (
@@ -1189,7 +1221,7 @@ export default function Clients() {
                     </div>
                   </div>
 
-                  {form.has_gstin && (
+                  {form.has_gstin && !isExport && (
                     <div className="col-span-4">
                       <FLbl>GSTIN</FLbl>
                       <input value={form.gstin} onChange={(e)=>set("gstin",e.target.value.toUpperCase())} className={fInp} placeholder="27AAPFU0939F1ZV" maxLength={15}/>
@@ -1219,19 +1251,19 @@ export default function Clients() {
                     </div>
                   )}
 
-                  {!isIndian && (
+                  {isExport && (
                     <div className="col-span-4 flex items-center gap-2 p-3 rounded-lg bg-purple-50 border border-purple-200 text-xs text-purple-700">
                       <Globe className="h-4 w-4 flex-shrink-0"/>
-                      Foreign client — classified as <strong className="mx-1">Export</strong> (zero-rated / LUT under GST).
+                      {isForeignCompany ? "Foreign company" : "Foreign client"} — classified as <strong className="mx-1">Export</strong> (zero-rated / LUT under GST). CIN, PAN and GSTIN don&apos;t apply.
                     </div>
                   )}
-                  {isIndian && !form.has_gstin && !isOrg && (
+                  {!isExport && !form.has_gstin && !isOrg && (
                     <div className="col-span-4 flex items-center gap-2 p-3 rounded-lg bg-green-50 border border-green-200 text-xs text-green-700">
                       <AlertCircle className="h-4 w-4 flex-shrink-0"/>
                       Indian individual without GSTIN — classified as <strong className="mx-1">B2C</strong>.
                     </div>
                   )}
-                  {isIndian && !form.has_gstin && isOrg && (
+                  {!isExport && !form.has_gstin && isOrg && (
                     <div className="col-span-4 flex items-center gap-2 p-3 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-700">
                       <AlertCircle className="h-4 w-4 flex-shrink-0"/>
                       Indian organization without GSTIN — classified as <strong className="mx-1">Unregistered</strong>.
@@ -1258,20 +1290,18 @@ export default function Clients() {
                     <FLbl>Email</FLbl>
                     <input type="email" value={form.contact_email} onChange={(e)=>set("contact_email",e.target.value)} className={fInp} placeholder="contact@company.com"/>
                   </div>
-                  {isIndian ? (
-                    <div className="col-span-2">
-                      <FLbl>State</FLbl>
+                  <div className="col-span-2">
+                    <FLbl>{isIndian ? "State" : "State / Region"}{form.country ? ` (${form.country})` : ""}</FLbl>
+                    {countryStates.length > 0 ? (
                       <select value={form.state} onChange={(e)=>set("state",e.target.value)} className={fInp}>
                         <option value="">Select state…</option>
-                        {INDIAN_STATES.map((s)=><option key={s}>{s}</option>)}
+                        {form.state && !countryStates.includes(form.state) && <option value={form.state}>{form.state}</option>}
+                        {countryStates.map((st)=><option key={st} value={st}>{st}</option>)}
                       </select>
-                    </div>
-                  ) : (
-                    <div className="col-span-2">
-                      <FLbl>State / Region</FLbl>
-                      <input value={form.state} onChange={(e)=>set("state",e.target.value)} className={fInp} placeholder="State or region"/>
-                    </div>
-                  )}
+                    ) : (
+                      <input value={form.state} onChange={(e)=>set("state",e.target.value)} className={fInp} placeholder={form.country ? "State or region" : "Choose the country first"}/>
+                    )}
+                  </div>
                   <div className="col-span-4">
                     <FLbl>Address</FLbl>
                     <textarea value={form.address} onChange={(e)=>set("address",e.target.value)} rows={2} className={fTa} placeholder="Full address including city, PIN code…"/>
@@ -1297,7 +1327,7 @@ export default function Clients() {
                     </select>
                   </div>
                   <div>
-                    <FLbl>Client Manager</FLbl>
+                    <FLbl>Client Manager (our staff)</FLbl>
                     <select value={form.account_manager_id} onChange={(e)=>set("account_manager_id",e.target.value)} className={fInp}>
                       <option value="">Select manager…</option>
                       {users.map((u)=><option key={u.id} value={u.id}>{u.name}</option>)}
@@ -1309,9 +1339,34 @@ export default function Clients() {
                       {["Active","Inactive","Prospect","On Hold"].map((s)=><option key={s}>{s}</option>)}
                     </select>
                   </div>
-                  <div className="col-span-2">
-                    <FLbl>Accounts Person</FLbl>
-                    <input value={form.accounts_person} onChange={(e)=>set("accounts_person",e.target.value)} className={fInp} placeholder="Finance/accounts contact"/>
+                  <div className="col-span-4 rounded border border-border/70 bg-muted/20 p-2">
+                    <div className="grid grid-cols-4 gap-2">
+                      <div className="col-span-2">
+                        <FLbl>Accounts Person (client&apos;s finance contact)</FLbl>
+                        <input value={form.accounts_person} onChange={(e)=>set("accounts_person",e.target.value)} className={fInp} placeholder="Name"/>
+                      </div>
+                      {!editC && canManagePortal && <>
+                        <div>
+                          <FLbl>Email</FLbl>
+                          <input type="email" value={form.accounts_email} onChange={(e)=>set("accounts_email",e.target.value)} className={fInp} placeholder="accounts@company.com"/>
+                        </div>
+                        <div>
+                          <FLbl>Phone</FLbl>
+                          <input value={form.accounts_phone} onChange={(e)=>set("accounts_phone",e.target.value)} className={fInp}/>
+                        </div>
+                        <label className="col-span-2 flex items-center gap-2 text-xs">
+                          <input type="checkbox" checked={form.accounts_login} onChange={(e)=>set("accounts_login",e.target.checked)}/>
+                          Give portal login as the financial person (sees invoices and payments only)
+                        </label>
+                        {form.accounts_login && (
+                          <div className="col-span-2">
+                            <FLbl req>Password (min. 8)</FLbl>
+                            <input value={form.accounts_password} onChange={(e)=>set("accounts_password",e.target.value)} className={`${fInp} font-mono`}/>
+                          </div>
+                        )}
+                      </>}
+                      {editC && <p className="col-span-2 self-end text-[10px] text-muted-foreground">Portal logins are managed in the client&apos;s Users tab.</p>}
+                    </div>
                   </div>
                 </div>
               </section>
@@ -1358,32 +1413,9 @@ export default function Clients() {
               <section>
                 <FSectionHeading n={editC ? 7 : 8}>Referral &amp; Remarks</FSectionHeading>
                 <div className="grid grid-cols-4 gap-2">
-                  <div className="col-span-2 relative">
+                  <div className="col-span-2">
                     <FLbl>Referred by (Client Code)</FLbl>
-                    <input
-                      value={refQ || form.referred_by_code}
-                      onChange={(e)=>{ setRefQ(e.target.value); if(!e.target.value) set("referred_by_code",""); }}
-                      className={fInp} placeholder="Search code or name…"/>
-                    {refQ && (
-                      <div className="absolute z-10 top-full mt-1 w-full bg-background border border-border rounded-md shadow-lg max-h-40 overflow-y-auto">
-                        {refOptions.map((c: any) => (
-                          <button key={c.id} type="button"
-                            onClick={()=>{ set("referred_by_code",c.client_code); setRefQ(""); }}
-                            className="w-full text-left px-3 py-2 text-sm hover:bg-muted/40 flex items-center gap-2">
-                            <span className="font-mono text-gold text-xs font-semibold">{c.client_code}</span>
-                            <span className="text-muted-foreground">{c.legal_name ?? c.company_name}</span>
-                          </button>
-                        ))}
-                        {refOptions.length===0 && <p className="px-3 py-2 text-xs text-muted-foreground">No matches</p>}
-                      </div>
-                    )}
-                    {form.referred_by_code && !refQ && (
-                      <div className="flex items-center gap-2 mt-1.5 px-1">
-                        <span className="font-mono text-gold text-xs font-semibold">{form.referred_by_code}</span>
-                        <span className="text-xs text-muted-foreground">{clients.find((c: any)=>c.client_code===form.referred_by_code)?.legal_name ?? ""}</span>
-                        <button type="button" onClick={()=>set("referred_by_code","")} className="ml-auto text-muted-foreground"><X className="h-3 w-3"/></button>
-                      </div>
-                    )}
+                    <ClientCodeCombobox value={form.referred_by_code} onChange={(code)=>set("referred_by_code", code)} excludeCode={editC?.client_code}/>
                   </div>
                   <div className="col-span-4">
                     <FLbl>Remarks</FLbl>
@@ -1391,6 +1423,31 @@ export default function Clients() {
                   </div>
                 </div>
               </section>
+
+              {!editC && canManagePortal && (
+                <section>
+                  <FSectionHeading n={9}>Portal Users</FSectionHeading>
+                  <p className="mb-2 text-[10px] text-muted-foreground">
+                    Client portal logins created with the client. What each person sees follows their designation; more can be added later in the client&apos;s Users tab or on the Client Portal page.
+                  </p>
+                  <div className="space-y-2">
+                    {form.portal_users.map((user, index) => (
+                      <div key={index} className="relative rounded border border-border p-2 pr-8">
+                        <PortalUserFields value={user}
+                          onChange={(next)=>setForm((p)=>({ ...p, portal_users: p.portal_users.map((u, i)=> i === index ? next : u) }))}/>
+                        <button type="button" title="Remove" className="absolute right-2 top-2 text-muted-foreground hover:text-destructive"
+                          onClick={()=>setForm((p)=>({ ...p, portal_users: p.portal_users.filter((_, i)=> i !== index) }))}>
+                          <X className="h-3.5 w-3.5"/>
+                        </button>
+                      </div>
+                    ))}
+                    <Button type="button" size="sm" variant="outline" className="h-7 text-xs"
+                      onClick={()=>setForm((p)=>({ ...p, portal_users: [...p.portal_users, blankPortalUser(p.portal_users.length === 0 ? "Manager" : "Other")] }))}>
+                      <Plus className="mr-1 h-3.5 w-3.5"/>Add portal user
+                    </Button>
+                  </div>
+                </section>
+              )}
 
               {fErr && (
                 <div className="flex items-center gap-2 p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-sm text-destructive">

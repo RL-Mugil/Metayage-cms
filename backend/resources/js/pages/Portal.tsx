@@ -1,4 +1,6 @@
-import { Head } from "@inertiajs/react";
+import { Head, usePage } from "@inertiajs/react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { useEffect, useState, useRef } from "react";
 import { Globe, Eye, EyeOff, Mail, Loader2, Plus, X, CheckCircle, Search, KeyRound, ChevronLeft, ChevronRight, AlertCircle, Trash2, ToggleLeft, ToggleRight, CheckCheck, Users, UserPlus, UserMinus, Shield } from "lucide-react";
 import AppLayout from "@/layouts/AppLayout";
@@ -7,8 +9,33 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api-client";
+import { ClientPortalUsers, PORTAL_MANAGE_ROLES } from "@/components/clients/client-portal-users";
 
 const PAGE_SIZE = 10;
+
+/** Top-right switch: invite emails to new portal users are paused until turned on. */
+function PortalEmailSwitch({ canManage }: { canManage: boolean }) {
+  const queryClient = useQueryClient();
+  const { data } = useQuery({ queryKey: ["portal-settings"], queryFn: () => api.getPortalSettings() });
+  const update = useMutation({
+    mutationFn: (paused: boolean) => api.updatePortalSettings({ emails_paused: paused }),
+    onSuccess: (fresh) => {
+      queryClient.setQueryData(["portal-settings"], fresh);
+      toast.success(fresh.emails_paused ? "Invite emails paused." : "Invite emails turned on.");
+    },
+    onError: (failure: Error) => toast.error(failure.message),
+  });
+  if (!data) return null;
+  const paused = data.emails_paused;
+  return (
+    <Button variant="outline" disabled={!canManage || update.isPending} onClick={() => update.mutate(!paused)}
+      title={paused ? "New portal users are not emailed. Share their login yourself." : "New portal users get an invite email with their login."}
+      className={paused ? "border-amber-500/50 text-amber-700 dark:text-amber-400" : ""}>
+      {paused ? <ToggleLeft className="h-4 w-4 mr-2" /> : <ToggleRight className="h-4 w-4 mr-2 text-emerald-600" />}
+      {paused ? "Invite emails paused" : "Invite emails on"}
+    </Button>
+  );
+}
 
 type PortalKpiKey = "active" | "pending" | "inactive";
 
@@ -124,28 +151,8 @@ export default function Portal() {
 
   // ── Company Profile Panel ─────────────────────────────────────────────────
   const [profileClient, setProfileClient] = useState<any | null>(null);
-  const [portalUsers, setPortalUsers] = useState<any[]>([]);
-  const [usersLoading, setUsersLoading] = useState(false);
-
-  // Add User in panel
-  const [showAddUser, setShowAddUser] = useState(false);
-  const [addName, setAddName] = useState("");
-  const [addEmail, setAddEmail] = useState("");
-  const [addPassword, setAddPassword] = useState("");
-  const [addUserSaving, setAddUserSaving] = useState(false);
-  const [addUserError, setAddUserError] = useState("");
-
-  // Per-user Reset PW (nested in profile panel)
-  const [userResetTarget, setUserResetTarget] = useState<any | null>(null);
-  const [userResetPw, setUserResetPw] = useState("");
-  const [userResetSaving, setUserResetSaving] = useState(false);
-  const [userResetError, setUserResetError] = useState("");
-  const [userResetDone, setUserResetDone] = useState(false);
-
-  // Remove user confirm
-  const [confirmRemoveUser, setConfirmRemoveUser] = useState<number | null>(null);
-  const [removeUserLoading, setRemoveUserLoading] = useState(false);
-  const [removeUserError, setRemoveUserError] = useState("");
+  const { props: pageProps } = usePage() as any;
+  const canManagePortal = PORTAL_MANAGE_ROLES.includes(pageProps.auth?.user?.role ?? "");
 
   const [activity, setActivity] = useState<any[]>([]);
   const [activityLoading, setActivityLoading] = useState(true);
@@ -271,67 +278,8 @@ export default function Portal() {
   };
 
   // ── Company Profile Panel actions ─────────────────────────────────────────
-  async function openProfile(client: any) {
+  function openProfile(client: any) {
     setProfileClient(client);
-    setUsersLoading(true);
-    setShowAddUser(false);
-    setAddName(""); setAddEmail(""); setAddPassword(""); setAddUserError("");
-    setUserResetTarget(null);
-    setConfirmRemoveUser(null); setRemoveUserError("");
-    try {
-      const users = await api.getPortalClientUsers(client.id);
-      setPortalUsers(Array.isArray(users) ? users : []);
-    } catch { setPortalUsers([]); }
-    finally { setUsersLoading(false); }
-  }
-
-  async function addUserToPortal() {
-    if (!profileClient || !addName.trim() || !addEmail.trim() || addPassword.length < 6) return;
-    setAddUserSaving(true);
-    setAddUserError("");
-    try {
-      const res = await api.addPortalClientUser(profileClient.id, {
-        name: addName.trim(),
-        email: addEmail.trim(),
-        password: addPassword,
-      });
-      setPortalUsers(prev => [...prev, res.user]);
-      setShowAddUser(false);
-      setAddName(""); setAddEmail(""); setAddPassword("");
-    } catch (e: any) {
-      setAddUserError(e?.message || "Failed to add user. Email may already exist.");
-    } finally {
-      setAddUserSaving(false);
-    }
-  }
-
-  async function removePortalUser(user: any) {
-    if (!profileClient) return;
-    setRemoveUserLoading(true);
-    setRemoveUserError("");
-    try {
-      await api.removePortalClientUser(profileClient.id, user.id);
-      setPortalUsers(prev => prev.filter(u => u.id !== user.id));
-      setConfirmRemoveUser(null);
-    } catch (e: any) {
-      setRemoveUserError(e?.message || "Failed to remove user.");
-    } finally {
-      setRemoveUserLoading(false);
-    }
-  }
-
-  async function resetPortalUserPw() {
-    if (!profileClient || !userResetTarget || userResetPw.length < 6) return;
-    setUserResetSaving(true);
-    setUserResetError("");
-    try {
-      await api.resetPortalUserPassword(profileClient.id, userResetTarget.id, userResetPw);
-      setUserResetDone(true);
-    } catch (e: any) {
-      setUserResetError(e?.message || "Failed to reset password.");
-    } finally {
-      setUserResetSaving(false);
-    }
   }
 
   // ── Derived values ────────────────────────────────────────────────────────
@@ -375,6 +323,7 @@ export default function Portal() {
         description="Manage client portal access and activity."
         actions={
           <>
+            <PortalEmailSwitch canManage={canManagePortal} />
             <Button variant="outline" onClick={() => { setShowInviteAll(true); setInviteAllDone(false); }}>
               <Mail className="h-4 w-4 mr-2" />Invite All Inactive
             </Button>
@@ -585,51 +534,6 @@ export default function Portal() {
         </div>
       )}
 
-      {/* ── Per-user Reset PW Modal (nested above profile panel) ─────────── */}
-      {userResetTarget && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-sm">
-          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-sm p-6 m-4">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="font-display text-base font-semibold">Reset Password</h2>
-              <button onClick={() => { setUserResetTarget(null); setUserResetPw(""); setUserResetDone(false); setUserResetError(""); }}>
-                <X className="h-5 w-5 text-muted-foreground" />
-              </button>
-            </div>
-            {userResetDone ? (
-              <div className="text-center py-3">
-                <CheckCircle className="h-8 w-8 text-green-500 mx-auto mb-2" />
-                <div className="font-semibold text-sm">Password Reset!</div>
-                <div className="text-xs text-muted-foreground mt-1">{userResetTarget.name} ({userResetTarget.email})</div>
-                <Button className="mt-4" size="sm" variant="outline" onClick={() => { setUserResetTarget(null); setUserResetPw(""); setUserResetDone(false); }}>Close</Button>
-              </div>
-            ) : (
-              <>
-                <p className="text-sm text-muted-foreground mb-1">
-                  New password for <strong>{userResetTarget.name}</strong>
-                </p>
-                <p className="text-xs font-mono text-muted-foreground mb-3">{userResetTarget.email}</p>
-                {userResetError && <p className="text-xs text-red-500 mb-2">{userResetError}</p>}
-                <input
-                  type="text"
-                  value={userResetPw}
-                  onChange={e => { setUserResetPw(e.target.value); setUserResetError(""); }}
-                  placeholder="New password (min. 6 chars)"
-                  className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-gold mb-4"
-                />
-                <div className="flex gap-2">
-                  <Button className="bg-gold hover:bg-gold/90 text-black flex-1 h-8 text-sm"
-                    disabled={userResetPw.length < 6 || userResetSaving}
-                    onClick={resetPortalUserPw}>
-                    {userResetSaving ? <Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" /> : <KeyRound className="h-3.5 w-3.5 mr-2" />}Reset
-                  </Button>
-                  <Button variant="outline" className="h-8 text-sm" onClick={() => { setUserResetTarget(null); setUserResetPw(""); setUserResetError(""); }}>Cancel</Button>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      )}
-
       {/* ── Company Profile Panel ─────────────────────────────────────────── */}
       {profileClient && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
@@ -645,162 +549,15 @@ export default function Portal() {
                 </div>
                 <p className="text-xs text-muted-foreground mt-0.5 font-mono">{profileClient.client_code}</p>
               </div>
-              <button onClick={() => {
-                setProfileClient(null);
-                setUserResetTarget(null);
-                setConfirmRemoveUser(null);
-                setShowAddUser(false);
-              }}>
+              <button onClick={() => setProfileClient(null)}>
                 <X className="h-5 w-5 text-muted-foreground" />
               </button>
             </div>
 
             {/* Body */}
             <div className="flex-1 overflow-auto px-6 py-4 space-y-4">
-              {/* Section header */}
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Users className="h-4 w-4 text-muted-foreground" />
-                  <h3 className="text-sm font-medium">Portal Users</h3>
-                  {!usersLoading && (
-                    <span className="text-xs text-muted-foreground">({portalUsers.length})</span>
-                  )}
-                </div>
-                {!showAddUser && (
-                  <Button size="sm" className="h-7 text-xs gap-1.5"
-                    onClick={() => { setShowAddUser(true); setAddName(""); setAddEmail(""); setAddPassword(""); setAddUserError(""); }}>
-                    <UserPlus className="h-3.5 w-3.5" /> Add User
-                  </Button>
-                )}
-              </div>
-
-              {/* User list */}
-              {usersLoading ? (
-                <div className="flex items-center justify-center py-10">
-                  <Loader2 className="h-5 w-5 animate-spin text-gold" />
-                </div>
-              ) : (
-                <div className="rounded-lg border border-border overflow-hidden">
-                  <table className="w-full text-sm">
-                    <thead className="bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground">
-                      <tr>
-                        <th className="px-4 py-2.5 text-left">Name</th>
-                        <th className="px-4 py-2.5 text-left">Email</th>
-                        <th className="px-4 py-2.5 text-left">Role</th>
-                        <th className="px-4 py-2.5 text-right">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {portalUsers.length === 0 && (
-                        <tr>
-                          <td colSpan={4} className="px-4 py-8 text-center text-muted-foreground text-xs">
-                            No portal users found.
-                          </td>
-                        </tr>
-                      )}
-                      {portalUsers.map((user) => (
-                        <tr key={user.id} className="border-t border-border hover:bg-muted/20">
-                          <td className="px-4 py-2.5 font-medium">{user.name}</td>
-                          <td className="px-4 py-2.5 text-muted-foreground text-xs font-mono">{user.email}</td>
-                          <td className="px-4 py-2.5">
-                            {user.is_primary ? (
-                              <span className="inline-flex items-center gap-1 text-xs font-medium text-gold">
-                                <Shield className="h-3 w-3" />Admin
-                              </span>
-                            ) : (
-                              <span className="text-xs text-muted-foreground">User</span>
-                            )}
-                          </td>
-                          <td className="px-4 py-2.5">
-                            <div className="flex items-center justify-end gap-1.5">
-                              <Button size="sm" variant="outline" className="h-7 text-xs"
-                                onClick={() => {
-                                  setUserResetTarget(user);
-                                  setUserResetPw("");
-                                  setUserResetDone(false);
-                                  setUserResetError("");
-                                }}>
-                                <KeyRound className="h-3 w-3 mr-1" /> PW
-                              </Button>
-                              {!user.is_primary && (
-                                confirmRemoveUser === user.id ? (
-                                  <div className="flex items-center gap-1">
-                                    <span className="text-xs text-destructive whitespace-nowrap">Remove?</span>
-                                    <Button size="sm" className="h-7 text-xs bg-destructive text-white hover:bg-destructive/90 px-2"
-                                      disabled={removeUserLoading}
-                                      onClick={() => removePortalUser(user)}>
-                                      {removeUserLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : "Yes"}
-                                    </Button>
-                                    <Button size="sm" variant="ghost" className="h-7 w-7 p-0"
-                                      onClick={() => { setConfirmRemoveUser(null); setRemoveUserError(""); }}>
-                                      <X className="h-3 w-3" />
-                                    </Button>
-                                  </div>
-                                ) : (
-                                  <Button size="sm" variant="outline"
-                                    className="h-7 text-xs text-destructive border-destructive/40 hover:bg-destructive/10"
-                                    onClick={() => setConfirmRemoveUser(user.id)}>
-                                    <UserMinus className="h-3.5 w-3.5" />
-                                  </Button>
-                                )
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  {removeUserError && (
-                    <p className="px-4 py-2 text-xs text-red-500 border-t border-border">{removeUserError}</p>
-                  )}
-                </div>
-              )}
-
-              {/* Add User Form */}
-              {showAddUser && (
-                <div className="rounded-lg border border-gold/30 bg-gold/5 p-4 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-sm font-medium flex items-center gap-1.5">
-                      <UserPlus className="h-4 w-4 text-gold" />Add Portal User
-                    </h4>
-                    <button onClick={() => setShowAddUser(false)}>
-                      <X className="h-4 w-4 text-muted-foreground" />
-                    </button>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs text-muted-foreground mb-1">Full Name</label>
-                      <input type="text" value={addName} onChange={e => setAddName(e.target.value)}
-                        placeholder="Contact name"
-                        className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-muted-foreground mb-1">Email</label>
-                      <input type="email" value={addEmail} onChange={e => setAddEmail(e.target.value)}
-                        placeholder="contact@company.com"
-                        className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-xs text-muted-foreground mb-1">Set Password</label>
-                    <input type="text" value={addPassword} onChange={e => setAddPassword(e.target.value)}
-                      placeholder="Min. 6 characters"
-                      className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-gold" />
-                  </div>
-                  {addUserError && <p className="text-xs text-red-500">{addUserError}</p>}
-                  <div className="flex gap-2">
-                    <Button
-                      className="bg-gold hover:bg-gold/90 text-black flex-1 h-8 text-sm"
-                      disabled={!addName.trim() || !addEmail.trim() || addPassword.length < 6 || addUserSaving}
-                      onClick={addUserToPortal}>
-                      {addUserSaving
-                        ? <><Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" />Adding…</>
-                        : <><UserPlus className="h-3.5 w-3.5 mr-2" />Add to Portal</>}
-                    </Button>
-                    <Button variant="outline" className="h-8 text-sm" onClick={() => setShowAddUser(false)}>Cancel</Button>
-                  </div>
-                </div>
-              )}
+              {/* Same list and actions as the client panel's Users tab. */}
+              <ClientPortalUsers clientId={profileClient.id} canManage={canManagePortal} />
             </div>
           </div>
         </div>

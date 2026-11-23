@@ -461,6 +461,9 @@ Route::middleware(['auth:sanctum', 'firm.context', 'throttle:120,1'])->group(fun
     Route::get('/portal/recent-activity', [\App\Http\Controllers\PortalController::class, 'recentActivity']);
     Route::post('/portal/clients/{id}/users/{userId}/reset-password', [\App\Http\Controllers\PortalController::class, 'resetUserPassword']);
     Route::get('/portal/my-team', [\App\Http\Controllers\PortalController::class, 'myTeam']);
+    // Invite-email switch (paused by default) at the top of the Client Portal page.
+    Route::get('/portal/settings', [\App\Http\Controllers\PortalController::class, 'settings']);
+    Route::put('/portal/settings', [\App\Http\Controllers\PortalController::class, 'updateSettings']);
 
     // Audit Log (super_admin / partner only — enforced in controller)
     Route::get('/audit-logs', [AuditLogController::class, 'index']);

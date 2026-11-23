@@ -19,6 +19,8 @@ class ClientContact extends Model
         'preferred_language',
         'notification_preferences',
         'role_type',
+        // Position at the client (Manager, CFO, CTO, Accounts Person, Other); fixes portal access.
+        'designation',
         'email_verified_at',
     ];
 

@@ -66,6 +66,9 @@ class User extends Authenticatable
     public const STAFF_ROLES = ['super_admin', 'partner', 'manager', 'hr', 'finance', 'associate', 'paralegal', 'galvanizer'];
     public const LEAVE_APPROVER_ROLES = ['super_admin', 'partner', 'hr'];
 
+    /** Firm staff who can be a client's Client Manager (never client or inventor logins). */
+    public const FIRM_STAFF_ROLES = ['super_admin', 'partner', 'director', 'manager', 'hr', 'finance', 'associate', 'paralegal', 'galvanizer'];
+
     /**
      * Full access to salary figures, payslips, payroll runs, loans, tax
      * declarations, Form 16, and reimbursement approvals — "director"

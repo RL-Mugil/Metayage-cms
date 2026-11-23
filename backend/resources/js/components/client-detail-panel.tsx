@@ -5,6 +5,7 @@ import { X, Loader2, ShieldCheck } from "lucide-react";
 import { api } from "@/lib/api-client";
 import { ProjectDetailPanel } from "@/components/project-detail-panel";
 import { ClientInventors } from "@/components/inventors/client-inventors";
+import { ClientPortalUsers, PORTAL_MANAGE_ROLES } from "@/components/clients/client-portal-users";
 
 const ENTITY_VERIFY_ROLES = ["super_admin", "partner", "manager", "galvanizer"];
 // Staff who manage inventors (InventorPolicy) and who may give them a portal login.
@@ -30,14 +31,15 @@ interface Props {
   onClose: () => void;
 }
 
-type Tab = "cases" | "invoices" | "ledger" | "inventors";
+type Tab = "cases" | "invoices" | "ledger" | "inventors" | "users";
 
 export function ClientDetailPanel({ clientId, onClose }: Props) {
   const { props } = usePage() as any;
   const role = props.auth?.user?.role ?? "";
   const canVerifyEntity = ENTITY_VERIFY_ROLES.includes(role);
   const canManageInventors = INVENTOR_ROLES.includes(role);
-  const tabs: Tab[] = canManageInventors ? ["cases", "invoices", "ledger", "inventors"] : ["cases", "invoices", "ledger"];
+  // Users: the client's portal logins (same list as the Client Portal page).
+  const tabs: Tab[] = canManageInventors ? ["cases", "invoices", "ledger", "inventors", "users"] : ["cases", "invoices", "ledger", "users"];
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<Tab>("cases");
@@ -149,7 +151,7 @@ export function ClientDetailPanel({ clientId, onClose }: Props) {
                   ? "border-primary text-primary"
                   : "border-transparent text-muted-foreground hover:text-foreground"
               }`}>
-              {t === "cases" ? "Cases" : t === "invoices" ? "Invoices" : t === "ledger" ? "Ledger" : "Inventors"}
+              {t === "cases" ? "Cases" : t === "invoices" ? "Invoices" : t === "ledger" ? "Ledger" : t === "inventors" ? "Inventors" : "Users"}
             </button>
           ))}
         </div>
@@ -277,7 +279,12 @@ export function ClientDetailPanel({ clientId, onClose }: Props) {
                 </div>
               )}
 
-              {/* Ledger */}
+              {tab === "users" && (
+                <div className="p-6">
+                  <ClientPortalUsers clientId={clientId} canManage={PORTAL_MANAGE_ROLES.includes(role)} />
+                </div>
+              )}
+
               {tab === "inventors" && canManageInventors && (
                 <div className="p-6">
                   <ClientInventors clientId={clientId} canGrantPortal={INVENTOR_PORTAL_ROLES.includes(role)} />

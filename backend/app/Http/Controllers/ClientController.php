@@ -92,17 +92,76 @@ class ClientController extends Controller
      * B2B          → Indian + registered (has GSTIN)
      * B2C          → Indian + unregistered + individual
      * Unregistered → Indian + unregistered + organization
-     * Export       → non-Indian nationality
+     * Export       → non-Indian nationality, or a Foreign Company
      */
-    private function computeGstType(string $nationality, bool $hasGstin, string $clientType): string
+    private function computeGstType(string $nationality, bool $hasGstin, string $clientType, ?string $entitySubtype = null): string
     {
-        if (strtolower(trim($nationality)) !== 'india')
+        if (strtolower(trim($nationality)) !== 'india' || $entitySubtype === self::FOREIGN_COMPANY)
             return 'Export';
         if ($hasGstin)
             return 'B2B';
         if ($clientType === 'individual')
             return 'B2C';
         return 'Unregistered';
+    }
+
+    private const FOREIGN_COMPANY = 'Foreign Company';
+
+    /**
+     * Country and the foreign-client rules for the New/Edit Client form. The form's Country
+     * is saved to both `country` and `nationality` (nationality drives GST, the M/Y code
+     * suffix and invoicing). A Foreign Company, or any client outside India, is Export:
+     * Indian registrations (CIN, PAN, GSTIN) don't apply and are cleared.
+     */
+    private function applyCountryRules(array $v, ?Client $client = null): array
+    {
+        $country = trim((string) ($v['country'] ?? $v['nationality'] ?? $client?->country ?? $client?->nationality ?? 'India')) ?: 'India';
+        if (in_array(strtolower($country), ['in', 'indian'], true)) {
+            $country = 'India';
+        }
+        $v['country'] = $country;
+        $v['nationality'] = $country;
+
+        $subtype = array_key_exists('entity_subtype', $v) ? $v['entity_subtype'] : $client?->entity_subtype;
+        $clientType = $v['client_type'] ?? $client?->client_type ?? 'organization';
+        $foreignCompany = $clientType === 'organization' && $subtype === self::FOREIGN_COMPANY;
+        if ($foreignCompany && strtolower($country) === 'india') {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'country' => "A foreign company's country cannot be India. Choose its country.",
+            ]);
+        }
+        if ($foreignCompany || strtolower($country) !== 'india') {
+            $v['has_gstin'] = false;
+            $v['gstin'] = null;
+            $v['pan_number'] = null;
+            $v['cin_number'] = null;
+        }
+
+        return $v;
+    }
+
+    /** The portal logins on the New Client form, Accounts Person first; emails must not repeat. */
+    private function portalLoginsFromForm(array $v): array
+    {
+        $logins = [];
+        if (! empty($v['accounts_portal']['email'])) {
+            $logins[] = [
+                'name'        => trim((string) ($v['accounts_person'] ?? '')) ?: 'Accounts',
+                'email'       => $v['accounts_portal']['email'],
+                'phone'       => $v['accounts_portal']['phone'] ?? null,
+                'password'    => $v['accounts_portal']['password'],
+                'designation' => 'Accounts Person',
+            ];
+        }
+        foreach ($v['portal_users'] ?? [] as $row) {
+            $logins[] = $row;
+        }
+        $emails = array_map(fn (array $login) => strtolower(trim($login['email'])), $logins);
+        if (count($emails) !== count(array_unique($emails))) {
+            throw \Illuminate\Validation\ValidationException::withMessages(['portal_users' => 'Each portal user needs a different email.']);
+        }
+
+        return $logins;
     }
 
     // ── API CRUD ──────────────────────────────────────────────────────────────
@@ -202,13 +261,20 @@ class ClientController extends Controller
     public function store(StoreClientRequest $request)
     {
         $user = $request->user();
-        $v = $request->validated();
+        $v = $this->applyCountryRules($request->validated());
 
-        $nationality = $v['nationality'] ?? 'India';
+        // Portal logins made with the client: the Accounts Person (Finance) and any others.
+        $portalLogins = $this->portalLoginsFromForm($v);
+        unset($v['accounts_portal'], $v['portal_users']);
+        if ($portalLogins !== [] && ! in_array($user->role, \App\Services\ClientPortalUsers::MANAGE_ROLES, true)) {
+            return response()->json(['message' => 'Only a partner, manager, HR or admin can create portal logins. Save the client without them.'], 403);
+        }
+
+        $nationality = $v['nationality'];
         $hasGstin = (bool) ($v['has_gstin'] ?? false);
         $clientType = $v['client_type'];
 
-        $client = \DB::transaction(function () use ($v, $nationality, $hasGstin, $clientType, $user, $request) {
+        $client = \DB::transaction(function () use ($v, $nationality, $hasGstin, $clientType, $user, $request, $portalLogins) {
             if ($user->isGalvanizer()) {
                 $v['circle'] = $v['circle'] ?? $user->defaultGalvanizerCircleCode();
                 if (! $user->canAccessCircle($v['circle'] ?? null)) {
@@ -224,7 +290,7 @@ class ClientController extends Controller
                 : $this->generateClientCode($nationality);
             $v['nationality'] = $nationality;
             $v['has_gstin'] = $hasGstin;
-            $v['gst_type'] = $this->computeGstType($nationality, $hasGstin, $clientType);
+            $v['gst_type'] = $this->computeGstType($nationality, $hasGstin, $clientType, $v['entity_subtype'] ?? null);
             $v['company_name'] = $v['legal_name'];
             $v['account_manager_id'] = $v['account_manager_id'] ?? $user->id;
             $v['date_onboarded'] = now()->toDateString();
@@ -256,6 +322,11 @@ class ClientController extends Controller
                 'user_agent' => $request->userAgent(),
             ]);
 
+            $portalUsers = app(\App\Services\ClientPortalUsers::class);
+            foreach ($portalLogins as $login) {
+                $portalUsers->add($client, $login, $user, $request->ip(), $request->userAgent());
+            }
+
             return $client;
         });
 
@@ -274,12 +345,13 @@ class ClientController extends Controller
             return response()->json(['message' => 'You cannot move a client outside your assigned circle.'], 403);
         }
 
-        $nationality = $v['nationality'] ?? $client->nationality ?? 'India';
+        $v = $this->applyCountryRules($v, $client);
+        $nationality = $v['nationality'];
         $hasGstin = array_key_exists('has_gstin', $v) ? (bool) $v['has_gstin'] : (bool) $client->has_gstin;
         $clientType = $v['client_type'] ?? $client->client_type ?? 'organization';
+        $subtype = array_key_exists('entity_subtype', $v) ? $v['entity_subtype'] : $client->entity_subtype;
 
-        $v['gst_type'] = $this->computeGstType($nationality, $hasGstin, $clientType);
-        $v['nationality'] = $nationality;
+        $v['gst_type'] = $this->computeGstType($nationality, $hasGstin, $clientType, $subtype);
 
         if (isset($v['legal_name'])) {
             $v['company_name'] = $v['legal_name'];
@@ -735,11 +807,13 @@ class ClientController extends Controller
         $user = $request->user();
         $client = Client::with('contacts')->findOrFail($id);
 
-        // RBAC: clients can only view their own
-        if ($user->role === 'client' || $user->role === 'client_admin') {
-            if ($client->id !== ($user->client_id ?? null)) {
-                return response()->json(['message' => 'Forbidden'], 403);
-            }
+        // RBAC: portal users only see their own client; a finance login has no case view and
+        // inventors see only their own cases, so neither opens the client detail.
+        if ($user->role === 'client_finance' || $user->isInventor()) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+        if ($user->isClientRole() && ! $client->isVisibleToUser($user)) {
+            return response()->json(['message' => 'Forbidden'], 403);
         }
 
         $projectsQuery = \App\Models\Project::with(['stages' => fn($q) => $q->orderBy('sequence_order')])

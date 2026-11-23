@@ -1,0 +1,139 @@
+<?php
+
+namespace Tests\Feature;
+
+use App\Mail\PortalInviteMail;
+use App\Models\Client;
+use App\Models\Inventor;
+use App\Models\Invoice;
+use App\Models\User;
+use App\Services\ClientPortalUsers;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Mail;
+use Laravel\Sanctum\Sanctum;
+use Tests\TestCase;
+
+/** Portal logins per client: made with the client, from the Users tab, or on the Client Portal page. */
+class ClientPortalUsersTest extends TestCase
+{
+    use RefreshDatabase;
+
+    private User $partner;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        Mail::fake();
+        $this->partner = $this->user('partner', 'partner@firm.test');
+        Sanctum::actingAs($this->partner);
+    }
+
+    private function user(string $role, string $email): User
+    {
+        return User::create(['name' => ucfirst($role), 'email' => $email, 'password' => bcrypt('password'), 'role' => $role, 'status' => 'Active']);
+    }
+
+    private function createClientWithUsers(): Client
+    {
+        $id = $this->postJson('/api/clients', [
+            'legal_name' => 'Acme Robotics', 'client_type' => 'organization', 'country' => 'India', 'status' => 'Active',
+            'accounts_person' => 'Kavya Rao',
+            'accounts_portal' => ['email' => 'accounts@acme.test', 'phone' => '9000000001', 'password' => 'Secret123'],
+            'portal_users' => [
+                ['designation' => 'Manager', 'name' => 'Ravi Kumar', 'email' => 'ravi@acme.test', 'password' => 'Secret123'],
+                ['designation' => 'CTO', 'name' => 'Meena S', 'email' => 'cto@acme.test', 'password' => 'Secret123'],
+                ['designation' => 'Inventor', 'name' => 'Arun P', 'email' => 'arun@acme.test', 'password' => 'Secret123'],
+            ],
+        ])->assertCreated()->json('id');
+
+        return Client::findOrFail($id);
+    }
+
+    public function test_client_is_created_with_its_portal_users_and_access_follows_designation(): void
+    {
+        $client = $this->createClientWithUsers();
+
+        $this->assertSame('client_finance', User::where('email', 'accounts@acme.test')->value('role'));
+        $this->assertSame('client_admin', User::where('email', 'ravi@acme.test')->value('role'));
+        $this->assertSame('client', User::where('email', 'cto@acme.test')->value('role'));
+        $this->assertSame('inventor', User::where('email', 'arun@acme.test')->value('role'));
+        $this->assertTrue((bool) $client->portal_enabled);
+        // The Manager is the primary login, even though the Accounts Person was created first.
+        $this->assertSame(User::where('email', 'ravi@acme.test')->value('id'), $client->fresh()->portal_user_id);
+
+        // The inventor is in the client's Inventors list, with the login linked, and not a client contact.
+        $inventor = Inventor::where('client_id', $client->id)->where('email', 'arun@acme.test')->firstOrFail();
+        $this->assertSame(User::where('email', 'arun@acme.test')->value('id'), $inventor->user_id);
+        $this->assertDatabaseMissing('client_contacts', ['email' => 'arun@acme.test']);
+        $this->assertDatabaseHas('client_contacts', ['email' => 'cto@acme.test', 'designation' => 'CTO', 'client_id' => $client->id]);
+
+        // The Users tab and the Client Portal page read the same list.
+        $rows = collect($this->getJson("/api/portal/clients/{$client->id}/users")->assertOk()->json())->keyBy('email');
+        $this->assertCount(4, $rows);
+        $this->assertSame('Finance', $rows['accounts@acme.test']['access']);
+        $this->assertSame('Accounts Person', $rows['accounts@acme.test']['designation']);
+        $this->assertSame('Admin', $rows['ravi@acme.test']['access']);
+        $this->assertSame('Inventor', $rows['arun@acme.test']['designation']);
+        $this->assertDatabaseHas('audit_logs', ['action' => 'portal_user_added', 'subject_id' => $client->id]);
+    }
+
+    public function test_users_tab_adds_resets_and_removes_logins(): void
+    {
+        $client = $this->createClientWithUsers();
+
+        $this->postJson("/api/portal/clients/{$client->id}/users", ['designation' => 'CFO', 'name' => 'Priya', 'email' => 'cfo@acme.test', 'password' => 'Secret123'])
+            ->assertCreated()->assertJsonPath('user.access', 'Finance');
+        $this->postJson("/api/portal/clients/{$client->id}/users", ['designation' => 'CFO', 'name' => 'Dup', 'email' => 'cfo@acme.test', 'password' => 'Secret123'])
+            ->assertStatus(422);
+        $this->postJson("/api/portal/clients/{$client->id}/users", ['designation' => 'Other', 'name' => 'Staff', 'email' => 'partner@firm.test', 'password' => 'Secret123'])
+            ->assertStatus(422);
+
+        $inventorLogin = User::where('email', 'arun@acme.test')->firstOrFail();
+        $this->postJson("/api/portal/clients/{$client->id}/users/{$inventorLogin->id}/reset-password", ['password' => 'Another123'])->assertOk();
+        $this->deleteJson("/api/portal/clients/{$client->id}/users/{$inventorLogin->id}")->assertOk();
+        $this->assertNull(Inventor::where('email', 'arun@acme.test')->value('user_id'));   // the record stays, without a login
+
+        $this->deleteJson("/api/portal/clients/{$client->id}/users/{$client->fresh()->portal_user_id}")->assertStatus(422);   // primary
+    }
+
+    public function test_only_portal_managers_create_logins(): void
+    {
+        Sanctum::actingAs($this->user('galvanizer', 'galv@firm.test'));
+        $this->postJson('/api/clients', [
+            'legal_name' => 'Beta', 'client_type' => 'organization', 'country' => 'India', 'circle' => 'A',
+            'portal_users' => [['designation' => 'Manager', 'name' => 'X', 'email' => 'x@beta.test', 'password' => 'Secret123']],
+        ])->assertForbidden();
+        $this->assertDatabaseMissing('users', ['email' => 'x@beta.test']);
+
+        $client = Client::create(['client_code' => 'C10M', 'legal_name' => 'Gamma', 'company_name' => 'Gamma', 'client_type' => 'organization', 'nationality' => 'India', 'status' => 'Active']);
+        Sanctum::actingAs($this->user('paralegal', 'para@firm.test'));
+        $this->postJson("/api/portal/clients/{$client->id}/users", ['designation' => 'CTO', 'name' => 'Y', 'email' => 'y@gamma.test', 'password' => 'Secret123'])->assertForbidden();
+    }
+
+    public function test_invite_emails_wait_while_paused(): void
+    {
+        $this->assertTrue(ClientPortalUsers::emailsPaused());   // paused until turned on
+        $this->createClientWithUsers();
+        Mail::assertNothingSent();
+
+        $this->putJson('/api/portal/settings', ['emails_paused' => false])->assertOk()->assertJsonPath('emails_paused', false);
+        $client = Client::create(['client_code' => 'C11M', 'legal_name' => 'Delta', 'company_name' => 'Delta', 'client_type' => 'organization', 'nationality' => 'India', 'status' => 'Active']);
+        $this->postJson("/api/portal/clients/{$client->id}/users", ['designation' => 'Manager', 'name' => 'Z', 'email' => 'z@delta.test', 'password' => 'Secret123'])->assertCreated();
+        Mail::assertSent(PortalInviteMail::class, fn (PortalInviteMail $mail) => $mail->hasTo('z@delta.test'));
+
+        Sanctum::actingAs($this->user('associate', 'assoc@firm.test'));
+        $this->putJson('/api/portal/settings', ['emails_paused' => true])->assertForbidden();
+    }
+
+    public function test_finance_login_sees_invoices_but_not_cases_or_other_clients(): void
+    {
+        $client = $this->createClientWithUsers();
+        $other = Client::create(['client_code' => 'C12M', 'legal_name' => 'Other', 'company_name' => 'Other', 'client_type' => 'organization', 'nationality' => 'India', 'status' => 'Active']);
+        Sanctum::actingAs(User::where('email', 'accounts@acme.test')->firstOrFail());
+
+        $this->getJson('/api/financial/invoices')->assertOk();
+        $this->getJson("/api/clients/{$client->id}/detail")->assertForbidden();
+        $this->getJson("/api/clients/{$other->id}/detail")->assertForbidden();
+        $this->getJson('/api/users')->assertForbidden();
+    }
+}

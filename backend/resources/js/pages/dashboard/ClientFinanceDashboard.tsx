@@ -1,6 +1,6 @@
-import { Head, usePage } from "@inertiajs/react";
+import { Head, Link, usePage } from "@inertiajs/react";
 import { useEffect, useState } from "react";
-import { Loader2, Landmark, Wallet, Scale, AlertTriangle, Clock } from "lucide-react";
+import { Loader2, Landmark, Wallet, Scale, AlertTriangle, Clock, Upload } from "lucide-react";
 import AppLayout from "@/layouts/AppLayout";
 import { PageHeader } from "@/components/page-header";
 import { StatCard } from "@/components/stat-card";
@@ -53,6 +53,7 @@ export function ClientFinanceDashboard() {
   const actionItems: ActionItem[] = metrics.action_items ?? [];
   const renewalItems: ActionItem[] = metrics.renewal_items ?? actionItems.filter((i) => i.is_renewal);
   const otherActionItems = actionItems.filter((i) => !i.is_renewal);
+  const totalDue = pendingInvoices.reduce((sum: number, inv: any) => sum + (parseFloat(inv.balance_due ?? 0) || 0), 0);
 
   return (
     <AppLayout>
@@ -60,7 +61,12 @@ export function ClientFinanceDashboard() {
       <PageHeader
         eyebrow="Billing"
         title="Your Billing"
-        description="Outstanding balance, collections, upcoming renewals, and pending invoices."
+        description="Invoices to pay, payments made, and upcoming renewal fees."
+        actions={
+          <Link href="/pending-payments" className="inline-flex h-9 items-center gap-2 rounded-md bg-gold px-4 text-sm font-medium text-black hover:bg-gold/90">
+            <Upload className="h-4 w-4" />Make a payment
+          </Link>
+        }
       />
 
       {renewalItem && (
@@ -79,6 +85,50 @@ export function ClientFinanceDashboard() {
           <StatCard label="Collected (MTD)" value={formatCurrency(metrics.zoho_collected_mtd ?? 0)} icon={Wallet} accent="success" />
           <StatCard label="Ledger Balance" value={formatCurrency(metrics.ledger_balance ?? 0)} icon={Scale} accent="neutral" />
         </div>
+
+        <Card className="border-border">
+          <CardHeader>
+            <CardTitle className="font-display flex items-center justify-between gap-2">
+              <span>Invoices to pay</span>
+              <span className="text-sm font-medium text-muted-foreground">Total due {formatCurrency(totalDue)}</span>
+            </CardTitle>
+            <p className="text-xs text-muted-foreground mt-1">Pay by bank transfer, then upload the payment proof so we can confirm it.</p>
+          </CardHeader>
+          <CardContent className="p-0">
+            {pendingInvoices.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-10">No pending invoices.</p>
+            ) : (
+              <table className="w-full text-sm">
+                <thead className="bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground">
+                  <tr>
+                    <th className="px-4 py-2 text-left">Invoice</th>
+                    <th className="px-4 py-2 text-left">Status</th>
+                    <th className="px-4 py-2 text-right">Total</th>
+                    <th className="px-4 py-2 text-right">Balance Due</th>
+                    <th className="px-4 py-2 text-left">Due Date</th>
+                    <th className="px-4 py-2 text-right"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pendingInvoices.map((inv: any) => (
+                    <tr key={inv.id} className="border-t border-border hover:bg-muted/30">
+                      <td className="px-4 py-3 font-mono text-xs">{inv.invoice_code}</td>
+                      <td className="px-4 py-3"><Badge variant={statusColor(inv.status)}>{inv.status}</Badge></td>
+                      <td className="px-4 py-3 text-right font-medium">{formatCurrency(parseFloat(inv.total_amount ?? 0))}</td>
+                      <td className="px-4 py-3 text-right text-muted-foreground">{formatCurrency(parseFloat(inv.balance_due ?? 0))}</td>
+                      <td className="px-4 py-3 text-muted-foreground font-mono text-xs">{fmtDate(inv.due_date)}</td>
+                      <td className="px-4 py-3 text-right">
+                        <Link href="/pending-payments" className="inline-flex items-center gap-1 rounded-md bg-gold px-2.5 py-1 text-xs font-medium text-black hover:bg-gold/90">
+                          <Upload className="h-3 w-3" />Pay / upload proof
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </CardContent>
+        </Card>
 
         {renewalItems.length > 0 && (
           <Card className="border-red-500/30">
@@ -108,39 +158,6 @@ export function ClientFinanceDashboard() {
           </CardContent>
         </Card>
 
-        <Card className="border-border">
-          <CardHeader>
-            <CardTitle className="font-display">Pending Invoices</CardTitle>
-          </CardHeader>
-          <CardContent className="p-0">
-            {pendingInvoices.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-10">No pending invoices.</p>
-            ) : (
-              <table className="w-full text-sm">
-                <thead className="bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground">
-                  <tr>
-                    <th className="px-4 py-2 text-left">Invoice</th>
-                    <th className="px-4 py-2 text-left">Status</th>
-                    <th className="px-4 py-2 text-right">Total</th>
-                    <th className="px-4 py-2 text-right">Balance Due</th>
-                    <th className="px-4 py-2 text-left">Due Date</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {pendingInvoices.map((inv: any) => (
-                    <tr key={inv.id} className="border-t border-border hover:bg-muted/30">
-                      <td className="px-4 py-3 font-mono text-xs">{inv.invoice_code}</td>
-                      <td className="px-4 py-3"><Badge variant={statusColor(inv.status)}>{inv.status}</Badge></td>
-                      <td className="px-4 py-3 text-right font-medium">{formatCurrency(parseFloat(inv.total_amount ?? 0))}</td>
-                      <td className="px-4 py-3 text-right text-muted-foreground">{formatCurrency(parseFloat(inv.balance_due ?? 0))}</td>
-                      <td className="px-4 py-3 text-muted-foreground font-mono text-xs">{fmtDate(inv.due_date)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </CardContent>
-        </Card>
       </div>
     </AppLayout>
   );

@@ -96,11 +96,13 @@ class AuthController extends Controller
 
     public function users(Request $request)
     {
-        if ($request->user()->isClientRole()) {
+        if ($request->user()->isClientRole() || $request->user()->isInventor()) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
+        // ?staff=1 → firm staff only (pickers such as Client Manager), never client or inventor logins.
         $users = User::where('status', 'Active')
+            ->when($request->boolean('staff'), fn ($q) => $q->whereIn('role', User::FIRM_STAFF_ROLES))
             ->select('id', 'name', 'email', 'role')
             ->orderBy('name')
             ->get();

@@ -10,7 +10,7 @@ class InvoicePolicy
 {
     public function viewAny(User $user): bool
     {
-        return in_array($user->role, ['super_admin', 'partner', 'finance', 'manager', 'associate', 'galvanizer', 'client', 'client_admin']);
+        return in_array($user->role, ['super_admin', 'partner', 'finance', 'manager', 'associate', 'galvanizer', 'client', 'client_admin', 'client_finance']);
     }
 
     public function view(User $user, Invoice $invoice): bool
