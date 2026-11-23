@@ -74,6 +74,7 @@ class StoreClientRequest extends FormRequest
             'portal_users.*.phone'           => 'nullable|string|max:30',
             'portal_users.*.designation'     => ['required', Rule::in(ClientPortalUsers::DESIGNATIONS)],
             'portal_users.*.password'        => 'required|string|min:8|max:100',
+            'portal_users.*.inventor'        => 'nullable|array',
         ];
     }
 

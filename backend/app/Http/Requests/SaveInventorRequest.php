@@ -20,22 +20,21 @@ class SaveInventorRequest extends FormRequest
 
     public function rules(): array
     {
+        $creating = $this->route('id') === null;
+
         return [
             // Every inventor is managed under a client; it can be moved on edit.
-            'client_id'            => ($this->route('id') === null ? 'required' : 'sometimes').'|integer|exists:clients,id',
-            'full_name'            => 'required|string|max:255',
-            'gender'               => 'nullable|in:Male,Female,Others,Prefer not to disclose',
-            'age'                  => 'nullable|integer|min:1|max:120',
-            'nationality'          => 'nullable|string|max:100',
-            'country_of_residence' => 'nullable|string|max:100',
-            'address_house'        => 'nullable|string|max:255',
-            'address_street'       => 'nullable|string|max:500',
-            'city'                 => 'nullable|string|max:100',
-            'state'                => 'nullable|string|max:100',
-            'country'              => 'nullable|string|max:100',
-            'pincode'              => 'nullable|string|max:20',
-            'email'                => 'nullable|email|max:255',
-            'phone'                => 'nullable|string|max:30',
+            'client_id' => ($creating ? 'required' : 'sometimes').'|integer|exists:clients,id',
+            'full_name' => 'required|string|max:255',
+        ] + Inventor::particularRules($creating, $this->all());
+    }
+
+    public function messages(): array
+    {
+        return [
+            'address_house.required_without'  => 'Enter the house no. / building or the street / area.',
+            'address_street.required_without' => 'Enter the house no. / building or the street / area.',
+            'state.required'                  => 'Enter the state (needed for an Indian address).',
         ];
     }
 }

@@ -18,6 +18,12 @@ class ClientPortalUsersTest extends TestCase
 {
     use RefreshDatabase;
 
+    /** An inventor's Form 1 address, required whenever an Inventor login is added. */
+    private const ADDRESS = [
+        'nationality' => 'Indian', 'gender' => 'Male', 'age' => '38', 'address_house' => '12', 'address_street' => 'MG Road',
+        'city' => 'Bengaluru', 'state' => 'Karnataka', 'country' => 'India', 'pincode' => '560001',
+    ];
+
     private User $partner;
 
     protected function setUp(): void
@@ -42,7 +48,7 @@ class ClientPortalUsersTest extends TestCase
             'portal_users' => [
                 ['designation' => 'Manager', 'name' => 'Ravi Kumar', 'email' => 'ravi@acme.test', 'password' => 'Secret123'],
                 ['designation' => 'CTO', 'name' => 'Meena S', 'email' => 'cto@acme.test', 'password' => 'Secret123'],
-                ['designation' => 'Inventor', 'name' => 'Arun P', 'email' => 'arun@acme.test', 'password' => 'Secret123'],
+                ['designation' => 'Inventor', 'name' => 'Arun P', 'email' => 'arun@acme.test', 'password' => 'Secret123', 'inventor' => self::ADDRESS],
             ],
         ])->assertCreated()->json('id');
 
@@ -64,6 +70,11 @@ class ClientPortalUsersTest extends TestCase
         // The inventor is in the client's Inventors list, with the login linked, and not a client contact.
         $inventor = Inventor::where('client_id', $client->id)->where('email', 'arun@acme.test')->firstOrFail();
         $this->assertSame(User::where('email', 'arun@acme.test')->value('id'), $inventor->user_id);
+        // Its address went into the inventor record, so Form 1 has every particular.
+        $this->assertSame('MG Road', $inventor->address_street);
+        $this->assertSame('560001', $inventor->pincode);
+        $this->assertSame('Male', $inventor->gender);
+        $this->assertTrue($inventor->isComplete());
         $this->assertDatabaseMissing('client_contacts', ['email' => 'arun@acme.test']);
         $this->assertDatabaseHas('client_contacts', ['email' => 'cto@acme.test', 'designation' => 'CTO', 'client_id' => $client->id]);
 
@@ -94,6 +105,30 @@ class ClientPortalUsersTest extends TestCase
         $this->assertNull(Inventor::where('email', 'arun@acme.test')->value('user_id'));   // the record stays, without a login
 
         $this->deleteJson("/api/portal/clients/{$client->id}/users/{$client->fresh()->portal_user_id}")->assertStatus(422);   // primary
+    }
+
+    public function test_an_inventor_login_needs_the_form_1_address(): void
+    {
+        $client = Client::create(['client_code' => 'C13M', 'legal_name' => 'Eta', 'company_name' => 'Eta', 'client_type' => 'organization', 'nationality' => 'India', 'status' => 'Active']);
+        $url = "/api/portal/clients/{$client->id}/users";
+        $base = ['designation' => 'Inventor', 'name' => 'RAO Kiran', 'email' => 'kiran@eta.test', 'password' => 'Secret123'];
+
+        $this->postJson($url, $base)->assertStatus(422)
+            ->assertJsonValidationErrors(['inventor.nationality', 'inventor.city', 'inventor.country', 'inventor.pincode', 'inventor.address_house']);
+        $this->postJson($url, $base + ['inventor' => array_diff_key(self::ADDRESS, ['state' => 1])])
+            ->assertStatus(422)->assertJsonValidationErrors('inventor.state');   // an Indian address needs its state
+        $this->assertDatabaseMissing('users', ['email' => 'kiran@eta.test']);
+        $this->assertDatabaseMissing('inventors', ['email' => 'kiran@eta.test']);
+
+        $this->postJson($url, $base + ['inventor' => self::ADDRESS])->assertCreated();
+        $this->assertTrue(Inventor::where('email', 'kiran@eta.test')->firstOrFail()->isComplete());
+
+        // The New Client form checks it before anything is saved.
+        $this->postJson('/api/clients', [
+            'legal_name' => 'Theta', 'client_type' => 'organization', 'country' => 'India', 'status' => 'Active',
+            'portal_users' => [['designation' => 'Inventor', 'name' => 'X', 'email' => 'x@theta.test', 'password' => 'Secret123']],
+        ])->assertStatus(422)->assertJsonValidationErrors('portal_users.0.inventor.city');
+        $this->assertDatabaseMissing('clients', ['legal_name' => 'Theta']);
     }
 
     public function test_only_portal_managers_create_logins(): void

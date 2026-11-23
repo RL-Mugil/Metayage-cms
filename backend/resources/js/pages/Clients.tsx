@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input";
 import { api, downloadCSV } from "@/lib/api-client";
 import { ClientDetailPanel } from "@/components/client-detail-panel";
 import { ClientCodeCombobox } from "@/components/client-code-combobox";
-import { PORTAL_MANAGE_ROLES, PortalUserFields, blankPortalUser, portalUserProblem } from "@/components/clients/client-portal-users";
+import { PORTAL_MANAGE_ROLES, PortalUserFields, blankPortalUser, portalUserPayload, portalUserProblem } from "@/components/clients/client-portal-users";
 import type { NewPortalUser } from "@/lib/api-client";
 import { isIndia, normaliseCountry, useCountries } from "@/lib/countries";
 
@@ -759,7 +759,7 @@ export default function Clients() {
         ...(isExport ? { has_gstin: false, gstin: "", pan_number: "", cin_number: "" } : {}),
         referred_by_code: form.referred_by_code || null,
         ...(!editC && accounts_login ? { accounts_portal: { email: accounts_email.trim(), phone: accounts_phone.trim() || null, password: accounts_password } } : {}),
-        ...(!editC && portal_users.length ? { portal_users: portal_users.map((u) => ({ ...u, name: u.name.trim(), email: u.email.trim() })) } : {}),
+        ...(!editC && portal_users.length ? { portal_users: portal_users.map(portalUserPayload) } : {}),
         client_code: form.client_code.trim().toUpperCase() || null,
         account_manager_id: form.account_manager_id ? parseInt(form.account_manager_id) : null,
         reminder_cadence_override: reminderDays.length ? reminderDays : null,

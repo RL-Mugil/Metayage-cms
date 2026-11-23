@@ -5,7 +5,7 @@ import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { api } from "@/lib/api-client"
-import { AddressFields, Field, GENDERS, selectClass, TextField } from "@/components/ipo/party-fields"
+import { AddressFields, Field, GENDERS, isIndianCountry, selectClass, TextField } from "@/components/ipo/party-fields"
 import type { InventorInput, InventorRecord, IpoGender } from "@/types/ipo-forms"
 
 export function place(inventor: InventorRecord): string {
@@ -131,6 +131,48 @@ export function InventorPicker({ value, onChange, clientId, disabled = false }: 
   )
 }
 
+type InventorParticulars = Omit<InventorInput, "client_id" | "full_name" | "email" | "phone">
+
+/** India by default, as most of the firm's inventors are Indian. */
+export const defaultInventorParticulars = (): InventorParticulars =>
+  ({ nationality: "Indian", country: "India", country_of_residence: "India" })
+
+/**
+ * The first Form 1 particular still missing (the same rule as Inventor::particularRules on the
+ * server): nationality, house no. or street, city, country, pin code, and state for India.
+ */
+export function inventorProblem(value: InventorParticulars, who = "the inventor"): string | null {
+  const blank = (text: string | number | null | undefined) => String(text ?? "").trim() === ""
+  if (blank(value.nationality)) return `Enter the nationality of ${who}.`
+  if (blank(value.address_house) && blank(value.address_street)) return `Enter the house no. or street of ${who}.`
+  if (blank(value.city)) return `Enter the city of ${who}.`
+  if (blank(value.country)) return `Enter the country of ${who}.`
+  if (isIndianCountry(value.country) && blank(value.state)) return `Enter the state of ${who} (needed for an Indian address).`
+  if (blank(value.pincode)) return `Enter the pin code of ${who}.`
+  return null
+}
+
+/** Nationality, gender, age, residence and the address: the Form 1 particulars after the name. */
+export function InventorParticularsFields<T extends InventorParticulars>({ value, onChange }: { value: T; onChange: (next: T) => void }) {
+  const set = (key: keyof InventorParticulars) => (text: string) => onChange({ ...value, [key]: text })
+  return (
+    <>
+      <div className="grid gap-2 sm:grid-cols-4">
+        <TextField label="Nationality *" value={value.nationality} onChange={set("nationality")} />
+        <Field label="Gender">
+          <select className={selectClass} value={value.gender ?? ""} onChange={(event) => onChange({ ...value, gender: (event.target.value || null) as IpoGender | null })}>
+            <option value="">-</option>
+            {GENDERS.map((gender) => <option key={gender} value={gender}>{gender}</option>)}
+          </select>
+        </Field>
+        <TextField label="Age" type="number" value={value.age} onChange={set("age")} />
+        <TextField label="Country of residence" value={value.country_of_residence} onChange={set("country_of_residence")} />
+      </div>
+      <AddressFields value={value} onChange={onChange} required />
+    </>
+  )
+}
+
 /** Every Form 1 particular for one inventor; saves the inventor record under its client. */
 export function InventorForm({ initial, onSaved, onCancel }: {
   initial: InventorInput & { id?: number }
@@ -143,6 +185,8 @@ export function InventorForm({ initial, onSaved, onCancel }: {
 
   async function save() {
     if (!draft.full_name.trim()) { toast.error("Enter the inventor's full name."); return }
+    const problem = inventorProblem(draft)
+    if (problem) { toast.error(problem); return }
     setSaving(true)
     try {
       const payload: InventorInput = {
@@ -164,19 +208,8 @@ export function InventorForm({ initial, onSaved, onCancel }: {
 
   return (
     <div className="mt-2 space-y-2 rounded-md border border-gold/40 bg-muted/10 p-3">
-      <div className="grid gap-2 sm:grid-cols-3">
-        <TextField className="sm:col-span-2" label="Name in full (family name first) *" value={draft.full_name} onChange={set("full_name")} />
-        <TextField label="Nationality" value={draft.nationality} onChange={set("nationality")} />
-        <Field label="Gender (optional)">
-          <select className={selectClass} value={draft.gender ?? ""} onChange={(event) => setDraft({ ...draft, gender: (event.target.value || null) as IpoGender | null })}>
-            <option value="">-</option>
-            {GENDERS.map((gender) => <option key={gender} value={gender}>{gender}</option>)}
-          </select>
-        </Field>
-        <TextField label="Age (optional)" type="number" value={draft.age} onChange={set("age")} />
-        <TextField label="Country of residence" value={draft.country_of_residence} onChange={set("country_of_residence")} />
-      </div>
-      <AddressFields value={draft} onChange={setDraft} />
+      <TextField label="Name in full (family name first) *" value={draft.full_name} onChange={set("full_name")} />
+      <InventorParticularsFields value={draft} onChange={setDraft} />
       <div className="grid gap-2 sm:grid-cols-2">
         <TextField label="Email (also the portal login)" type="email" value={draft.email} onChange={set("email")} />
         <TextField label="Phone" value={draft.phone} onChange={set("phone")} />

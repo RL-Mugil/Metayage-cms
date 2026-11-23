@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -60,6 +61,42 @@ class ClientPortalUsers
         DB::table('system_settings')->updateOrInsert(['key' => self::EMAILS_PAUSED_KEY], ['value' => $paused ? '1' : '0']);
     }
 
+    /**
+     * The Form 1 particulars sent with an Inventor login ($data['inventor']), validated with the
+     * same rules as the Inventors tab. Errors are keyed under $prefix (e.g. "inventor.city").
+     *
+     * @return array<string, mixed>
+     */
+    public static function inventorParticulars(array $data, string $prefix = 'inventor'): array
+    {
+        $particulars = is_array($data['inventor'] ?? null) ? $data['inventor'] : [];
+        $particulars = array_intersect_key($particulars, Inventor::particularRules(true));
+        unset($particulars['email'], $particulars['phone']);   // the login's own email and phone are used
+        $rules = array_diff_key(Inventor::particularRules(true, $particulars), ['email' => 1, 'phone' => 1]);
+
+        $validator = Validator::make($particulars, $rules, [
+            'address_house.required_without'  => 'Enter the house no. / building or the street / area.',
+            'address_street.required_without' => 'Enter the house no. / building or the street / area.',
+            'state.required'                  => 'Enter the state (needed for an Indian address).',
+        ], [
+            'pincode' => 'pin code', 'address_house' => 'house no. / building', 'address_street' => 'street / area',
+        ]);
+        if ($validator->fails()) {
+            $messages = [];
+            foreach ($validator->errors()->messages() as $field => $errors) {
+                $messages["{$prefix}.{$field}"] = $errors;
+            }
+            throw ValidationException::withMessages($messages);
+        }
+
+        $clean = $validator->validated();
+        foreach ($clean as $field => $value) {
+            $clean[$field] = is_string($value) ? (trim($value) === '' ? null : trim($value)) : $value;
+        }
+
+        return $clean;
+    }
+
     /** @return array<int, array<string, mixed>> primary first, then by name */
     public function list(Client $client): array
     {
@@ -101,6 +138,8 @@ class ClientPortalUsers
         $password = (string) $data['password'];
         $name = trim((string) $data['name']);
         $phone = filled($data['phone'] ?? null) ? trim((string) $data['phone']) : null;
+        // An inventor login is also the inventor record Form 1 prints, so its address is required.
+        $particulars = $role === 'inventor' ? self::inventorParticulars($data) : [];
 
         if (User::whereRaw('LOWER(email) = ?', [strtolower($email)])->exists()) {
             throw ValidationException::withMessages(['email' => "{$email} already has a login."]);
@@ -110,7 +149,7 @@ class ClientPortalUsers
             throw ValidationException::withMessages(['email' => "{$email} is a contact of another client."]);
         }
 
-        $user = DB::transaction(function () use ($client, $actor, $designation, $role, $email, $password, $name, $phone, $contact, $ip, $userAgent) {
+        $user = DB::transaction(function () use ($client, $actor, $designation, $role, $email, $password, $name, $phone, $contact, $particulars, $ip, $userAgent) {
             $user = User::create([
                 'name' => $name, 'email' => $email, 'password' => Hash::make($password),
                 'role' => $role, 'status' => 'Active', 'mobile' => $phone,
@@ -118,7 +157,7 @@ class ClientPortalUsers
 
             if ($role === 'inventor') {
                 // Listed in the client's Inventors tab, ready to be picked on cases and Form 1.
-                Inventor::create([
+                Inventor::create($particulars + [
                     'client_id' => $client->id, 'full_name' => $name, 'email' => $email, 'phone' => $phone,
                     'user_id' => $user->id, 'created_by_id' => $actor->id,
                 ]);

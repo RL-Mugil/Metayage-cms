@@ -153,7 +153,11 @@ class ClientController extends Controller
                 'designation' => 'Accounts Person',
             ];
         }
-        foreach ($v['portal_users'] ?? [] as $row) {
+        foreach ($v['portal_users'] ?? [] as $index => $row) {
+            if (($row['designation'] ?? null) === 'Inventor') {
+                // Checked before the client is created, so a missing address saves nothing.
+                \App\Services\ClientPortalUsers::inventorParticulars($row, "portal_users.{$index}.inventor");
+            }
             $logins[] = $row;
         }
         $emails = array_map(fn (array $login) => strtolower(trim($login['email'])), $logins);

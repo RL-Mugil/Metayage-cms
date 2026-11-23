@@ -218,6 +218,8 @@ export interface NewPortalUser {
   phone?: string
   designation: PortalDesignation
   password: string
+  /** An Inventor login's Form 1 particulars (address required); also saved to the Inventors tab. */
+  inventor?: Omit<InventorInput, 'client_id' | 'full_name' | 'email' | 'phone'>
 }
 
 export const api = {

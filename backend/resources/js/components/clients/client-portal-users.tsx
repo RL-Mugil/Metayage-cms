@@ -4,6 +4,7 @@ import { KeyRound, Loader2, Plus, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { api, type NewPortalUser, type PortalDesignation, type PortalUser } from "@/lib/api-client"
+import { defaultInventorParticulars, InventorParticularsFields, inventorProblem } from "@/components/inventors/inventor-picker"
 
 /** Firm roles that create, reset and remove portal logins (ClientPortalUsers::MANAGE_ROLES). */
 export const PORTAL_MANAGE_ROLES = ["super_admin", "partner", "manager", "hr"]
@@ -44,6 +45,7 @@ export function ClientPortalUsers({ clientId, canManage }: { clientId: number; c
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: portalUsersKey(clientId) })
     void queryClient.invalidateQueries({ queryKey: ["client-inventors", clientId] })
+    void queryClient.invalidateQueries({ queryKey: ["inventor-options"] })
   }
   const remove = useMutation({
     mutationFn: (user: PortalUser) => api.removePortalClientUser(clientId, user.id),
@@ -115,10 +117,14 @@ export function PortalUserFields({ value, onChange, designations = PORTAL_DESIGN
 }) {
   const set = (key: keyof NewPortalUser) => (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     onChange({ ...value, [key]: event.target.value })
+  const pickDesignation = (event: React.ChangeEvent<HTMLSelectElement>) => {
+    const designation = event.target.value as PortalDesignation
+    onChange({ ...value, designation, inventor: designation === "Inventor" ? (value.inventor ?? defaultInventorParticulars()) : value.inventor })
+  }
   return (
     <div className="grid gap-2 sm:grid-cols-5">
       <label className="text-[10px] text-muted-foreground">Designation
-        <select value={value.designation} onChange={set("designation")} className={inputClass}>
+        <select value={value.designation} onChange={pickDesignation} className={inputClass}>
           {designations.map((designation) => <option key={designation}>{designation}</option>)}
         </select>
       </label>
@@ -135,24 +141,40 @@ export function PortalUserFields({ value, onChange, designations = PORTAL_DESIGN
         <input value={value.password} onChange={set("password")} className={`${inputClass} font-mono`} />
       </label>
       <p className="text-[10px] text-muted-foreground sm:col-span-5">{DESIGNATION_ACCESS[value.designation]}</p>
+      {value.designation === "Inventor" && (
+        <div className="space-y-2 rounded-md border border-gold/40 bg-background/60 p-3 sm:col-span-5">
+          <p className="text-xs font-medium">Inventor particulars (printed on Form 1). Enter the name in full, family name first.</p>
+          <InventorParticularsFields value={value.inventor ?? defaultInventorParticulars()} onChange={(inventor) => onChange({ ...value, inventor })} />
+        </div>
+      )}
     </div>
   )
 }
 
 export const blankPortalUser = (designation: PortalDesignation = "Manager"): NewPortalUser =>
-  ({ designation, name: "", email: "", phone: "", password: "" })
+  ({ designation, name: "", email: "", phone: "", password: "", ...(designation === "Inventor" ? { inventor: defaultInventorParticulars() } : {}) })
 
 export function portalUserProblem(user: NewPortalUser): string | null {
   if (!user.name.trim()) return "Enter the portal user's name."
   if (!/^\S+@\S+\.\S+$/.test(user.email.trim())) return `Enter a valid email for ${user.name || "the portal user"}.`
   if (user.password.length < 8) return `The password for ${user.name || user.email} must be at least 8 characters.`
+  if (user.designation === "Inventor") return inventorProblem(user.inventor ?? {}, user.name.trim() || "the inventor")
   return null
+}
+
+/** What goes to the server: only an Inventor carries particulars, with age as a number. */
+export function portalUserPayload(user: NewPortalUser): NewPortalUser {
+  const { inventor, ...rest } = user
+  const base = { ...rest, name: user.name.trim(), email: user.email.trim() }
+  if (user.designation !== "Inventor" || !inventor) return base
+  const age = inventor.age === "" || inventor.age === null || inventor.age === undefined ? null : Number(inventor.age)
+  return { ...base, inventor: { ...inventor, age, gender: inventor.gender || null } }
 }
 
 function PortalUserForm({ clientId, onCancel, onSaved }: { clientId: number; onCancel: () => void; onSaved: () => void }) {
   const [user, setUser] = useState<NewPortalUser>(blankPortalUser())
   const save = useMutation({
-    mutationFn: () => api.addPortalClientUser(clientId, { ...user, name: user.name.trim(), email: user.email.trim() }),
+    mutationFn: () => api.addPortalClientUser(clientId, portalUserPayload(user)),
     onSuccess: (result) => { toast.success(`Portal login created for ${result.user.email}. Share the password with them directly.`); onSaved() },
     onError: (failure: Error) => toast.error(failure.message),
   })

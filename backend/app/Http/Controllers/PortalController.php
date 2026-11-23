@@ -203,6 +203,8 @@ class PortalController extends Controller
             'phone'       => 'nullable|string|max:30',
             'designation' => ['required', Rule::in(ClientPortalUsers::DESIGNATIONS)],
             'password'    => 'required|string|min:8|max:100',
+            // An Inventor's Form 1 particulars; checked in ClientPortalUsers::inventorParticulars().
+            'inventor'    => 'nullable|array',
         ]);
 
         $row = $portalUsers->add(Client::findOrFail($id), $validated, $request->user(), $request->ip(), $request->userAgent());

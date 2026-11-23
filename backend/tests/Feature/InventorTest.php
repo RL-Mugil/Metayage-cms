@@ -75,11 +75,27 @@ class InventorTest extends TestCase
         $this->assertDatabaseHas('audit_logs', ['action' => 'update_inventor', 'subject_id' => $created['id']]);
     }
 
-    public function test_incomplete_inventor_is_flagged(): void
+    public function test_new_inventor_needs_the_form_1_address(): void
     {
         Sanctum::actingAs($this->paralegal);
 
-        $this->postJson('/api/inventors', ['full_name' => 'Only A Name', 'client_id' => $this->client->id])->assertCreated()->assertJsonPath('complete', false);
+        $this->postJson('/api/inventors', ['full_name' => 'Only A Name', 'client_id' => $this->client->id])->assertStatus(422)
+            ->assertJsonValidationErrors(['nationality', 'city', 'country', 'pincode', 'address_house']);
+        $this->postJson('/api/inventors', $this->particulars(['state' => null]))->assertStatus(422)->assertJsonValidationErrors('state');
+        $this->postJson('/api/inventors', $this->particulars(['address_house' => null]))->assertCreated();   // street alone is enough
+        // A foreign address needs no state; gender, age, email and phone stay optional.
+        $this->postJson('/api/inventors', $this->particulars([
+            'full_name' => 'SMITH John', 'nationality' => 'American', 'state' => null, 'country' => 'United States',
+            'city' => 'Austin', 'pincode' => '73301', 'gender' => null, 'age' => null, 'email' => null, 'phone' => null,
+        ]))->assertCreated()->assertJsonPath('complete', true);
+
+        // An edit may leave a field out, but not blank it.
+        $id = Inventor::where('full_name', 'SMITH John')->value('id');
+        $this->putJson("/api/inventors/{$id}", ['full_name' => 'SMITH John', 'city' => ''])->assertStatus(422)->assertJsonValidationErrors('city');
+        $this->putJson("/api/inventors/{$id}", ['full_name' => 'SMITH John', 'age' => 40])->assertOk();
+
+        // Older records without an address are still flagged.
+        $this->assertFalse(Inventor::create(['full_name' => 'Legacy', 'client_id' => $this->client->id])->isComplete());
         $this->postJson('/api/inventors', ['city' => 'Pune', 'client_id' => $this->client->id])->assertStatus(422);   // name is required
         $this->postJson('/api/inventors', ['full_name' => 'No Client'])->assertStatus(422);                         // client is required
     }

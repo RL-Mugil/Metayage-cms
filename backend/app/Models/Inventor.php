@@ -51,6 +51,34 @@ class Inventor extends Model
         return $this->belongsTo(User::class);
     }
 
+    /**
+     * Validation rules for an inventor's Form 1 particulars, shared by the Inventors tab,
+     * the case picker and an Inventor login added from the Users tab. The address set Form 1
+     * prints is required when adding; an edit may leave a field out but not blank it.
+     * $data is the input being validated (to require the state for an Indian address).
+     */
+    public static function particularRules(bool $creating, array $data = []): array
+    {
+        $must = $creating ? 'required' : 'sometimes|required';
+        $country = strtolower(trim((string) ($data['country'] ?? '')));
+        $indian = in_array($country, ['india', 'in'], true);
+
+        return [
+            'gender'               => 'nullable|in:Male,Female,Others,Prefer not to disclose',
+            'age'                  => 'nullable|integer|min:1|max:120',
+            'nationality'          => "{$must}|string|max:100",
+            'country_of_residence' => 'nullable|string|max:100',
+            'address_house'        => ($creating ? 'required_without:address_street|' : '').'nullable|string|max:255',
+            'address_street'       => ($creating ? 'required_without:address_house|' : '').'nullable|string|max:500',
+            'city'                 => "{$must}|string|max:100",
+            'state'                => ($indian && ($creating || array_key_exists('state', $data)) ? 'required|' : 'nullable|').'string|max:100',
+            'country'              => "{$must}|string|max:100",
+            'pincode'              => "{$must}|string|max:20",
+            'email'                => 'nullable|email|max:255',
+            'phone'                => 'nullable|string|max:30',
+        ];
+    }
+
     /** Everything Form 1 needs is on record (an Indian address also needs its state). */
     public function isComplete(): bool
     {
