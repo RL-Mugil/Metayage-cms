@@ -29,6 +29,8 @@ const blankForm = {
   is_patent_agent: false, patent_agent_no: "",
 };
 const HR_CRUD_ROLES = ["super_admin", "partner", "hr", "finance"];
+/** Employees per page in the HRMS directory. */
+const PAGE_SIZE = 25;
 // Salary/payroll data — director (partner), accountant (finance), and
 // system admin only. Mirrors App\Models\User::PAYROLL_ACCESS_ROLES.
 const PAYROLL_ACCESS_ROLES = ["super_admin", "partner", "finance"];
@@ -125,6 +127,12 @@ export default function HRMSEmployees() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  // Server-side pages of PAGE_SIZE, A→Z; search and status filter run on the server.
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [lastPage, setLastPage] = useState(1);
+  const [query, setQuery] = useState("");
+  const [reloadKey, setReloadKey] = useState(0);
   const [statusSaving, setStatusSaving] = useState<number | null>(null);
 
   const [showModal, setShowModal] = useState(false);
@@ -168,20 +176,35 @@ export default function HRMSEmployees() {
     }
   }
 
+  // Wait for typing to pause before searching, and go back to page 1 on a new search.
   useEffect(() => {
-    api.getEmployees().then(setEmployees).catch(() => {}).finally(() => setLoading(false));
-  }, []);
+    const timer = setTimeout(() => { setQuery(search.trim()); setPage(1); }, 300);
+    return () => clearTimeout(timer);
+  }, [search]);
 
-  const filtered = employees.filter(e => {
-    if (statusFilter && (e.employment_status || "Active") !== statusFilter) return false;
-    const q = search.toLowerCase();
-    return !search ||
-      (e.user?.name || e.full_name || "").toLowerCase().includes(q) ||
-      (e.designation?.title || "").toLowerCase().includes(q) ||
-      (e.department?.name || "").toLowerCase().includes(q);
-  })
-    // Alphabetical by the name shown in the list (also keeps new or renamed employees in place).
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    const params = new URLSearchParams({ page: String(page), per_page: String(PAGE_SIZE) });
+    if (query) params.set("search", query);
+    if (statusFilter) params.set("employment_status", statusFilter);
+    api.getEmployeesPaged(params)
+      .then(res => {
+        if (cancelled) return;
+        // A page emptied by a status change or removal falls back to the last page that has rows.
+        if (res.data.length === 0 && page > 1) { setPage(Math.max(1, res.last_page)); return; }
+        setEmployees(res.data); setTotal(res.total); setLastPage(Math.max(1, res.last_page));
+      })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [page, query, statusFilter, reloadKey]);
+
+  // Alphabetical by the name shown in the list (keeps a renamed employee in place on this page).
+  const filtered = [...employees]
     .sort((a, b) => (a.user?.name || a.full_name || "").localeCompare(b.user?.name || b.full_name || "", "en", { sensitivity: "base" }));
+  const firstRow = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
+  const lastRow = Math.min(total, page * PAGE_SIZE);
 
   async function handleStatusChange(id: number, employment_status: string) {
     setStatusSaving(id);
@@ -268,8 +291,8 @@ export default function HRMSEmployees() {
         const updated = await api.updateEmployee(editEmp.id, payload as any);
         setEmployees(prev => prev.map(e => e.id === editEmp.id ? { ...e, ...updated } : e));
       } else {
-        const created = await api.createEmployee(payload as any);
-        setEmployees(prev => [created, ...prev]);
+        await api.createEmployee(payload as any);
+        setReloadKey(k => k + 1);
       }
       setShowModal(false);
     } catch (e: any) { setSaveError(e.message || "Failed to save employee."); }
@@ -284,8 +307,13 @@ export default function HRMSEmployees() {
     } catch (e: any) { alert(e.message || "Failed."); }
   }
 
-  function handleExport() {
-    const rows = filtered.map(e => ({
+  async function handleExport() {
+    // Every employee matching the search and status filter, not just this page.
+    const params: Record<string, string> = {};
+    if (query) params.search = query;
+    if (statusFilter) params.employment_status = statusFilter;
+    const all = await api.getEmployees(params).catch(() => filtered);
+    const rows = [...all].sort((a: any, b: any) => (a.user?.name || a.full_name || "").localeCompare(b.user?.name || b.full_name || "", "en", { sensitivity: "base" })).map((e: any) => ({
       Code: e.employee_code, Name: e.user?.name || e.full_name, Email: e.user?.email,
       Department: e.department?.name, Role: e.designation?.title,
       Location: e.work_location, Status: e.employment_status,
@@ -326,7 +354,7 @@ export default function HRMSEmployees() {
       <PageHeader
         eyebrow="HRMS"
         title="Employees"
-        description={`${employees.length} team members`}
+        description={`${total} team members`}
         actions={
           <>
             <Button variant="outline" onClick={handleExport}><Download className="h-4 w-4 mr-2" />Export CSV</Button>
@@ -624,7 +652,7 @@ export default function HRMSEmployees() {
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search employees…"
               className="w-full h-9 pl-9 pr-3 rounded-md border border-border bg-background text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
           </div>
-          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
+          <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setPage(1); }}
             className="h-9 rounded-md border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold">
             <option value="">All statuses</option>
             {EMPLOYMENT_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
@@ -698,11 +726,21 @@ export default function HRMSEmployees() {
                   ))}
                   {filtered.length === 0 && (
                     <tr><td colSpan={canCRUD ? 7 : 6} className="px-4 py-12 text-center text-muted-foreground">
-                      {employees.length === 0 ? "No employees yet. Add your first team member." : "No employees match your search."}
+                      {!query && !statusFilter ? "No employees yet. Add your first team member." : "No employees match your search."}
                     </td></tr>
                   )}
                 </tbody>
               </table>
+              {total > 0 && (
+                <div className="flex items-center justify-between border-t border-border px-4 py-2.5 text-xs text-muted-foreground">
+                  <span>Showing {firstRow}–{lastRow} of {total}</span>
+                  <div className="flex items-center gap-2">
+                    <Button size="sm" variant="outline" disabled={page <= 1} onClick={() => setPage(p => Math.max(1, p - 1))}>Previous</Button>
+                    <span>Page {page} of {lastPage}</span>
+                    <Button size="sm" variant="outline" disabled={page >= lastPage} onClick={() => setPage(p => Math.min(lastPage, p + 1))}>Next</Button>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
         )}

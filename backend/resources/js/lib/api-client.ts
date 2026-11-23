@@ -577,8 +577,9 @@ export const api = {
   async getHRMSStats(): Promise<{ total: number; active: number; on_leave: number; departments: number }> {
     return this.request('/hrms/stats')
   },
+  /** Every matching employee (pickers, payroll, reminders); the HRMS directory pages with getEmployeesPaged. */
   async getEmployees(params?: Record<string, string | number | boolean>): Promise<Employee[]> {
-    const query = params ? '?' + new URLSearchParams(params as Record<string, string>).toString() : ''
+    const query = '?' + new URLSearchParams({ per_page: '2000', ...(params ?? {}) } as Record<string, string>).toString()
     const res = await this.request<PaginatedResponse<Employee> | Employee[]>(`/hrms/employees${query}`)
     return Array.isArray(res) ? res : ((res as PaginatedResponse<Employee>).data ?? [])
   },

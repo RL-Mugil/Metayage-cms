@@ -59,7 +59,10 @@ class HRMSController extends Controller
         $query = Employee::with(['department', 'designation', 'user:id,name,email,role,status,avatar_url,patent_agent_no']);
 
         if ($request->filled('employment_status')) {
-            $query->where('employment_status', $request->employment_status);
+            // A blank status is shown (and treated) as Active in the directory.
+            $request->employment_status === 'Active'
+                ? $query->where(fn ($q) => $q->where('employment_status', 'Active')->orWhereNull('employment_status'))
+                : $query->where('employment_status', $request->employment_status);
         }
 
         // Used by HR Overview to show only people currently on the payroll —
@@ -73,7 +76,10 @@ class HRMSController extends Controller
             $query->where(function ($q) use ($s) {
                 $sl = strtolower($s);
                 $q->whereRaw('LOWER(full_name) LIKE ?', ["%{$sl}%"])
-                  ->orWhereRaw('LOWER(work_email) LIKE ?', ["%{$sl}%"]);
+                  ->orWhereRaw('LOWER(work_email) LIKE ?', ["%{$sl}%"])
+                  ->orWhereRaw('LOWER(employee_code) LIKE ?', ["%{$sl}%"])
+                  ->orWhereHas('designation', fn ($d) => $d->whereRaw('LOWER(title) LIKE ?', ["%{$sl}%"]))
+                  ->orWhereHas('department', fn ($d) => $d->whereRaw('LOWER(name) LIKE ?', ["%{$sl}%"]));
             });
         }
 
