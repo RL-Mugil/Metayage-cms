@@ -50,10 +50,8 @@ class DashboardController extends Controller
         $zohoCollectedMtd = $figures->collectedInMonth($user, now(), $client->id);
         $zohoOpeningBalance = (float) ZohoOpeningBalance::where('client_id', $client->id)->sum('balance');
 
-        $ledgerBalance = (float) (DB::table('client_ledger')
-            ->where('client_id', $client->id)
-            ->orderByDesc('id')
-            ->value('balance') ?? 0);
+        // Debits less credits (the ledger is kept in date order, so the last id isn't the latest).
+        $ledgerBalance = (float) DB::table('client_ledger')->where('client_id', $client->id)->sum(DB::raw('debit - credit'));
 
         $pendingInvoices = $figures->rows($user, $client->id)
             ->filter(fn (array $row) => $row['outstanding'] > 0)

@@ -191,9 +191,21 @@ class MatterWorkspaceService
     {
         $projectIds = $elevations->pluck('predecessor_project_id')->filter()->push($project->id)->unique();
         $invoices = Invoice::query()->whereIn('project_id', $projectIds)->orderByDesc('created_at')->get();
+        // Register invoices for the case (portal-raised + imported from Zoho Books), shown in the
+        // same shape so the Costs tab lists everything billed on it.
+        $register = \App\Models\PatentInvoiceIn::query()->whereIn('project_id', $projectIds)->where('type', 'invoice')
+            ->orderByRaw('invoice_date DESC NULLS LAST')->get();
+        $invoices = $invoices->concat($register->map(fn ($row) => (new Invoice([
+            'invoice_code' => $row->invoice_uin, 'status' => $row->status === 'Cancelled' ? 'Cancelled'
+                : ($row->balance_due !== null && (float) $row->balance_due <= 0 ? 'Paid' : ($row->status === 'Draft' ? 'Draft' : 'Sent')),
+            'total_amount' => (float) $row->invoice_amount, 'balance_due' => $row->balance_due ?? $row->invoice_amount,
+            'currency' => $row->currency ?: 'INR', 'issue_date' => $row->invoice_date, 'due_date' => $row->due_date,
+        ]))->forceFill(['id' => $row->id, 'created_at' => $row->invoice_date])))->values();
         $ledger = ClientLedger::query()
-            ->whereIn('document_reference', $invoices->pluck('invoice_code'))
-            ->orderByDesc('created_at')
+            ->where(fn ($q) => $q->whereIn('document_reference', $invoices->pluck('invoice_code'))
+                ->orWhereIn('source_key', $register->map(fn ($row) => "reg-inv:{$row->id}"))
+                ->orWhereIn('source_key', \App\Models\RegisterPayment::whereIn('patent_invoice_in_id', $register->pluck('id'))->pluck('id')->map(fn ($id) => "reg-pay:{$id}")))
+            ->orderByDesc('transaction_date')->orderByDesc('id')
             ->get();
 
         return [

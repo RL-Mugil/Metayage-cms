@@ -56,7 +56,7 @@ class FinancialAnalyticsService
         return [
             'currency' => 'INR',
             'generated_at' => now()->toIso8601String(),
-            'portal' => $this->source($portalInvoices, $portalQuotes, $portalBilled, $portalPaid, $portalOutstanding, $portalPrefixes, $this->monthlyPortal($portalRows)),
+            'portal' => $this->source($portalInvoices, $portalQuotes, $portalBilled, $portalPaid, $portalOutstanding, $portalPrefixes, $this->monthlyPortal($portalRows, app(FinanceFigures::class)->collectedByMonth($user))),
             'zoho' => $this->source($zohoInvoices, $zohoQuotes, $zohoBilled, $zohoCollected, $zohoOutstanding, $zohoConverted, $this->monthlyZoho($zohoInvoices), $zohoOpeningBalance),
             'comparison' => [
                 'portal_invoice_count' => $portalInvoices->count(),
@@ -94,15 +94,19 @@ class FinancialAnalyticsService
         ];
     }
 
-    /** Billed and collected per month of the invoice date (INR). */
-    private function monthlyPortal(Collection $rows): array
+    /** Billed per month of the invoice date, collected per month of the payment date (INR). */
+    private function monthlyPortal(Collection $rows, array $collected): array
     {
         $months = $this->months();
         foreach ($rows as $row) {
             $key = optional($row['date'])->format('Y-m');
             if (isset($months[$key])) {
                 $months[$key]['billed'] += (float) $row['billed'];
-                $months[$key]['collected'] += max(0, (float) $row['billed'] - (float) $row['outstanding']);
+            }
+        }
+        foreach ($collected as $key => $amount) {
+            if (isset($months[$key])) {
+                $months[$key]['collected'] += $amount;
             }
         }
         return array_values(array_map(fn ($row) => ['month' => $row['month'], 'billed' => round($row['billed'], 2), 'collected' => round($row['collected'], 2)], $months));

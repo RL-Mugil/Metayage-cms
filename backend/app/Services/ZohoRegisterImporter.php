@@ -23,11 +23,20 @@ use Illuminate\Support\Facades\Log;
  */
 class ZohoRegisterImporter
 {
-    /** Line items that are Patent Office / government fees. */
-    public const OFFICE_FEE_WORDS = ['official fee', 'office fee', 'govt', 'government', 'statutory', 'uspto', 'ipo fee', 'patent office', 'filing fee', 'form ', 'epo', 'wipo', 'pct fee', 'renewal fee', 'annuity', 'maintenance fee', 'issue fee', 'examination fee'];
+    /**
+     * The firm's Zoho items are named by code (POI, POF, PAS, PRV, ...). Patent Office fees:
+     * POI (Indian Patent Office), POF (foreign patent offices), or the "Patent Office Fees
+     * Reimbursement" account / "fixed by ... Patent Office" description.
+     */
+    public const OFFICE_FEE_CODES = ['POI', 'POF', 'PATENT OFFICES FEES', 'PATENT OFFICE FEES'];
+    public const OFFICE_FEE_WORDS = ['patent office fees reimbursement', 'payable to indian patent office', 'fixed by patent office', 'fees fixed by patent office', 'patent office fee', 'official fee', 'government fee'];
 
-    /** Line items that are disbursements / out-of-pocket expenses. */
-    public const EXPENSE_WORDS = ['expense', 'out of pocket', 'out-of-pocket', 'courier', 'postage', 'translation', 'notar', 'legalis', 'apostille', 'disbursement', 'stamp', 'bank charge', 'travel', 'certified cop'];
+    /** Disbursements: STP (stamp papers) and out-of-pocket costs. */
+    public const EXPENSE_CODES = ['STP'];
+    public const EXPENSE_WORDS = ['stamp paper', 'out of pocket', 'out-of-pocket', 'courier', 'postage', 'notar', 'legalis', 'apostille', 'disbursement', 'bank charge', 'travel'];
+
+    /** Discount lines (negative amounts). */
+    public const DISCOUNT_CODES = ['DISCOUNT'];
 
     /** @var array<string, int>|null client_code => id */
     private ?array $clientsByCode = null;
@@ -37,6 +46,9 @@ class ZohoRegisterImporter
 
     /** Unclassified line-item names seen in this run (for the dry-run report). */
     public array $unclassified = [];
+
+    /** True during importAll(): payments and ledgers are rebuilt once at the end. */
+    private bool $bulk = false;
 
     /**
      * @return array{action: string, row: ?PatentInvoiceIn} action: created | updated | linked | cancelled | skipped
@@ -49,6 +61,10 @@ class ZohoRegisterImporter
         if ($mirror->trashed()) {
             if ($existing && ! $dryRun) {
                 $existing->update(['status' => 'Cancelled', 'zoho_status' => 'deleted']);
+                app(RegisterPaymentsImporter::class)->fillGap($existing);
+                if ($existing->client_id && ! $this->bulk) {
+                    app(ClientLedgerSync::class)->sync((int) $existing->client_id);
+                }
             }
 
             return ['action' => $existing ? 'cancelled' : 'skipped', 'row' => $existing];
@@ -73,6 +89,7 @@ class ZohoRegisterImporter
             return ['action' => $action, 'row' => $row];
         }
 
+        $previousClient = $row?->client_id;
         if ($row) {
             // A portal-raised row keeps its own UIN/fees; it gains the Zoho link, status and balance.
             if ($row->source !== 'zoho' && $action === 'linked') {
@@ -83,6 +100,16 @@ class ZohoRegisterImporter
             $row = PatentInvoiceIn::create($attrs + ['source' => 'zoho']);
         }
 
+        // Payments with real dates (Zoho customer payments; any unrecorded part estimated) and
+        // the client's ledger follow every change. Skipped during the bulk import, which does
+        // both once at the end.
+        if (! $this->bulk) {
+            app(RegisterPaymentsImporter::class)->fillGap($row, $this->detail($mirror)['last_payment_date'] ?? null);
+            foreach (array_unique(array_filter([$row->client_id, $previousClient])) as $client) {
+                app(ClientLedgerSync::class)->sync((int) $client);
+            }
+        }
+
         return ['action' => $action, 'row' => $row];
     }
 
@@ -91,7 +118,8 @@ class ZohoRegisterImporter
     {
         $report = ['created' => 0, 'updated' => 0, 'linked' => 0, 'cancelled' => 0, 'skipped' => 0,
             'no_client' => 0, 'no_case' => 0, 'split_pending' => 0,
-            'totals' => ['invoice' => 0.0, 'quote' => 0.0]];
+            'totals' => ['invoice' => 0.0, 'quote' => 0.0], 'payments' => 0, 'ledgers' => 0];
+        $this->bulk = true;
         ZohoInvoice::withTrashed()->orderBy('id')->chunkById(200, function ($records) use (&$report, $dryRun, $progress) {
             foreach ($records as $mirror) {
                 try {
@@ -113,6 +141,20 @@ class ZohoRegisterImporter
                 $progress && $progress();
             }
         });
+        $this->bulk = false;
+        if (! $dryRun) {
+            // Payments with their dates, gaps for invoices paid without a payment record, then ledgers.
+            $payments = app(RegisterPaymentsImporter::class);
+            $report['payments'] = $payments->importAll();
+            PatentInvoiceIn::where('source', 'zoho')->where('type', 'invoice')->with('zohoRecord')->chunkById(200, function ($rows) use ($payments) {
+                foreach ($rows as $row) {
+                    $payments->fillGap($row, $row->zohoRecord ? ($this->detail($row->zohoRecord)['last_payment_date'] ?? null) : null);
+                }
+            });
+            $report['ledgers'] = app(ClientLedgerSync::class)->syncAll();
+        } else {
+            $report['payments'] = \App\Models\ZohoSnapshot::where('resource', 'customerpayments')->count();
+        }
         arsort($this->unclassified);
         $report['unclassified_items'] = array_slice($this->unclassified, 0, 40, true);
 
@@ -270,11 +312,14 @@ class ZohoRegisterImporter
         }
         foreach ($items as $item) {
             $amount = (float) ($item['item_total'] ?? (($item['rate'] ?? 0) * ($item['quantity'] ?? 1)));
-            $text = strtolower(trim(($item['name'] ?? '').' '.($item['description'] ?? '')));
-            if ($this->matches($text, self::OFFICE_FEE_WORDS)) {
-                $out['office'] += $amount;
-            } elseif ($this->matches($text, self::EXPENSE_WORDS)) {
+            $code = strtoupper(trim((string) ($item['name'] ?? '')));
+            $text = strtolower(trim(($item['name'] ?? '').' '.($item['description'] ?? '').' '.($item['account_name'] ?? '')));
+            if (in_array($code, self::DISCOUNT_CODES, true) || ($amount < 0 && str_contains($text, 'discount'))) {
+                $out['discount'] += abs($amount);
+            } elseif (in_array($code, self::EXPENSE_CODES, true) || $this->matches($text, self::EXPENSE_WORDS)) {
                 $out['expenses'] += $amount;
+            } elseif (in_array($code, self::OFFICE_FEE_CODES, true) || $this->matches($text, self::OFFICE_FEE_WORDS)) {
+                $out['office'] += $amount;
             } else {
                 $out['service'] += $amount;
                 $name = trim((string) ($item['name'] ?? '')) ?: mb_substr(trim((string) ($item['description'] ?? '')), 0, 60);
@@ -292,9 +337,13 @@ class ZohoRegisterImporter
                 $out['cgst'] += $amount;
             } elseif (str_contains($name, 'SGST') || str_contains($name, 'UTGST')) {
                 $out['sgst'] += $amount;
+            } elseif (str_contains($name, 'GST')) {
+                // A GST group (e.g. GST18) is CGST + SGST in equal halves.
+                $out['cgst'] += $amount / 2;
+                $out['sgst'] += $amount / 2;
             }
         }
-        $out['discount'] = (float) ($detail['discount_total'] ?? $detail['discount_amount'] ?? 0);
+        $out['discount'] += (float) ($detail['discount_total'] ?? 0);
         foreach (['office', 'service', 'expenses', 'discount', 'igst', 'cgst', 'sgst'] as $key) {
             $out[$key] = round($out[$key], 2);
         }

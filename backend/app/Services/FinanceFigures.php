@@ -94,16 +94,49 @@ class FinanceFigures
         ];
     }
 
-    /** Amount collected on invoices dated in the given month (INR). */
+    /** Amount received in the given month, by payment date (INR). */
     public function collectedInMonth(User $user, Carbon $month, ?int $clientId = null): float
     {
-        $register = (float) $this->registerInvoices($user, $clientId)
-            ->whereYear('invoice_date', $month->year)->whereMonth('invoice_date', $month->month)
-            ->sum(\DB::raw('GREATEST('.self::TOTAL_INR.' - '.self::BALANCE_INR.', 0)'));
-        $legacy = (float) $this->legacyInvoices($user, $clientId)->where('status', 'Paid')
-            ->whereYear('updated_at', $month->year)->whereMonth('updated_at', $month->month)->sum('total_amount');
+        return round((float) $this->payments($user, $clientId)
+            ->whereYear('payment_date', $month->year)->whereMonth('payment_date', $month->month)
+            ->sum('amount_bcy') + $this->legacyPaymentsIn($user, $clientId, $month), 2);
+    }
 
-        return round($register + $legacy, 2);
+    /** Payments received against the register invoices the user may see. */
+    public function payments(User $user, ?int $clientId = null): Builder
+    {
+        return \App\Models\RegisterPayment::query()
+            ->whereIn('patent_invoice_in_id', $this->registerInvoices($user, $clientId)->select('id'));
+    }
+
+    /**
+     * Received per month (INR) for the last 12 months, keyed "Y-m".
+     *
+     * @return array<string, float>
+     */
+    public function collectedByMonth(User $user, ?int $clientId = null): array
+    {
+        $from = now()->subMonths(11)->startOfMonth();
+        $out = [];
+        foreach ($this->payments($user, $clientId)->where('payment_date', '>=', $from->toDateString())->get(['payment_date', 'amount_bcy']) as $payment) {
+            $key = $payment->payment_date->format('Y-m');
+            $out[$key] = ($out[$key] ?? 0) + (float) $payment->amount_bcy;
+        }
+        $legacy = \App\Models\Payment::query()->where('status', 'Completed')->where('payment_date', '>=', $from->toDateString())
+            ->whereIn('invoice_id', $this->legacyInvoices($user, $clientId)->select('id'))->get(['payment_date', 'amount']);
+        foreach ($legacy as $payment) {
+            $key = Carbon::parse($payment->payment_date)->format('Y-m');
+            $out[$key] = ($out[$key] ?? 0) + (float) $payment->amount;
+        }
+
+        return $out;
+    }
+
+    private function legacyPaymentsIn(User $user, ?int $clientId, Carbon $month): float
+    {
+        return (float) \App\Models\Payment::query()->where('status', 'Completed')
+            ->whereIn('invoice_id', $this->legacyInvoices($user, $clientId)->select('id'))
+            ->whereYear('payment_date', $month->year)->whereMonth('payment_date', $month->month)->sum('amount');
     }
 
     /**

@@ -310,7 +310,7 @@ export function ClientDetailPanel({ clientId, onClose }: Props) {
                       <tbody>
                         {(data.ledger as any[]).map((l: any) => (
                           <tr key={l.id} className="border-b border-border/50 hover:bg-muted/20">
-                            <td className="py-2.5 pr-3 font-mono text-muted-foreground">{fmtDate(l.created_at)}</td>
+                            <td className="py-2.5 pr-3 font-mono text-muted-foreground">{fmtDate(l.transaction_date ?? l.created_at)}</td>
                             <td className="py-2.5 pr-3 capitalize text-muted-foreground">{l.document_type}</td>
                             <td className="py-2.5 pr-3 font-mono text-gold text-[10px]">{l.document_reference}</td>
                             <td className="py-2.5 pr-3 text-right font-mono">

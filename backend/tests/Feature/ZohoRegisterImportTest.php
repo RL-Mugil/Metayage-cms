@@ -122,6 +122,37 @@ class ZohoRegisterImportTest extends TestCase
         $this->deleteJson("/api/patent-invoices/in/{$row->id}")->assertStatus(422);
     }
 
+    public function test_payments_carry_their_dates_and_feed_the_ledger(): void
+    {
+        $mirror = ZohoInvoice::create(['zoho_id' => 'inv-5', 'zoho_type' => 'invoice', 'number' => '940M005INCPT', 'status' => 'partially_paid',
+            'total' => 10000, 'balance' => 4000, 'currency' => 'INR', 'txn_date' => now()->subMonths(2)->toDateString()]);
+        $row = PatentInvoiceIn::where('zoho_invoice_id', $mirror->id)->firstOrFail();
+
+        // Paid per Zoho but no payment record yet: one estimated line keeps collections complete.
+        $this->assertSame(1, \App\Models\RegisterPayment::where('patent_invoice_in_id', $row->id)->where('estimated', true)->count());
+
+        // The real payment arrives (Zoho customer payment applied to the invoice).
+        ZohoSnapshot::create(['scope' => app(ZohoBooksService::class)->scope(), 'resource' => 'customerpayments', 'remote_id' => 'pay-1',
+            'summary' => '{}', 'fingerprint' => 'p1', 'detail' => json_encode([
+                'payment_id' => 'pay-1', 'payment_number' => 'PMT-7', 'date' => now()->toDateString(), 'amount' => 6000,
+                'currency_code' => 'INR', 'exchange_rate' => 1, 'payment_mode' => 'Bank Transfer',
+                'invoices' => [['invoice_id' => 'inv-5', 'amount_applied' => 6000]],
+            ])]);
+        $payments = \App\Models\RegisterPayment::where('patent_invoice_in_id', $row->id)->get();
+        $this->assertCount(1, $payments);                                    // the estimate was replaced
+        $this->assertSame('PMT-7', $payments[0]->payment_number);
+        $this->assertSame(now()->toDateString(), $payments[0]->payment_date->toDateString());
+
+        // Collected this month is by payment date, not invoice date.
+        $this->assertEquals(6000, app(\App\Services\FinanceFigures::class)->collectedInMonth(auth()->user(), now()));
+
+        // Ledger: invoice debit, payment credit, running balance 4000.
+        $ledger = \App\Models\ClientLedger::where('client_id', $this->client->id)->orderBy('transaction_date')->orderBy('id')->get();
+        $this->assertSame(['Invoice', 'Payment'], $ledger->pluck('document_type')->all());
+        $this->assertSame('4000.00', $ledger->last()->balance);
+        $this->assertSame(4000.0, (float) $this->getJson("/api/clients/{$this->client->id}/detail")->assertOk()->json('invoice_summary.total_pending'));
+    }
+
     public function test_dry_run_reports_without_writing(): void
     {
         $mirror = ZohoInvoice::withoutEvents(fn () => ZohoInvoice::create(['scope' => app(ZohoBooksService::class)->scope(), 'zoho_id' => 'inv-9', 'zoho_type' => 'invoice', 'number' => '940M009INCPT',

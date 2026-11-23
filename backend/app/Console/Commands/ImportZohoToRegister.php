@@ -31,6 +31,8 @@ class ImportZohoToRegister extends Command
             ['Without a matched client', $report['no_client']],
             ['Without a matched case', $report['no_case']],
             ['Amount split pending (no line items yet)', $report['split_pending']],
+            [$dry ? 'Zoho customer payments to import' : 'Zoho customer payments imported', $report['payments']],
+            ['Client ledgers rebuilt', $dry ? '-' : $report['ledgers']],
         ]);
         $this->line(sprintf('Invoices total: ₹%s   Quotes total: ₹%s',
             number_format($report['totals']['invoice'], 2), number_format($report['totals']['quote'], 2)));

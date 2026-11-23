@@ -838,19 +838,27 @@ class ClientController extends Controller
             ];
         });
 
-        $invoices = \App\Models\Invoice::where('client_id', $client->id)
-            ->orderBy('created_at', 'desc')
-            ->get(['id', 'invoice_code', 'status', 'total_amount', 'balance_due', 'currency', 'created_at']);
+        // The portal register (portal-raised + imported from Zoho Books) and older invoices.
+        $figures = app(\App\Services\FinanceFigures::class);
+        $invoices = $figures->rows($request->user(), $client->id)
+            ->sortByDesc(fn (array $row) => $row['date']?->timestamp ?? 0)
+            ->map(fn (array $row) => [
+                'id' => $row['id'], 'invoice_code' => $row['number'], 'status' => ucfirst($row['status']),
+                'total_amount' => $row['invoice_amount'], 'balance_due' => $row['balance_due'] ?? $row['outstanding'],
+                'currency' => $row['currency'], 'created_at' => $row['date']?->toDateString(), 'source' => $row['source'],
+            ])->values();
 
+        $summary = $figures->summary($request->user(), $client->id);
         $invoiceSummary = [
-            'total_invoiced' => $invoices->sum('total_amount'),
-            'total_received' => $invoices->sum(fn($i) => $i->total_amount - $i->balance_due),
-            'total_pending'  => $invoices->sum('balance_due'),
+            'total_invoiced' => $summary['billed'],
+            'total_received' => $summary['received'],
+            'total_pending'  => $summary['outstanding'],
         ];
 
+        // In date order: the running balance is computed that way (ClientLedgerSync).
         $ledger = \App\Models\ClientLedger::where('client_id', $client->id)
-            ->orderBy('created_at', 'asc')
-            ->get(['id', 'document_type', 'document_reference', 'debit', 'credit', 'balance', 'created_at']);
+            ->orderBy('transaction_date')->orderByRaw('CASE WHEN debit > 0 THEN 0 ELSE 1 END')->orderBy('id')
+            ->get(['id', 'transaction_date', 'document_type', 'document_reference', 'debit', 'credit', 'balance', 'notes', 'created_at']);
 
         return response()->json([
             'client'          => $client,

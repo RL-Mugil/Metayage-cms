@@ -14,6 +14,7 @@ class ClientLedger extends Model
         'transaction_date',
         'document_type',
         'document_reference',
+        'source_key',   // "reg-inv:<id>", "reg-pay:<id>", "zoho-open:<id>": lines rebuilt from the register
         'debit',
         'credit',
         'balance',
