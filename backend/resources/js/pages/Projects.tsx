@@ -579,7 +579,9 @@ const PIPELINE_STAGES_LEGACY = [
   "Hearing with Examiner", "Hearing Response Preparation", "Hearing Response Filing",
 ];
 
-function stagesForProject(p: { service_code?: string | null; docket_number?: string | null; stages?: any[] }): string[] {
+function stagesForProject(p: { service_code?: string | null; docket_number?: string | null; stages?: any[]; stage_names?: string[] }): string[] {
+  // The case's own stage list (its office's template, e.g. USPTO stages for a US case) comes first.
+  if (p.stage_names && p.stage_names.length > 0) return p.stage_names;
   // service_code takes precedence; fall back to extracting from docket_number (chars 9+)
   const svc = (p.service_code ?? p.docket_number?.slice(9) ?? "").toUpperCase();
   return STAGES_BY_SERVICE[svc] ?? p.stages?.map((s: any) => s.stage_name) ?? PIPELINE_STAGES_LEGACY;

@@ -101,10 +101,14 @@ class InventorController extends Controller
     public function update(SaveInventorRequest $request, $id): JsonResponse
     {
         $inventor = Inventor::findOrFail($id);
+        $nationalityBefore = $inventor->nationality;
         DB::transaction(function () use ($request, $inventor) {
             $inventor->update($request->validated());
             $this->audit($request, 'update_inventor', $inventor->id, ['fields' => array_keys($request->validated())]);
         });
+        if ($inventor->nationality !== $nationalityBefore) {
+            app(\App\Services\ForeignFilingPermission::class)->syncForInventor($inventor);
+        }
 
         return response()->json($inventor->fresh('client')->toSummary());
     }
@@ -162,6 +166,7 @@ class InventorController extends Controller
 
         DB::transaction(function () use ($request, $project, $validated) {
             $project->syncInventors($validated['inventor_ids']);
+            app(\App\Services\ForeignFilingPermission::class)->sync($project);
             AuditLog::create([
                 'user_id' => $request->user()->id, 'action' => 'set_project_inventors',
                 'subject_type' => 'Project', 'subject_id' => $project->id,

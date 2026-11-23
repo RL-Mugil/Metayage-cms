@@ -209,7 +209,20 @@ class ProjectController extends Controller
             return response()->json(['data' => (clone $query)->limit(20000)->get()]);
         }
 
-        return response()->json(PaginationHelper::paginate($query, $request));
+        $page = PaginationHelper::paginate($query, $request);
+
+        // Each case's own stage list, in order — the list's "Set workflow stage" picker offers
+        // these (a US case's USPTO stages, not India's list for the same service code).
+        $ids = collect($page['data'])->pluck('id')->all();
+        $names = $ids
+            ? DB::table('project_stages')->whereIn('project_id', $ids)->orderBy('sequence_order')->orderBy('id')
+                ->get(['project_id', 'stage_name'])->groupBy('project_id')
+            : collect();
+        foreach ($page['data'] as $project) {
+            $project->setAttribute('stage_names', ($names->get($project->id) ?? collect())->pluck('stage_name')->values()->all());
+        }
+
+        return response()->json($page);
     }
 
     /**
@@ -397,6 +410,8 @@ class ProjectController extends Controller
             if ($inventorIds !== null) {
                 $project->syncInventors($inventorIds);
             }
+            // Inventor of another nationality → foreign filing permission step before filing.
+            app(\App\Services\ForeignFilingPermission::class)->sync($project);
 
             return $project;
         });
@@ -705,6 +720,10 @@ class ProjectController extends Controller
         }
 
         $project->update($validated);
+
+        if (isset($inventorIds) || array_key_exists('patent_office_code', $validated)) {
+            app(\App\Services\ForeignFilingPermission::class)->sync($project->fresh());
+        }
 
         // A project edited to carry the REN/RNF service code is, by definition,
         // already granted — same rule as at creation time (createProjectWithCodes()).
