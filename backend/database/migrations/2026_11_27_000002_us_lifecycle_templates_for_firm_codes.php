@@ -83,7 +83,7 @@ return new class extends Migration
             ['OAR', 'NOA', 'us_notice_of_allowance', null], ['QOA', 'NOA', 'us_notice_of_allowance', null],
             ['FOA', 'RCE', null, null], ['FOA', 'APL', null, null], ['FOA', 'EXI', null, null],
             ['RCE', 'NFO', 'us_nonfinal_office_action', null], ['APL', 'NOA', 'us_notice_of_allowance', null],
-            ['NOA', 'MFE', 'us_patent_issued', 'Issued'],
+            ['NOA', 'MFE', 'us_patent_issued', 'Granted'],
         ];
         foreach ($rules as [$from, $to, $event, $status]) {
             DB::table('service_transition_rules')->insert([
@@ -93,6 +93,11 @@ return new class extends Migration
                 'created_at' => now(), 'updated_at' => now(),
             ]);
         }
+
+        // A granted US application's legal status is 'Granted' (DocketRules sets it on
+        // us_patent_issued / granted), so the older US rules waiting for 'Issued' never fired.
+        DB::table('service_transition_rules')->where('jurisdiction', 'US')
+            ->where('required_application_status', 'Issued')->update(['required_application_status' => 'Granted']);
 
         // Cases already coded PGR on a US case meant US post-grant review.
         DB::table('projects')->where('patent_office_code', 'US')->where('service_code', 'PGR')->update(['service_code' => 'PGV']);
@@ -104,6 +109,8 @@ return new class extends Migration
         DB::table('jurisdiction_lifecycle_stages')->whereIn('jurisdiction_lifecycle_template_id', $ids)->delete();
         DB::table('jurisdiction_lifecycle_templates')->whereIn('id', $ids)->delete();
         DB::table('service_transition_rules')->where('jurisdiction', 'US')->where('description', 'like', '%(firm codes)')->delete();
+        DB::table('service_transition_rules')->where('jurisdiction', 'US')->where('required_application_status', 'Granted')
+            ->whereIn('to_service_code', ['M35', 'M75', 'M15'])->update(['required_application_status' => 'Issued']);
         DB::table('jurisdiction_lifecycle_templates')->where('jurisdiction', 'US')->where('service_code', 'OAR')
             ->where('version', '2026.3')->update(['is_active' => true]);
     }
