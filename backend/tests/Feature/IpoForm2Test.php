@@ -128,6 +128,16 @@ class IpoForm2Test extends TestCase
         $this->assertStringContainsString('PERCEPTIVE ENTERTAINMENT COMPANION SYSTEM', $xml);
     }
 
+    public function test_title_falls_back_to_the_patent_title_case_name(): void
+    {
+        // The case form has one title field; older cases may have only the case name.
+        $this->project->update(['invention_title' => null, 'project_name' => 'Gripper With Tactile Feedback']);
+        Sanctum::actingAs($this->paralegal);
+
+        $xml = $this->documentXml($this->postJson("/api/projects/{$this->project->id}/ipo-forms/form2/generate", ['specification' => 'complete'])->assertOk());
+        $this->assertStringContainsString('GRIPPER WITH TACTILE FEEDBACK', $xml);
+    }
+
     public function test_unknown_specification_type_is_rejected(): void
     {
         Sanctum::actingAs($this->paralegal);

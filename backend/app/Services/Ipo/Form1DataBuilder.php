@@ -183,13 +183,18 @@ class Form1DataBuilder
 
     /**
      * The title on record: the case's own, else the linked patent application's (what the
-     * case page's Application Details shows; some imported cases keep it only there).
+     * case page's Application Details shows; some imported cases keep it only there), else
+     * the Patent Title / Case Name.
      */
     public function caseTitle(Project $project): ?string
     {
         $title = trim((string) $project->invention_title);
         if ($title === '') {
             $title = trim((string) $project->patentApplication?->title);
+        }
+        if ($title === '') {
+            // The case form has one title field (Patent Title / Case Name).
+            $title = trim((string) $project->project_name);
         }
 
         return $title !== '' ? $title : null;

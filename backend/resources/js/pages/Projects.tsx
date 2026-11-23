@@ -1360,6 +1360,8 @@ export default function Projects() {
       secondary_manager_id: form.secondary_manager_id ? parseInt(form.secondary_manager_id) : null,
       patent_engineer_id:   form.patent_engineer_id   ? parseInt(form.patent_engineer_id)   : null,
       project_type: form.case_type,
+      // One title field: the Patent Title / Case Name is also the title of invention (Forms 1 and 2).
+      invention_title: isTrademark ? (form.invention_title || null) : form.project_name.trim(),
       circle: form.circle || null,
       ...(caseInventors !== null && !isTrademark ? { inventor_ids: caseInventors.map((inventor) => inventor.id) } : {}),
     };
@@ -2238,13 +2240,6 @@ export default function Projects() {
                     />
                   </div>
                   {!isTrademarkCode(form.service_code) && (<>
-                  <div>
-                    <FLbl>Title of Invention</FLbl>
-                    <input value={form.invention_title}
-                      onChange={(e) => sf("invention_title", e.target.value)}
-                      placeholder="Optional until the title is finalised"
-                      className={fInp} />
-                  </div>
                   <div>
                     <FLbl>Technology Field</FLbl>
                     <input value={form.technology_field}
@@ -3153,7 +3148,7 @@ export default function Projects() {
                           </td>
                           <td className="px-4 py-3 max-w-[200px]">
                             <div className="font-medium truncate">{p.project_name}</div>
-                            {p.invention_title && (
+                            {p.invention_title && p.invention_title.trim() !== (p.project_name ?? "").trim() && (
                               <div className="text-xs text-muted-foreground truncate">{p.invention_title}</div>
                             )}
                           </td>
