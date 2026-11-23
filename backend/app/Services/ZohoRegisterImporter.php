@@ -47,6 +47,9 @@ class ZohoRegisterImporter
     /** Unclassified line-item names seen in this run (for the dry-run report). */
     public array $unclassified = [];
 
+    /** Count unclassified line items (off for the report's second pass over the same record). */
+    private bool $tally = true;
+
     /** True during importAll(): payments and ledgers are rebuilt once at the end. */
     private bool $bulk = false;
 
@@ -133,7 +136,9 @@ class ZohoRegisterImporter
                 $report[$result['action']]++;
                 if (! $mirror->trashed()) {
                     $report['totals'][$mirror->zoho_type === 'quote' ? 'quote' : 'invoice'] += (float) $mirror->total;
+                    $this->tally = false;
                     $attrs = $this->attributes($mirror, $mirror->zoho_type === 'quote' ? 'quote' : 'invoice', $this->clientFor($mirror) ?? Project::whereKey($mirror->project_id)->value('client_id'), null);
+                    $this->tally = true;
                     $report['no_client'] += $attrs['client_id'] ? 0 : 1;
                     $report['no_case'] += $attrs['project_id'] ? 0 : 1;
                     $report['split_pending'] += $attrs['amount_split_pending'] ? 1 : 0;
@@ -312,7 +317,8 @@ class ZohoRegisterImporter
         }
         foreach ($items as $item) {
             $amount = (float) ($item['item_total'] ?? (($item['rate'] ?? 0) * ($item['quantity'] ?? 1)));
-            $code = strtoupper(trim((string) ($item['name'] ?? '')));
+            // The item code is the name; a few lines leave the name blank and put the code in the description.
+            $code = strtoupper(trim((string) (($item['name'] ?? '') !== '' ? $item['name'] : ($item['description'] ?? ''))));
             $text = strtolower(trim(($item['name'] ?? '').' '.($item['description'] ?? '').' '.($item['account_name'] ?? '')));
             if (in_array($code, self::DISCOUNT_CODES, true) || ($amount < 0 && str_contains($text, 'discount'))) {
                 $out['discount'] += abs($amount);
@@ -323,7 +329,7 @@ class ZohoRegisterImporter
             } else {
                 $out['service'] += $amount;
                 $name = trim((string) ($item['name'] ?? '')) ?: mb_substr(trim((string) ($item['description'] ?? '')), 0, 60);
-                if ($name !== '') {
+                if ($name !== '' && $this->tally) {
                     $this->unclassified[$name] = ($this->unclassified[$name] ?? 0) + 1;
                 }
             }

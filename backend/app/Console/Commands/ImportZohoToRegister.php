@@ -27,7 +27,7 @@ class ImportZohoToRegister extends Command
             ['Already imported (refreshed)', $report['updated']],
             ['Linked to an existing portal row', $report['linked']],
             ['Deleted in Zoho → Cancelled', $report['cancelled']],
-            ['Skipped / failed', $report['skipped']],
+            ['Deleted in Zoho before import (not imported)', $report['skipped']],
             ['Without a matched client', $report['no_client']],
             ['Without a matched case', $report['no_case']],
             ['Amount split pending (no line items yet)', $report['split_pending']],
