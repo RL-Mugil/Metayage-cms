@@ -771,21 +771,18 @@ class ProjectController extends Controller
         // the workflow history is preserved and can be resumed if status is reopened.
         $terminalStatuses = ['Granted', 'Refused', 'Abandoned', 'Closed', 'Completed', 'Archived'];
         if (array_key_exists('status', $validated) && in_array($validated['status'], $terminalStatuses, true)) {
-            $now = Carbon::now();
             if (in_array($validated['status'], ['Granted', 'Completed'], true)) {
-                // Full completion — mark every stage done
-                $project->stages()->where('status', '!=', 'Completed')->update([
-                    'status'        => 'Completed',
-                    'actual_end_at' => $now,
-                ]);
-                $project->stages()->whereNull('actual_start_at')->update(['actual_start_at' => $now]);
+                // Full completion: every stage done. Only the stage in progress gets today as
+                // its end; stages never worked on stay undated, to be back-logged.
+                app(\App\Services\StageDates::class)->completeAll($project, 'status', null, $user->id);
             } else {
-                // Soft terminal (Refused/Abandoned/Closed) — just clear the active stage
-                $project->stages()->where('status', 'In Progress')->update([
-                    'status'        => 'Pending',
-                    'actual_start_at' => null,
-                    'actual_end_at'   => null,
-                ]);
+                // Soft terminal (Refused/Abandoned/Closed) — just clear the active stage,
+                // keeping any date someone recorded.
+                foreach ($project->stages()->where('status', 'In Progress')->get() as $active) {
+                    $active->update(array_merge(['status' => 'Pending'],
+                        $active->start_source === 'manual' ? [] : ['actual_start_at' => null, 'start_source' => null],
+                        $active->end_source === 'manual' ? [] : ['actual_end_at' => null, 'end_source' => null]));
+                }
             }
             // Sync the application's legal status + auto-record docket events
             // (granted → renewal schedule + Rule 80(3) deadline; refused → review/appeal windows)
@@ -809,14 +806,7 @@ class ProjectController extends Controller
         if (array_key_exists('filing_date', $validated) && !empty($validated['filing_date'])) {
             $filedStage = $project->stages()->where('stage_name', 'Filed')->first();
             if ($filedStage && $filedStage->status !== 'In Progress' && $filedStage->status !== 'Completed') {
-                $now = Carbon::now();
-                $project->stages()
-                    ->where('sequence_order', '<', $filedStage->sequence_order)
-                    ->update(['status' => 'Completed', 'actual_end_at' => $now]);
-                $filedStage->update(['status' => 'In Progress', 'actual_start_at' => $now]);
-                $project->stages()
-                    ->where('sequence_order', '>', $filedStage->sequence_order)
-                    ->update(['status' => 'Pending', 'actual_start_at' => null, 'actual_end_at' => null]);
+                app(\App\Services\StageDates::class)->moveTo($project, $filedStage, 'docket', Carbon::parse($validated['filing_date']), $user->id);
                 ProjectTrackerController::syncTrackerRowStatus($project->id, 'Filed');
             }
         }
@@ -908,28 +898,9 @@ class ProjectController extends Controller
             return response()->json(['message' => $blocker, 'requires_mark_image' => true], 422);
         }
 
-        // 1. Mark previous active stages as Completed
-        ProjectStage::where('project_id', $project->id)
-            ->where('sequence_order', '<', $targetStage->sequence_order)
-            ->update([
-                'status' => 'Completed',
-                'actual_end_at' => Carbon::now()
-            ]);
-
-        // 2. Mark current target stage as In Progress
-        $targetStage->update([
-            'status' => 'In Progress',
-            'actual_start_at' => Carbon::now()
-        ]);
-
-        // 3. Mark upcoming stages as Pending
-        ProjectStage::where('project_id', $project->id)
-            ->where('sequence_order', '>', $targetStage->sequence_order)
-            ->update([
-                'status' => 'Pending',
-                'actual_start_at' => null,
-                'actual_end_at' => null
-            ]);
+        // Earlier stages Completed, this one In Progress, later ones Pending. Today is logged
+        // only on the stage left and the stage started, and never over a recorded date.
+        app(\App\Services\StageDates::class)->moveTo($project, $targetStage, 'stage_picker', null, $user->id);
 
         // Reverse sync: update linked tracker row status to match the new stage.
         ProjectTrackerController::syncTrackerRowStatus($project->id, $stageName);

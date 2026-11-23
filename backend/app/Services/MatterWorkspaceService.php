@@ -89,16 +89,21 @@ class MatterWorkspaceService
             'allowed_transitions' => ! $isClient && $user->can('update', $project)
                 ? app(ServiceTransitionService::class)->available($project)->values()
                 : collect(),
-            'stages' => $project->stages->map(fn ($stage) => [
-                'id' => $stage->id,
-                'stage_name' => $stage->stage_name,
-                'status' => $stage->status,
-                'sequence_order' => $stage->sequence_order,
-                'due_date' => $stage->due_date,
-                'actual_start_at' => $stage->actual_start_at?->toISOString(),
-                'actual_end_at' => $stage->actual_end_at?->toISOString(),
-                'owner' => $stage->owner,
-                'working_days' => $this->workingDays($stage->actual_start_at, $stage->actual_end_at),
+            // A stage without its own start begins when the previous stage completed (chain).
+            'stages' => app(StageDates::class)->withEffectiveStarts($project->stages)->map(fn (array $row) => [
+                'id' => $row['stage']->id,
+                'stage_name' => $row['stage']->stage_name,
+                'status' => $row['stage']->status,
+                'sequence_order' => $row['stage']->sequence_order,
+                'due_date' => $row['stage']->due_date,
+                'actual_start_at' => $row['stage']->actual_start_at?->toISOString(),
+                'actual_end_at' => $row['stage']->actual_end_at?->toISOString(),
+                'effective_start_at' => $row['effective_start']?->toISOString(),
+                'start_from_previous' => $row['start_from_previous'],
+                'start_source' => $row['stage']->start_source,
+                'end_source' => $row['stage']->end_source,
+                'owner' => $row['stage']->owner,
+                'working_days' => $this->workingDays($row['effective_start'], $row['stage']->actual_end_at),
             ])->values(),
             'deadlines' => $deadlines,
             'deadline_summary' => $this->deadlineSummary($deadlines),

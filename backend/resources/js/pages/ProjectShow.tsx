@@ -30,6 +30,9 @@ export default function ProjectShow({ projectId }: Props) {
     return () => { active = false }
   }, [projectId])
 
+  // Quiet refresh (no spinner) after an edit inside a tab.
+  const reload = () => { api.getMatterWorkspace(projectId).then(setData).catch(() => { /* keep current data */ }) }
+
   return (
     <AppLayout>
       <Head title={data?.project.project_name || "Matter Workspace"} />
@@ -38,7 +41,7 @@ export default function ProjectShow({ projectId }: Props) {
       ) : error || !data ? (
         <div className="flex min-h-[70vh] flex-col items-center justify-center px-6 text-center"><p className="text-base font-semibold">Matter workspace unavailable</p><p className="mt-2 max-w-lg text-sm text-muted-foreground">{error || "This matter was not found or is outside your access scope."}</p></div>
       ) : (
-        <MatterWorkspace data={data} projectId={projectId} tab={tab} onTabChange={setTab} />
+        <MatterWorkspace data={data} projectId={projectId} tab={tab} onTabChange={setTab} onReload={reload} />
       )}
     </AppLayout>
   )

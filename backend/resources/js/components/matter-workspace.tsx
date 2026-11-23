@@ -9,6 +9,7 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { DocketDeadlines } from "@/components/docket-deadlines"
+import { WorkflowStageLog } from "@/components/workflow-stage-log"
 import { ProjectChat } from "@/components/project-chat"
 import { ZohoBooksPanel } from "@/components/zoho-books-panel"
 import { InventorsPanel } from "@/components/inventors-panel"
@@ -31,6 +32,8 @@ interface MatterWorkspaceProps {
   projectId: number
   tab: WorkspaceTab
   onTabChange: (tab: WorkspaceTab) => void
+  /** Re-fetches the workspace (after work-stage dates change). */
+  onReload?: () => void
 }
 
 const TAB_DEFS: Array<{ id: WorkspaceTab; label: string; icon: typeof Activity }> = [
@@ -67,7 +70,7 @@ function timelineLabel(item: WorkspaceTimelineItem): string {
   return item.title
 }
 
-export function MatterWorkspace({ data, projectId, tab, onTabChange }: MatterWorkspaceProps) {
+export function MatterWorkspace({ data, projectId, tab, onTabChange, onReload }: MatterWorkspaceProps) {
   const { project, application, deadline_summary: summary } = data
   // Indian Patent Office forms: every IN case except trademark and copyright cases.
   // Some imported trademark filings carry a patent project type, so the TM service code counts too.
@@ -223,23 +226,8 @@ export function MatterWorkspace({ data, projectId, tab, onTabChange }: MatterWor
         )}
 
         {tab === "lifecycle" && (
-          <section>
-            <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
-              <div><h2 className="text-base font-semibold">Prosecution lifecycle</h2><p className="mt-1 text-sm text-muted-foreground">{completedStages} of {data.stages.length} stages completed</p>{data.lifecycle_template && <p className="mt-1 text-xs text-muted-foreground">{data.lifecycle_template.name} · version {data.lifecycle_template.version} · reviewer {data.docket_reviewer?.name || "Unassigned"}</p>}</div>
-              <span className="font-mono text-sm font-semibold">{progress}%</span>
-            </div>
-            <div className="space-y-0">
-              {data.stages.map((stage, index) => (
-                <div key={stage.id} className="grid grid-cols-[32px_minmax(0,1fr)] gap-3">
-                  <div className="flex flex-col items-center"><div className={`mt-1 flex h-7 w-7 items-center justify-center rounded-full border text-[10px] font-semibold ${stage.status === "Completed" ? "border-emerald-500 bg-emerald-500 text-white" : stage.status === "In Progress" ? "border-blue-500 bg-blue-500 text-white" : "border-border bg-background text-muted-foreground"}`}>{index + 1}</div>{index < data.stages.length - 1 && <div className="min-h-12 w-px flex-1 bg-border" />}</div>
-                  <div className="pb-6">
-                    <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="text-sm font-semibold">{stage.stage_name}</h3><Badge variant="outline">{stage.status}</Badge></div>
-                    <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted-foreground"><span>Start: {formatDate(stage.actual_start_at)}</span><span>End: {formatDate(stage.actual_end_at)}</span><span>Due: {formatDate(stage.due_date)}</span>{stage.owner && <span>Owner: {stage.owner.name}</span>}{stage.working_days != null && <span>{stage.working_days} working days</span>}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
+          <WorkflowStageLog projectId={projectId} stages={data.stages} onChanged={() => onReload?.()}
+            title={data.lifecycle_template ? `${data.lifecycle_template.name} · version ${data.lifecycle_template.version} · reviewer ${data.docket_reviewer?.name || "Unassigned"}` : undefined} />
         )}
 
         {tab === "deadlines" && (

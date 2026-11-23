@@ -98,8 +98,36 @@ export interface WorkspaceStage {
   due_date?: string | null
   actual_start_at?: string | null
   actual_end_at?: string | null
+  /** Own start, else the previous stage's completion (chain). */
+  effective_start_at?: string | null
+  start_from_previous?: boolean
+  /** Where the date came from: "manual" (recorded) or "auto" (logged when the stage moved). */
+  start_source?: string | null
+  end_source?: string | null
   working_days?: number | null
   owner?: WorkspacePerson | null
+}
+
+/** One line of the work-stage log (Lifecycle tab). */
+export interface StageEvent {
+  id: number
+  project_stage_id: number | null
+  stage_name: string
+  event: "started" | "completed"
+  event_date: string
+  source: string
+  source_label: string
+  notes?: string | null
+  created_by?: string | null
+  created_at?: string | null
+}
+
+/** A date the case already knows, offered for back-logging. */
+export interface StageDateSuggestion {
+  stage_id: number
+  event: "started" | "completed"
+  date: string
+  reason: string
 }
 
 export interface WorkspaceLifecycleTemplate {

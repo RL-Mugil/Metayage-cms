@@ -15,6 +15,8 @@ class ProjectStage extends Model
         'due_date',
         'actual_start_at',
         'actual_end_at',
+        'start_source',
+        'end_source',
         'notes',
         'checklist',
         'gate_criteria',

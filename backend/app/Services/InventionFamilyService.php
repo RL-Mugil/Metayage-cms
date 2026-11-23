@@ -142,7 +142,7 @@ class InventionFamilyService
 
             if (($attributes['complete_source'] ?? false) === true) {
                 $source->update(['status' => 'Completed']);
-                $source->stages()->where('status', '!=', 'Completed')->update(['status' => 'Completed', 'actual_end_at' => now()]);
+                app(StageDates::class)->completeAll($source, 'status', null, $actor->id);
             }
 
             AuditLog::create([

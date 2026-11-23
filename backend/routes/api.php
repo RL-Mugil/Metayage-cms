@@ -143,6 +143,11 @@ Route::middleware(['auth:sanctum', 'firm.context', 'throttle:120,1'])->group(fun
     Route::put('/projects/{id}', [ProjectController::class, 'update']);
     Route::delete('/projects/{id}', [ProjectController::class, 'destroy']);
     Route::post('/projects/{id}/stage', [ProjectController::class, 'updateStage']);
+    // Work-stage log (case Lifecycle tab): record / back-log stage dates.
+    Route::get('/projects/{id}/stage-events', [\App\Http\Controllers\ProjectStageEventController::class, 'index']);
+    Route::post('/projects/{id}/stage-events', [\App\Http\Controllers\ProjectStageEventController::class, 'store']);
+    Route::put('/projects/{id}/stage-events/bulk', [\App\Http\Controllers\ProjectStageEventController::class, 'bulk']);
+    Route::delete('/stage-events/{id}', [\App\Http\Controllers\ProjectStageEventController::class, 'destroy']);
     Route::get('/projects/{id}/detail', [ProjectController::class, 'detail']);
     // Was never actually registered despite the frontend "Elevate" button/modal calling it —
     // a pre-existing 404. Fixed here since the new renewal-paid flow relies on the same

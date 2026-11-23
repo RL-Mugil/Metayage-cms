@@ -6,7 +6,7 @@ import type {
   PaginatedResponse, SearchResult, Quotation, AuditLog, PatentInvoiceIn, ProjectTab,
   CodeRow, CodeRenameImpact, CodeRenameResult, CodeMergeAvailable, CodeMergeImpact, CodeMergeResult,
 } from '@/types'
-import type { MatterWorkspace, MatterWorkspaceResponse } from '@/types/matter-workspace'
+import type { MatterWorkspace, MatterWorkspaceResponse, StageDateSuggestion, StageEvent } from '@/types/matter-workspace'
 import type { ZohoQuotePreview } from '@/types/zoho'
 import type { TrademarkDetails, TrademarkInput } from '@/types/trademark'
 import type { Form1Input, Form1Prefill, InventorInput, InventorRecord, IpoAddress, IpoServiceAddress, IpoSettings } from '@/types/ipo-forms'
@@ -283,6 +283,19 @@ export const api = {
     if (tab) params.set('tab', tab)
     const q = params.toString()
     return this.request(`/projects/stats${q ? `?${q}` : ''}`)
+  },
+  // ── Work-stage log (case Lifecycle tab) ──
+  async getStageEvents(projectId: number | string): Promise<{ events: StageEvent[]; suggestions: StageDateSuggestion[]; can_record: boolean }> {
+    return this.request(`/projects/${projectId}/stage-events`)
+  },
+  async recordStageEvent(projectId: number | string, data: { stage_id: number; event: 'started' | 'completed'; event_date: string; notes?: string | null }): Promise<{ ok: boolean }> {
+    return this.request(`/projects/${projectId}/stage-events`, { method: 'POST', body: JSON.stringify(data) })
+  },
+  async backlogStageDates(projectId: number | string, rows: Array<{ stage_id: number; completed_on?: string | null; started_on?: string | null }>): Promise<{ ok: boolean; dates: number }> {
+    return this.request(`/projects/${projectId}/stage-events/bulk`, { method: 'PUT', body: JSON.stringify({ rows }) })
+  },
+  async deleteStageEvent(eventId: number): Promise<{ ok: boolean }> {
+    return this.request(`/stage-events/${eventId}`, { method: 'DELETE' })
   },
   async getMatterWorkspace(projectId: number | string): Promise<MatterWorkspace> {
     const response = await this.request<MatterWorkspaceResponse>(`/projects/${projectId}/workspace`)

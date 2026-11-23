@@ -715,18 +715,8 @@ class ProjectTrackerController extends Controller implements HasMiddleware
 
         if (!$targetStage) return;
 
-        ProjectStage::where('project_id', $projectId)
-            ->where('sequence_order', '<', $targetStage->sequence_order)
-            ->update(['status' => 'Completed', 'actual_end_at' => Carbon::now()]);
-
-        $targetStage->update([
-            'status'           => 'In Progress',
-            'actual_start_at'  => Carbon::now(),
-        ]);
-
-        ProjectStage::where('project_id', $projectId)
-            ->where('sequence_order', '>', $targetStage->sequence_order)
-            ->update(['status' => 'Pending', 'actual_start_at' => null, 'actual_end_at' => null]);
+        // Logs today on the stage left and the stage started, never over a recorded date.
+        app(\App\Services\StageDates::class)->moveTo(Project::findOrFail($projectId), $targetStage, 'tracker');
     }
 
     /**

@@ -152,6 +152,12 @@ class Project extends Model
         return $this->hasMany(ProjectStage::class)->orderBy('sequence_order');
     }
 
+    /** The work-stage log (Lifecycle tab): stages started / completed on dates. */
+    public function stageEvents(): HasMany
+    {
+        return $this->hasMany(ProjectStageEvent::class)->orderByDesc('event_date')->orderByDesc('id');
+    }
+
     public function secondaryManager(): BelongsTo
     {
         return $this->belongsTo(User::class, 'secondary_manager_id');

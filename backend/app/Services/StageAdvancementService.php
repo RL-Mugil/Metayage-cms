@@ -37,16 +37,8 @@ class StageAdvancementService
             return;
         }
 
-        // This stage, and any earlier stage still open, are proven complete
-        // by the event having happened at all.
-        $project->stages()
-            ->where('sequence_order', '<=', $stage->sequence_order)
-            ->where('status', '!=', 'Completed')
-            ->update(['status' => 'Completed', 'actual_end_at' => $eventDate]);
-
-        $next = $project->stages()->where('sequence_order', '>', $stage->sequence_order)->first();
-        if ($next && $next->status === 'Pending') {
-            $next->update(['status' => 'In Progress', 'actual_start_at' => $eventDate]);
-        }
+        // This stage, and any earlier stage still open, are proven complete by the event
+        // having happened at all; its date is logged where no date is recorded yet.
+        app(StageDates::class)->completeThrough($project, $stage, $eventDate);
     }
 }
