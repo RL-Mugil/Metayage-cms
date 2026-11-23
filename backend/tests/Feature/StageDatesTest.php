@@ -84,7 +84,7 @@ class StageDatesTest extends TestCase
         $stages = $case->stages()->orderBy('sequence_order')->get();
         $this->postJson("/api/projects/{$case->id}/stage-events", ['stage_id' => $stages[0]->id, 'event' => 'completed', 'event_date' => '2026-09-10'])->assertCreated();
 
-        $workspace = collect($this->getJson("/api/projects/{$case->id}/workspace")->assertOk()->json('stages'))->keyBy('id');
+        $workspace = collect($this->getJson("/api/projects/{$case->id}/workspace")->assertOk()->json('data.stages'))->keyBy('id');
         $second = $workspace[$stages[1]->id];
         $this->assertSame('In Progress', $second['status']);
         $this->assertTrue($second['start_from_previous']);
