@@ -5,12 +5,12 @@ import { X, Loader2, ShieldCheck } from "lucide-react";
 import { api } from "@/lib/api-client";
 import { ProjectDetailPanel } from "@/components/project-detail-panel";
 import { ClientInventors } from "@/components/inventors/client-inventors";
+import { INVENTOR_LOGIN_ROLES } from "@/components/inventors/inventor-picker";
 import { ClientPortalUsers, PORTAL_MANAGE_ROLES } from "@/components/clients/client-portal-users";
 
 const ENTITY_VERIFY_ROLES = ["super_admin", "partner", "manager", "galvanizer"];
 // Staff who manage inventors (InventorPolicy) and who may give them a portal login.
 const INVENTOR_ROLES = ["super_admin", "partner", "director", "manager", "associate", "paralegal", "galvanizer"];
-const INVENTOR_PORTAL_ROLES = ["super_admin", "partner", "director", "manager"];
 
 function verifyBadgeClass(status: string | undefined) {
   if (status === "Verified") return "bg-green-100 text-green-700 border-green-200";
@@ -287,7 +287,7 @@ export function ClientDetailPanel({ clientId, onClose }: Props) {
 
               {tab === "inventors" && canManageInventors && (
                 <div className="p-6">
-                  <ClientInventors clientId={clientId} canGrantPortal={INVENTOR_PORTAL_ROLES.includes(role)} />
+                  <ClientInventors clientId={clientId} canGrantPortal={INVENTOR_LOGIN_ROLES.includes(role)} />
                 </div>
               )}
 

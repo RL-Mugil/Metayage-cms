@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { usePage } from "@inertiajs/react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { ArrowDown, ArrowUp, CheckCircle2, Loader2, Pencil, Plus, Search, TriangleAlert, X } from "lucide-react"
 import { toast } from "sonner"
@@ -7,6 +8,9 @@ import { Input } from "@/components/ui/input"
 import { api, type PortalUser } from "@/lib/api-client"
 import { AddressFields, Field, GENDERS, isIndianCountry, selectClass, TextField } from "@/components/ipo/party-fields"
 import type { InventorInput, InventorRecord, IpoGender } from "@/types/ipo-forms"
+
+/** Firm roles that may create an inventor's portal login (InventorPolicy::grantPortalAccess). */
+export const INVENTOR_LOGIN_ROLES = ["super_admin", "partner", "director", "manager"]
 
 export function place(inventor: InventorRecord): string {
   return [inventor.city, inventor.state, inventor.country].filter(Boolean).join(", ") || "No address yet"
@@ -25,6 +29,8 @@ export function InventorPicker({ value, onChange, clientId, disabled = false }: 
 }) {
   const queryClient = useQueryClient()
   const client = clientId ? Number(clientId) : null
+  const { props } = usePage<{ auth?: { user?: { role?: string } } }>()
+  const canCreateLogin = INVENTOR_LOGIN_ROLES.includes(props.auth?.user?.role ?? "")
   const [term, setTerm] = useState("")
   const [otherClients, setOtherClients] = useState(false)
   // null: nothing open; "new": adding; a number: editing that inventor.
@@ -41,6 +47,7 @@ export function InventorPicker({ value, onChange, clientId, disabled = false }: 
   const refreshLists = () => {
     void queryClient.invalidateQueries({ queryKey: ["inventor-options"] })
     void queryClient.invalidateQueries({ queryKey: ["client-inventors"] })
+    void queryClient.invalidateQueries({ queryKey: ["client-portal-users"] })
   }
 
   const move = (index: number, step: -1 | 1) => {
@@ -124,6 +131,7 @@ export function InventorPicker({ value, onChange, clientId, disabled = false }: 
 
       {editing === "new" && client !== null && (
         <InventorForm initial={{ client_id: client, full_name: term.trim(), nationality: "Indian", country: "India", country_of_residence: "India" }}
+          link={{ clientId: client, canCreateLogin }}
           onCancel={() => setEditing(null)}
           onSaved={(record) => { onChange([...value, record]); setEditing(null); setTerm(""); refreshLists() }} />
       )}
