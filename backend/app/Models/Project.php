@@ -16,8 +16,10 @@ class Project extends Model
     protected static function booted(): void
     {
         static::saved(function (self $project): void {
-            if ($project->wasChanged(['docket_number', 'client_id'])) {
+            if ($project->wasRecentlyCreated || $project->wasChanged(['docket_number', 'client_id'])) {
                 app(\App\Services\ZohoUinLinker::class)->linkProject($project);
+                // Finance register rows (from Zoho) whose UIN is this case's docket.
+                rescue(fn () => app(\App\Services\ZohoRegisterImporter::class)->linkProject($project), null, false);
             }
         });
     }

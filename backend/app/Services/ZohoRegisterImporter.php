@@ -74,7 +74,7 @@ class ZohoRegisterImporter
         }
 
         $clientId = $this->clientFor($mirror);
-        $project = $mirror->project_id ? Project::find($mirror->project_id) : null;
+        $project = $mirror->project_id ? Project::find($mirror->project_id) : $this->projectForUin((string) $mirror->number, $clientId);
         $clientId ??= $project?->client_id;
         if (! $dryRun && $clientId && ! $mirror->client_id) {
             // Improves the Zoho list too (ZohoInvoice has no events that re-import here: quiet update).
@@ -178,6 +178,7 @@ class ZohoRegisterImporter
         $rate = isset($detail['exchange_rate']) && (float) $detail['exchange_rate'] > 0 ? (float) $detail['exchange_rate'] : 1.0;
         $zohoStatus = strtolower((string) $mirror->status);
         $client = $clientId ? Client::find($clientId) : null;
+        $inventor = $project ? rescue(fn () => $project->inventors()->value('full_name'), null, false) : null;
 
         $attrs = [
             'type' => $type,
@@ -197,6 +198,12 @@ class ZohoRegisterImporter
             'service_code' => $project?->service_code ?? $uin['service'],
             'invention_title' => $project ? ($project->invention_title ?: $project->project_name) : null,
             'client_name' => $client ? ($client->legal_name ?: $client->company_name) : ($detail['customer_name'] ?? null),
+            // The invoice / quote form, filled from the case and client where they are known.
+            'first_inventor_name' => $inventor,
+            'patent_office_application_number' => $project?->application_number ?: $this->cleanCf($detail['cf_application_no'] ?? $mirror->application_no),
+            'client_reference' => $client?->referred_by_code,
+            'state_of_supply' => $client?->state ?: ($detail['place_of_supply_name'] ?? $detail['place_of_supply'] ?? null),
+            'entity_status' => $client?->fee_entity_tier,
             'currency' => $mirror->currency ?: 'INR',
             'exchange_rate' => $rate,
             'total_bcy' => round($total * $rate, 2),
@@ -247,6 +254,58 @@ class ZohoRegisterImporter
         }
 
         return 'Pending';
+    }
+
+    /**
+     * The case a UIN belongs to, only when exactly one case fits: the docket equal to the UIN
+     * without its "/N", else its first 12 characters (client + invention + office + service),
+     * else the 9-character prefix with the same service code.
+     */
+    public function projectForUin(string $number, ?int $clientId = null): ?Project
+    {
+        $base = strtoupper(preg_replace('#/.*$#', '', trim($number)));
+        if (strlen($base) < 9) {
+            return null;
+        }
+        $unique = function ($query) use ($clientId) {
+            $rows = $query->when($clientId, fn ($q) => $q->where('client_id', $clientId))->limit(2)->get();
+
+            return $rows->count() === 1 ? $rows->first() : null;
+        };
+        $uin = $this->parseUin($base);
+
+        return $unique(Project::whereRaw('UPPER(docket_number) = ?', [$base]))
+            ?? (strlen($base) > 12 ? $unique(Project::whereRaw('UPPER(docket_number) = ?', [substr($base, 0, 12)])) : null)
+            ?? ($uin['service'] ? $unique(Project::whereRaw('UPPER(SUBSTRING(docket_number, 1, 9)) = ?', [substr($base, 0, 9)])
+                ->whereRaw('UPPER(service_code) = ?', [$uin['service']])) : null);
+    }
+
+    /** A case saved with this docket picks up the Zoho register rows whose UIN matches it. */
+    public function linkProject(Project $project): int
+    {
+        $docket = strtoupper((string) $project->docket_number);
+        if (strlen($docket) < 9) {
+            return 0;
+        }
+        $linked = 0;
+        $rows = PatentInvoiceIn::where('source', 'zoho')->whereNull('project_id')
+            ->whereRaw('UPPER(invoice_uin) LIKE ?', [substr($docket, 0, 9).'%'])->with('zohoRecord')->get();
+        foreach ($rows as $row) {
+            if ($row->zohoRecord && $this->projectForUin((string) $row->invoice_uin, $row->client_id)?->id === $project->id) {
+                $row->zohoRecord->forceFill(['project_id' => $project->id, 'match_source' => $row->zohoRecord->match_source ?: 'uin'])->saveQuietly();
+                $this->import($row->zohoRecord->fresh());
+                $linked++;
+            }
+        }
+
+        return $linked;
+    }
+
+    private function cleanCf(mixed $value): ?string
+    {
+        $value = trim((string) $value, " '\t\n-");
+
+        return $value === '' ? null : $value;
     }
 
     /** "B37M001INPRV647" → client code B37M, invention 001, office IN, service PRV, docket B37M001INPRV. */

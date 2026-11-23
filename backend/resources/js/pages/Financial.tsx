@@ -1,7 +1,8 @@
 import { Head, usePage } from "@inertiajs/react";
 import { useEffect, useState, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
-import { Loader2, Plus, X, Trash2, Download, DollarSign, Clock, CheckCircle, AlertCircle, Search, ChevronLeft, ChevronRight, CheckSquare, Square, FileText, Pencil, IndianRupee } from "lucide-react";
+import { Loader2, Plus, X, Trash2, Download, DollarSign, Clock, CheckCircle, AlertCircle, Search, ChevronLeft, ChevronRight, CheckSquare, Square, FileText, Pencil, IndianRupee, Upload } from "lucide-react";
+import { ZohoExportImport } from "@/components/finance/zoho-export-import";
 import AppLayout from "@/layouts/AppLayout";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -306,6 +307,7 @@ export default function Financial() {
 
   // ── Indian Patent Invoices state ─────────────────────────────────────────────
   const isInternal = !["client", "client_admin", "associate", "paralegal"].includes(role);
+  const [zohoImportOpen, setZohoImportOpen] = useState(false);
   const INDIA_PER_PAGE = 25;
   const [indiaRecords, setIndiaRecords]     = useState<PatentInvoiceIn[]>([]);
   const [indiaLoading, setIndiaLoading]     = useState(false);
@@ -1453,6 +1455,11 @@ export default function Financial() {
                   );
                 })}
                 <div className="ml-auto flex gap-2">
+                  {["super_admin", "partner", "finance"].includes(role) && (
+                    <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => setZohoImportOpen(true)}>
+                      <Upload className="h-3 w-3 mr-1" />Import Zoho export
+                    </Button>
+                  )}
                   {!isClientUser && (
                     <Button size="sm" variant="outline" className="h-8 text-xs" disabled={indiaExporting} onClick={() => exportIndiaCSV(false)}>
                       {indiaExporting ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Download className="h-3 w-3 mr-1" />}Export CSV
@@ -1849,6 +1856,10 @@ export default function Financial() {
           </>
         )}
       </div>
+
+      {zohoImportOpen && (
+        <ZohoExportImport onClose={() => setZohoImportOpen(false)} onImported={() => loadIndia({ page: 1 })} />
+      )}
 
       {/* ── Indian Patent Invoice / Quote Modal ─────────────────────────────── */}
       {showIndiaModal && (() => {

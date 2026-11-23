@@ -224,6 +224,26 @@ export interface NewPortalUser {
   inventor?: Omit<InventorInput, 'client_id' | 'full_name' | 'email' | 'phone'>
 }
 
+/** One uploaded Zoho export file: what is new / changed / identical in the portal. */
+export interface ZohoExportReport {
+  file: string
+  kind: 'invoices' | 'quotes' | 'payments'
+  documents: number
+  new: number
+  changed: number
+  identical: number
+  changes: Array<{ number: string; what: string[] }>
+  cross_check: Array<{ number: string; zoho_office_fee: number; portal_office_fee: number; zoho_service_fee: number; portal_service_fee: number }>
+  totals: { total: number; balance: number }
+}
+export interface ZohoExportResult {
+  reports: ZohoExportReport[]
+  reconciliation: {
+    invoices?: { export: { count: number; billed: number; outstanding: number; collected: number }; portal: { count: number; billed: number; outstanding: number; collected: number } }
+    quotes?: { export: { count: number; total: number }; portal: { count: number; total: number } }
+  }
+}
+
 export const api = {
   async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     const method = (options.method || 'GET').toUpperCase()
@@ -457,6 +477,26 @@ export const api = {
       throw new Error(errors?.signature?.[0] || (err as { message?: string }).message || 'Signature upload failed')
     }
     return (await response.json()) as { has_signature: boolean }
+  },
+  /** Zoho Books export files (Invoice / Quote / Customer Payment CSV): preview, nothing written. */
+  async previewZohoExport(files: File[]): Promise<ZohoExportResult & { token: string }> {
+    const formData = new FormData()
+    files.forEach((file) => formData.append('files[]', file))
+    const response = await fetch('/api/finance/zoho-export/preview', {
+      method: 'POST',
+      headers: { 'X-XSRF-TOKEN': getCsrfToken(), Accept: 'application/json' },
+      credentials: 'same-origin',
+      body: formData,
+    })
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}))
+      const errors = (err as { errors?: Record<string, string[]> }).errors
+      throw new Error(Object.values(errors ?? {})[0]?.[0] || (err as { message?: string }).message || 'Could not read the export files')
+    }
+    return (await response.json()) as ZohoExportResult & { token: string }
+  },
+  async importZohoExport(token: string): Promise<ZohoExportResult> {
+    return this.request('/finance/zoho-export/import', { method: 'POST', body: JSON.stringify({ token }) })
   },
   async deleteAgentSignature(employeeId: number): Promise<{ has_signature: boolean }> {
     return this.request(`/hrms/employees/${employeeId}/agent-signature`, { method: 'DELETE' })
