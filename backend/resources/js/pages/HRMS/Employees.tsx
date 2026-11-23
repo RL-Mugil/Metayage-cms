@@ -179,7 +179,9 @@ export default function HRMSEmployees() {
       (e.user?.name || e.full_name || "").toLowerCase().includes(q) ||
       (e.designation?.title || "").toLowerCase().includes(q) ||
       (e.department?.name || "").toLowerCase().includes(q);
-  });
+  })
+    // Alphabetical by the name shown in the list (also keeps new or renamed employees in place).
+    .sort((a, b) => (a.user?.name || a.full_name || "").localeCompare(b.user?.name || b.full_name || "", "en", { sensitivity: "base" }));
 
   async function handleStatusChange(id: number, employment_status: string) {
     setStatusSaving(id);

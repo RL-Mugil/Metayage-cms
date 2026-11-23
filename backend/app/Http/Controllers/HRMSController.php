@@ -77,6 +77,9 @@ class HRMSController extends Controller
             });
         }
 
+        // Alphabetical by name, so every page of the directory reads A→Z.
+        $query->orderByRaw('LOWER(full_name)')->orderBy('id');
+
         $result = PaginationHelper::paginate($query, $request);
 
         $hideSensitive = ! in_array($user->role, User::PAYROLL_ACCESS_ROLES, true);
