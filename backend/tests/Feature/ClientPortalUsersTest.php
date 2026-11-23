@@ -131,6 +131,58 @@ class ClientPortalUsersTest extends TestCase
         $this->assertDatabaseMissing('clients', ['legal_name' => 'Theta']);
     }
 
+    public function test_inventors_tab_picks_a_portal_user_as_inventor(): void
+    {
+        $client = $this->createClientWithUsers();
+        $cto = User::where('email', 'cto@acme.test')->firstOrFail();
+
+        $id = $this->postJson('/api/inventors', self::ADDRESS + ['client_id' => $client->id, 'full_name' => 'S Meena', 'user_id' => $cto->id])
+            ->assertCreated()->assertJsonPath('email', 'cto@acme.test')->assertJsonPath('has_portal_access', true)->json('id');
+        $this->assertSame($cto->id, Inventor::findOrFail($id)->user_id);
+        $this->assertSame('client', $cto->fresh()->role);   // keeps their own access
+        $this->assertSame(4, User::where('email', 'like', '%@acme.test')->count());   // no new login
+
+        // Listed once in the Users tab, marked as an inventor; can't be picked twice.
+        $rows = collect($this->getJson("/api/portal/clients/{$client->id}/users")->assertOk()->json());
+        $this->assertCount(1, $rows->where('email', 'cto@acme.test'));
+        $this->assertTrue($rows->firstWhere('email', 'cto@acme.test')['is_inventor']);
+        $this->postJson('/api/inventors', self::ADDRESS + ['client_id' => $client->id, 'full_name' => 'Again', 'user_id' => $cto->id])
+            ->assertStatus(422)->assertJsonValidationErrors('user_id');
+
+        // Another client's user cannot be picked.
+        $other = Client::create(['client_code' => 'C14M', 'legal_name' => 'Iota', 'company_name' => 'Iota', 'client_type' => 'organization', 'nationality' => 'India', 'status' => 'Active']);
+        $this->postJson('/api/inventors', self::ADDRESS + ['client_id' => $other->id, 'full_name' => 'X', 'user_id' => User::where('email', 'ravi@acme.test')->value('id')])
+            ->assertStatus(422)->assertJsonValidationErrors('user_id');
+
+        // Deleting the inventor record leaves the CTO's login active.
+        $this->deleteJson("/api/inventors/{$id}")->assertOk();
+        $this->assertSame('Active', $cto->fresh()->status);
+    }
+
+    public function test_inventors_tab_creates_a_login_for_a_new_inventor(): void
+    {
+        $client = Client::create(['client_code' => 'C15M', 'legal_name' => 'Kappa', 'company_name' => 'Kappa', 'client_type' => 'organization', 'nationality' => 'India', 'status' => 'Active']);
+        $new = self::ADDRESS + ['client_id' => $client->id, 'full_name' => 'NAIR Priya', 'email' => 'priya@kappa.test', 'portal_password' => 'Secret123'];
+
+        $this->postJson('/api/inventors', array_diff_key($new, ['email' => 1]))->assertStatus(422)->assertJsonValidationErrors('email');
+        $id = $this->postJson('/api/inventors', $new)->assertCreated()->assertJsonPath('has_portal_access', true)->json('id');
+        $login = User::where('email', 'priya@kappa.test')->firstOrFail();
+        $this->assertSame('inventor', $login->role);
+        $this->assertSame($login->id, Inventor::findOrFail($id)->user_id);
+        $this->assertTrue(collect($this->getJson("/api/portal/clients/{$client->id}/users")->json())->contains('email', 'priya@kappa.test'));
+        Mail::assertNothingSent();   // invite emails are paused
+
+        // The email already has a login: pick that user instead.
+        $this->postJson('/api/inventors', array_merge($new, ['full_name' => 'Dup']))->assertStatus(422)->assertJsonValidationErrors('email');
+
+        // Staff who cannot create logins still add the inventor, but not a login.
+        Sanctum::actingAs($this->user('paralegal', 'para2@firm.test'));
+        $this->postJson('/api/inventors', array_merge($new, ['email' => 'kiran@kappa.test', 'full_name' => 'RAO Kiran']))->assertForbidden();
+        $this->assertDatabaseMissing('users', ['email' => 'kiran@kappa.test']);
+        $this->postJson('/api/inventors', array_diff_key(array_merge($new, ['email' => 'kiran@kappa.test', 'full_name' => 'RAO Kiran']), ['portal_password' => 1]))
+            ->assertCreated()->assertJsonPath('has_portal_access', false);
+    }
+
     public function test_only_portal_managers_create_logins(): void
     {
         Sanctum::actingAs($this->user('galvanizer', 'galv@firm.test'));

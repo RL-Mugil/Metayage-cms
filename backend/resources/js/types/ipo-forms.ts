@@ -60,6 +60,10 @@ export interface InventorInput extends IpoAddress {
   country_of_residence?: string | null
   email?: string | null
   phone?: string | null
+  /** On create only: a client portal user picked as this inventor (keeps their login). */
+  user_id?: number | null
+  /** On create only: password for a new inventor-role login (the email is the login). */
+  portal_password?: string | null
 }
 
 /** A firm-wide inventor record, reusable across cases. */

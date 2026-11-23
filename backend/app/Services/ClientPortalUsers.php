@@ -103,6 +103,10 @@ class ClientPortalUsers
         $contacts = ClientContact::where('client_id', $client->id)->get(['email', 'designation', 'phone'])
             ->keyBy(fn (ClientContact $c) => strtolower($c->email));
 
+        // Logins already linked to one of this client's inventor records (an inventor login, or a
+        // client user such as a CTO who was also picked as an inventor).
+        $inventorUserIds = Inventor::where('client_id', $client->id)->whereNotNull('user_id')->pluck('user_id')->map(fn ($id) => (int) $id)->all();
+
         $users = User::whereIn('role', User::CLIENT_ROLES)
             ->where(function ($q) use ($contacts, $client) {
                 $q->whereIn(DB::raw('LOWER(email)'), $contacts->keys()->all() ?: ['']);
@@ -111,15 +115,17 @@ class ClientPortalUsers
                 }
             })
             ->get(['id', 'name', 'email', 'role', 'status', 'created_at'])
-            ->map(function (User $user) use ($contacts, $client) {
+            ->map(function (User $user) use ($contacts, $client, $inventorUserIds) {
                 $contact = $contacts->get(strtolower($user->email));
 
-                return $this->row($user, $contact?->designation, $contact?->phone, (int) $client->portal_user_id === $user->id);
+                return $this->row($user, $contact?->designation, $contact?->phone, (int) $client->portal_user_id === $user->id)
+                    + ['is_inventor' => in_array($user->id, $inventorUserIds, true)];
             });
 
+        $listed = $users->pluck('id')->all();
         $inventors = Inventor::where('client_id', $client->id)->whereNotNull('user_id')->with('user:id,name,email,role,status,created_at')->get()
-            ->filter(fn (Inventor $inventor) => $inventor->user)
-            ->map(fn (Inventor $inventor) => $this->row($inventor->user, 'Inventor', $inventor->phone, false));
+            ->filter(fn (Inventor $inventor) => $inventor->user && ! in_array($inventor->user->id, $listed, true))
+            ->map(fn (Inventor $inventor) => $this->row($inventor->user, 'Inventor', $inventor->phone, false) + ['is_inventor' => true]);
 
         return $users->concat($inventors)
             ->sortBy(fn (array $row) => [$row['is_primary'] ? 0 : 1, strtolower($row['name'])])
@@ -188,18 +194,25 @@ class ClientPortalUsers
             return $user;
         });
 
-        if (! self::emailsPaused()) {
-            $clientName = $client->company_name ?? $client->legal_name ?? 'Client';
-            DB::afterCommit(function () use ($user, $password, $clientName) {
-                try {
-                    Mail::to($user->email)->send(new PortalInviteMail($clientName, $user->email, $password, url('/login')));
-                } catch (\Throwable $e) {
-                    Log::warning('Portal invite email failed', ['user_id' => $user->id, 'error' => $e->getMessage()]);
-                }
-            });
-        }
+        self::sendInvite($client, $user, $password);
 
         return $this->row($user, $designation, $phone, (int) $client->portal_user_id === $user->id);
+    }
+
+    /** The portal invite email, after commit, unless invite emails are paused (Client Portal page). */
+    public static function sendInvite(Client $client, User $user, string $password): void
+    {
+        if (self::emailsPaused()) {
+            return;
+        }
+        $clientName = $client->company_name ?? $client->legal_name ?? 'Client';
+        DB::afterCommit(function () use ($user, $password, $clientName) {
+            try {
+                Mail::to($user->email)->send(new PortalInviteMail($clientName, $user->email, $password, url('/login')));
+            } catch (\Throwable $e) {
+                Log::warning('Portal invite email failed', ['user_id' => $user->id, 'error' => $e->getMessage()]);
+            }
+        });
     }
 
     /** True when the user is one of this client's portal logins (a contact login or one of its inventors). */

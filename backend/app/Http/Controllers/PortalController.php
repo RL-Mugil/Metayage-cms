@@ -22,7 +22,7 @@ class PortalController extends Controller
     /** Any internal (non-client) staff may read portal data. */
     private function denyNonInternal(Request $request): ?\Illuminate\Http\JsonResponse
     {
-        if ($request->user()->isClientRole()) {
+        if ($request->user()->isClientRole() || $request->user()->role === 'inventor') {
             return response()->json(['message' => 'Forbidden'], 403);
         }
         return null;

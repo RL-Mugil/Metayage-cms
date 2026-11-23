@@ -211,6 +211,8 @@ export interface PortalUser {
   is_primary: boolean
   status: string
   created_at: string | null
+  /** Already linked to one of the client's inventor records. */
+  is_inventor?: boolean
 }
 export interface NewPortalUser {
   name: string

@@ -4,7 +4,7 @@ import { ArrowDown, ArrowUp, CheckCircle2, Loader2, Pencil, Plus, Search, Triang
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { api } from "@/lib/api-client"
+import { api, type PortalUser } from "@/lib/api-client"
 import { AddressFields, Field, GENDERS, isIndianCountry, selectClass, TextField } from "@/components/ipo/party-fields"
 import type { InventorInput, InventorRecord, IpoGender } from "@/types/ipo-forms"
 
@@ -173,20 +173,34 @@ export function InventorParticularsFields<T extends InventorParticulars>({ value
   )
 }
 
-/** Every Form 1 particular for one inventor; saves the inventor record under its client. */
-export function InventorForm({ initial, onSaved, onCancel }: {
+/**
+ * Every Form 1 particular for one inventor; saves the inventor record under its client.
+ * With `link` (the client panel's Inventors tab, adding): the name is a combobox over the
+ * client's portal users. Picking one makes that person the inventor with their existing
+ * login; a typed new name gets a new inventor-role login (email + password) when the
+ * staff member may create logins.
+ */
+export function InventorForm({ initial, onSaved, onCancel, link }: {
   initial: InventorInput & { id?: number }
   onSaved: (record: InventorRecord) => void
   onCancel: () => void
+  link?: { clientId: number; canCreateLogin: boolean }
 }) {
   const [draft, setDraft] = useState<InventorInput>(initial)
   const [saving, setSaving] = useState(false)
   const set = (key: keyof InventorInput) => (text: string) => setDraft({ ...draft, [key]: text })
+  const adding = !initial.id && !!link
+  const picked = adding && !!draft.user_id
+  const newLogin = adding && !picked && !!link?.canCreateLogin
 
   async function save() {
     if (!draft.full_name.trim()) { toast.error("Enter the inventor's full name."); return }
     const problem = inventorProblem(draft)
     if (problem) { toast.error(problem); return }
+    if (newLogin) {
+      if (!/^\S+@\S+\.\S+$/.test((draft.email ?? "").trim())) { toast.error("Enter the inventor's email; it is their portal login."); return }
+      if ((draft.portal_password ?? "").length < 8) { toast.error("The login password must be at least 8 characters."); return }
+    }
     setSaving(true)
     try {
       const payload: InventorInput = {
@@ -194,10 +208,16 @@ export function InventorForm({ initial, onSaved, onCancel }: {
         full_name: draft.full_name.trim(),
         age: draft.age === "" || draft.age === null || draft.age === undefined ? null : Number(draft.age),
         gender: draft.gender || null,
-        email: draft.email || null,
+        email: draft.email?.trim() || null,
+        user_id: picked ? draft.user_id : null,
+        portal_password: newLogin ? draft.portal_password : null,
       }
+      if (initial.id) { delete payload.user_id; delete payload.portal_password }
       const record = initial.id ? await api.updateInventor(initial.id, payload) : await api.createInventor(payload)
-      toast.success(initial.id ? "Inventor updated on every case they are named on." : "Inventor added.")
+      toast.success(initial.id ? "Inventor updated on every case they are named on."
+        : picked ? `${record.full_name} added as inventor, using their existing portal login.`
+        : newLogin ? `Inventor added with portal login ${record.email}. Share the password with them directly.`
+        : "Inventor added.")
       onSaved(record)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not save the inventor.")
@@ -208,12 +228,24 @@ export function InventorForm({ initial, onSaved, onCancel }: {
 
   return (
     <div className="mt-2 space-y-2 rounded-md border border-gold/40 bg-muted/10 p-3">
-      <TextField label="Name in full (family name first) *" value={draft.full_name} onChange={set("full_name")} />
+      {adding && link ? (
+        <InventorNameCombobox clientId={link.clientId} draft={draft} onChange={setDraft} />
+      ) : (
+        <TextField label="Name in full (family name first) *" value={draft.full_name} onChange={set("full_name")} />
+      )}
       <InventorParticularsFields value={draft} onChange={setDraft} />
-      <div className="grid gap-2 sm:grid-cols-2">
-        <TextField label="Email (also the portal login)" type="email" value={draft.email} onChange={set("email")} />
+      <div className="grid gap-2 sm:grid-cols-3">
+        <Field label={newLogin ? "Email (portal login) *" : "Email (also the portal login)"}>
+          <Input type="email" value={draft.email ?? ""} disabled={picked} onChange={(event) => set("email")(event.target.value)} className="h-9 text-sm text-foreground" />
+        </Field>
         <TextField label="Phone" value={draft.phone} onChange={set("phone")} />
+        {newLogin && (
+          <TextField label="Login password (min. 8) *" value={draft.portal_password} onChange={set("portal_password")} />
+        )}
       </div>
+      {adding && !picked && !link?.canCreateLogin && (
+        <p className="text-xs text-muted-foreground">A partner, director or manager can give this inventor a portal login later.</p>
+      )}
       <div className="flex gap-2">
         <Button type="button" size="sm" disabled={saving} onClick={save}>
           {saving && <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />}{initial.id ? "Save inventor" : "Add inventor"}
@@ -221,5 +253,94 @@ export function InventorForm({ initial, onSaved, onCancel }: {
         <Button type="button" size="sm" variant="outline" disabled={saving} onClick={onCancel}>Cancel</Button>
       </div>
     </div>
+  )
+}
+
+/**
+ * Name field that searches the client's portal users (the Users tab list, same query key).
+ * Picking a user fills name, email and phone and links their login; typing a name that
+ * is not in the list adds a new person.
+ */
+function InventorNameCombobox({ clientId, draft, onChange }: {
+  clientId: number
+  draft: InventorInput
+  onChange: (next: InventorInput) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [active, setActive] = useState(0)
+  // Same key as the Users tab (portalUsersKey in components/clients/client-portal-users).
+  const { data: users = [] } = useQuery<PortalUser[]>({
+    queryKey: ["client-portal-users", clientId],
+    queryFn: () => api.getPortalClientUsers(clientId),
+  })
+  const term = draft.full_name.trim().toLowerCase()
+  const options = users
+    .filter((user) => !user.is_inventor && user.role !== "inventor")
+    .filter((user) => !term || `${user.name} ${user.email}`.toLowerCase().includes(term))
+    .slice(0, 8)
+  const pickedUser = draft.user_id ? users.find((user) => user.id === draft.user_id) : undefined
+
+  function pick(user: PortalUser) {
+    onChange({ ...draft, full_name: user.name, email: user.email, phone: draft.phone || user.phone || "", user_id: user.id, portal_password: null })
+    setOpen(false)
+  }
+
+  return (
+    <Field label="Name in full (family name first) *: pick a portal user, or type a new name">
+      <div className="relative">
+        <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          value={draft.full_name}
+          role="combobox"
+          aria-expanded={open}
+          aria-autocomplete="list"
+          placeholder="Search this client's users or type a new name"
+          className="h-9 pl-8 text-sm text-foreground"
+          onFocus={() => setOpen(true)}
+          onBlur={() => window.setTimeout(() => setOpen(false), 150)}
+          onChange={(event) => {
+            // A picked user stays linked while the name is tidied (family name first); × unlinks.
+            onChange({ ...draft, full_name: event.target.value })
+            setOpen(true)
+            setActive(0)
+          }}
+          onKeyDown={(event) => {
+            if (!open || options.length === 0) return
+            if (event.key === "ArrowDown") { event.preventDefault(); setActive((active + 1) % options.length) }
+            else if (event.key === "ArrowUp") { event.preventDefault(); setActive((active - 1 + options.length) % options.length) }
+            else if (event.key === "Enter") { event.preventDefault(); pick(options[active]) }
+            else if (event.key === "Escape") setOpen(false)
+          }}
+        />
+        {open && !draft.user_id && (
+          <div role="listbox" className="absolute z-20 mt-1 max-h-56 w-full overflow-y-auto rounded-md border border-border bg-background shadow-md">
+            {options.map((user, index) => (
+              <button key={user.id} type="button" role="option" aria-selected={index === active}
+                className={`flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-sm ${index === active ? "bg-muted" : "hover:bg-muted"}`}
+                onMouseDown={(event) => event.preventDefault()} onClick={() => pick(user)}>
+                <span className="truncate">
+                  <span className="font-medium">{user.name}</span>{" "}
+                  <span className="text-xs text-muted-foreground">{user.email}{user.designation ? ` · ${user.designation}` : ""}</span>
+                </span>
+                <Plus className="h-3.5 w-3.5 shrink-0 text-gold" />
+              </button>
+            ))}
+            <p className="border-t border-border px-3 py-1.5 text-xs text-muted-foreground">
+              {term ? `Not listed? Keep typing to add "${draft.full_name.trim()}" as a new inventor.` : "Type a name to add someone new."}
+            </p>
+          </div>
+        )}
+      </div>
+      {draft.user_id && (
+        <p className="mt-1 flex items-center gap-1 text-xs text-emerald-700 dark:text-emerald-400">
+          <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+          Uses the portal login {pickedUser?.email ?? draft.email}{pickedUser?.designation ? ` (${pickedUser.designation})` : ""}; no new login is made. Check the name is in full, family name first.
+          <button type="button" className="ml-1 text-muted-foreground hover:text-foreground" title="Not this user"
+            onClick={() => onChange({ ...draft, user_id: null, email: "", phone: "", full_name: "" })}>
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </p>
+      )}
+    </Field>
   )
 }

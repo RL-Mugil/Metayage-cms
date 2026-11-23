@@ -25,6 +25,8 @@ export function ClientInventors({ clientId, canGrantPortal }: { clientId: number
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: key })
     void queryClient.invalidateQueries({ queryKey: ["inventor-options"] })
+    // The Users tab lists inventor logins too.
+    void queryClient.invalidateQueries({ queryKey: ["client-portal-users", clientId] })
   }
   const remove = useMutation({
     mutationFn: (inventor: InventorRecord) => api.deleteInventor(inventor.id),
@@ -38,7 +40,7 @@ export function ClientInventors({ clientId, canGrantPortal }: { clientId: number
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-2">
-        <p className="text-xs text-muted-foreground">Inventors picked on this client's cases and printed on Form 1. The email is also their portal login.</p>
+        <p className="text-xs text-muted-foreground">Inventors picked on this client's cases and printed on Form 1. Pick one of the client's users, or add a new person with their own inventor login.</p>
         {editing !== "new" && (
           <Button size="sm" onClick={() => setEditing("new")}><Plus className="mr-1 h-3.5 w-3.5" />Add inventor</Button>
         )}
@@ -46,6 +48,7 @@ export function ClientInventors({ clientId, canGrantPortal }: { clientId: number
 
       {editing === "new" && (
         <InventorForm initial={{ client_id: clientId, full_name: "", nationality: "Indian", country: "India", country_of_residence: "India" }}
+          link={{ clientId, canCreateLogin: canGrantPortal }}
           onCancel={() => setEditing(null)} onSaved={() => { setEditing(null); refresh() }} />
       )}
 

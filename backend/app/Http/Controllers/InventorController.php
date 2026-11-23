@@ -11,7 +11,9 @@ use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use App\Services\ClientPortalUsers;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Firm-wide inventor records and the inventors named on each case. Staff add an
@@ -53,13 +55,45 @@ class InventorController extends Controller
     {
         $client = Client::findOrFail($request->validated('client_id'));
         $this->authorize('view', $client);
+        $data = $request->validated();
+        $password = $data['portal_password'] ?? null;
+        $linked = null;
+        unset($data['portal_password']);
 
-        $inventor = DB::transaction(function () use ($request) {
-            $inventor = Inventor::create($request->validated() + ['created_by_id' => $request->user()->id]);
-            $this->audit($request, 'create_inventor', $inventor->id, ['full_name' => $inventor->full_name, 'client_id' => $inventor->client_id]);
+        if (! empty($data['user_id'])) {
+            // A portal user of this client picked from the name list: the inventor uses their login.
+            $linked = User::findOrFail($data['user_id']);
+            if (! in_array($linked->role, User::CLIENT_ROLES, true) || ! app(ClientPortalUsers::class)->belongsTo($client, $linked)) {
+                throw ValidationException::withMessages(['user_id' => 'Pick one of this client\'s portal users.']);
+            }
+            $data['email'] = $linked->email;
+            $data['phone'] = $data['phone'] ?? $linked->mobile;
+        } elseif ($password !== null) {
+            // A new person: their inventor-role login is created with the record.
+            $this->authorize('grantPortalAccess', new Inventor());
+        }
 
-            return $inventor;
+        [$inventor, $newLogin] = DB::transaction(function () use ($request, $data, $password, $linked) {
+            $newLogin = null;
+            if ($password !== null) {
+                $newLogin = User::create([
+                    'name' => $data['full_name'], 'email' => $data['email'], 'password' => Hash::make($password),
+                    'role' => 'inventor', 'status' => 'Active', 'mobile' => $data['phone'] ?? null,
+                ]);
+                $data['user_id'] = $newLogin->id;
+            }
+            $inventor = Inventor::create($data + ['created_by_id' => $request->user()->id]);
+            $this->audit($request, 'create_inventor', $inventor->id, [
+                'full_name' => $inventor->full_name, 'client_id' => $inventor->client_id,
+                'user_id' => $inventor->user_id, 'login' => $newLogin ? 'created' : ($linked ? 'existing' : null),
+            ]);
+
+            return [$inventor, $newLogin];
         });
+
+        if ($newLogin) {
+            ClientPortalUsers::sendInvite($client, $newLogin, $password);
+        }
 
         return response()->json($inventor->fresh('client')->toSummary(), 201);
     }
@@ -90,8 +124,9 @@ class InventorController extends Controller
         }
 
         DB::transaction(function () use ($request, $inventor) {
+            // Only an inventor-role login goes; a client user picked as inventor keeps their access.
             if ($inventor->user_id) {
-                User::whereKey($inventor->user_id)->update(['status' => 'Inactive']);
+                User::whereKey($inventor->user_id)->where('role', 'inventor')->update(['status' => 'Inactive']);
             }
             $this->audit($request, 'delete_inventor', $inventor->id, ['full_name' => $inventor->full_name, 'client_id' => $inventor->client_id, 'user_id' => $inventor->user_id]);
             $inventor->delete();
