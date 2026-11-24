@@ -128,6 +128,8 @@ class SettlementAndPaymentReportTest extends TestCase
 
     public function test_every_report_downloads_on_the_letterhead_and_signs(): void
     {
+        // 26 downloads in a row: the per-minute download limit is not what this test checks.
+        $this->withoutMiddleware(\Illuminate\Routing\Middleware\ThrottleRequests::class);
         $admin = $this->user('super_admin', 'sa@set.test');
         $employee = Employee::create(['employee_code' => 'EMP-2026-0097', 'user_id' => $admin->id, 'full_name' => 'Admin', 'work_email' => 'sa@set.test',
             'status' => 'Active', 'date_of_joining' => '2024-01-01']);
