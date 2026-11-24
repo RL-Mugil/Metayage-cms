@@ -122,6 +122,13 @@ Route::middleware(['auth:sanctum', 'firm.context', 'throttle:120,1'])->group(fun
     Route::get('/dashboard/finance', [\App\Http\Controllers\DashboardInsightsController::class, 'finance']);
     Route::get('/dashboard/trends', [\App\Http\Controllers\DashboardInsightsController::class, 'trends']);
     Route::get('/settings/switches', [\App\Http\Controllers\FeatureSwitchController::class, 'index']);
+    // Client hub: approvals, quotes, renewal decisions, invoices to pay, questions, scorecard PDF.
+    Route::get('/client-hub', [\App\Http\Controllers\ClientHubController::class, 'index']);
+    Route::post('/client-hub/renewals/{scheduleId}/decision', [\App\Http\Controllers\ClientHubController::class, 'decide']);
+    Route::post('/client-hub/comment', [\App\Http\Controllers\ClientHubController::class, 'comment']);
+    Route::get('/client-hub/scorecard', [\App\Http\Controllers\ClientHubController::class, 'scorecard'])->middleware('throttle:20,1');
+    Route::get('/settings/payment-details', [\App\Http\Controllers\ClientHubController::class, 'getPaymentDetails']);
+    Route::put('/settings/payment-details', [\App\Http\Controllers\ClientHubController::class, 'updatePaymentDetails']);
     Route::put('/settings/switches', [\App\Http\Controllers\FeatureSwitchController::class, 'update']);
 
     // CRM / Clients

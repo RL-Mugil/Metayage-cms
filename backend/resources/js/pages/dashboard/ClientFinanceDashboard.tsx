@@ -10,6 +10,7 @@ import { api } from "@/lib/api-client";
 import { statusColor } from "@/lib/utils";
 import { fmtDate } from "@/lib/date-utils";
 import { ActionItem, ActionItemRow, RenewalApproveModal, formatCurrency } from "@/components/action-item-row";
+import { ClientHub } from "@/components/client/client-hub";
 
 /**
  * Billing-only dashboard for the client_finance role — no drafting/technical
@@ -80,6 +81,14 @@ export function ClientFinanceDashboard() {
       )}
 
       <div className="px-8 py-6 space-y-6">
+        <Card className="border-gold/30">
+          <CardHeader className="pb-2">
+            <CardTitle className="font-display">Waiting on you</CardTitle>
+            <p className="text-xs text-muted-foreground">Approve, decide on renewals, pay, or ask us about anything here.</p>
+          </CardHeader>
+          <CardContent><ClientHub /></CardContent>
+        </Card>
+
         <div className="grid gap-4 md:grid-cols-4">
           <StatCard label="Zoho Receivables" value={formatCurrency(metrics.zoho_total_receivables ?? metrics.zoho_outstanding ?? 0)} icon={Landmark} accent="info" subtitle={`Invoice ${formatCurrency(metrics.zoho_outstanding ?? 0)} · Opening ${formatCurrency(metrics.zoho_opening_balance ?? 0)}`} />
           <StatCard label="Collected (MTD)" value={formatCurrency(metrics.zoho_collected_mtd ?? 0)} icon={Wallet} accent="success" />

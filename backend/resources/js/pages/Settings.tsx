@@ -12,6 +12,7 @@ import { isAllCountries, taggedCountries, type CodeItem } from "@/lib/service-co
 import { SiteAdminPanel } from "@/components/site-admin-panel";
 import { IpoSettingsPanel } from "@/components/ipo/ipo-settings-panel";
 import { FirmSwitches } from "@/components/settings/firm-switches";
+import { PaymentDetailsCard } from "@/components/settings/payment-details-card";
 import type { ProjectTab, CodeRow, CodeRenameImpact, CodeMergeAvailable, CodeMergeImpact } from "@/types";
 
 function loadPrefs<T>(key: string, fallback: T): T {
@@ -1851,6 +1852,7 @@ export default function Settings() {
             </div>
           )}
 
+          {tab === "finance" && canManageSystem && <div className="mb-6"><PaymentDetailsCard /></div>}
           {tab === "finance" && isSuperAdmin && (
             <div className="space-y-6">
               <Card className="border-border">

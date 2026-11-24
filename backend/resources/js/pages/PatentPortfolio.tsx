@@ -1,12 +1,15 @@
 import { Head, Link, router, usePage } from "@inertiajs/react";
 import { useEffect, useState, useMemo } from "react";
 import { GlossaryText, HealthDot } from "@/components/glossary-text";
+import { OfficeMap } from "@/components/portfolio/office-map";
+import { ClientHub } from "@/components/client/client-hub";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import type { PortfolioInsights } from "@/lib/api-client";
 import { AnalystRoleFilter, useAnalystRoleFilter } from "@/components/analyst-role-filter";
 import {
   Loader2, RefreshCw, ChevronDown, MapPin, FileText, Calendar,
   AlertCircle, CreditCard, X, Search, ChevronUp, ExternalLink, ArrowUpDown,
-  Hourglass, Activity,
+  Hourglass, Activity, Inbox,
 } from "lucide-react";
 import AppLayout from "@/layouts/AppLayout";
 import { PageHeader } from "@/components/page-header";
@@ -168,6 +171,7 @@ export default function PatentPortfolio() {
   const [renewalSearch, setRenewalSearch] = useState("");
   const [renewalView, setRenewalView] = useState<"list" | "calendar">("list");
   const [insights, setInsights] = useState<PortfolioInsights | null>(null);
+  const [hubOpen, setHubOpen] = useState(false);
   /** "YYYY-MM", "overdue", or null (all) — the View all dialog's month filter from the calendar. */
   const [renewalMonth, setRenewalMonth] = useState<string | null>(null);
   const [paymentSearch, setPaymentSearch] = useState("");
@@ -337,6 +341,12 @@ export default function PatentPortfolio() {
         actions={
           <>
             <AnalystRoleFilter value={roleFilter} onChange={(v) => { setRoleFilter(v); }} />
+            {!isClientUser && selectedClientId && ["super_admin", "partner", "director", "manager", "finance"].includes(role) && (
+              <button onClick={() => setHubOpen(true)}
+                className="flex items-center gap-1.5 rounded-md border border-gold/40 px-3 py-1.5 text-sm text-gold hover:bg-gold/10 transition-colors">
+                <Inbox className="h-3.5 w-3.5" /> Client hub
+              </button>
+            )}
             <button
               onClick={() => load(selectedClientId, roleFilter)}
               className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
@@ -431,6 +441,17 @@ export default function PatentPortfolio() {
                 </CardContent>
               </Card>
             </div>
+
+            {/* Where the filings are */}
+            <Card className="border-border">
+              <CardHeader className="pb-2"><CardTitle className="font-display text-sm">Portfolio map</CardTitle></CardHeader>
+              <CardContent>
+                <OfficeMap active={data.active_by_office ?? {}} granted={data.granted_by_office ?? {}}
+                  other={Object.fromEntries(Object.keys({ ...(data.refused_by_office ?? {}), ...(data.closed_by_office ?? {}) })
+                    .map((k) => [k, Number(data.refused_by_office?.[k] ?? 0) + Number(data.closed_by_office?.[k] ?? 0)]))}
+                  label={ol} selected={activeOffice} onSelect={toggleOffice} />
+              </CardContent>
+            </Card>
 
             {/* Row 2: Renewals + Payments — same height side by side */}
             <div className="grid gap-4 lg:grid-cols-2 items-stretch">
@@ -687,6 +708,15 @@ export default function PatentPortfolio() {
                   </CardContent>
                 </Card>
               </div>
+            )}
+
+            {hubOpen && selectedClientId && (
+              <Dialog open onOpenChange={(o) => !o && setHubOpen(false)}>
+                <DialogContent className="max-h-[90vh] max-w-5xl overflow-y-auto">
+                  <DialogHeader><DialogTitle>Client hub</DialogTitle></DialogHeader>
+                  <ClientHub clientId={selectedClientId} />
+                </DialogContent>
+              </Dialog>
             )}
 
             {viewAll === "renewals" && (

@@ -275,6 +275,26 @@ export interface PortfolioInsights {
   changes: Array<{ at: string; kind: "stage" | "deadline" | "invoice" | "payment"; text: string; project_id: number | null; docket_number: string | null }>
 }
 
+export interface PaymentDetails {
+  account_name: string | null; bank_name: string | null; account_number: string | null; ifsc: string | null
+  swift: string | null; branch: string | null; upi_id: string | null; note: string | null
+}
+export interface ClientHubData {
+  client: { id: number; name: string; client_code: string | null }
+  approvals: Array<{ id: number; kind: string | null; title: string; description: string | null; project_id: number | null; docket_number: string | null; submitted: string | null }>
+  quotes: Array<{ id: number; number: string | null; project_id: number | null; date: string | null; amount: number; currency: string }>
+  renewals: Array<{
+    id: number | null; renewal_id: number; docket_number: string | null; project_name: string | null; application_number: string | null
+    patent_office_code: string | null; label: string; renewal_year: number; due_date: string; days: number
+    estimate: { amount: number; currency: string } | null; grace_ends_on: string | null; title: string | null; years_left: number | null
+    decision: "renew" | "lapse" | "ask" | null; decision_note: string | null; decided_at: string | null
+  }>
+  invoices: Array<{ id: number; number: string | null; project_id: number | null; outstanding: number; due_date: string | null; overdue: boolean; status: string; currency: string; payment_status: string | null }>
+  counts: { approvals: number; quotes: number; renewals: number; invoices: number }
+  payment_details: PaymentDetails
+  can_decide: boolean
+}
+
 /** Six-month KPI trend lines (oldest first). */
 export interface DashboardTrends {
   months: string[]
@@ -339,6 +359,34 @@ export const api = {
   async getDashboardQuoted(): Promise<any[]> { return this.request('/dashboard/drill/quoted') },
   async getDashboardTrends(): Promise<DashboardTrends> { return this.request('/dashboard/trends') },
   async getCaseInsights(projectId: number | string): Promise<CaseInsightsData> { return this.request(`/projects/${projectId}/insights`) },
+  // ── Client hub (client users see their own client; staff pass clientId) ──
+  async getClientHub(clientId?: number | null): Promise<ClientHubData> {
+    return this.request(`/client-hub${clientId ? `?client_id=${clientId}` : ''}`)
+  },
+  async decideRenewal(scheduleId: number, decision: 'renew' | 'lapse' | 'ask', note?: string, clientId?: number | null): Promise<{ id: number; decision: string }> {
+    return this.request(`/client-hub/renewals/${scheduleId}/decision${clientId ? `?client_id=${clientId}` : ''}`, { method: 'POST', body: JSON.stringify({ decision, note: note || null }) })
+  },
+  async askAboutItem(data: { kind: string; ref: string; project_id?: number; message: string }, clientId?: number | null): Promise<{ thread_id: number }> {
+    return this.request(`/client-hub/comment${clientId ? `?client_id=${clientId}` : ''}`, { method: 'POST', body: JSON.stringify(data) })
+  },
+  async downloadClientScorecard(month: string, clientId?: number | null): Promise<void> {
+    const q = new URLSearchParams({ month, ...(clientId ? { client_id: String(clientId) } : {}) })
+    const response = await fetch(`/api/client-hub/scorecard?${q}`, { headers: { Accept: 'application/pdf' }, credentials: 'same-origin' })
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}))
+      throw new Error((err as { message?: string }).message || 'Scorecard download failed')
+    }
+    const url = URL.createObjectURL(await response.blob())
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `Scorecard-${month}.pdf`
+    link.click()
+    URL.revokeObjectURL(url)
+  },
+  async getPaymentDetails(): Promise<PaymentDetails> { return this.request('/settings/payment-details') },
+  async updatePaymentDetails(data: PaymentDetails): Promise<PaymentDetails> {
+    return this.request('/settings/payment-details', { method: 'PUT', body: JSON.stringify(data) })
+  },
   async getPortfolioInsights(params: Record<string, string | number | undefined> = {}): Promise<PortfolioInsights> {
     const q = new URLSearchParams(Object.entries(params).filter(([, v]) => v !== undefined && v !== '').map(([k, v]) => [k, String(v)]))
     return this.request(`/patent-portfolio/insights${q.toString() ? `?${q}` : ''}`)

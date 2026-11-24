@@ -7,6 +7,7 @@ import { StatCard } from "@/components/stat-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { api } from "@/lib/api-client";
 import { ActionItem, ActionItemRow, RenewalApproveModal, formatCurrency } from "@/components/action-item-row";
+import { ClientHub } from "@/components/client/client-hub";
 
 /**
  * Action-centric dashboard for client / client_admin — "what do I need to
@@ -73,6 +74,14 @@ export function ClientActionDashboard() {
           <StatCard label="Open Action Items" value={items.length.toString()} icon={Clock} accent="primary" />
           <StatCard label="Zoho Receivables" value={formatCurrency(metrics.zoho_total_receivables ?? metrics.zoho_outstanding ?? 0)} icon={Landmark} accent="info" subtitle={`Invoice ${formatCurrency(metrics.zoho_outstanding ?? 0)} · Opening ${formatCurrency(metrics.zoho_opening_balance ?? 0)}`} />
         </div>
+
+        <Card className="border-gold/30">
+          <CardHeader className="pb-2">
+            <CardTitle className="font-display">Waiting on you</CardTitle>
+            <p className="text-xs text-muted-foreground">Approve, decide on renewals, pay, or ask us about anything here.</p>
+          </CardHeader>
+          <CardContent><ClientHub /></CardContent>
+        </Card>
 
         {renewals.length > 0 && (
           <Card className="border-red-500/30">
