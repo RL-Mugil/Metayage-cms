@@ -162,12 +162,13 @@ interface KpiDef {
   icon: React.ComponentType<{ className?: string }>;
 }
 
-const FIN_COLORS: Record<string, string> = { total_billed: "#d4a017", total_received: "#22c55e", total_outstanding: "#3b82f6", overdue_count: "#ef4444" };
+const FIN_COLORS: Record<string, string> = { total_billed: "#d4a017", total_received: "#22c55e", total_outstanding: "#3b82f6", total_waived: "#8b5cf6", overdue_count: "#ef4444" };
 
 const KPI_DEFS: KpiDef[] = [
   { label: "Total Billed",   key: "total_billed",      color: "text-gold",         isCurrency: true,  filterParams: { kind: "billed" },      icon: DollarSign   },
   { label: "Received",       key: "total_received",    color: "text-green-500",    isCurrency: true,  filterParams: { kind: "received" },    icon: CheckCircle  },
   { label: "Outstanding",    key: "total_outstanding", color: "text-blue-500",     isCurrency: true,  filterParams: { kind: "outstanding" }, icon: Clock        },
+  { label: "Waived",         key: "total_waived",      color: "text-violet-500",   isCurrency: true,  filterParams: { kind: "waived" },      icon: CheckCircle  },
   { label: "Overdue",        key: "overdue_count",     color: "text-destructive",  isCurrency: false, filterParams: { kind: "overdue" },     icon: AlertCircle  },
 ];
 
@@ -281,7 +282,7 @@ export default function Financial() {
   const [projects, setProjects] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState("All");
-  const [stats, setStats] = useState({ total_billed: 0, total_received: 0, total_outstanding: 0, overdue_count: 0 });
+  const [stats, setStats] = useState({ total_billed: 0, total_received: 0, total_outstanding: 0, total_waived: 0, overdue_count: 0 });
   const [kpiModal, setKpiModal] = useState<KpiDef | null>(null);
 
   // New invoice modal

@@ -107,6 +107,7 @@ class FinancialController extends Controller
                 'total_billed' => $figures['billed'],
                 'total_received' => $figures['received'],
                 'total_outstanding' => $figures['outstanding'],
+                'total_waived' => $figures['waived'],
                 'overdue_count' => $figures['overdue_count'],
                 'draft_count' => $figures['draft_count'],
                 'paid_count' => $figures['paid_count'],
@@ -125,12 +126,13 @@ class FinancialController extends Controller
     {
         $this->authorize('viewAny', \App\Models\Invoice::class);
         $kind = (string) $request->query('kind', 'billed');
-        abort_unless(in_array($kind, ['billed', 'received', 'outstanding', 'overdue'], true), 422, 'Unknown list.');
+        abort_unless(in_array($kind, ['billed', 'received', 'outstanding', 'overdue', 'waived'], true), 422, 'Unknown list.');
         $today = now()->startOfDay();
         $rows = $figures->rows($request->user())->filter(fn ($r) => match ($kind) {
             'received' => $r['billed'] - $r['outstanding'] - ($r['waived'] ?? 0) > 0.009,
             'outstanding' => $r['outstanding'] > 0.009,
             'overdue' => $r['outstanding'] > 0.009 && $r['due_date'] && $r['due_date']->lt($today),
+            'waived' => ($r['waived'] ?? 0) > 0.009,
             default => true,
         });
         $names = \App\Models\Client::whereIn('id', $rows->pluck('client_id')->filter()->unique())->get(['id', 'legal_name', 'company_name'])

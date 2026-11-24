@@ -35,6 +35,8 @@ import { api, downloadCSV } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import type { Client, ReportResponse } from "@/types";
 import { fmtDateTime } from "@/lib/date-utils";
+import { PaymentExportDialog } from "@/components/reports/payment-export-dialog";
+import { ReportVerifyDialog } from "@/components/reports/report-verify";
 
 interface ReportTemplate {
   id: string;
@@ -213,6 +215,19 @@ export default function Reports() {
     format: "PDF",
   });
   const [generating, setGenerating] = useState(false);
+  // Signed letterhead export (Payment Collection / Financial Summary) and verification of a signed report.
+  const [signedExport, setSignedExport] = useState<"payment-collection" | "financial-summary" | null>(null);
+  const [exportClients, setExportClients] = useState<{ id: number; name: string; code: string | null }[]>([]);
+  const [verifyCode, setVerifyCode] = useState<string | null>(() => typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("verify"));
+  const canSignedExport = ["super_admin", "partner", "manager", "finance", "galvanizer"].includes(role);
+  const openSignedExport = (type: "payment-collection" | "financial-summary") => {
+    setSignedExport(type);
+    if (exportClients.length === 0) {
+      api.getClients(new URLSearchParams({ per_page: "2000" }))
+        .then((res: any) => setExportClients((res?.data ?? []).map((c: any) => ({ id: c.id, name: c.legal_name ?? c.company_name, code: c.client_code ?? null }))))
+        .catch(() => {});
+    }
+  };
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [history, setHistory] = useState<ReportHistoryItem[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
@@ -320,7 +335,15 @@ export default function Reports() {
   return (
     <AppLayout>
       <Head title="Reports" />
-      <PageHeader eyebrow="Insight" title="Reports" description="Generate and export reports across all practice areas" />
+      <PageHeader eyebrow="Insight" title="Reports" description="Generate and export reports across all practice areas"
+        actions={canSignedExport ? (
+          <>
+            <Button size="sm" variant="outline" onClick={() => openSignedExport("financial-summary")}>Financial summary · signed export</Button>
+            <Button size="sm" className="bg-gold text-black hover:bg-gold/90" onClick={() => openSignedExport("payment-collection")}>Payment collection · signed export</Button>
+          </>
+        ) : undefined} />
+      {signedExport && <PaymentExportDialog clients={exportClients} initialType={signedExport} onClose={() => setSignedExport(null)} />}
+      {verifyCode && <ReportVerifyDialog code={verifyCode} onClose={() => { setVerifyCode(null); window.history.replaceState(window.history.state, "", "/reports"); }} />}
 
       <div className="px-8 py-6 space-y-8">
         {successMsg && (

@@ -709,6 +709,41 @@ export const api = {
   },
   // Approves an auto-generated renewal quote (90-day-prior estimate) — marks it Accepted,
   // does NOT create an invoice; staff raise the real invoice separately.
+  // ── Settling invoices (Pending Payments) ──
+  async markInvoicePaid(id: number, data: { amount: number; date: string; mode: string; reference?: string }): Promise<{ ok: boolean }> {
+    return this.request(`/pending-payments/${id}/mark-paid`, { method: 'POST', body: JSON.stringify(data) })
+  },
+  async requestWaiver(id: number, amount: number, reason: string): Promise<{ ok: boolean }> {
+    return this.request(`/pending-payments/${id}/waiver`, { method: 'POST', body: JSON.stringify({ amount, reason }) })
+  },
+  async decideWaiver(id: number, approve: boolean, note?: string): Promise<{ ok: boolean }> {
+    return this.request(`/pending-payments/${id}/waiver/decision`, { method: 'POST', body: JSON.stringify({ approve, note }) })
+  },
+  async retryZohoWriteback(id: number): Promise<{ ok: boolean }> {
+    return this.request(`/pending-payments/${id}/zoho-retry`, { method: 'POST' })
+  },
+  /** Signed letterhead export (Excel / CSV / PDF) of Payment Collection or Financial Summary; downloads the file. */
+  async downloadPaymentReport(data: { type: string; file: 'xlsx' | 'csv' | 'pdf'; client_code?: string; date?: string; from_date?: string; to_date?: string; pin?: string }): Promise<void> {
+    const response = await fetch('/api/reports/download', {
+      method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-XSRF-TOKEN': getCsrfToken() },
+      body: JSON.stringify(data),
+    })
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}))
+      throw new Error((err as { message?: string }).message || 'Export failed')
+    }
+    const name = /filename="?([^";]+)"?/.exec(response.headers.get('content-disposition') ?? '')?.[1] ?? `report.${data.file}`
+    const url = URL.createObjectURL(await response.blob())
+    const link = document.createElement('a')
+    link.href = url
+    link.download = name
+    link.click()
+    URL.revokeObjectURL(url)
+  },
+  async verifyReport(code: string): Promise<{ valid: boolean; report: string; format: string; filters: Record<string, string | null>; signed_by: string; signer_role: string; signed_at: string; rows: number }> {
+    return this.request(`/reports/verify/${encodeURIComponent(code)}`)
+  },
   async approveRenewalQuote(invoiceId: number | string): Promise<any> {
     return this.request(`/pending-payments/${invoiceId}/approve-quote`, { method: 'POST' })
   },
