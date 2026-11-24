@@ -37,7 +37,7 @@ class ZohoExportImportTest extends TestCase
     private function csv(string $name, array $header, array $rows): UploadedFile
     {
         $handle = fopen('php://temp', 'r+');
-        fputcsv($handle, $header);
+        fputcsv($handle, $header, ",", "\"", "");
         foreach ($rows as $row) {
             fputcsv($handle, array_map(fn ($column) => $row[$column] ?? '', $header));
         }

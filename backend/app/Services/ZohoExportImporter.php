@@ -106,7 +106,7 @@ class ZohoExportImporter
     private function header(string $path): array
     {
         $handle = fopen($path, 'r');
-        $header = fgetcsv($handle) ?: [];
+        $header = fgetcsv($handle, null, ",", "\"", "") ?: [];
         fclose($handle);
         if (isset($header[0])) {
             $header[0] = preg_replace('/^\xEF\xBB\xBF/', '', (string) $header[0]);
@@ -120,7 +120,7 @@ class ZohoExportImporter
     {
         $handle = fopen($path, 'r');
         $header = null;
-        while (($line = fgetcsv($handle)) !== false) {
+        while (($line = fgetcsv($handle, null, ",", "\"", "")) !== false) {
             if ($header === null) {
                 $line[0] = preg_replace('/^\xEF\xBB\xBF/', '', (string) $line[0]);
                 $header = array_map('trim', $line);
