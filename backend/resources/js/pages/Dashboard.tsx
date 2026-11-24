@@ -17,11 +17,16 @@ import { ClientFinanceDashboard } from "@/pages/dashboard/ClientFinanceDashboard
 import { InventorDashboard } from "@/pages/dashboard/InventorDashboard";
 import { ActionItem, ActionItemRow, RenewalApproveModal } from "@/components/action-item-row";
 import { DonutChart, StatusBar, JurisdictionStackedBar, officeLabel } from "@/components/portfolio-charts";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { FinanceTab } from "@/components/dashboard/finance-tab";
 import { TeamTab } from "@/components/dashboard/team-tab";
+import { OverviewGrid } from "@/components/dashboard/overview-grid";
+import { PortfolioGrid } from "@/components/dashboard/portfolio-grid";
+import { SegmentTabs } from "@/components/modern/segment-tabs";
+import { AnimatePresence, motion } from "framer-motion";
 
 const TEAM_ROLES = ["super_admin", "partner", "director", "manager", "galvanizer", "associate", "paralegal"];
+/** Roles that see money (same list as DashboardInsightsController::FINANCE_ROLES, staff side). */
+const FINANCE_ROLES = ["super_admin", "partner", "manager", "finance", "galvanizer"];
 import { useMiniPager, MiniPager } from "@/components/mini-pager";
 
 function formatCurrency(val: number) {
@@ -172,6 +177,7 @@ function StaffDashboard() {
   const [drillKey, setDrillKey] = useState<DrillKey | null>(null);
   const [renewalItem, setRenewalItem] = useState<ActionItem | null>(null);
   const [trends, setTrends] = useState<DashboardTrends | null>(null);
+  const [tab, setTab] = useState<"overview" | "portfolio" | "financial" | "team">("overview");
   useEffect(() => { api.getDashboardTrends().then(setTrends).catch(() => setTrends(null)); }, []);
 
   const feeRates = props.systemSettings?.renewal_fee_rates ?? { government_fee: 0, professional_fee: 0, currency: "INR" };
@@ -228,8 +234,7 @@ function StaffDashboard() {
         pending: Number(active[code] ?? 0),
       }))
       .map(r => ({ ...r, total: r.granted + r.pending }))
-      .sort((a, b) => b.total - a.total)
-      .slice(0, 8);
+      .sort((a, b) => b.total - a.total);
     const max = rows.reduce((m, r) => Math.max(m, r.total), 0);
     return { rows, max };
   }, [portfolio]);
@@ -375,23 +380,38 @@ function StaffDashboard() {
       ] },
   };
 
+  const showMoney = FINANCE_ROLES.includes(user?.role);
+  const tabs = [
+    { value: "overview" as const, label: "Overview" },
+    { value: "portfolio" as const, label: "IP Portfolio" },
+    ...(showMoney ? [{ value: "financial" as const, label: "Financial" }] : []),
+    ...(TEAM_ROLES.includes(user?.role) ? [{ value: "team" as const, label: "Team" }] : []),
+  ];
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+
   return (
     <AppLayout>
       <Head title="Dashboard" />
-      {/* Viewport-locked shell: header + tab strip stay fixed, each tab scrolls its
-          own content independently instead of the whole page scrolling. */}
-      <div className="flex h-[calc(100vh-3.5rem)] flex-col overflow-hidden">
-        <PageHeader
-          eyebrow="Overview"
-          title={`Good morning, ${welcomeName}`}
-          description={`${metrics.active_matters} active · ${metrics.inactive_matters ?? 0} inactive · ${metrics.clients} clients · ${formatCurrency(metrics.zoho_outstanding ?? 0)} outstanding`}
-          actions={
-            <>
-              <AnalystRoleFilter value={roleFilter} onChange={setRoleFilter} />
-              <Button variant="outline" onClick={handleExport}><Download className="h-4 w-4 mr-2" />Export CSV</Button>
-            </>
-          }
-        />
+      {/* One screen: compact header + tabs; each tab fits the window (lists scroll inside their tiles). */}
+      <div className="surface-mesh flex min-h-[calc(100dvh-3.5rem)] flex-col fit:h-[calc(100dvh-3.5rem)] fit:overflow-hidden">
+        <header className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 px-4 pt-4 pb-3 sm:px-6">
+          <div className="min-w-0 flex-1">
+            <h1 className="truncate font-display text-xl font-semibold tracking-tight sm:text-2xl">
+              {greeting}, <span className="text-gradient-gold">{welcomeName}</span>
+            </h1>
+            <p className="truncate text-xs text-muted-foreground">
+              {metrics.active_matters} active · {metrics.inactive_matters ?? 0} inactive · {metrics.clients} clients{showMoney ? ` · ${formatCurrency(metrics.zoho_outstanding ?? 0)} outstanding` : ""}
+            </p>
+          </div>
+          <SegmentTabs value={tab} onChange={setTab} options={tabs} />
+          <div className="flex items-center gap-2">
+            <AnalystRoleFilter value={roleFilter} onChange={setRoleFilter} />
+            <Button variant="outline" size="sm" onClick={handleExport} className="glass rounded-full border-0" title="Export cases to CSV">
+              <Download className="h-3.5 w-3.5 sm:mr-1.5" /><span className="hidden sm:inline">Export</span>
+            </Button>
+          </div>
+        </header>
 
         {drillKey && (
           <DashboardDrillModal config={DRILL_CONFIGS[drillKey]} onClose={() => setDrillKey(null)} />
@@ -407,244 +427,19 @@ function StaffDashboard() {
           />
         )}
 
-        <Tabs defaultValue="overview" className="flex flex-1 flex-col overflow-hidden">
-          <TabsList className="mx-4 mt-4 w-fit max-w-[calc(100%-2rem)] shrink-0 overflow-x-auto sm:mx-8">
-            <TabsTrigger value="overview">Overview</TabsTrigger>
-            <TabsTrigger value="portfolio">IP Portfolio</TabsTrigger>
-            <TabsTrigger value="financial">Financial</TabsTrigger>
-            {TEAM_ROLES.includes(user?.role) && <TabsTrigger value="team">Team</TabsTrigger>}
-          </TabsList>
-
-          <TabsContent value="overview" className="mt-0 flex-1 overflow-y-auto px-4 py-4 sm:px-8 sm:py-6 space-y-6">
-        <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-6">
-          <StatCard
-            label="Active Cases"
-            value={metrics.active_matters.toString()}
-            delta={metrics.opened_this_month != null ? `+${metrics.opened_this_month} opened this month` : undefined}
-            trend="up"
-            icon={Briefcase}
-            accent="primary"
-            onClick={() => setDrillKey("active_cases")}
-            spark={trends?.opened}
-            subtitle={metrics.distinct_matters != null && metrics.distinct_matters !== metrics.active_matters
-              ? `${metrics.distinct_matters} distinct matters`
-              : undefined}
-          />
-          <StatCard label="Inactive Cases" value={(metrics.inactive_matters ?? 0).toString()} icon={Archive} accent="neutral" onClick={() => setDrillKey("inactive_cases")} />
-          <StatCard label="Active Clients" value={metrics.clients.toString()} delta={metrics.clients_delta ?? undefined} trend={metrics.clients_delta_trend ?? "up"} icon={Users} accent="gold" onClick={() => setDrillKey("active_clients")} />
-          <StatCard label="Quoted, not invoiced" value={formatCurrency(metrics.quoted_open ?? 0)} icon={Clock} accent="info" subtitle={`${metrics.quoted_count ?? 0} open quotes`} spark={trends?.quoted} onClick={() => setDrillKey("quoted")} />
-          <StatCard label="Collected this month" value={formatCurrency(metrics.collected_mtd ?? 0)} delta={metrics.revenue_delta ?? undefined} trend={metrics.revenue_delta_trend ?? "up"} icon={Wallet} accent="success" spark={trends?.collected} onClick={() => setDrillKey("collected")} />
-          <StatCard label="Outstanding" value={formatCurrency(metrics.zoho_outstanding ?? 0)} icon={Landmark} accent="info" subtitle={`${metrics.overdue_invoices ?? 0} invoices overdue`} onClick={() => router.visit("/pending-payments")} />
-        </div>
-
-        <section className="border-y border-border py-4">
-          <div className="mb-3 flex items-center justify-between"><div><h2 className="text-sm font-semibold">Statutory deadline risk</h2><p className="mt-1 text-xs text-muted-foreground">Open deadlines visible within your matter scope</p></div><Link href="/projects" className="text-xs font-medium text-gold hover:underline">Open matters</Link></div>
-          <div className="grid grid-cols-2 gap-px overflow-hidden rounded-md border border-border bg-border lg:grid-cols-4">
-            {([["Overdue", "dl_overdue", metrics.deadline_risk?.overdue ?? 0], ["Next 7 days", "dl_next_7_days", metrics.deadline_risk?.next_7_days ?? 0], ["Unreviewed", "dl_unreviewed", metrics.deadline_risk?.unreviewed ?? 0], ["Critical", "dl_critical", metrics.deadline_risk?.critical ?? 0]] as [string, DrillKey, number][]).map(([label, key, value]) => (
-              <button key={label} onClick={() => Number(value) > 0 && setDrillKey(key)} title={Number(value) > 0 ? `Show the ${String(label).toLowerCase()} deadlines` : undefined}
-                className={`px-4 py-3 text-left transition-colors ${Number(value) > 0 ? "cursor-pointer hover:bg-muted/40" : "cursor-default"} ${(label === "Overdue" || label === "Critical") && Number(value) > 0 ? "bg-destructive/5" : "bg-background"}`}>
-                <p className="text-xs text-muted-foreground">{label}</p>
-                <p className={`mt-1 text-2xl font-semibold ${(label === "Overdue" || label === "Critical") && Number(value) > 0 ? "text-destructive" : ""}`}>{value}</p>
-                {Number(value) > 0 && <p className="mt-0.5 text-[10px] text-muted-foreground">Click to view →</p>}
-              </button>
-            ))}
-          </div>
-        </section>
-
-        {(metrics.action_items ?? []).length > 0 && (
-          <Card className="border-border">
-            <CardHeader>
-              <CardTitle className="font-display flex items-center gap-2">
-                <Clock className="h-4 w-4" /> Action Required
-              </CardTitle>
-              <p className="text-xs text-muted-foreground mt-1">
-                Renewals first, then urgency and nearest deadline — click a case for details, click a renewal for the fee breakdown.
-              </p>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              {actionItemsPager.pageItems.map((item) => (
-                <ActionItemRow key={item.id} item={item} onRenewClick={setRenewalItem} showOwnerBadge />
-              ))}
-            </CardContent>
-            <MiniPager
-              page={actionItemsPager.page}
-              totalPages={actionItemsPager.totalPages}
-              pageSize={actionItemsPager.pageSize}
-              total={actionItemsPager.total}
-              onPageChange={actionItemsPager.setPage}
-              onPageSizeChange={actionItemsPager.setPageSize}
-            />
-          </Card>
-        )}
-
-        <div className="grid gap-6 lg:grid-cols-3">
-          <Card className="lg:col-span-2 border-border">
-            <CardHeader className="flex flex-row items-center justify-between">
-              <div>
-                <CardTitle className="font-display">Cases needing attention</CardTitle>
-                <p className="text-xs text-muted-foreground mt-1">Sorted by deadline proximity & priority</p>
-              </div>
-              <Button asChild variant="ghost" size="sm">
-                <Link href="/projects">View all <ArrowUpRight className="ml-1 h-3 w-3" /></Link>
-              </Button>
-            </CardHeader>
-            <CardContent className="p-0">
-              <table className="w-full text-sm">
-                <thead className="bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground">
-                  <tr>
-                    <th className="px-4 py-2 text-left">Case</th>
-                    <th className="px-4 py-2 text-left">Client</th>
-                    <th className="px-4 py-2 text-left">Stage</th>
-                    <th className="px-4 py-2 text-left">Priority</th>
-                    <th className="px-4 py-2 text-left">Due</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {casesPager.pageItems.map((p) => {
-                    const activeStage = p.stages?.find((s: any) => s.status === "In Progress")?.stage_name || "Invention Disclosure";
-                    return (
-                      <tr key={p.id} className="border-t border-border hover:bg-muted/30">
-                        <td className="px-4 py-3">
-                          <div className="font-medium">{p.project_name}</div>
-                          <div className="text-xs text-muted-foreground font-mono">{p.project_code}</div>
-                        </td>
-                        <td className="px-4 py-3 text-muted-foreground">{p.client?.company_name}</td>
-                        <td className="px-4 py-3"><Badge variant="secondary">{activeStage}</Badge></td>
-                        <td className="px-4 py-3"><Badge variant={p.urgency === "High" ? "destructive" : "outline"}>{p.urgency}</Badge></td>
-                        <td className="px-4 py-3 text-muted-foreground font-mono text-xs">{fmtDate(p.hard_deadline) === "—" ? "No deadline" : fmtDate(p.hard_deadline)}</td>
-                      </tr>
-                    );
-                  })}
-                  {projects.length === 0 && (
-                    <tr><td colSpan={5} className="px-4 py-8 text-center text-muted-foreground text-sm">No cases yet. Create your first case above.</td></tr>
-                  )}
-                </tbody>
-              </table>
-            </CardContent>
-            <MiniPager
-              page={casesPager.page}
-              totalPages={casesPager.totalPages}
-              pageSize={casesPager.pageSize}
-              total={casesPager.total}
-              onPageChange={casesPager.setPage}
-              onPageSizeChange={casesPager.setPageSize}
-            />
-          </Card>
-
-          <Card className="border-border">
-            <CardHeader>
-              <CardTitle className="font-display">My tasks</CardTitle>
-              <p className="text-xs text-muted-foreground mt-1">{tasks.length} open tasks</p>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {tasksPager.pageItems.map((t) => (
-                <div key={t.id} className="flex items-start gap-3 rounded-md border border-border p-3 hover:bg-muted/30">
-                  <div className="mt-1 h-2 w-2 rounded-full bg-gold flex-shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium truncate">{t.title}</div>
-                    <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
-                      <span className="font-mono">{t.project?.project_code}</span>
-                      {t.due_date && <><span>·</span><span>{fmtDate(t.due_date)}</span></>}
-                    </div>
-                  </div>
-                  <Badge variant={statusColor(t.status)} className="text-[10px] flex-shrink-0">{t.status}</Badge>
-                </div>
-              ))}
-              {tasks.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">No open tasks</p>}
-            </CardContent>
-            <MiniPager
-              page={tasksPager.page}
-              totalPages={tasksPager.totalPages}
-              pageSize={tasksPager.pageSize}
-              total={tasksPager.total}
-              onPageChange={tasksPager.setPage}
-              onPageSizeChange={tasksPager.setPageSize}
-            />
-          </Card>
-        </div>
-          </TabsContent>
-
-          <TabsContent value="portfolio" className="mt-0 flex-1 overflow-y-auto px-4 py-4 sm:px-8 sm:py-6 space-y-6">
-            {portfolio && statusMix.total > 0 ? (
-              <section>
-                <div className="mb-3 flex items-center justify-between">
-                  <div>
-                    <h2 className="text-sm font-semibold flex items-center gap-2"><PieChartIcon className="h-4 w-4 text-gold" /> IP Portfolio Analytics</h2>
-                    <p className="mt-1 text-xs text-muted-foreground">Patent case mix, jurisdiction spread, and prosecution pipeline across the firm</p>
-                  </div>
-                  <Link href="/patent-portfolio" className="text-xs font-medium text-gold hover:underline flex items-center gap-1">
-                    View full portfolio <ArrowUpRight className="h-3 w-3" />
-                  </Link>
-                </div>
-                <div className="grid gap-4 lg:grid-cols-3">
-                  <Card className="border-border">
-                    <CardHeader className="pb-1">
-                      <CardTitle className="font-display text-sm">Case Status Mix</CardTitle>
-                      <p className="text-xs text-muted-foreground">{statusMix.total} unique patent cases, deduped by invention &amp; office</p>
-                    </CardHeader>
-                    <CardContent className="flex items-center justify-center pt-2">
-                      <DonutChart data={statusMix.data} total={statusMix.total} label="All Cases" activeCode={null} onSelect={() => {}} />
-                    </CardContent>
-                  </Card>
-
-                  <Card className="border-border">
-                    <CardHeader className="pb-1">
-                      <CardTitle className="font-display text-sm flex items-center gap-2"><MapPin className="h-4 w-4 text-gold" /> Where The Patents Are</CardTitle>
-                      <p className="text-xs text-muted-foreground">Granted vs. pending records by jurisdiction</p>
-                    </CardHeader>
-                    <CardContent className="pt-2">
-                      {jurisdictionRows.rows.length === 0 ? (
-                        <p className="text-xs text-muted-foreground py-6 text-center">No jurisdiction data yet.</p>
-                      ) : (
-                        <>
-                          <div className="space-y-2">
-                            {jurisdictionRows.rows.map((r) => (
-                              <JurisdictionStackedBar key={r.code} name={r.name} granted={r.granted} pending={r.pending} max={jurisdictionRows.max} />
-                            ))}
-                          </div>
-                          <div className="flex items-center gap-3 mt-3 text-[10px] text-muted-foreground">
-                            <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full" style={{ background: "#22c55e" }} />Granted</span>
-                            <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full" style={{ background: "#f59e0b" }} />Pending</span>
-                          </div>
-                        </>
-                      )}
-                    </CardContent>
-                  </Card>
-
-                  <Card className="border-border">
-                    <CardHeader className="pb-1">
-                      <CardTitle className="font-display text-sm flex items-center gap-2"><GitBranch className="h-4 w-4 text-gold" /> Prosecution Pipeline</CardTitle>
-                      <p className="text-xs text-muted-foreground">Pending patents by current lifecycle stage</p>
-                    </CardHeader>
-                    <CardContent className="pt-2">
-                      {stageData.rows.length === 0 ? (
-                        <p className="text-xs text-muted-foreground py-6 text-center">No pending patents.</p>
-                      ) : (
-                        <div className="space-y-1.5">
-                          {stageData.rows.map((s) => (
-                            <StatusBar key={s.name} name={s.name} count={s.count} max={stageData.max} active={false} onClick={() => {}} />
-                          ))}
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-                </div>
-              </section>
-            ) : (
-              <p className="text-sm text-muted-foreground text-center py-12">No patent portfolio data available for your scope yet.</p>
-            )}
-          </TabsContent>
-
-          <TabsContent value="financial" className="mt-0 flex-1 overflow-y-auto px-4 py-4 sm:px-8 sm:py-6 space-y-6">
-            <FinanceTab />
-          </TabsContent>
-
-          {TEAM_ROLES.includes(user?.role) && (
-            <TabsContent value="team" className="mt-0 flex-1 overflow-y-auto px-4 py-4 sm:px-8 sm:py-6 space-y-6">
-              <TeamTab />
-            </TabsContent>
-          )}
-        </Tabs>
+        <main className="min-h-0 flex-1 px-4 pb-4 sm:px-6 fit:overflow-hidden">
+          <AnimatePresence mode="wait">
+            <motion.div key={tab} className="h-full" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.18 }}>
+              {tab === "overview" && (
+                <OverviewGrid metrics={metrics} trends={trends} projects={projects} tasks={tasks} statusMix={statusMix}
+                  showMoney={showMoney} onDrill={(k) => setDrillKey(k)} onRenew={setRenewalItem} />
+              )}
+              {tab === "portfolio" && <PortfolioGrid statusMix={statusMix} offices={jurisdictionRows} stages={stageData} />}
+              {tab === "financial" && showMoney && <FinanceTab />}
+              {tab === "team" && TEAM_ROLES.includes(user?.role) && <TeamTab />}
+            </motion.div>
+          </AnimatePresence>
+        </main>
       </div>
     </AppLayout>
   );

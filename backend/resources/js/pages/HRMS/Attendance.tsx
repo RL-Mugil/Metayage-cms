@@ -95,7 +95,7 @@ export default function HRMSAttendance() {
               { key: "settings", label: "Settings",      icon: Settings },
               { key: "report",   label: "Report",        icon: FileBarChart2 },
             ] : []),
-          ] as { key: typeof tab; label: string; icon: React.ElementType }[]).map(({ key, label, icon: Icon }) => (
+          ] as { key: typeof tab; label: string; icon: React.ComponentType<{ className?: string }> }[]).map(({ key, label, icon: Icon }) => (
             <button
               key={key}
               onClick={() => setTab(key)}

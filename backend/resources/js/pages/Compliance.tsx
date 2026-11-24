@@ -30,7 +30,7 @@ interface ComplianceItem {
   notes: { text: string; by: string; at: string }[];
 }
 
-const statusConfig: Record<AlertLevel, { color: string; bg: string; icon: React.ElementType }> = {
+const statusConfig: Record<AlertLevel, { color: string; bg: string; icon: React.ComponentType<{ className?: string }> }> = {
   Critical: { color: "text-red-600", bg: "bg-red-50 border-red-200", icon: AlertTriangle },
   "At Risk": { color: "text-amber-600", bg: "bg-amber-50 border-amber-200", icon: Clock },
   "On Track": { color: "text-blue-600", bg: "bg-blue-50 border-blue-200", icon: Clock },
@@ -39,7 +39,7 @@ const statusConfig: Record<AlertLevel, { color: string; bg: string; icon: React.
 
 const daysColor = (d: number) => d <= 30 ? "text-red-600 font-bold" : d <= 90 ? "text-amber-600 font-semibold" : "text-green-600";
 
-interface ComplianceKpiDef { label: AlertLevel; key: string; color: string; bg: string; icon: React.ElementType }
+interface ComplianceKpiDef { label: AlertLevel; key: string; color: string; bg: string; icon: React.ComponentType<{ className?: string }> }
 
 const COMPLIANCE_KPI_DEFS: ComplianceKpiDef[] = [
   { label: "Critical", key: "critical", color: "text-red-600",   bg: "border-red-200 bg-red-50",    icon: AlertTriangle },

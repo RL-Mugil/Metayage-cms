@@ -1,7 +1,16 @@
 import { Head, Link, router, usePage } from "@inertiajs/react";
-import { useEffect, useState, useMemo } from "react";
+import { lazy, Suspense, useEffect, useState, useMemo } from "react";
 import { GlossaryText, HealthDot } from "@/components/glossary-text";
 import { OfficeMap } from "@/components/portfolio/office-map";
+import { canUseWebGL } from "@/components/portfolio/globe-support";
+import { TiltCard } from "@/components/modern/tilt-card";
+import { Ring3D } from "@/components/modern/ring-3d";
+import { HBar3D } from "@/components/modern/bar-3d";
+import { SegmentTabs } from "@/components/modern/segment-tabs";
+import { staggerParent } from "@/components/modern/glass-card";
+import { motion } from "framer-motion";
+
+const OfficeGlobe = lazy(() => import("@/components/portfolio/office-globe"));
 import { SavedViewsBar } from "@/components/saved-views-bar";
 import { ClientHub } from "@/components/client/client-hub";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -10,7 +19,7 @@ import { AnalystRoleFilter, useAnalystRoleFilter } from "@/components/analyst-ro
 import {
   Loader2, RefreshCw, ChevronDown, MapPin, FileText, Calendar,
   AlertCircle, CreditCard, X, Search, ChevronUp, ExternalLink, ArrowUpDown,
-  Hourglass, Activity, Inbox,
+  Hourglass, Activity, Inbox, Globe2,
 } from "lucide-react";
 import AppLayout from "@/layouts/AppLayout";
 import { PageHeader } from "@/components/page-header";
@@ -173,6 +182,9 @@ export default function PatentPortfolio() {
   const [renewalView, setRenewalView] = useState<"list" | "calendar">("list");
   const [insights, setInsights] = useState<PortfolioInsights | null>(null);
   const [hubOpen, setHubOpen] = useState(false);
+  const [mapView, setMapView] = useState<"globe" | "tiles">("globe");
+  const [globeOk] = useState(() => typeof window !== "undefined" && canUseWebGL()
+    && !window.matchMedia("(prefers-reduced-motion: reduce)").matches && window.innerWidth >= 640);
   /** "YYYY-MM", "overdue", or null (all) — the View all dialog's month filter from the calendar. */
   const [renewalMonth, setRenewalMonth] = useState<string | null>(null);
   const [paymentSearch, setPaymentSearch] = useState("");
@@ -250,6 +262,8 @@ export default function PatentPortfolio() {
   const grantedTotal = grantedData.reduce((s, d) => s + d.value, 0);
 
   const activeData = useMemo(() => officeSeries("active_by_office"), [data]);
+  const mapOther = useMemo(() => (data ? Object.fromEntries(Object.keys({ ...(data.refused_by_office ?? {}), ...(data.closed_by_office ?? {}) })
+    .map((k) => [k, Number(data.refused_by_office?.[k] ?? 0) + Number(data.closed_by_office?.[k] ?? 0)])) : {}), [data]);
   const activeTotal = activeData.reduce((s, d) => s + d.value, 0);
 
   const refusedData = useMemo(() => officeSeries("refused_by_office"), [data]);
@@ -358,7 +372,7 @@ export default function PatentPortfolio() {
         }
       />
 
-      <div className="px-4 py-4 sm:px-8 sm:py-6 space-y-5">
+      <div className="surface-mesh min-h-full px-4 py-4 sm:px-8 sm:py-6 space-y-5">
         <SavedViewsBar page="patent_portfolio"
           hasFilters={!!(activeOffice || activeStatus || activeStage || actionSearch || selectedClientId)}
           current={{ client_id: selectedClientId, office: activeOffice, status: activeStatus, stage: activeStage, search: actionSearch, sort: sortCol, dir: sortDir }}
@@ -376,7 +390,7 @@ export default function PatentPortfolio() {
 
         {/* Phones: jump between sections */}
         <nav className="sticky top-0 z-10 -mx-4 flex gap-1.5 overflow-x-auto bg-background/95 px-4 py-2 backdrop-blur sm:hidden">
-          {[["pf-actions", "Action Required"], ["pf-renewals", "Renewals"], ["pf-payments", "Payments"], ["pf-map", "Map"], ["pf-week", "This week"]].map(([id, label]) => (
+          {[["pf-actions", "Action Required"], ["pf-renewals", "Renewals"], ["pf-payments", "Payments"], ["pf-week", "This week"], ["pf-map", "Map"]].map(([id, label]) => (
             <a key={id} href={`#${id}`} className="shrink-0 rounded-full border border-border px-3 py-1 text-xs">{label}</a>
           ))}
         </nav>
@@ -437,136 +451,29 @@ export default function PatentPortfolio() {
                 </span>
               )}
             </div>
-            <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
-              <Card className="border-border">
-                <CardContent className="pt-5 pb-4 flex items-center justify-center">
-                  <DonutChart data={grantedData} total={grantedTotal} label="Granted"
-                    activeCode={activeOffice} onSelect={toggleOffice} />
-                </CardContent>
-              </Card>
-              <Card className="border-border">
-                <CardContent className="pt-5 pb-4 flex items-center justify-center">
-                  <DonutChart data={activeData} total={activeTotal} label="Active"
-                    sublabel="Open · In Progress · On Hold"
-                    activeCode={activeOffice} onSelect={toggleOffice} />
-                </CardContent>
-              </Card>
-              <Card className="border-border">
-                <CardContent className="pt-5 pb-4 flex items-center justify-center">
-                  <DonutChart data={refusedData} total={refusedTotal} label="Refused / Abandoned"
-                    activeCode={activeOffice} onSelect={toggleOffice} />
-                </CardContent>
-              </Card>
-              <Card className="border-border">
-                <CardContent className="pt-5 pb-4 flex items-center justify-center">
-                  <DonutChart data={closedData} total={closedTotal} label="Closed / Completed"
-                    activeCode={activeOffice} onSelect={toggleOffice} />
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* Where the filings are */}
-            <Card id="pf-map" className="scroll-mt-14 border-border">
-              <CardHeader className="pb-2"><CardTitle className="font-display text-sm">Portfolio map</CardTitle></CardHeader>
-              <CardContent>
-                <OfficeMap active={data.active_by_office ?? {}} granted={data.granted_by_office ?? {}}
-                  other={Object.fromEntries(Object.keys({ ...(data.refused_by_office ?? {}), ...(data.closed_by_office ?? {}) })
-                    .map((k) => [k, Number(data.refused_by_office?.[k] ?? 0) + Number(data.closed_by_office?.[k] ?? 0)]))}
-                  label={ol} selected={activeOffice} onSelect={toggleOffice} />
-              </CardContent>
-            </Card>
-
-            {/* Row 2: Renewals + Payments — same height side by side */}
-            <div className="grid gap-4 lg:grid-cols-2 items-stretch">
-              {/* Upcoming Renewals */}
-              <Card id="pf-renewals" className="scroll-mt-14 border-border h-full flex flex-col">
-                <SectionHead icon={<Calendar className="h-4 w-4 text-gold" />} title="Upcoming Renewals"
-                  search={renewalSearch} onSearch={(v) => { setRenewalSearch(v); setRenewalPage(1); }} onViewAll={() => { setRenewalMonth(null); setViewAll("renewals"); }}
-                  extra={
-                    <div className="flex rounded-md border border-border p-0.5 text-[10px]">
-                      {(["list", "calendar"] as const).map((v) => (
-                        <button key={v} onClick={() => setRenewalView(v)} className={`rounded px-1.5 py-0.5 capitalize ${renewalView === v ? "bg-muted font-medium" : "text-muted-foreground"}`}>{v}</button>
-                      ))}
+            <motion.div variants={staggerParent} initial="hidden" animate="show" className="grid gap-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-4">
+              {([
+                ["Granted", grantedData, grantedTotal, "radial-gradient(closest-side, rgb(34 197 94 / 0.35), transparent)", "Patents in force"],
+                ["Active", activeData, activeTotal, "radial-gradient(closest-side, rgb(245 158 11 / 0.35), transparent)", "Open · In Progress · On Hold"],
+                ["Refused / Abandoned", refusedData, refusedTotal, "radial-gradient(closest-side, rgb(244 63 94 / 0.3), transparent)", "Ended without grant"],
+                ["Closed / Completed", closedData, closedTotal, "radial-gradient(closest-side, rgb(100 116 139 / 0.3), transparent)", "Work finished"],
+              ] as [string, any[], number, string, string][]).map(([label, ring, total, glow, hint]) => (
+                <TiltCard key={label} glow={glow}>
+                  <div className="p-4">
+                    <div className="mb-2 flex items-center justify-between">
+                      <span className="font-display text-sm font-semibold">{label}</span>
+                      <span className="text-[10px] text-muted-foreground">{hint}</span>
                     </div>
-                  } />
-                <CardContent className="p-0 flex-1 flex flex-col">
-                  {renewalView === "calendar" ? (
-                    <RenewalCalendar rows={renewalRows} onPick={(month) => { setRenewalMonth(month); setViewAll("renewals"); }} />
-                  ) : (<>
-                  <div className="flex-1">
-                    {renewalRows.length === 0 ? (
-                      <p className="text-xs text-muted-foreground px-4 py-6">{renewalSearch ? "No matching renewals." : "No upcoming renewals."}</p>
-                    ) : pageOf(renewalRows, renewalPage, RENEWAL_PAGE).map((r: any, i: number) => (
-                      <button key={i} onClick={() => r.id && goTo(`/projects/${r.id}?tab=deadlines`)}
-                        className="block w-full text-left px-4 py-3 border-b border-border last:border-0 hover:bg-muted/20 transition-colors group">
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-1.5 text-xs font-mono font-medium text-foreground group-hover:text-gold transition-colors">
-                            <FileText className="h-3 w-3 text-muted-foreground" />
-                            {r.docket_number ?? r.project_name ?? "—"}
-                            <ExternalLink className="h-2.5 w-2.5 opacity-0 group-hover:opacity-100 transition-opacity" />
-                          </div>
-                          <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                            <MapPin className="h-3 w-3" />{ol(r.patent_office_code ?? "")}
-                          </div>
-                        </div>
-                        <div className="flex items-center justify-between gap-2 mt-1.5">
-                          <span className="text-[10px] text-muted-foreground truncate">{r.label ? `${r.label} · ` : ""}{r.client?.legal_name ?? r.client?.company_name ?? r.project_name ?? ""}</span>
-                          <span className="flex items-center gap-1.5 text-xs font-medium text-foreground whitespace-nowrap">
-                            {typeof r.days === "number" && (r.days < 0
-                              ? <span className="rounded bg-red-500/15 px-1.5 py-0.5 text-[9px] font-semibold text-red-500">{-r.days}d overdue</span>
-                              : r.days <= 60 ? <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-semibold text-amber-600">in {r.days}d</span> : null)}
-                            Due {fmtShort(r.due_date ?? r.hard_deadline)}
-                          </span>
-                        </div>
-                      </button>
-                    ))}
+                    <Ring3D data={ring} total={total} label="cases" size={132} thickness={18} activeCode={activeOffice} onSelect={(c) => toggleOffice(c ?? activeOffice ?? "")} />
                   </div>
-                  <SectionPager page={renewalPage} total={renewalRows.length} onPage={setRenewalPage} size={RENEWAL_PAGE} />
-                  </>)}
-                </CardContent>
-              </Card>
-
-              {/* Pending Payments */}
-              <Card id="pf-payments" className="scroll-mt-14 border-border h-full flex flex-col">
-                <SectionHead icon={<CreditCard className="h-4 w-4 text-gold" />} title="Pending Payments"
-                  search={paymentSearch} onSearch={(v) => { setPaymentSearch(v); setPaymentPage(1); }}
-                  onViewAll={() => goTo(`/pending-payments${selectedClientCode ? `?search=${encodeURIComponent(selectedClientCode)}` : ""}`)} />
-                <CardContent className="p-0 flex-1 flex flex-col">
-                  <div className="flex-1">
-                    {paymentRows.length === 0 ? (
-                      <p className="text-xs text-muted-foreground px-4 py-6">{paymentSearch ? "No matching payments." : "No pending payments."}</p>
-                    ) : pageOf(paymentRows, paymentPage).map((inv: any, i: number) => {
-                      const overdue = inv.due_date ? Math.floor((Date.now() - new Date(inv.due_date).getTime()) / 86400000) : 0;
-                      return (
-                        <button key={i} onClick={() => goTo(`/pending-payments?search=${encodeURIComponent(inv.invoice_code ?? inv.docket_number ?? "")}`)}
-                          className="block w-full text-left px-4 py-3 border-b border-border last:border-0 hover:bg-muted/20 transition-colors group">
-                          <div className="flex items-center justify-between gap-2 text-[10px] text-muted-foreground mb-1">
-                            <div className="flex items-center gap-1">
-                              <FileText className="h-3 w-3" />
-                              <span className="font-mono text-foreground font-medium group-hover:text-gold">{inv.invoice_code ?? inv.docket_number}</span>
-                              {overdue > 0 && <span className="rounded bg-red-500/15 px-1.5 py-0.5 text-[9px] font-semibold text-red-500">{overdue}d overdue</span>}
-                            </div>
-                            <span>{inv.due_date ? `Due ${fmtShort(inv.due_date)}` : fmtShort(inv.created_at)}</span>
-                          </div>
-                          <div className="flex items-center justify-between rounded-md bg-gold/10 px-2.5 py-1.5">
-                            <span className="text-[10px] text-muted-foreground">Amount Due</span>
-                            <span className="text-xs font-semibold text-gold">
-                              {inv.currency ?? "INR"} {Number(inv.balance_due ?? inv.total_amount ?? 0).toLocaleString("en-IN")}
-                            </span>
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <SectionPager page={paymentPage} total={paymentRows.length} onPage={setPaymentPage} />
-                </CardContent>
-              </Card>
-            </div>
+                </TiltCard>
+              ))}
+            </motion.div>
 
             {/* Row 3: Pending by Stage + Action Required — same height side by side */}
-            <div className="grid gap-4 lg:grid-cols-2 items-stretch">
+            <div className="grid gap-4 lg:grid-cols-12 items-stretch">
               {/* Pending by Stage — clickable bars filter Action Required */}
-              <Card className="border-border h-full flex flex-col">
+              <Card className="rounded-2xl border-[var(--glass-border)] bg-[var(--glass-bg)] shadow-3d backdrop-blur-xl h-full flex flex-col lg:col-span-4 lg:order-2">
                 <SectionHead title="Pending Patents by Stage" search={stageSearch}
                   onSearch={(v) => { setStageSearch(v); setStagePage(1); }} onViewAll={() => setViewAll("stages")}
                   extra={activeStage ? (
@@ -580,7 +487,7 @@ export default function PatentPortfolio() {
                   ) : (
                     <div className="space-y-2 flex-1">
                       {pageOf(stageRows, stagePage, STAGE_PAGE).map((s: any) => (
-                        <StatusBar key={s.name} name={s.name} count={s.count} max={maxStage}
+                        <HBar3D key={s.name} label={s.name} value={s.count} max={maxStage}
                           active={activeStage === s.name} onClick={() => toggleStage(s.name)} />
                       ))}
                       {activeStage && <p className="pt-1 text-[10px] text-muted-foreground">Filtering Action Required by "{activeStage}" · click again to clear</p>}
@@ -591,7 +498,7 @@ export default function PatentPortfolio() {
               </Card>
 
               {/* Action Required — filterable, sortable, searchable; a row opens its action */}
-              <Card id="pf-actions" className="scroll-mt-14 border-border h-full flex flex-col">
+              <Card id="pf-actions" className="rounded-2xl border-[var(--glass-border)] bg-[var(--glass-bg)] shadow-3d backdrop-blur-xl scroll-mt-14 h-full flex flex-col lg:col-span-8 lg:order-1">
                 <SectionHead icon={<AlertCircle className="h-4 w-4 text-amber-500" />} title="Action Required"
                   badge={filtered.length !== actionRows.length ? `${filtered.length} of ${actionRows.length}` : undefined}
                   search={actionSearch} onSearch={(v) => { setActionSearch(v); setPage(1); }} onViewAll={() => setViewAll("actions")}
@@ -690,9 +597,96 @@ export default function PatentPortfolio() {
               </Card>
             </div>
 
+            {/* Row 2: Renewals + Payments — same height side by side */}
+            <div className="grid gap-4 lg:grid-cols-2 items-stretch">
+              {/* Upcoming Renewals */}
+              <Card id="pf-renewals" className="rounded-2xl border-[var(--glass-border)] bg-[var(--glass-bg)] shadow-3d backdrop-blur-xl scroll-mt-14  h-full flex flex-col">
+                <SectionHead icon={<Calendar className="h-4 w-4 text-gold" />} title="Upcoming Renewals"
+                  search={renewalSearch} onSearch={(v) => { setRenewalSearch(v); setRenewalPage(1); }} onViewAll={() => { setRenewalMonth(null); setViewAll("renewals"); }}
+                  extra={
+                    <div className="flex rounded-md border border-border p-0.5 text-[10px]">
+                      {(["list", "calendar"] as const).map((v) => (
+                        <button key={v} onClick={() => setRenewalView(v)} className={`rounded px-1.5 py-0.5 capitalize ${renewalView === v ? "bg-muted font-medium" : "text-muted-foreground"}`}>{v}</button>
+                      ))}
+                    </div>
+                  } />
+                <CardContent className="p-0 flex-1 flex flex-col">
+                  {renewalView === "calendar" ? (
+                    <RenewalCalendar rows={renewalRows} onPick={(month) => { setRenewalMonth(month); setViewAll("renewals"); }} />
+                  ) : (<>
+                  <div className="flex-1">
+                    {renewalRows.length === 0 ? (
+                      <p className="text-xs text-muted-foreground px-4 py-6">{renewalSearch ? "No matching renewals." : "No upcoming renewals."}</p>
+                    ) : pageOf(renewalRows, renewalPage, RENEWAL_PAGE).map((r: any, i: number) => (
+                      <button key={i} onClick={() => r.id && goTo(`/projects/${r.id}?tab=deadlines`)}
+                        className="block w-full text-left px-4 py-3 border-b border-border last:border-0 hover:bg-muted/20 transition-colors group">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-1.5 text-xs font-mono font-medium text-foreground group-hover:text-gold transition-colors">
+                            <FileText className="h-3 w-3 text-muted-foreground" />
+                            {r.docket_number ?? r.project_name ?? "—"}
+                            <ExternalLink className="h-2.5 w-2.5 opacity-0 group-hover:opacity-100 transition-opacity" />
+                          </div>
+                          <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                            <MapPin className="h-3 w-3" />{ol(r.patent_office_code ?? "")}
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between gap-2 mt-1.5">
+                          <span className="text-[10px] text-muted-foreground truncate">{r.label ? `${r.label} · ` : ""}{r.client?.legal_name ?? r.client?.company_name ?? r.project_name ?? ""}</span>
+                          <span className="flex items-center gap-1.5 text-xs font-medium text-foreground whitespace-nowrap">
+                            {typeof r.days === "number" && (r.days < 0
+                              ? <span className="rounded bg-red-500/15 px-1.5 py-0.5 text-[9px] font-semibold text-red-500">{-r.days}d overdue</span>
+                              : r.days <= 60 ? <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-semibold text-amber-600">in {r.days}d</span> : null)}
+                            Due {fmtShort(r.due_date ?? r.hard_deadline)}
+                          </span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                  <SectionPager page={renewalPage} total={renewalRows.length} onPage={setRenewalPage} size={RENEWAL_PAGE} />
+                  </>)}
+                </CardContent>
+              </Card>
+
+              {/* Pending Payments */}
+              <Card id="pf-payments" className="rounded-2xl border-[var(--glass-border)] bg-[var(--glass-bg)] shadow-3d backdrop-blur-xl scroll-mt-14  h-full flex flex-col">
+                <SectionHead icon={<CreditCard className="h-4 w-4 text-gold" />} title="Pending Payments"
+                  search={paymentSearch} onSearch={(v) => { setPaymentSearch(v); setPaymentPage(1); }}
+                  onViewAll={() => goTo(`/pending-payments${selectedClientCode ? `?search=${encodeURIComponent(selectedClientCode)}` : ""}`)} />
+                <CardContent className="p-0 flex-1 flex flex-col">
+                  <div className="flex-1">
+                    {paymentRows.length === 0 ? (
+                      <p className="text-xs text-muted-foreground px-4 py-6">{paymentSearch ? "No matching payments." : "No pending payments."}</p>
+                    ) : pageOf(paymentRows, paymentPage).map((inv: any, i: number) => {
+                      const overdue = inv.due_date ? Math.floor((Date.now() - new Date(inv.due_date).getTime()) / 86400000) : 0;
+                      return (
+                        <button key={i} onClick={() => goTo(`/pending-payments?search=${encodeURIComponent(inv.invoice_code ?? inv.docket_number ?? "")}`)}
+                          className="block w-full text-left px-4 py-3 border-b border-border last:border-0 hover:bg-muted/20 transition-colors group">
+                          <div className="flex items-center justify-between gap-2 text-[10px] text-muted-foreground mb-1">
+                            <div className="flex items-center gap-1">
+                              <FileText className="h-3 w-3" />
+                              <span className="font-mono text-foreground font-medium group-hover:text-gold">{inv.invoice_code ?? inv.docket_number}</span>
+                              {overdue > 0 && <span className="rounded bg-red-500/15 px-1.5 py-0.5 text-[9px] font-semibold text-red-500">{overdue}d overdue</span>}
+                            </div>
+                            <span>{inv.due_date ? `Due ${fmtShort(inv.due_date)}` : fmtShort(inv.created_at)}</span>
+                          </div>
+                          <div className="flex items-center justify-between rounded-md bg-gold/10 px-2.5 py-1.5">
+                            <span className="text-[10px] text-muted-foreground">Amount Due</span>
+                            <span className="text-xs font-semibold text-gold">
+                              {inv.currency ?? "INR"} {Number(inv.balance_due ?? inv.total_amount ?? 0).toLocaleString("en-IN")}
+                            </span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <SectionPager page={paymentPage} total={paymentRows.length} onPage={setPaymentPage} />
+                </CardContent>
+              </Card>
+            </div>
+
             {insights && (insights.stuck.length > 0 || insights.changes.length > 0) && (
               <div id="pf-week" className="scroll-mt-14 grid gap-4 lg:grid-cols-2 items-stretch">
-                <Card className="border-border h-full flex flex-col">
+                <Card className="rounded-2xl border-[var(--glass-border)] bg-[var(--glass-bg)] shadow-3d backdrop-blur-xl h-full flex flex-col">
                   <CardHeader className="pb-2">
                     <CardTitle className="font-display text-sm flex items-center gap-2">
                       <Hourglass className="h-4 w-4 text-amber-500" /> Stuck in a stage
@@ -713,7 +707,7 @@ export default function PatentPortfolio() {
                   </CardContent>
                 </Card>
 
-                <Card className="border-border h-full flex flex-col">
+                <Card className="rounded-2xl border-[var(--glass-border)] bg-[var(--glass-bg)] shadow-3d backdrop-blur-xl h-full flex flex-col">
                   <CardHeader className="pb-2">
                     <CardTitle className="font-display text-sm flex items-center gap-2"><Activity className="h-4 w-4 text-gold" /> What changed this week</CardTitle>
                   </CardHeader>
@@ -732,6 +726,28 @@ export default function PatentPortfolio() {
                 </Card>
               </div>
             )}
+
+            {/* Where the filings are — bottom of the page */}
+            <Card id="pf-map" className="rounded-2xl border-[var(--glass-border)] bg-[var(--glass-bg)] shadow-3d backdrop-blur-xl scroll-mt-14">
+              <CardHeader className="pb-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <CardTitle className="font-display text-sm flex items-center gap-2"><Globe2 className="h-4 w-4 text-gold" /> Portfolio map</CardTitle>
+                  <SegmentTabs size="sm" value={mapView} onChange={setMapView} options={[{ value: "globe", label: "Globe" }, { value: "tiles", label: "Tiles" }]} />
+                </div>
+              </CardHeader>
+              <CardContent>
+                {mapView === "globe" && globeOk ? (
+                  <Suspense fallback={<div className="flex h-[380px] items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-gold" /></div>}>
+                    <OfficeGlobe active={data.active_by_office ?? {}} granted={data.granted_by_office ?? {}} other={mapOther}
+                      label={ol} selected={activeOffice} onSelect={(c) => { toggleOffice(c); document.getElementById("pf-actions")?.scrollIntoView({ behavior: "smooth" }); }} />
+                  </Suspense>
+                ) : (
+                  <OfficeMap active={data.active_by_office ?? {}} granted={data.granted_by_office ?? {}} other={mapOther}
+                    label={ol} selected={activeOffice} onSelect={toggleOffice} />
+                )}
+                {mapView === "globe" && !globeOk && <p className="mt-2 text-[11px] text-muted-foreground">3D view is not available in this browser, showing tiles.</p>}
+              </CardContent>
+            </Card>
 
             {hubOpen && selectedClientId && (
               <Dialog open onOpenChange={(o) => !o && setHubOpen(false)}>

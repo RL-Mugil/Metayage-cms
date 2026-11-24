@@ -6,7 +6,7 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { api } from "@/lib/api-client"
 import type { SearchResult } from "@/types"
 
-const PAGES: { label: string; url: string; icon: React.ElementType; staff?: boolean; client?: boolean }[] = [
+const PAGES: { label: string; url: string; icon: React.ComponentType<{ className?: string }>; staff?: boolean; client?: boolean }[] = [
   { label: "Dashboard", url: "/", icon: LayoutDashboard, staff: true, client: true },
   { label: "Patent Portfolio", url: "/patent-portfolio", icon: Briefcase, staff: true, client: true },
   { label: "Pending Payments", url: "/pending-payments", icon: Wallet, staff: true, client: true },

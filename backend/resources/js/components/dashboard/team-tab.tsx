@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react"
 import { router } from "@inertiajs/react"
 import { CalendarDays, Loader2, Trophy, Users } from "lucide-react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { motion } from "framer-motion"
+import { GlassCard, staggerParent } from "@/components/modern/glass-card"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { api, type TeamInsights } from "@/lib/api-client"
 
@@ -53,13 +54,11 @@ export function TeamTab() {
   const maxLoad = Math.max(1, ...data.workload.map((w) => w.total))
 
   return (
-    <div className="space-y-6">
-      <Card className="border-border">
-        <CardHeader className="pb-2">
-          <CardTitle className="font-display flex items-center gap-2"><CalendarDays className="h-4 w-4 text-gold" /> Deadline load · next 26 weeks</CardTitle>
-          <p className="text-xs text-muted-foreground">Darker days carry more open statutory deadlines. {data.heatmap.overdue > 0 && <span className="font-medium text-destructive">{data.heatmap.overdue} already overdue.</span>} Click a day to list it.</p>
-        </CardHeader>
-        <CardContent className="overflow-x-auto">
+    <motion.div variants={staggerParent} initial="hidden" animate="show" className="flex flex-col gap-3 fit:grid fit:h-full fit:grid-rows-[auto_minmax(0,1fr)]">
+      <GlassCard title="Deadline load · next 26 weeks" icon={<CalendarDays className="h-4 w-4 text-gold" />}
+        subtitle={<>Darker days carry more open statutory deadlines. {data.heatmap.overdue > 0 && <span className="font-medium text-destructive">{data.heatmap.overdue} already overdue.</span>} Click a day to list it.</>}
+        bodyClassName="thin-scrollbar overflow-x-auto px-4 pb-4">
+        <div>
           <div className="flex gap-[3px]">
             <div className="mr-1 flex flex-col gap-[3px] pt-4 text-[9px] text-muted-foreground">
               {["S", "M", "T", "W", "T", "F", "S"].map((d, i) => <span key={i} className="h-3 leading-3">{i % 2 ? d : ""}</span>)}
@@ -79,16 +78,12 @@ export function TeamTab() {
               </div>
             ))}
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </GlassCard>
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        <Card className={`border-border ${data.leaderboard ? "lg:col-span-2" : "lg:col-span-3"}`}>
-          <CardHeader className="pb-2">
-            <CardTitle className="font-display flex items-center gap-2"><Users className="h-4 w-4 text-gold" /> Workload by person</CardTitle>
-            <p className="text-xs text-muted-foreground">Active cases as primary (PCM), secondary (SCM) case manager and patent representative (PR). Click a person to see their cases.</p>
-          </CardHeader>
-          <CardContent className="space-y-2">
+      <div className="grid min-h-0 gap-3 lg:grid-cols-3">
+        <GlassCard className={`min-h-[260px] ${data.leaderboard ? "lg:col-span-2" : "lg:col-span-3"}`} title="Workload by person" icon={<Users className="h-4 w-4 text-gold" />}
+          subtitle="Active cases as PCM, SCM and PR · click a person for their cases" scroll bodyClassName="space-y-1.5 px-3 pb-3">
             {data.workload.length === 0 ? <p className="py-4 text-center text-sm text-muted-foreground">No active cases assigned.</p> : data.workload.map((w) => (
               <button key={w.user_id} onClick={() => openPerson(w.user_id, w.name)} className="block w-full rounded-md p-1.5 text-left hover:bg-muted/40">
                 <div className="flex items-center justify-between gap-2 text-xs">
@@ -110,24 +105,17 @@ export function TeamTab() {
               <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-violet-500" />SCM</span>
               <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-emerald-500" />PR</span>
             </div>
-          </CardContent>
-        </Card>
+        </GlassCard>
 
         {data.leaderboard && (
-          <Card className="border-border">
-            <CardHeader className="pb-2">
-              <CardTitle className="font-display flex items-center gap-2"><Trophy className="h-4 w-4 text-gold" /> This month</CardTitle>
-              <p className="text-xs text-muted-foreground">Stages completed + deadlines met on time</p>
-            </CardHeader>
-            <CardContent className="space-y-1.5">
+          <GlassCard className="min-h-[260px]" title="This month" icon={<Trophy className="h-4 w-4 text-gold" />} subtitle="Stages completed + deadlines met on time" scroll bodyClassName="space-y-1.5 px-3 pb-3">
               {data.leaderboard.length === 0 ? <p className="py-4 text-center text-sm text-muted-foreground">Nothing completed yet this month.</p> : data.leaderboard.map((l, i) => (
                 <div key={l.user_id} className="flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-xs odd:bg-muted/30">
                   <span className="flex items-center gap-2"><span className={`w-4 text-center font-semibold ${i === 0 ? "text-gold" : "text-muted-foreground"}`}>{i + 1}</span>{l.name}</span>
                   <span className="font-mono text-muted-foreground">{l.stages} stages · {l.deadlines} on time</span>
                 </div>
               ))}
-            </CardContent>
-          </Card>
+          </GlassCard>
         )}
       </div>
 
@@ -148,6 +136,6 @@ export function TeamTab() {
           </DialogContent>
         </Dialog>
       )}
-    </div>
+    </motion.div>
   )
 }

@@ -156,7 +156,7 @@ interface KpiDef {
   color: string;
   isCurrency: boolean;
   filterParams: Record<string, string>;
-  icon: React.ElementType;
+  icon: React.ComponentType<{ className?: string }>;
 }
 
 const KPI_DEFS: KpiDef[] = [

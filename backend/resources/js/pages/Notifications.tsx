@@ -21,7 +21,7 @@ interface Notif {
   created_at: string;
 }
 
-const typeConfig: Record<string, { icon: React.ElementType; color: string }> = {
+const typeConfig: Record<string, { icon: React.ComponentType<{ className?: string }>; color: string }> = {
   task:     { icon: CheckSquare,    color: "text-blue-500"            },
   deadline: { icon: AlertTriangle,  color: "text-red-500"             },
   payment:  { icon: DollarSign,     color: "text-green-500"           },

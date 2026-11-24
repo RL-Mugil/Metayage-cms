@@ -36,7 +36,7 @@ const LANGUAGES = ["English", "Hindi", "Tamil", "Telugu"];
 
 type Tab = "profile" | "notifications" | "security" | "appearance" | "system" | "codes" | "projectTabs" | "finance" | "payroll" | "ipo" | "site";
 
-const tabs: { id: Tab; label: string; icon: React.ElementType }[] = [
+const tabs: { id: Tab; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { id: "profile",       label: "Profile",       icon: User },
   { id: "notifications", label: "Notifications", icon: Bell },
   { id: "security",      label: "Security",      icon: Shield },

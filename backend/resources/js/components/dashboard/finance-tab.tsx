@@ -1,264 +1,152 @@
 import { useEffect, useState } from "react"
 import { router, Link } from "@inertiajs/react"
-import { ArrowUpRight, Loader2, TrendingUp, Users, FileText, CalendarClock, Filter, Receipt } from "lucide-react"
-import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
+import { motion } from "framer-motion"
+import { ArrowUpRight, BadgePercent, CalendarClock, Filter, Landmark, Loader2, Receipt, TrendingUp, Wallet } from "lucide-react"
+import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts"
 import { api, type DashboardFinance } from "@/lib/api-client"
+import { GlassCard, staggerParent } from "@/components/modern/glass-card"
+import { KpiTile } from "@/components/modern/kpi-tile"
+import { Ring3D } from "@/components/modern/ring-3d"
+import { Bar3DDefs, Bar3DShape, HBar3D } from "@/components/modern/bar-3d"
+import { SegmentTabs } from "@/components/modern/segment-tabs"
+import { formatValue } from "@/components/modern/animated-number"
 
-const inr = (value: number) => `₹${Math.round(value).toLocaleString("en-IN")}`
-const lakh = (value: number) => (Math.abs(value) >= 100000 ? `₹${(value / 100000).toFixed(1)}L` : inr(value))
+const inr = (v: number) => formatValue(v, "inr")
+const lakh = (v: number) => formatValue(v, "lakh")
 
-/** Ageing colours: not yet due → 90+ days late. */
-const AGEING_COLOR: Record<string, string> = {
-  current: "bg-emerald-500", "1_30": "bg-amber-400", "31_60": "bg-orange-500", "61_90": "bg-red-500", "90_plus": "bg-red-700",
-}
+const AGEING_COLOR: Record<string, string> = { current: "#10b981", "1_30": "#f59e0b", "31_60": "#f97316", "61_90": "#ef4444", "90_plus": "#b91c1c" }
 
 /**
- * Dashboard → Financial: collection rate with an ageing bar, 12-month billed vs collected,
- * recent invoices and the clients owing the most. All from the portal register; every
- * figure links to where it can be acted on (Pending Payments).
+ * Dashboard → Financial on one screen: money KPIs; 12-month billed vs collected (or year
+ * over year); outstanding by age as a ring; 3-month expected collections; then recent
+ * invoices / top clients / unbilled work, the quote funnel and billing by service.
+ * Every figure still opens where it can be acted on.
  */
 export function FinanceTab() {
   const [data, setData] = useState<DashboardFinance | null>(null)
   const [error, setError] = useState("")
   const [yoy, setYoy] = useState(false)
+  const [list, setList] = useState<"recent" | "clients" | "unbilled">("recent")
+  const [group, setGroup] = useState<"services" | "offices">("services")
 
-  useEffect(() => {
-    api.getDashboardFinance().then(setData).catch((e: Error) => setError(e.message))
-  }, [])
+  useEffect(() => { api.getDashboardFinance().then(setData).catch((e: Error) => setError(e.message)) }, [])
 
   if (error) return <p className="py-10 text-center text-sm text-destructive">{error}</p>
   if (!data) return <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-gold" /></div>
 
-  const outstanding = data.ageing.reduce((sum, b) => sum + b.amount, 0)
   const go = (url: string) => router.visit(url)
+  const ageing = data.ageing.map((b) => ({ code: b.key, name: `${b.label} (${b.count})`, value: Math.round(b.amount), color: AGEING_COLOR[b.key] }))
+  const breakdown = data.breakdown[group]
+  const axis = { tick: { fontSize: 10 }, tickLine: false, axisLine: false, stroke: "var(--muted-foreground)" } as const
+  const tip = { contentStyle: { fontSize: 12, borderRadius: 10 }, cursor: { fill: "var(--muted)", opacity: 0.4 }, formatter: (v: number) => inr(Number(v)) }
 
   return (
-    <div className="space-y-6">
-      <div className="grid gap-6 lg:grid-cols-3">
-        {/* Collection rate + ageing */}
-        <Card className="border-border">
-          <CardHeader>
-            <CardTitle className="font-display flex items-center gap-2"><TrendingUp className="h-4 w-4 text-gold" /> Collection rate</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-end gap-3">
-              <div className="font-display text-4xl font-semibold">{data.rate}%</div>
-              <p className="pb-1 text-xs text-muted-foreground">of everything billed has been received</p>
-            </div>
-            <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-              <div className="h-full rounded-full bg-gradient-to-r from-primary to-gold" style={{ width: `${Math.min(data.rate, 100)}%` }} />
-            </div>
-            <div className="grid grid-cols-3 gap-2 text-center">
-              <div className="rounded-md bg-muted/40 p-2"><p className="text-[10px] uppercase tracking-wider text-muted-foreground">Billed</p><p className="text-sm font-semibold">{lakh(data.billed)}</p></div>
-              <div className="rounded-md bg-emerald-500/10 p-2"><p className="text-[10px] uppercase tracking-wider text-muted-foreground">Collected</p><p className="text-sm font-semibold text-emerald-600">{lakh(data.collected)}</p></div>
-              <button onClick={() => go("/pending-payments")} className="rounded-md bg-amber-500/10 p-2 hover:bg-amber-500/20">
-                <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Outstanding</p><p className="text-sm font-semibold text-amber-600">{lakh(data.outstanding)}</p>
-              </button>
-            </div>
-            <div>
-              <p className="mb-1.5 text-xs font-medium text-muted-foreground">Outstanding by days overdue</p>
-              <div className="flex h-3 w-full overflow-hidden rounded-full bg-muted">
-                {outstanding > 0 && data.ageing.map((b) => b.amount > 0 && (
-                  <button key={b.key} title={`${b.label}: ${inr(b.amount)} · ${b.count} invoices`}
-                    onClick={() => go(b.key === "current" ? "/pending-payments" : "/pending-payments?overdue=1")}
-                    className={`${AGEING_COLOR[b.key]} h-full transition-opacity hover:opacity-80`} style={{ width: `${(b.amount / outstanding) * 100}%` }} />
-                ))}
-              </div>
-              <div className="mt-2 grid grid-cols-1 gap-1">
-                {data.ageing.map((b) => (
-                  <button key={b.key} onClick={() => go(b.key === "current" ? "/pending-payments" : "/pending-payments?overdue=1")}
-                    className="flex items-center justify-between rounded px-1 py-0.5 text-xs hover:bg-muted/40">
-                    <span className="flex items-center gap-1.5"><span className={`h-2 w-2 rounded-full ${AGEING_COLOR[b.key]}`} />{b.label}</span>
-                    <span className="font-mono">{inr(b.amount)} <span className="text-muted-foreground">({b.count})</span></span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+    <motion.div variants={staggerParent} initial="hidden" animate="show"
+      className="flex flex-col gap-3 fit:grid fit:h-full fit:grid-rows-[auto_minmax(0,1.15fr)_minmax(0,1fr)]">
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+        <KpiTile label="Billed (all time)" value={data.billed} format="lakh" icon={Receipt} accent="blue" spark={data.monthly.map((m) => m.billed)} />
+        <KpiTile label="Collected" value={data.collected} format="lakh" icon={Wallet} accent="emerald" spark={data.monthly.map((m) => m.collected)} />
+        <KpiTile label="Outstanding" value={data.outstanding} format="lakh" icon={Landmark} accent="rose" onClick={() => go("/pending-payments")}
+          subtitle={`${data.ageing.filter((b) => b.key !== "current").reduce((s, b) => s + b.count, 0)} invoices overdue`} />
+        <KpiTile label="Collection rate" value={data.rate} format="percent" icon={BadgePercent} accent="gold" subtitle="of everything billed is received" />
+      </div>
 
-        {/* 12 months billed vs collected */}
-        <Card className="border-border lg:col-span-2">
-          <CardHeader>
-            <div className="flex items-start justify-between gap-2">
-              <div>
-                <CardTitle className="font-display">{yoy ? "Billed: this year vs last year" : "Billed vs collected · last 12 months"}</CardTitle>
-                <p className="text-xs text-muted-foreground">{yoy ? "Each month against the same month a year earlier" : "Billed by invoice date, collected by payment date"}</p>
-              </div>
-              <div className="flex rounded-md border border-border p-0.5 text-[11px]">
-                <button onClick={() => setYoy(false)} className={`rounded px-2 py-0.5 ${!yoy ? "bg-muted font-medium" : "text-muted-foreground"}`}>Billed vs collected</button>
-                <button onClick={() => setYoy(true)} className={`rounded px-2 py-0.5 ${yoy ? "bg-muted font-medium" : "text-muted-foreground"}`}>Year over year</button>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent className="h-72">
+      <div className="grid min-h-0 gap-3 lg:grid-cols-12">
+        <GlassCard className="min-h-[280px] lg:col-span-6" title={yoy ? "Billed: this year vs last" : "Billed vs collected"} icon={<TrendingUp className="h-4 w-4 text-gold" />}
+          subtitle={yoy ? "Each month against the same month a year earlier" : "12 months · billed by invoice date, collected by payment date"}
+          actions={<SegmentTabs size="sm" value={yoy ? "yoy" : "bc"} onChange={(v) => setYoy(v === "yoy")} options={[{ value: "bc", label: "Billed vs collected" }, { value: "yoy", label: "Year over year" }]} />}>
+          <div className="h-full min-h-[220px] px-2 pb-2">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={data.monthly} margin={{ top: 4, right: 8, left: 8, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
-                <XAxis dataKey="month" tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" />
-                <YAxis tickFormatter={(v) => lakh(Number(v))} tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" width={64} />
-                <Tooltip formatter={(v: number) => inr(Number(v))} contentStyle={{ fontSize: 12 }} />
-                <Legend wrapperStyle={{ fontSize: 12 }} />
-                {yoy && <Bar dataKey="prev_billed" name="Same month last year" fill="#94a3b8" radius={[3, 3, 0, 0]} />}
-                <Bar dataKey="billed" name={yoy ? "This year" : "Billed"} fill="#3b82f6" radius={[3, 3, 0, 0]} />
-                {!yoy && <Bar dataKey="collected" name="Collected" fill="#10b981" radius={[3, 3, 0, 0]} />}
+              <BarChart data={data.monthly} margin={{ top: 14, right: 12, left: 0, bottom: 0 }} barGap={3}>
+                <Bar3DDefs />
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
+                <XAxis dataKey="month" {...axis} />
+                <YAxis {...axis} width={54} tickFormatter={(v) => lakh(Number(v))} />
+                <Tooltip {...tip} />
+                {yoy && <Bar dataKey="prev_billed" name="Same month last year" fill="#94a3b8" shape={<Bar3DShape />} maxBarSize={22} />}
+                <Bar dataKey="billed" name={yoy ? "This year" : "Billed"} fill="#3b82f6" shape={<Bar3DShape />} maxBarSize={22} />
+                {!yoy && <Bar dataKey="collected" name="Collected" fill="#10b981" shape={<Bar3DShape />} maxBarSize={22} />}
               </BarChart>
             </ResponsiveContainer>
-          </CardContent>
-        </Card>
-      </div>
+          </div>
+        </GlassCard>
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        {/* Recent invoices */}
-        <Card className="border-border lg:col-span-2">
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="font-display flex items-center gap-2"><FileText className="h-4 w-4 text-gold" /> Recent invoices</CardTitle>
-            <Button asChild variant="ghost" size="sm"><Link href="/financial">View all <ArrowUpRight className="ml-1 h-3 w-3" /></Link></Button>
-          </CardHeader>
-          <CardContent className="p-0">
-            {data.recent.length === 0 ? <p className="px-4 py-6 text-center text-sm text-muted-foreground">No invoices yet</p> : (
-              <table className="w-full text-sm">
-                <tbody>
-                  {data.recent.map((i) => (
-                    <tr key={`${i.source}-${i.id}`} onClick={() => go(i.outstanding > 0 ? `/pending-payments?search=${encodeURIComponent(i.number ?? "")}` : "/financial")}
-                      className="cursor-pointer border-t border-border hover:bg-muted/30">
-                      <td className="px-4 py-3 font-mono text-xs text-gold">{i.number}</td>
-                      <td className="max-w-[220px] truncate px-4 py-3">{i.client ?? "—"}</td>
-                      <td className="px-4 py-3 text-right font-medium">{inr(i.amount)}</td>
-                      <td className="px-4 py-3 text-right">
-                        <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${i.outstanding <= 0 ? "bg-emerald-500/15 text-emerald-600" : i.overdue ? "bg-red-500/15 text-red-600" : "bg-amber-500/15 text-amber-600"}`}>{i.state}</span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </CardContent>
-        </Card>
+        <GlassCard className="min-h-[280px] lg:col-span-3" title="Outstanding by age" subtitle="Click a slice for the list" scroll bodyClassName="px-3 pb-3">
+          <Ring3D data={ageing} total={data.outstanding} format="lakh" label="outstanding" size={138} thickness={18}
+            onSelect={(code) => go(code === "current" ? "/pending-payments" : "/pending-payments?overdue=1")} />
+        </GlassCard>
 
-        {/* Clients owing the most */}
-        <Card className="border-border">
-          <CardHeader>
-            <CardTitle className="font-display flex items-center gap-2"><Users className="h-4 w-4 text-gold" /> Top clients by outstanding</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2.5">
-            {data.top_clients.length === 0 ? <p className="py-4 text-center text-sm text-muted-foreground">Nothing outstanding.</p> : data.top_clients.map((c) => (
-              <button key={c.client_id} onClick={() => go(`/pending-payments?search=${encodeURIComponent(c.client_code ?? c.name)}`)}
-                className="block w-full rounded-md p-1.5 text-left hover:bg-muted/40">
-                <div className="flex items-center justify-between gap-2 text-xs">
-                  <span className="truncate font-medium">{c.name}</span>
-                  <span className="font-mono">{inr(c.outstanding)}</span>
-                </div>
-                <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-muted">
-                  <div className="h-full rounded-full bg-amber-500" style={{ width: `${(c.outstanding / (data.top_clients[0]?.outstanding || 1)) * 100}%` }} />
-                </div>
-                <p className="mt-0.5 text-[10px] text-muted-foreground">{c.client_code} · {c.invoices} unpaid invoice{c.invoices === 1 ? "" : "s"}</p>
-              </button>
-            ))}
-          </CardContent>
-        </Card>
-      </div>
-      <div className="grid gap-6 lg:grid-cols-3">
-        {/* Expected collections */}
-        <Card className="border-border">
-          <CardHeader>
-            <CardTitle className="font-display flex items-center gap-2"><CalendarClock className="h-4 w-4 text-gold" /> Expected collections · next 3 months</CardTitle>
-            <p className="text-xs text-muted-foreground">Unpaid invoices by due date (overdue counted now) plus renewal fee estimates</p>
-          </CardHeader>
-          <CardContent className="h-56">
+        <GlassCard className="min-h-[280px] lg:col-span-3" title="Expected collections" icon={<CalendarClock className="h-4 w-4 text-gold" />} subtitle="Next 3 months · invoices + renewal estimates">
+          <div className="h-full min-h-[200px] px-1 pb-2">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={data.forecast} margin={{ top: 4, right: 8, left: 8, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
-                <XAxis dataKey="month" tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" />
-                <YAxis tickFormatter={(v) => lakh(Number(v))} tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" width={60} />
-                <Tooltip formatter={(v: number) => inr(Number(v))} contentStyle={{ fontSize: 12 }} />
-                <Legend wrapperStyle={{ fontSize: 12 }} />
-                <Bar dataKey="invoices" name="Invoices due" stackId="f" fill="#f59e0b" />
-                <Bar dataKey="renewals" name="Renewal fees" stackId="f" fill="#8b5cf6" radius={[3, 3, 0, 0]} />
+              <BarChart data={data.forecast} margin={{ top: 14, right: 10, left: 0, bottom: 0 }}>
+                <Bar3DDefs />
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
+                <XAxis dataKey="month" {...axis} />
+                <YAxis {...axis} width={50} tickFormatter={(v) => lakh(Number(v))} />
+                <Tooltip {...tip} />
+                <Bar dataKey="invoices" name="Invoices due" stackId="f" fill="#f59e0b" shape={<Bar3DShape />} maxBarSize={34} />
+                <Bar dataKey="renewals" name="Renewal fees" stackId="f" fill="#8b5cf6" shape={<Bar3DShape />} maxBarSize={34} />
               </BarChart>
             </ResponsiveContainer>
-          </CardContent>
-        </Card>
-
-        {/* Quote funnel */}
-        <Card className="border-border">
-          <CardHeader>
-            <CardTitle className="font-display flex items-center gap-2"><Filter className="h-4 w-4 text-gold" /> Quote to payment</CardTitle>
-            <p className="text-xs text-muted-foreground">How many quotes become paid work</p>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {data.funnel.map((step, i) => {
-              const top = data.funnel[0]?.count || 1
-              const prev = i > 0 ? data.funnel[i - 1].count : 0
-              return (
-                <div key={step.stage}>
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-medium">{step.stage}</span>
-                    <span className="font-mono">{step.count} · {lakh(step.amount)}</span>
-                  </div>
-                  <div className="mt-1 h-5 w-full rounded bg-muted">
-                    <div className="h-full rounded bg-gradient-to-r from-primary/80 to-gold/80" style={{ width: `${Math.max(4, Math.min(100, (step.count / top) * 100))}%` }} />
-                  </div>
-                  {i > 0 && i < 3 && prev > 0 && <p className="mt-0.5 text-[10px] text-muted-foreground">{Math.round((step.count / prev) * 100)}% of the step before</p>}
-                </div>
-              )
-            })}
-          </CardContent>
-        </Card>
-
-        {/* Billed by service and office */}
-        <Card className="border-border">
-          <CardHeader>
-            <CardTitle className="font-display">Billed by service and office</CardTitle>
-            <p className="text-xs text-muted-foreground">All invoices in the register</p>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {(["services", "offices"] as const).map((group) => {
-              const rows = data.breakdown[group]
-              const max = rows[0]?.billed || 1
-              return (
-                <div key={group}>
-                  <p className="mb-1 text-[10px] uppercase tracking-wider text-muted-foreground">{group === "services" ? "Service code" : "Patent office"}</p>
-                  <div className="space-y-1">
-                    {rows.slice(0, group === "services" ? 6 : 4).map((r) => (
-                      <div key={r.code} className="flex items-center gap-2 text-xs">
-                        <span className="w-10 shrink-0 font-mono">{r.code}</span>
-                        <div className="h-2 flex-1 rounded bg-muted"><div className={`h-full rounded ${group === "services" ? "bg-blue-500" : "bg-emerald-500"}`} style={{ width: `${(r.billed / max) * 100}%` }} /></div>
-                        <span className="w-16 shrink-0 text-right font-mono">{lakh(r.billed)}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )
-            })}
-          </CardContent>
-        </Card>
+          </div>
+        </GlassCard>
       </div>
 
-      {data.unbilled.count > 0 && (
-        <Card className="border-amber-500/40">
-          <CardHeader>
-            <CardTitle className="font-display flex items-center gap-2"><Receipt className="h-4 w-4 text-amber-500" /> Work done, not invoiced · {data.unbilled.count} cases</CardTitle>
-            <p className="text-xs text-muted-foreground">Filed or granted cases with no invoice in the register for their docket. Click one to open the case.</p>
-          </CardHeader>
-          <CardContent className="p-0">
-            <table className="w-full text-sm">
-              <tbody>
-                {data.unbilled.items.map((u) => (
-                  <tr key={u.id} onClick={() => go(`/projects/${u.id}`)} className="cursor-pointer border-t border-border hover:bg-muted/30">
-                    <td className="px-4 py-2.5 font-mono text-xs text-gold">{u.docket_number}</td>
-                    <td className="max-w-[280px] truncate px-4 py-2.5">{u.project_name ?? "—"}</td>
-                    <td className="px-4 py-2.5 text-xs text-muted-foreground">{u.client ?? "—"}</td>
-                    <td className="px-4 py-2.5 text-right text-xs">{u.status}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </CardContent>
-        </Card>
-      )}
-    </div>
+      <div className="grid min-h-0 gap-3 lg:grid-cols-12">
+        <GlassCard className="min-h-[240px] lg:col-span-6" scroll bodyClassName="px-2 pb-2"
+          title={list === "recent" ? "Recent invoices" : list === "clients" ? "Clients owing the most" : `Work done, not invoiced · ${data.unbilled.count}`}
+          actions={<>
+            <SegmentTabs size="sm" value={list} onChange={setList} options={[
+              { value: "recent", label: "Recent" }, { value: "clients", label: "Top clients" },
+              { value: "unbilled", label: "Not invoiced", badge: data.unbilled.count },
+            ]} />
+            <Link href="/financial" className="hidden text-muted-foreground hover:text-gold sm:block" title="Financial Suite"><ArrowUpRight className="h-4 w-4" /></Link>
+          </>}>
+          {list === "recent" && (data.recent.length === 0 ? <p className="py-8 text-center text-sm text-muted-foreground">No invoices yet</p> : data.recent.map((i) => (
+            <button key={`${i.source}-${i.id}`} onClick={() => go(i.outstanding > 0 ? `/pending-payments?search=${encodeURIComponent(i.number ?? "")}` : "/financial")}
+              className="flex w-full items-center justify-between gap-3 rounded-lg px-2 py-2 text-left hover:bg-muted/50">
+              <div className="min-w-0"><p className="font-mono text-xs font-semibold text-gold">{i.number}</p><p className="truncate text-[11px] text-muted-foreground">{i.client ?? "—"}</p></div>
+              <div className="flex shrink-0 items-center gap-2">
+                <span className="text-sm font-medium">{inr(i.amount)}</span>
+                <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${i.outstanding <= 0 ? "bg-emerald-500/15 text-emerald-600" : i.overdue ? "bg-rose-500/15 text-rose-600" : "bg-amber-500/15 text-amber-600"}`}>{i.state}</span>
+              </div>
+            </button>
+          )))}
+          {list === "clients" && (data.top_clients.length === 0 ? <p className="py-8 text-center text-sm text-muted-foreground">Nothing outstanding.</p> : data.top_clients.map((c) => (
+            <HBar3D key={c.client_id} label={`${c.name} · ${c.invoices} unpaid`} value={c.outstanding} max={data.top_clients[0]?.outstanding || 1} color="#f59e0b"
+              right={inr(c.outstanding)} onClick={() => go(`/pending-payments?search=${encodeURIComponent(c.client_code ?? c.name)}`)} />
+          )))}
+          {list === "unbilled" && (data.unbilled.items.length === 0 ? <p className="py-8 text-center text-sm text-muted-foreground">Every filed case has an invoice.</p> : data.unbilled.items.map((u) => (
+            <button key={u.id} onClick={() => go(`/projects/${u.id}`)} className="flex w-full items-center justify-between gap-3 rounded-lg px-2 py-2 text-left hover:bg-muted/50">
+              <div className="min-w-0"><p className="font-mono text-xs font-semibold text-gold">{u.docket_number}</p><p className="truncate text-[11px] text-muted-foreground">{u.project_name ?? "—"} · {u.client ?? ""}</p></div>
+              <span className="shrink-0 text-[11px] text-muted-foreground">{u.status}</span>
+            </button>
+          )))}
+        </GlassCard>
+
+        <GlassCard className="min-h-[240px] lg:col-span-3" title="Quote to payment" icon={<Filter className="h-4 w-4 text-gold" />} scroll bodyClassName="space-y-2 px-3 pb-3">
+          {data.funnel.map((step, i) => {
+            const top = data.funnel[0]?.count || 1
+            const prev = i > 0 ? data.funnel[i - 1].count : 0
+            const width = Math.max(18, Math.min(100, (step.count / top) * 100))
+            return (
+              <div key={step.stage}>
+                <div className="mx-auto flex h-8 items-center justify-between rounded-lg px-2.5 text-[11px] font-medium text-white shadow-3d transition-all"
+                  style={{ width: `${width}%`, background: `linear-gradient(135deg, hsl(${220 - i * 35} 75% 55%), hsl(${200 - i * 35} 75% 45%))` }}>
+                  <span className="truncate">{step.stage}</span><span className="font-mono">{step.count}</span>
+                </div>
+                <p className="mt-0.5 text-center text-[10px] text-muted-foreground">{lakh(step.amount)}{i > 0 && i < 3 && prev > 0 ? ` · ${Math.round((step.count / prev) * 100)}% of previous` : ""}</p>
+              </div>
+            )
+          })}
+        </GlassCard>
+
+        <GlassCard className="min-h-[240px] lg:col-span-3" title="Billed by" scroll bodyClassName="px-2 pb-3"
+          actions={<SegmentTabs size="sm" value={group} onChange={setGroup} options={[{ value: "services", label: "Service" }, { value: "offices", label: "Office" }]} />}>
+          {breakdown.map((r) => <HBar3D key={r.code} label={r.code} value={r.billed} max={breakdown[0]?.billed || 1} right={lakh(r.billed)} color={group === "services" ? "#3b82f6" : "#10b981"} />)}
+        </GlassCard>
+      </div>
+    </motion.div>
   )
 }

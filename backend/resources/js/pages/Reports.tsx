@@ -40,7 +40,7 @@ interface ReportTemplate {
   id: string;
   name: string;
   description: string;
-  icon: React.ElementType;
+  icon: React.ComponentType<{ className?: string }>;
   color: string;
   roles: string[];
 }
