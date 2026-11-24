@@ -321,8 +321,8 @@ class ModuleActionsTest extends TestCase
         Sanctum::actingAs($manager);
 
         $this->postJson('/api/bulk/execute', [
-            'entity' => 'clients', 'ids' => [$a->id, $b->id], 'action' => 'change_status', 'status' => 'On Hold',
-        ])->assertOk()->assertJson(['affected' => 2]);
+            'entity' => 'clients', 'ids' => [$a->id, $b->id], 'action' => 'status', 'params' => ['status' => 'On Hold'],
+        ])->assertOk()->assertJson(['ok' => 2, 'failed' => 0]);
 
         $this->assertEquals('On Hold', $a->fresh()->status);
         $this->assertEquals('On Hold', $b->fresh()->status);
@@ -334,21 +334,20 @@ class ModuleActionsTest extends TestCase
         $client = Client::create(['company_name' => 'A', 'client_code' => 'C04M', 'status' => 'Active', 'account_manager_id' => $manager->id]);
         Sanctum::actingAs($manager);
 
-        // Invoices are not bulk-mutable
-        $this->postJson('/api/bulk/execute', [
-            'entity' => 'invoices', 'ids' => [1], 'action' => 'change_status', 'status' => 'Paid',
-        ])->assertStatus(422);
+        // Unknown action for the entity
+        $this->postJson('/api/bulk/execute', ['entity' => 'invoices', 'ids' => [1], 'action' => 'mark_paid'])->assertStatus(422);
 
-        // Non-whitelisted status
+        // Non-whitelisted status: that client is reported as not changed
         $this->postJson('/api/bulk/execute', [
-            'entity' => 'clients', 'ids' => [$client->id], 'action' => 'change_status', 'status' => 'Hacked',
-        ])->assertStatus(422);
+            'entity' => 'clients', 'ids' => [$client->id], 'action' => 'status', 'params' => ['status' => 'Hacked'],
+        ])->assertOk()->assertJson(['ok' => 0, 'failed' => 1]);
+        $this->assertEquals('Active', $client->fresh()->status);
 
-        // Associates cannot bulk-operate
+        // Someone else's client: not changed
         Sanctum::actingAs($this->user('associate'));
         $this->postJson('/api/bulk/execute', [
-            'entity' => 'clients', 'ids' => [$client->id], 'action' => 'archive',
-        ])->assertForbidden();
+            'entity' => 'clients', 'ids' => [$client->id], 'action' => 'status', 'params' => ['status' => 'Inactive'],
+        ])->assertOk()->assertJson(['ok' => 0, 'failed' => 1]);
     }
 
     // ── Leave Management ────────────────────────────────────────────

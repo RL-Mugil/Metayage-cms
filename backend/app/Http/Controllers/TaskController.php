@@ -47,6 +47,11 @@ class TaskController extends Controller
         if ($request->filled('status')) {
             $query->where('status', $request->status);
         }
+        if ($request->filled('search')) {
+            $like = '%'.addcslashes(trim((string) $request->search), '%_\\').'%';
+            $query->where(fn ($q) => $q->where('title', 'ilike', $like)
+                ->orWhereHas('project', fn ($p) => $p->where('docket_number', 'ilike', $like)));
+        }
 
         $query->orderBy('due_date');
         return response()->json(PaginationHelper::paginate($query, $request));

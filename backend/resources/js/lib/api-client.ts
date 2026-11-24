@@ -295,6 +295,12 @@ export interface DashboardTrends {
   quoted: number[]
 }
 
+export interface BulkResult {
+  ok: number
+  failed: number
+  results: { id: number; ok: boolean; label?: string; error?: string }[]
+}
+
 export interface ServiceChangePreview {
   from_service: string
   from_docket: string
@@ -829,6 +835,9 @@ export const api = {
   },
 
   // ── Tasks ──
+  async getTasksPaged(params?: URLSearchParams): Promise<PaginatedResponse<Task>> {
+    return this.request(`/tasks${params ? `?${params.toString()}` : ''}`)
+  },
   async getTasks(status?: string): Promise<Task[]> {
     const res = await this.request<PaginatedResponse<Task> | Task[]>(`/tasks${status ? `?status=${encodeURIComponent(status)}` : ''}`)
     return Array.isArray(res) ? res : ((res as PaginatedResponse<Task>).data ?? [])
@@ -1605,7 +1614,8 @@ export const api = {
   },
 
   // ── Bulk operations ──
-  async bulkExecute(data: { entity: string; ids: number[]; action: string; status?: string; stage?: string }): Promise<{ ok: boolean; affected: number }> {
+  /** One change across many records; each item reports ok or why it was not changed. */
+  async bulkExecute(data: { entity: string; ids: number[]; action: string; params?: Record<string, unknown> }): Promise<BulkResult> {
     return this.request('/bulk/execute', { method: 'POST', body: JSON.stringify(data) })
   },
 

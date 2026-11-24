@@ -1,295 +1,322 @@
 import { Head } from "@inertiajs/react";
-import { useState } from "react";
-import { Package, CheckSquare, ChevronRight, Download, Archive, Send, Users, FolderOpen, FileText, Check, Loader2 } from "lucide-react";
-import { api, downloadCSV } from "@/lib/api-client";
+import { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
+import { Building2, CheckCircle2, CheckSquare, ClipboardList, Download, FileText, FolderOpen, Layers, Loader2, Search, XCircle } from "lucide-react";
+import { api, downloadCSV, type BulkResult } from "@/lib/api-client";
 import AppLayout from "@/layouts/AppLayout";
 import { PageHeader } from "@/components/page-header";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
-type EntityType = "Clients" | "Projects" | "Tasks" | "Invoices" | "Employees";
-type BulkAction = "Export CSV" | "Change Status" | "Archive" | "Send Notification";
+type Entity = "cases" | "tasks" | "clients" | "invoices";
 
-interface Row { id: number; col1: string; col2: string; col3: string }
+interface Row { id: number; cells: string[]; stageNames?: string[] }
 
-const headers: Record<EntityType, [string, string, string]> = {
-  Clients: ["Name", "GST Type", "Status"],
-  Projects: ["Matter", "Type", "Status"],
-  Tasks: ["Title", "Priority", "Status"],
-  Invoices: ["Invoice #", "Client", "Status"],
-  Employees: ["Name", "Role", "Status"],
+const CASE_STATUSES = ["Open", "In Progress", "On Hold", "Closed", "Completed", "Granted", "Refused", "Abandoned"];
+const US_CASE_STATUSES = ["Filed", "Missing Parts Pending", "Awaiting Publication", "Awaiting Examination", "Non-Final Action Received", "Final Action Received", "After-Final Strategy", "Appeal Pending", "Allowed", "Issue Fee Pending", "Issued", "Revival Pending", "Expired"];
+const TASK_STATUSES = ["Pending", "In Progress", "Review", "Completed"];
+const CLIENT_STATUSES = ["Active", "Inactive", "Prospect", "On Hold"];
+const EVENT_STATUSES = new Set(["Granted", "Refused", "Abandoned"]);
+
+const ENTITIES: { key: Entity; label: string; icon: React.ComponentType<{ className?: string }>; headers: string[] }[] = [
+  { key: "cases", label: "Cases", icon: FolderOpen, headers: ["UIN", "Title", "Client", "Status", "Stage", "Client Manager", "Circle"] },
+  { key: "tasks", label: "Tasks", icon: ClipboardList, headers: ["Task", "Case", "Assignee", "Due", "Status"] },
+  { key: "clients", label: "Clients", icon: Building2, headers: ["Code", "Client", "Account manager", "Circle", "Status"] },
+  { key: "invoices", label: "Invoices", icon: FileText, headers: ["Invoice", "Client", "Status", "Payment", "Balance"] },
+];
+
+const ACTIONS: Record<Entity, { key: string; label: string }[]> = {
+  cases: [
+    { key: "status", label: "Change status" }, { key: "stage", label: "Move workflow stage" },
+    { key: "assign", label: "Reassign CM / SCM / Patent Engineer" }, { key: "circle", label: "Change circle" },
+    { key: "deadline", label: "Set or shift deadline" }, { key: "notify", label: "Send a message" },
+    { key: "export", label: "Export CSV" }, { key: "delete", label: "Delete (System Admin)" },
+  ],
+  tasks: [{ key: "status", label: "Change status" }, { key: "assign", label: "Reassign" }, { key: "due_date", label: "Set due date" }, { key: "export", label: "Export CSV" }],
+  clients: [{ key: "status", label: "Change status" }, { key: "account_manager", label: "Change account manager" }, { key: "circle", label: "Change circle" }, { key: "export", label: "Export CSV" }],
+  invoices: [{ key: "remind_client", label: "Payment reminder to client" }, { key: "status_note", label: "Add follow-up note" }, { key: "mark_sent", label: "Mark sent" }, { key: "export", label: "Export CSV" }],
 };
 
-// Entities the backend allows mutations on; the rest are export-only.
-const MUTABLE: Record<EntityType, string | null> = {
-  Clients: "clients", Projects: "projects", Tasks: "tasks", Invoices: null, Employees: null,
-};
+const money = (v: unknown, cur = "INR") => `${cur} ${Number(v || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 
-const STATUS_OPTIONS: Record<string, string[]> = {
-  clients: ["Active", "Inactive", "Prospect", "On Hold"],
-  projects: ["Active", "On Hold", "Completed", "Archived"],
-  tasks: ["Pending", "In Progress", "Completed", "Archived"],
-};
-
-async function fetchRows(entity: EntityType): Promise<Row[]> {
-  const arr = (v: any) => (Array.isArray(v) ? v : v?.data || []);
-  switch (entity) {
-    case "Clients": {
-      const params = new URLSearchParams(); params.set("per_page", "500");
-      return arr(await api.getClients(params)).map((c: any) => ({
-        id: c.id, col1: c.legal_name ?? c.company_name ?? "—", col2: c.gst_type ?? c.client_type ?? "—", col3: c.status ?? "Active",
-      }));
-    }
-    case "Projects":
-      return arr(await api.getProjects()).map((p: any) => ({
-        id: p.id, col1: p.project_code ? `${p.project_code} — ${p.project_name}` : p.project_name, col2: p.project_type ?? "—", col3: p.status ?? "—",
-      }));
-    case "Tasks":
-      return arr(await api.getTasks()).map((t: any) => ({
-        id: t.id, col1: t.title, col2: t.priority ?? "—", col3: t.status ?? "—",
-      }));
-    case "Invoices":
-      return arr(await api.getInvoices()).map((i: any) => ({
-        id: i.id, col1: i.invoice_code ?? `INV-${i.id}`, col2: i.client?.company_name ?? "—", col3: i.status ?? "—",
-      }));
-    case "Employees":
-      return arr(await api.getEmployees().catch(() => [])).map((e: any) => ({
-        id: e.id, col1: e.full_name ?? e.name ?? "—", col2: e.designation?.title ?? e.role ?? "—", col3: e.status ?? "Active",
-      }));
+async function loadPage(entity: Entity, search: string, status: string, page: number): Promise<{ rows: Row[]; lastPage: number; total: number }> {
+  const params = new URLSearchParams({ page: String(page), per_page: "50" });
+  if (search.trim()) params.set("search", search.trim());
+  if (status) params.set("status", status);
+  if (entity === "cases") {
+    const res = await api.getProjectsPaged(params);
+    return {
+      lastPage: res.last_page, total: res.total,
+      rows: res.data.map((p: any) => ({
+        id: p.id, stageNames: p.stage_names ?? [],
+        cells: [p.docket_number ?? p.project_code ?? "—", p.project_name ?? "—", p.client?.company_name ?? p.client?.legal_name ?? "—", p.status ?? "—",
+          p.current_stage ?? "—", p.manager?.name ?? "—", p.circle ?? "—"],
+      })),
+    };
   }
+  if (entity === "tasks") {
+    const res = await api.getTasksPaged(params);
+    return {
+      lastPage: res.last_page, total: res.total,
+      rows: res.data.map((t: any) => ({ id: t.id, cells: [t.title ?? "—", t.project?.docket_number ?? t.project?.project_code ?? "—", t.assignee?.name ?? "—", t.due_date ? String(t.due_date).slice(0, 10) : "—", t.status ?? "—"] })),
+    };
+  }
+  if (entity === "clients") {
+    const res = await api.getClients(params);
+    return {
+      lastPage: res.last_page, total: res.total,
+      rows: res.data.map((c: any) => ({ id: c.id, cells: [c.client_code ?? "—", c.legal_name ?? c.company_name ?? "—", c.account_manager?.name ?? "—", c.circle ?? "—", c.status ?? "—"] })),
+    };
+  }
+  params.set("type", "invoice");
+  const res = await api.getPatentInvoicesIn(params);
+  return {
+    lastPage: res.last_page, total: res.total,
+    rows: res.data.map((i: any) => ({ id: i.id, cells: [i.invoice_uin ?? "—", i.client_name ?? i.client?.company_name ?? "—", i.status ?? "—", i.payment_status ?? "—", money(i.balance_due ?? i.invoice_amount, i.currency ?? "INR")] })),
+  };
 }
 
 export default function Bulk() {
-  const [step, setStep] = useState(1);
-  const [entity, setEntity] = useState<EntityType | null>(null);
-  const [rows, setRows] = useState<Row[]>([]);
-  const [loadingRows, setLoadingRows] = useState(false);
-  const [selected, setSelected] = useState<Set<number>>(new Set());
-  const [action, setAction] = useState<BulkAction | "">("");
-  const [statusValue, setStatusValue] = useState("");
-  const [notifyTitle, setNotifyTitle] = useState("");
-  const [notifyMessage, setNotifyMessage] = useState("");
-  const [executing, setExecuting] = useState(false);
-  const [done, setDone] = useState(false);
-  const [resultMsg, setResultMsg] = useState("");
+  const [entity, setEntity] = useState<Entity>("cases");
+  const [search, setSearch] = useState("");
+  const [status, setStatus] = useState("");
+  const [page, setPage] = useState(1);
+  const [data, setData] = useState<{ rows: Row[]; lastPage: number; total: number }>({ rows: [], lastPage: 1, total: 0 });
+  const [loading, setLoading] = useState(false);
+  const [selected, setSelected] = useState<Map<number, Row>>(new Map());
+  const [action, setAction] = useState("status");
+  const [params, setParams] = useState<Record<string, string | boolean>>({});
+  const [staff, setStaff] = useState<{ id: number; name: string }[]>([]);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [running, setRunning] = useState(false);
+  const [results, setResults] = useState<BulkResult | null>(null);
+  const meta = ENTITIES.find((e) => e.key === entity)!;
 
-  const pickEntity = (e: EntityType) => {
-    setEntity(e); setSelected(new Set()); setRows([]); setLoadingRows(true); setStep(2);
-    fetchRows(e).then(setRows).catch(() => setRows([])).finally(() => setLoadingRows(false));
-  };
+  useEffect(() => { api.getStaffPickerUsers().then((u) => setStaff(u.map((x) => ({ id: x.id, name: x.name })))).catch(() => {}); }, []);
+  useEffect(() => { setSelected(new Map()); setAction(ACTIONS[entity][0].key); setParams({}); setStatus(""); setPage(1); setResults(null); }, [entity]);
+  useEffect(() => {
+    setLoading(true);
+    const t = window.setTimeout(() => {
+      loadPage(entity, search, status, page).then(setData).catch((e) => toast.error((e as Error).message)).finally(() => setLoading(false));
+    }, 250);
+    return () => window.clearTimeout(t);
+  }, [entity, search, status, page]);
 
-  const toggleRow = (id: number) => {
-    setSelected((prev) => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next; });
-  };
-  const toggleAll = () => {
-    setSelected(selected.size === rows.length ? new Set() : new Set(rows.map((r) => r.id)));
-  };
-  const reset = () => { setStep(1); setEntity(null); setRows([]); setSelected(new Set()); setAction(""); setStatusValue(""); setNotifyTitle(""); setNotifyMessage(""); setDone(false); setResultMsg(""); };
+  const statusFilter = entity === "cases" ? [...CASE_STATUSES, ...US_CASE_STATUSES] : entity === "tasks" ? TASK_STATUSES : entity === "clients" ? CLIENT_STATUSES : ["Draft", "Sent", "Paid", "Partially Paid", "Overdue", "Cancelled"];
+  const allOnPage = data.rows.length > 0 && data.rows.every((r) => selected.has(r.id));
+  const toggle = (row: Row) => setSelected((m) => { const n = new Map(m); n.has(row.id) ? n.delete(row.id) : n.set(row.id, row); return n; });
+  const togglePage = () => setSelected((m) => { const n = new Map(m); data.rows.forEach((r) => (allOnPage ? n.delete(r.id) : n.set(r.id, r))); return n; });
+  const stageOptions = useMemo(() => Array.from(new Set([...selected.values()].flatMap((r) => r.stageNames ?? []))), [selected]);
+  const set = (k: string, v: string | boolean) => setParams((p) => ({ ...p, [k]: v }));
 
-  const availableActions: { a: BulkAction; icon: any; desc: string }[] = [
-    { a: "Export CSV", icon: Download, desc: "Download as CSV file" },
-    ...(entity && MUTABLE[entity] ? [
-      { a: "Change Status" as BulkAction, icon: CheckSquare, desc: "Update status for all selected" },
-      { a: "Archive" as BulkAction, icon: Archive, desc: "Move to archive" },
-      { a: "Send Notification" as BulkAction, icon: Send, desc: "Queue an in-app notification" },
-    ] : []),
-  ];
-
-  async function execute() {
-    if (!entity) return;
-    if (action === "Export CSV") {
-      const selectedRows = rows.filter((r) => selected.has(r.id));
-      const [h1, h2, h3] = headers[entity];
-      downloadCSV(`${entity.toLowerCase()}-export-${new Date().toISOString().slice(0, 10)}.csv`,
-        selectedRows.map((r) => ({ [h1]: r.col1, [h2]: r.col2, [h3]: r.col3 })));
-      setResultMsg(`Exported ${selected.size} records to CSV`);
-      setDone(true);
-      return;
+  const ready = (() => {
+    if (selected.size === 0) return false;
+    switch (`${entity}:${action}`) {
+      case "cases:status": case "tasks:status": case "clients:status": return !!params.status && (!EVENT_STATUSES.has(String(params.status)) || !!params.status_event_date);
+      case "cases:stage": return !!params.stage_name;
+      case "cases:assign": return !!(params.assigned_manager_id || params.secondary_manager_id || params.patent_engineer_id);
+      case "cases:circle": case "clients:circle": return !!params.circle;
+      case "cases:deadline": return !!params.hard_deadline || !!Number(params.shift_days);
+      case "cases:notify": return !!params.title && !!params.message;
+      case "tasks:assign": return !!params.assignee_id;
+      case "tasks:due_date": return !!params.due_date;
+      case "clients:account_manager": return !!params.account_manager_id;
+      case "invoices:status_note": return !!params.status_note;
+      default: return true;
     }
-    const backendEntity = MUTABLE[entity];
-    if (!backendEntity) return;
-    setExecuting(true);
-    try {
-      const res = await api.bulkExecute({
-        entity: backendEntity,
-        ids: Array.from(selected),
-        action: action === "Change Status" ? "change_status" : action === "Archive" ? "archive" : "notify",
-        ...(action === "Change Status" ? { status: statusValue } : {}),
-        ...(action === "Send Notification" ? { notify_title: notifyTitle || "Bulk Notification", notify_message: notifyMessage } : {}),
-      } as any);
-      setResultMsg(`${res.affected} records updated`);
-      setDone(true);
-    } catch (e: any) {
-      setResultMsg(e.message || "Operation failed");
-      setDone(true);
-    } finally { setExecuting(false); }
-  }
+  })();
 
-  const steps = ["Select Entity", "Choose Records", "Pick Action", "Execute"];
+  const exportSelected = () => {
+    const rows = [...selected.values()].map((r) => Object.fromEntries(meta.headers.map((h, i) => [h, r.cells[i] ?? ""])));
+    downloadCSV(`${entity}-${new Date().toISOString().slice(0, 10)}.csv`, rows);
+  };
+
+  const run = async () => {
+    setRunning(true);
+    try {
+      const res = await api.bulkExecute({ entity, ids: [...selected.keys()], action, params });
+      setResults(res);
+      toast[res.failed ? "warning" : "success"](`${res.ok} done${res.failed ? `, ${res.failed} not changed` : ""}`);
+      setConfirmOpen(false);
+      loadPage(entity, search, status, page).then(setData).catch(() => {});
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  const field = "h-9 w-full rounded-lg border border-border bg-background px-2.5 text-sm outline-none focus:border-gold/60";
+  const staffSelect = (k: string, placeholder: string) => (
+    <select value={String(params[k] ?? "")} onChange={(e) => set(k, e.target.value)} className={field}>
+      <option value="">{placeholder}</option>
+      {staff.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+    </select>
+  );
 
   return (
     <AppLayout>
       <Head title="Bulk Operations" />
-      <PageHeader eyebrow="Operations" title="Bulk Operations" description="Select and act on multiple records at once"
-        actions={<Button variant="outline" size="sm" onClick={reset}>Reset</Button>} />
-      <div className="px-4 py-4 sm:px-8 sm:py-5 space-y-5">
-        {/* Stepper */}
-        <div className="flex items-center">
-          {steps.map((s, i) => (
-            <div key={s} className="flex items-center">
-              <div className={`flex items-center gap-2 px-3 py-1.5 text-sm ${step > i+1 ? "text-green-600" : step === i+1 ? "text-gold font-semibold" : "text-muted-foreground"}`}>
-                <span className={`h-6 w-6 rounded-full flex items-center justify-center text-xs font-bold border-2 ${step > i+1 ? "border-green-500 bg-green-50 text-green-600" : step === i+1 ? "border-gold bg-gold/10 text-gold" : "border-border text-muted-foreground"}`}>
-                  {step > i+1 ? <Check className="h-3 w-3" /> : i+1}
-                </span>
-                {s}
-              </div>
-              {i < steps.length - 1 && <ChevronRight className="h-4 w-4 text-muted-foreground" />}
-            </div>
+      <PageHeader eyebrow="Operations" title="Bulk Operations" description="One change across many cases, tasks, clients or invoices — each goes through the same checks as a single edit" />
+      <div className="space-y-4 px-8 py-6">
+        <div className="flex flex-wrap gap-2">
+          {ENTITIES.map((e) => (
+            <button key={e.key} onClick={() => setEntity(e.key)}
+              className={`flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-medium transition ${entity === e.key ? "shadow-3d border-gold bg-gold/10" : "border-border hover:border-gold/40"}`}>
+              <e.icon className="h-4 w-4 text-gold" />{e.label}
+            </button>
           ))}
         </div>
 
-        {done ? (
-          <Card className="border-green-200 bg-green-50">
-            <CardContent className="p-8 text-center">
-              <div className="h-12 w-12 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-4">
-                <Check className="h-6 w-6 text-green-600" />
+        <div className="grid gap-4 lg:grid-cols-[1fr_340px]">
+          <Card className="border-border overflow-hidden">
+            <CardContent className="p-0">
+              <div className="flex flex-wrap items-center gap-2 border-b border-border p-3">
+                <div className="relative min-w-[200px] flex-1">
+                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <input value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder={`Search ${meta.label.toLowerCase()}…`} className={`${field} pl-8`} />
+                </div>
+                <select value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); }} className="h-9 rounded-lg border border-border bg-background px-2 text-sm">
+                  <option value="">All statuses</option>
+                  {statusFilter.map((s) => <option key={s}>{s}</option>)}
+                </select>
+                <Badge variant="outline" className="h-9 px-3">{selected.size} selected</Badge>
+                {selected.size > 0 && <Button size="sm" variant="ghost" onClick={() => setSelected(new Map())}>Clear</Button>}
               </div>
-              <div className="text-lg font-semibold text-green-700">{resultMsg}</div>
-              <div className="text-sm text-green-600 mt-1">Action: <strong>{action}</strong> applied to <strong>{entity}</strong></div>
-              <Button className="mt-5" variant="outline" onClick={reset}>Run Another Operation</Button>
+              <div className="max-h-[60vh] overflow-auto">
+                <table className="w-full text-sm">
+                  <thead className="table-sticky-head bg-muted/40 text-[11px] uppercase tracking-wider text-muted-foreground">
+                    <tr>
+                      <th className="w-10 px-3 py-2.5"><input type="checkbox" checked={allOnPage} onChange={togglePage} aria-label="Select page" /></th>
+                      {meta.headers.map((h) => <th key={h} className="px-3 py-2.5 text-left">{h}</th>)}
+                    </tr>
+                  </thead>
+                  <tbody className="table-rows-3d">
+                    {loading && data.rows.length === 0 ? (
+                      <tr><td colSpan={meta.headers.length + 1} className="py-10 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin text-gold" /></td></tr>
+                    ) : data.rows.length === 0 ? (
+                      <tr><td colSpan={meta.headers.length + 1} className="py-10 text-center text-muted-foreground">Nothing matches.</td></tr>
+                    ) : data.rows.map((r) => (
+                      <tr key={r.id} onClick={() => toggle(r)} className={`cursor-pointer border-t border-border ${selected.has(r.id) ? "bg-gold/5" : "hover:bg-muted/30"}`}>
+                        <td className="px-3 py-2"><input type="checkbox" checked={selected.has(r.id)} onChange={() => toggle(r)} onClick={(e) => e.stopPropagation()} aria-label="Select row" /></td>
+                        {r.cells.map((c, i) => <td key={i} className={`px-3 py-2 ${i === 0 ? "font-mono text-xs" : "text-muted-foreground"}`}>{c}</td>)}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="flex items-center justify-between border-t border-border px-3 py-2 text-xs text-muted-foreground">
+                <span>{data.total.toLocaleString("en-IN")} {meta.label.toLowerCase()}</span>
+                <div className="flex items-center gap-2">
+                  <Button size="sm" variant="outline" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>Prev</Button>
+                  <span>Page {page} of {Math.max(1, data.lastPage)}</span>
+                  <Button size="sm" variant="outline" disabled={page >= data.lastPage} onClick={() => setPage((p) => p + 1)}>Next</Button>
+                </div>
+              </div>
             </CardContent>
           </Card>
-        ) : (
-          <>
-            {step === 1 && (
-              <div>
-                <p className="text-sm text-muted-foreground mb-4">Choose the type of records you want to operate on</p>
-                <div className="grid grid-cols-5 gap-3">
-                  {([
-                    { e: "Clients" as EntityType, icon: Users },
-                    { e: "Projects" as EntityType, icon: FolderOpen },
-                    { e: "Tasks" as EntityType, icon: CheckSquare },
-                    { e: "Invoices" as EntityType, icon: FileText },
-                    { e: "Employees" as EntityType, icon: Users },
-                  ]).map(({ e, icon: Icon }) => (
-                    <button key={e} onClick={() => pickEntity(e)}
-                      className="p-5 rounded-xl border-2 border-border hover:border-gold hover:bg-gold/5 transition-all flex flex-col items-center gap-2 text-sm font-medium">
-                      <Icon className="h-8 w-8 text-gold" />{e}
-                    </button>
+
+          <Card className="border-border h-fit">
+            <CardContent className="space-y-3 p-4 text-sm">
+              <div className="flex items-center gap-2 font-semibold"><Layers className="h-4 w-4 text-gold" />Action</div>
+              <select value={action} onChange={(e) => { setAction(e.target.value); setParams({}); setResults(null); }} className={field}>
+                {ACTIONS[entity].map((a) => <option key={a.key} value={a.key}>{a.label}</option>)}
+              </select>
+
+              {(action === "status") && (
+                <>
+                  <select value={String(params.status ?? "")} onChange={(e) => set("status", e.target.value)} className={field}>
+                    <option value="">Choose status…</option>
+                    {(entity === "cases" ? [...CASE_STATUSES, ...US_CASE_STATUSES] : entity === "tasks" ? TASK_STATUSES : CLIENT_STATUSES).map((s) => <option key={s}>{s}</option>)}
+                  </select>
+                  {entity === "cases" && EVENT_STATUSES.has(String(params.status)) && (
+                    <label className="block text-xs">{String(params.status)} on (date)<input type="date" value={String(params.status_event_date ?? "")} onChange={(e) => set("status_event_date", e.target.value)} className={`${field} mt-1`} /></label>
+                  )}
+                </>
+              )}
+              {entity === "cases" && action === "stage" && (
+                <>
+                  <input list="bulk-stages" value={String(params.stage_name ?? "")} onChange={(e) => set("stage_name", e.target.value)} placeholder="Stage name" className={field} />
+                  <datalist id="bulk-stages">{stageOptions.map((s) => <option key={s} value={s} />)}</datalist>
+                  <p className="text-[11px] text-muted-foreground">Cases whose workflow has no stage with this name are left unchanged and listed.</p>
+                </>
+              )}
+              {entity === "cases" && action === "assign" && (
+                <>
+                  <label className="block text-xs">Client Manager{staffSelect("assigned_manager_id", "Keep as is")}</label>
+                  <label className="block text-xs">Secondary CM{staffSelect("secondary_manager_id", "Keep as is")}</label>
+                  <label className="block text-xs">Patent Engineer{staffSelect("patent_engineer_id", "Keep as is")}</label>
+                </>
+              )}
+              {(action === "circle") && (
+                <select value={String(params.circle ?? "")} onChange={(e) => set("circle", e.target.value)} className={field}>
+                  <option value="">Choose circle…</option><option value="A">Circle A</option><option value="B">Circle B</option>
+                </select>
+              )}
+              {entity === "cases" && action === "deadline" && (
+                <>
+                  <label className="block text-xs">New deadline<input type="date" value={String(params.hard_deadline ?? "")} onChange={(e) => set("hard_deadline", e.target.value)} className={`${field} mt-1`} /></label>
+                  <label className="block text-xs">— or shift each case's deadline by (days, minus for earlier)
+                    <input type="number" value={String(params.shift_days ?? "")} onChange={(e) => set("shift_days", e.target.value)} disabled={!!params.hard_deadline} className={`${field} mt-1`} /></label>
+                </>
+              )}
+              {entity === "cases" && action === "notify" && (
+                <>
+                  <input value={String(params.title ?? "")} onChange={(e) => set("title", e.target.value)} placeholder="Title" className={field} />
+                  <textarea value={String(params.message ?? "")} onChange={(e) => set("message", e.target.value)} placeholder="Message to the CM, SCM and Patent Engineer" rows={3} className={`${field} h-auto py-2`} />
+                  <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={!!params.include_client} onChange={(e) => set("include_client", e.target.checked)} />Also the client's portal users</label>
+                </>
+              )}
+              {entity === "tasks" && action === "assign" && staffSelect("assignee_id", "Choose assignee…")}
+              {entity === "tasks" && action === "due_date" && <input type="date" value={String(params.due_date ?? "")} onChange={(e) => set("due_date", e.target.value)} className={field} />}
+              {entity === "clients" && action === "account_manager" && staffSelect("account_manager_id", "Choose account manager…")}
+              {entity === "invoices" && action === "status_note" && <textarea value={String(params.status_note ?? "")} onChange={(e) => set("status_note", e.target.value)} placeholder="Follow-up note" rows={3} maxLength={500} className={`${field} h-auto py-2`} />}
+              {entity === "invoices" && action === "remind_client" && <textarea value={String(params.message ?? "")} onChange={(e) => set("message", e.target.value)} placeholder="Optional message (default: balance and a request to pay or share proof)" rows={3} className={`${field} h-auto py-2`} />}
+
+              {action === "export" ? (
+                <Button className="w-full" variant="outline" disabled={selected.size === 0} onClick={exportSelected}><Download className="mr-1.5 h-4 w-4" />Export {selected.size} row(s)</Button>
+              ) : (
+                <Button className="w-full bg-gold text-black hover:bg-gold/90" disabled={!ready} onClick={() => setConfirmOpen(true)}>
+                  <CheckSquare className="mr-1.5 h-4 w-4" />Apply to {selected.size} {meta.label.toLowerCase()}
+                </Button>
+              )}
+
+              {results && (
+                <div className="max-h-64 space-y-1 overflow-y-auto rounded-lg border border-border p-2 text-xs">
+                  <div className="font-semibold">{results.ok} done · {results.failed} not changed</div>
+                  {results.results.map((r) => (
+                    <div key={r.id} className="flex items-start gap-1.5">
+                      {r.ok ? <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600" /> : <XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-red-600" />}
+                      <span>{r.label ?? selected.get(r.id)?.cells[0] ?? `#${r.id}`}{!r.ok && <span className="text-muted-foreground"> — {r.error}</span>}</span>
+                    </div>
                   ))}
                 </div>
-              </div>
-            )}
-
-            {step === 2 && entity && (
-              <div>
-                <div className="flex items-center justify-between mb-3">
-                  <p className="text-sm text-muted-foreground"><span className="text-gold font-semibold">{selected.size}</span> of {rows.length} selected</p>
-                  <Button size="sm" disabled={selected.size === 0} onClick={() => setStep(3)}>Continue <ChevronRight className="h-4 w-4 ml-1" /></Button>
-                </div>
-                <Card className="border-border">
-                  <CardContent className="p-0">
-                    {loadingRows ? (
-                      <div className="flex items-center justify-center py-12">
-                        <Loader2 className="h-6 w-6 animate-spin text-gold" />
-                      </div>
-                    ) : (
-                      <table className="w-full text-sm">
-                        <thead className="bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground">
-                          <tr>
-                            <th className="px-4 py-3 w-10"><input type="checkbox" checked={rows.length > 0 && selected.size === rows.length} onChange={toggleAll} /></th>
-                            {headers[entity].map((h) => <th key={h} className="px-4 py-3 text-left">{h}</th>)}
-                          </tr>
-                        </thead>
-                        <tbody className="table-rows-3d">
-                          {rows.map((row) => (
-                            <tr key={row.id} onClick={() => toggleRow(row.id)}
-                              className={`border-t border-border cursor-pointer ${selected.has(row.id) ? "bg-gold/5" : "hover:bg-muted/30"}`}>
-                              <td className="px-4 py-3"><input type="checkbox" checked={selected.has(row.id)} onChange={() => {}} /></td>
-                              <td className="px-4 py-3 font-medium">{row.col1}</td>
-                              <td className="px-4 py-3 text-muted-foreground">{row.col2}</td>
-                              <td className="px-4 py-3"><Badge variant="outline">{row.col3}</Badge></td>
-                            </tr>
-                          ))}
-                          {rows.length === 0 && (
-                            <tr><td colSpan={4} className="px-4 py-10 text-center text-sm text-muted-foreground">No records found.</td></tr>
-                          )}
-                        </tbody>
-                      </table>
-                    )}
-                  </CardContent>
-                </Card>
-              </div>
-            )}
-
-            {step === 3 && (
-              <div>
-                <p className="text-sm text-muted-foreground mb-4">Choose action for {selected.size} {entity} records</p>
-                <div className="grid grid-cols-3 gap-3">
-                  {availableActions.map(({ a, icon: Icon, desc }) => (
-                    <button key={a} onClick={() => { setAction(a); setStatusValue(""); setStep(4); }}
-                      className="p-4 rounded-xl border-2 border-border hover:border-gold hover:bg-gold/5 text-left transition-all">
-                      <Icon className="h-6 w-6 text-gold mb-2" />
-                      <div className="font-medium text-sm">{a}</div>
-                      <div className="text-xs text-muted-foreground mt-0.5">{desc}</div>
-                    </button>
-                  ))}
-                </div>
-                {entity && !MUTABLE[entity] && (
-                  <p className="text-xs text-muted-foreground mt-3">{entity} are export-only — status changes must go through their own module.</p>
-                )}
-              </div>
-            )}
-
-            {step === 4 && (
-              <Card className="border-border max-w-lg">
-                <CardHeader><CardTitle className="font-display">Confirm & Execute</CardTitle></CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="rounded-lg bg-muted/40 p-4 space-y-2 text-sm">
-                    <div className="flex justify-between"><span className="text-muted-foreground">Entity</span><span className="font-medium">{entity}</span></div>
-                    <div className="flex justify-between"><span className="text-muted-foreground">Records</span><span className="font-medium">{selected.size} selected</span></div>
-                    <div className="flex justify-between"><span className="text-muted-foreground">Action</span><span className="font-medium">{action}</span></div>
-                  </div>
-                  {action === "Change Status" && entity && MUTABLE[entity] && (
-                    <div>
-                      <label className="block text-xs text-muted-foreground mb-1">New status</label>
-                      <select value={statusValue} onChange={(e) => setStatusValue(e.target.value)}
-                        className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold">
-                        <option value="">Select status…</option>
-                        {STATUS_OPTIONS[MUTABLE[entity]!].map((s) => <option key={s}>{s}</option>)}
-                      </select>
-                    </div>
-                  )}
-                  {action === "Send Notification" && (
-                    <div className="space-y-2">
-                      <div>
-                        <label className="block text-xs text-muted-foreground mb-1">Notification Title</label>
-                        <input value={notifyTitle} onChange={(e) => setNotifyTitle(e.target.value)}
-                          placeholder="e.g. Action Required"
-                          className="w-full h-9 rounded-md border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
-                      </div>
-                      <div>
-                        <label className="block text-xs text-muted-foreground mb-1">Message Body</label>
-                        <textarea value={notifyMessage} onChange={(e) => setNotifyMessage(e.target.value)}
-                          rows={3} placeholder="Enter the notification message…"
-                          className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-gold" />
-                      </div>
-                    </div>
-                  )}
-                  <div className="flex gap-3">
-                    <Button className="flex-1" disabled={executing || (action === "Change Status" && !statusValue) || (action === "Send Notification" && !notifyMessage.trim())} onClick={execute}>
-                      {executing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Package className="h-4 w-4 mr-2" />}
-                      Execute on {selected.size} Records
-                    </Button>
-                    <Button variant="outline" onClick={() => setStep(3)}>Back</Button>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-          </>
-        )}
+              )}
+            </CardContent>
+          </Card>
+        </div>
       </div>
+
+      <Dialog open={confirmOpen} onOpenChange={(o) => !running && setConfirmOpen(o)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{ACTIONS[entity].find((a) => a.key === action)?.label} — {selected.size} {meta.label.toLowerCase()}</DialogTitle>
+            <DialogDescription>Each one is checked like a single edit; any that can't change are listed with the reason. Every change is in the audit log.</DialogDescription>
+          </DialogHeader>
+          <div className="max-h-48 overflow-y-auto rounded-lg border border-border p-2 font-mono text-xs">
+            {[...selected.values()].slice(0, 50).map((r) => <div key={r.id}>{r.cells[0]} <span className="font-sans text-muted-foreground">{r.cells[1]}</span></div>)}
+            {selected.size > 50 && <div className="font-sans text-muted-foreground">… and {selected.size - 50} more</div>}
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" disabled={running} onClick={() => setConfirmOpen(false)}>Cancel</Button>
+            <Button className={action === "delete" ? "bg-red-600 text-white hover:bg-red-700" : "bg-gold text-black hover:bg-gold/90"} disabled={running} onClick={run}>
+              {running && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}{action === "delete" ? "Delete" : "Apply"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 }
