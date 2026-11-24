@@ -259,6 +259,22 @@ export interface DashboardFinance {
   unbilled: { count: number; items: Array<{ id: number; docket_number: string; project_name: string | null; service_code: string | null; status: string; client: string | null }> }
 }
 
+export interface CaseHealth { score: number; level: "good" | "watch" | "risk"; reasons: string[] }
+export interface CaseInsightsData {
+  health: CaseHealth | null
+  journey: {
+    stages: Array<{ id: number; name: string; status: string; started: string | null; ended: string | null; due: string | null }>
+    milestones: Array<{ label: string; date: string }>
+    upcoming: Array<{ id: number; title: string; date: string }>
+  }
+  checklist: Array<{ key: string; label: string; present: boolean }>
+}
+export interface PortfolioInsights {
+  health: Record<number, CaseHealth>
+  stuck: Array<{ id: number; docket_number: string | null; project_name: string | null; client: string | null; stage: string; days: number; target: number; over: number }>
+  changes: Array<{ at: string; kind: "stage" | "deadline" | "invoice" | "payment"; text: string; project_id: number | null; docket_number: string | null }>
+}
+
 /** Six-month KPI trend lines (oldest first). */
 export interface DashboardTrends {
   months: string[]
@@ -322,6 +338,11 @@ export const api = {
   },
   async getDashboardQuoted(): Promise<any[]> { return this.request('/dashboard/drill/quoted') },
   async getDashboardTrends(): Promise<DashboardTrends> { return this.request('/dashboard/trends') },
+  async getCaseInsights(projectId: number | string): Promise<CaseInsightsData> { return this.request(`/projects/${projectId}/insights`) },
+  async getPortfolioInsights(params: Record<string, string | number | undefined> = {}): Promise<PortfolioInsights> {
+    const q = new URLSearchParams(Object.entries(params).filter(([, v]) => v !== undefined && v !== '').map(([k, v]) => [k, String(v)]))
+    return this.request(`/patent-portfolio/insights${q.toString() ? `?${q}` : ''}`)
+  },
   /** Firm-wide switches (weekly digest, leaderboard); only a super admin can change them. */
   async getSwitches(): Promise<Record<string, boolean>> { return this.request('/settings/switches') },
   async updateSwitches(data: Record<string, boolean>): Promise<Record<string, boolean>> {

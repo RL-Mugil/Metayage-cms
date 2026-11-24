@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api-client";
 import { fmtDate } from "@/lib/date-utils";
+import { GlossaryText } from "@/components/glossary-text";
 
 export function formatCurrency(val: number) {
   if (val >= 100000) return `₹ ${(val / 100000).toFixed(1)}L`;
@@ -189,7 +190,7 @@ export function ActionItemRow({ item, onRenewClick, showOwnerBadge }: {
           )}
         </div>
         {item.project_name && <div className="mt-0.5 text-sm font-medium truncate">{item.project_name}</div>}
-        <div className="mt-1 text-xs text-muted-foreground">{item.pending_action}</div>
+        <div className="mt-1 text-xs text-muted-foreground"><GlossaryText text={item.pending_action} /></div>
         {item.plain_status && <div className="mt-0.5 text-[11px] italic text-foreground/70">{item.plain_status}</div>}
       </div>
       <div className="flex flex-shrink-0 items-center gap-3">

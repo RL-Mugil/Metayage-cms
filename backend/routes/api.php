@@ -157,6 +157,7 @@ Route::middleware(['auth:sanctum', 'firm.context', 'throttle:120,1'])->group(fun
     Route::put('/projects/{id}/stage-events/bulk', [\App\Http\Controllers\ProjectStageEventController::class, 'bulk']);
     Route::delete('/stage-events/{id}', [\App\Http\Controllers\ProjectStageEventController::class, 'destroy']);
     Route::get('/projects/{id}/detail', [ProjectController::class, 'detail']);
+    Route::get('/projects/{id}/insights', [\App\Http\Controllers\CaseInsightsController::class, 'show']);
     // Was never actually registered despite the frontend "Elevate" button/modal calling it —
     // a pre-existing 404. Fixed here since the new renewal-paid flow relies on the same
     // InventionFamilyService::createBranch() this wraps.
@@ -282,6 +283,7 @@ Route::middleware(['auth:sanctum', 'firm.context', 'throttle:120,1'])->group(fun
 
     // Patent Portfolio
     Route::get('/patent-portfolio/stats', [PatentPortfolioController::class, 'stats']);
+    Route::get('/patent-portfolio/insights', [PatentPortfolioController::class, 'insights']);
 
     // My Portal (client_admin self-service user management)
     Route::get('/my-portal/users', [\App\Http\Controllers\MyPortalController::class, 'users']);

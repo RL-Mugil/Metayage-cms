@@ -18,6 +18,7 @@ import { FormsWorkspace } from "@/components/ipo/forms-workspace"
 import { TrademarkMarkPanel } from "@/components/trademark-details-fields"
 import { isTrademarkCode } from "@/types/trademark"
 import { api } from "@/lib/api-client"
+import { CaseInsightsPanel } from "@/components/case/case-insights-panel"
 import type {
   MatterWorkspace as WorkspaceData,
   WorkspaceDeadline,
@@ -147,6 +148,7 @@ export function MatterWorkspace({ data, projectId, tab, onTabChange, onReload }:
       <main className="px-4 py-5 sm:px-6 lg:px-8">
         {tab === "overview" && (
           <div className="space-y-6">
+            <CaseInsightsPanel projectId={Number(projectId)} onOpenDocuments={() => onTabChange("documents")} />
             <section className="grid gap-px overflow-hidden rounded-md border border-border bg-border sm:grid-cols-2 xl:grid-cols-5">
               {[
                 isRenewalProject

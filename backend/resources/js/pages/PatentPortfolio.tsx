@@ -1,9 +1,12 @@
 import { Head, Link, router, usePage } from "@inertiajs/react";
 import { useEffect, useState, useMemo } from "react";
+import { GlossaryText, HealthDot } from "@/components/glossary-text";
+import type { PortfolioInsights } from "@/lib/api-client";
 import { AnalystRoleFilter, useAnalystRoleFilter } from "@/components/analyst-role-filter";
 import {
   Loader2, RefreshCw, ChevronDown, MapPin, FileText, Calendar,
   AlertCircle, CreditCard, X, Search, ChevronUp, ExternalLink, ArrowUpDown,
+  Hourglass, Activity,
 } from "lucide-react";
 import AppLayout from "@/layouts/AppLayout";
 import { PageHeader } from "@/components/page-header";
@@ -164,6 +167,7 @@ export default function PatentPortfolio() {
   const [stagePage, setStagePage]     = useState(1);
   const [renewalSearch, setRenewalSearch] = useState("");
   const [renewalView, setRenewalView] = useState<"list" | "calendar">("list");
+  const [insights, setInsights] = useState<PortfolioInsights | null>(null);
   /** "YYYY-MM", "overdue", or null (all) — the View all dialog's month filter from the calendar. */
   const [renewalMonth, setRenewalMonth] = useState<string | null>(null);
   const [paymentSearch, setPaymentSearch] = useState("");
@@ -184,6 +188,8 @@ export default function PatentPortfolio() {
     setPage(1);
     api.getPatentPortfolioStats(clientId ?? null, effectiveRf(rf))
       .then(setData).catch(() => {}).finally(() => setLoading(false));
+    api.getPortfolioInsights({ client_id: clientId ?? undefined, role_filter: effectiveRf(rf) && effectiveRf(rf) !== "all" ? effectiveRf(rf) : undefined })
+      .then(setInsights).catch(() => setInsights(null));
   };
 
   useEffect(() => { load(selectedClientId, roleFilter); }, [roleFilter]);
@@ -592,8 +598,9 @@ export default function PatentPortfolio() {
                             <tr key={i} onClick={() => goToAction(row)} title={row.plain_status ?? undefined} className="border-t border-border hover:bg-muted/20 transition-colors group cursor-pointer">
                               <td className="px-3 py-2.5 truncate">
                                 <button onClick={(e) => { e.stopPropagation(); if (row.id) setDetailId(row.id); }} title="Quick look at the case"
-                                  className="font-mono font-medium text-foreground hover:text-gold hover:underline transition-colors truncate max-w-full">
-                                  {row.docket_number}
+                                  className="inline-flex max-w-full items-center gap-1.5 font-mono font-medium text-foreground hover:text-gold hover:underline transition-colors">
+                                  <HealthDot health={insights?.health?.[row.id]} />
+                                  <span className="truncate">{row.docket_number}</span>
                                 </button>
                               </td>
                               <td className="px-3 py-2.5">
@@ -611,7 +618,7 @@ export default function PatentPortfolio() {
                                 </button>
                               </td>
                               <td className="px-3 py-2">
-                                <div className="truncate text-foreground" title={row.current_stage ?? ""}>{row.current_stage ?? "—"}</div>
+                                <div className="truncate text-foreground"><GlossaryText text={row.current_stage ?? "—"} /></div>
                                 <div className="flex items-center justify-between gap-2">
                                   <span className="truncate text-[10px] text-muted-foreground" title={row.pending_action}>{row.pending_action}</span>
                                   <span className="shrink-0 text-[10px] font-medium text-gold group-hover:underline">{row.action_target?.label ?? "Open"} →</span>
@@ -638,6 +645,49 @@ export default function PatentPortfolio() {
                 </CardContent>
               </Card>
             </div>
+
+            {insights && (insights.stuck.length > 0 || insights.changes.length > 0) && (
+              <div className="grid gap-4 lg:grid-cols-2 items-stretch">
+                <Card className="border-border h-full flex flex-col">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="font-display text-sm flex items-center gap-2">
+                      <Hourglass className="h-4 w-4 text-amber-500" /> Stuck in a stage
+                      <span className="text-[10px] font-normal text-muted-foreground">past the stage's target duration</span>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="p-0 flex-1 max-h-[320px] overflow-y-auto">
+                    {insights.stuck.length === 0 ? <p className="px-4 py-6 text-xs text-muted-foreground">Nothing is running late.</p> : insights.stuck.slice(0, 30).map((r) => (
+                      <button key={r.id} onClick={() => goTo(`/projects/${r.id}?tab=lifecycle`)}
+                        className="flex w-full items-center justify-between gap-3 border-b border-border px-4 py-2.5 text-left last:border-0 hover:bg-muted/20">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5 font-mono text-xs font-medium"><HealthDot health={insights.health?.[r.id]} />{r.docket_number ?? "—"}</div>
+                          <div className="truncate text-[11px] text-muted-foreground"><GlossaryText text={r.stage} /> · {r.client ?? ""}</div>
+                        </div>
+                        <span className="shrink-0 rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-amber-600">{r.days}d / {r.target}d</span>
+                      </button>
+                    ))}
+                  </CardContent>
+                </Card>
+
+                <Card className="border-border h-full flex flex-col">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="font-display text-sm flex items-center gap-2"><Activity className="h-4 w-4 text-gold" /> What changed this week</CardTitle>
+                  </CardHeader>
+                  <CardContent className="p-0 flex-1 max-h-[320px] overflow-y-auto">
+                    {insights.changes.length === 0 ? <p className="px-4 py-6 text-xs text-muted-foreground">No changes in the last 7 days.</p> : insights.changes.map((c, i) => (
+                      <button key={i} onClick={() => c.project_id && goTo(`/projects/${c.project_id}${c.kind === "deadline" ? "?tab=deadlines" : c.kind === "stage" ? "?tab=lifecycle" : ""}`)}
+                        className="flex w-full items-start gap-3 border-b border-border px-4 py-2.5 text-left last:border-0 hover:bg-muted/20">
+                        <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${c.kind === "payment" ? "bg-emerald-500" : c.kind === "invoice" ? "bg-blue-500" : c.kind === "deadline" ? "bg-amber-500" : "bg-gold"}`} />
+                        <div className="min-w-0 flex-1">
+                          <div className="text-xs"><GlossaryText text={c.text} /></div>
+                          <div className="text-[10px] text-muted-foreground"><span className="font-mono">{c.docket_number ?? ""}</span> · {new Date(c.at).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}</div>
+                        </div>
+                      </button>
+                    ))}
+                  </CardContent>
+                </Card>
+              </div>
+            )}
 
             {viewAll === "renewals" && (
               <SectionDialog title={renewalMonth ? `Renewals · ${renewalMonth === "overdue" ? "Overdue" : monthLabel(renewalMonth)}` : "Upcoming Renewals"}

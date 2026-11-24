@@ -10,7 +10,33 @@ use Illuminate\Support\Facades\DB;
 
 class PatentPortfolioController extends Controller
 {
-    public function stats(Request $request)
+    /** Health, stuck stages and the week's changes for the cases this page shows. */
+    public function insights(Request $request, \App\Services\CaseInsights $insights)
+    {
+        $scope = $this->scopeFor($request);
+        if ($scope instanceof \Illuminate\Http\JsonResponse) {
+            return $scope;
+        }
+        [$clientId, $analystIds] = $scope;
+        $active = $this->baseQuery($clientId, $analystIds)
+            ->whereNotIn('status', ['Granted', 'Refused', 'Abandoned', 'Closed', 'Completed', 'Archived']);
+        $projects = (clone $active)->with('client:id,legal_name,company_name')->limit(2000)
+            ->get(['id', 'docket_number', 'project_name', 'client_id', 'status', 'service_code', 'patent_office_code', 'hard_deadline', 'priority_date']);
+        $health = $insights->healthMany($projects);
+
+        return response()->json([
+            'health' => $health,
+            'stuck' => $insights->stuck($projects),
+            'changes' => $insights->changes($this->baseQuery($clientId, $analystIds)->select('id'), 7, $request->user()->isClientRole()),
+        ]);
+    }
+
+    /**
+     * Who may see what: [client_id or null, project ids or null (= all)], or a 403 response.
+     *
+     * @return array{0: int|string|null, 1: array<int, int>|null}|\Illuminate\Http\JsonResponse
+     */
+    private function scopeFor(Request $request)
     {
         $user = $request->user();
         $isClient = $user->isClientRole();
@@ -68,13 +94,33 @@ class PatentPortfolioController extends Controller
             // else: $analystIds stays null — partner/director sees all
         }
 
-        $base = Project::where(function ($q) {
+
+        return [$clientId, $analystIds];
+    }
+
+    /** Patent-type cases within the scope. */
+    private function baseQuery($clientId, ?array $analystIds)
+    {
+        return Project::where(function ($q) {
                 $q->where('project_type', 'like', '%Patent%')
                   ->orWhere('project_type', 'Design')
                   ->orWhere('project_type', 'Trade Secret');
             })
             ->when($clientId, fn($q) => $q->where('client_id', $clientId))
             ->when($analystIds !== null, fn($q) => $q->whereIn('id', $analystIds));
+    }
+
+    public function stats(Request $request)
+    {
+        $user = $request->user();
+        $isClient = $user->isClientRole();
+        $scope = $this->scopeFor($request);
+        if ($scope instanceof \Illuminate\Http\JsonResponse) {
+            return $scope;
+        }
+        [$clientId, $analystIds] = $scope;
+
+        $base = $this->baseQuery($clientId, $analystIds);
 
         // Terminal statuses — no active workflow, excluded from pending KPIs. Split into the
         // two flavors the portfolio charts distinguish: an explicit rejection/abandonment vs.
