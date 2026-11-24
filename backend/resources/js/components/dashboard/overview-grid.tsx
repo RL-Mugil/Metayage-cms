@@ -73,17 +73,17 @@ export function OverviewGrid({ metrics, trends, projects, tasks, statusMix, show
         <div className="flex min-h-0 flex-col gap-3 lg:col-span-3">
           <GlassCard title="Statutory deadline risk" icon={<AlertTriangle className="h-4 w-4 text-amber-500" />}
             actions={<Link href="/projects" className="text-[11px] font-medium text-gold hover:underline">Matters</Link>} className="shrink-0">
-            <div className="grid grid-cols-2 gap-2 px-3 pb-3">
+            <div className="grid grid-cols-2 gap-1.5 px-3 pb-3">
               {RISK.map((r) => {
                 const n = Number(risk[r.field] ?? 0)
                 const alarm = r.hot && n > 0
                 return (
-                  <motion.button key={r.key} whileHover={n ? { y: -2 } : undefined} onClick={() => n && onDrill(r.key)} disabled={!n}
-                    className={`relative overflow-hidden rounded-xl border p-2.5 fit:p-2 text-left transition-colors ${alarm ? "border-rose-500/30 bg-gradient-to-br from-rose-500/15 to-rose-500/5" : "border-border/60 bg-background/60"} ${n ? "cursor-pointer hover:border-gold/50" : "cursor-default opacity-80"}`}>
-                    {alarm && <span className="absolute right-2 top-2 h-2 w-2 animate-ping rounded-full bg-rose-500" />}
-                    <r.icon className={`h-3.5 w-3.5 ${alarm ? "text-rose-500" : "text-muted-foreground"}`} />
-                    <AnimatedNumber value={n} className={`mt-1 block font-display text-xl fit:text-lg font-semibold leading-none ${alarm ? "text-rose-600" : ""}`} />
-                    <span className="text-[10px] text-muted-foreground">{r.label}</span>
+                  <motion.button key={r.key} whileHover={n ? { y: -1 } : undefined} onClick={() => n && onDrill(r.key)} disabled={!n} title={n ? `Show the ${r.label.toLowerCase()} deadlines` : undefined}
+                    className={`relative flex items-center gap-2 overflow-hidden rounded-lg border px-2 py-1.5 text-left transition-colors ${alarm ? "border-rose-500/30 bg-gradient-to-br from-rose-500/15 to-rose-500/5" : "border-border/60 bg-background/60"} ${n ? "cursor-pointer hover:border-gold/50" : "cursor-default opacity-80"}`}>
+                    {alarm && <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 animate-ping rounded-full bg-rose-500" />}
+                    <r.icon className={`h-3.5 w-3.5 shrink-0 ${alarm ? "text-rose-500" : "text-muted-foreground"}`} />
+                    <AnimatedNumber value={n} className={`font-display text-base font-semibold leading-none ${alarm ? "text-rose-600" : ""}`} />
+                    <span className="truncate text-[10px] text-muted-foreground">{r.label}</span>
                   </motion.button>
                 )
               })}
@@ -92,7 +92,7 @@ export function OverviewGrid({ metrics, trends, projects, tasks, statusMix, show
           <GlassCard title="Case mix" className="min-h-[190px] fit:min-h-0 flex-1"
             actions={<Link href="/patent-portfolio" className="text-[11px] font-medium text-gold hover:underline">Portfolio</Link>}>
             <div className="flex h-full items-center px-3 pb-3">
-              <Ring3D data={statusMix.data} total={statusMix.total} label="cases" size={104} thickness={14} />
+              <Ring3D data={statusMix.data} total={statusMix.total} label="cases" size={124} thickness={16} />
             </div>
           </GlassCard>
         </div>
