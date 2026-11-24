@@ -35,8 +35,11 @@ import { api, downloadCSV } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import type { Client, ReportResponse } from "@/types";
 import { fmtDateTime } from "@/lib/date-utils";
-import { PaymentExportDialog } from "@/components/reports/payment-export-dialog";
 import { ReportVerifyDialog } from "@/components/reports/report-verify";
+import { SignDownloadDialog } from "@/components/reports/sign-download-dialog";
+
+/** Reports whose files are rendered on the server: letterhead, charts and the signature seal. */
+const SIGNED_REPORTS = new Set(["payment-collection", "financial-summary"]);
 
 interface ReportTemplate {
   id: string;
@@ -61,14 +64,14 @@ interface ReportHistoryItem {
 const REPORT_TEMPLATES: ReportTemplate[] = [
   { id: "client-portfolio", name: "Client Portfolio Report", description: "All clients with case summary, GST type, billed, received, and outstanding totals", icon: Users, color: "text-blue-400", roles: ["super_admin", "partner", "manager", "galvanizer"] },
   { id: "matter-status", name: "Case Status Report", description: "Current status of all active cases by stage and priority", icon: FolderOpen, color: "text-green-400", roles: ["super_admin", "partner", "manager", "finance", "galvanizer"] },
-  { id: "financial-summary", name: "Financial Summary", description: "Invoices, amounts received, and outstanding balances", icon: Wallet, color: "text-gold", roles: ["super_admin", "partner", "manager", "finance", "galvanizer"] },
+  { id: "financial-summary", name: "Financial Summary", description: "Every invoice with billed, received, waived and balance — signed letterhead PDF / Excel", icon: Wallet, color: "text-gold", roles: ["super_admin", "partner", "manager", "finance", "galvanizer"] },
   { id: "hrms", name: "HRMS Report", description: "Employee attendance, date-adjusted leave, and latest payroll summary", icon: Users, color: "text-purple-400", roles: ["super_admin", "partner", "hr"] },
   { id: "ip-deadline", name: "IP Deadline Report", description: "Upcoming matter, statutory docket, and patent renewal deadlines", icon: Clock, color: "text-red-400", roles: ["super_admin", "partner", "manager", "galvanizer"] },
   { id: "productivity", name: "Productivity Report", description: "Scoped time logs, billability, approval status, and work descriptions", icon: BarChart3, color: "text-cyan-400", roles: ["super_admin", "partner", "manager", "galvanizer"] },
   { id: "tracker-workload", name: "Team Workload Report", description: "Cases per PCM / SCM / PR with overdue count from Project Tracker", icon: Users, color: "text-indigo-400", roles: ["super_admin", "partner", "manager", "galvanizer"] },
   { id: "overdue-cases", name: "Overdue Cases Report", description: "All past-due delivery dates with assigned team member details", icon: AlertTriangle, color: "text-red-500", roles: ["super_admin", "partner", "manager", "galvanizer"] },
   { id: "deadline-forecast", name: "Deadline Forecast", description: "Upcoming delivery deadlines in the next 60 days by default", icon: Clock, color: "text-amber-400", roles: ["super_admin", "partner", "manager", "galvanizer"] },
-  { id: "payment-collection", name: "Payment Collection", description: "Paid / Partial / Pending breakdown per client from tracker", icon: TrendingUp, color: "text-green-400", roles: ["super_admin", "partner", "manager", "finance", "galvanizer"] },
+  { id: "payment-collection", name: "Payment Collection", description: "Pending follow-up with client contacts, payments, waivers and ageing per client — signed letterhead PDF / Excel", icon: TrendingUp, color: "text-green-400", roles: ["super_admin", "partner", "manager", "finance", "galvanizer"] },
   { id: "zoho-summary", name: "Zoho Books Summary", description: "Synced Zoho invoices and estimates with balances and case matches", icon: Wallet, color: "text-teal-400", roles: ["super_admin", "partner", "manager", "finance", "galvanizer"] },
   { id: "payroll-cost-summary", name: "Payroll Cost Summary", description: "Gross, deductions, and net totals per payroll run", icon: Wallet, color: "text-gold", roles: ["super_admin", "partner", "finance"] },
   { id: "tds-pf-esi-summary", name: "TDS / PF / ESI Summary", description: "Statutory withholding totals per payroll run", icon: TrendingUp, color: "text-purple-400", roles: ["super_admin", "partner", "finance"] },
@@ -215,19 +218,10 @@ export default function Reports() {
     format: "PDF",
   });
   const [generating, setGenerating] = useState(false);
-  // Signed letterhead export (Payment Collection / Financial Summary) and verification of a signed report.
-  const [signedExport, setSignedExport] = useState<"payment-collection" | "financial-summary" | null>(null);
-  const [exportClients, setExportClients] = useState<{ id: number; name: string; code: string | null }[]>([]);
+  // Payment Collection / Financial Summary: files rendered on the server (letterhead, charts, signature).
   const [verifyCode, setVerifyCode] = useState<string | null>(() => typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("verify"));
-  const canSignedExport = ["super_admin", "partner", "manager", "finance", "galvanizer"].includes(role);
-  const openSignedExport = (type: "payment-collection" | "financial-summary") => {
-    setSignedExport(type);
-    if (exportClients.length === 0) {
-      api.getClients(new URLSearchParams({ per_page: "2000" }))
-        .then((res: any) => setExportClients((res?.data ?? []).map((c: any) => ({ id: c.id, name: c.legal_name ?? c.company_name, code: c.client_code ?? null }))))
-        .catch(() => {});
-    }
-  };
+  const [lastFilters, setLastFilters] = useState<{ type: string; fromDate: string; toDate: string; clientCode: string } | null>(null);
+  const [signPrompt, setSignPrompt] = useState<{ file: "xlsx" | "csv" | "pdf"; historyId?: number; edited: boolean } | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [history, setHistory] = useState<ReportHistoryItem[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
@@ -288,6 +282,7 @@ export default function Reports() {
         clientCode: generator.clientCode,
       });
       setPreview(result);
+      setLastFilters({ type: activeReport.id, fromDate: generator.fromDate, toDate: generator.toDate, clientCode: generator.clientCode });
       setEditableRows(result.rows.map((row) => ({ ...row })));
       setPreviewName(activeReport.name);
       setActiveReport(null);
@@ -309,6 +304,11 @@ export default function Reports() {
 
   function downloadEditedPreview(format: "PDF" | "Excel" | "CSV") {
     if (!preview || !previewName) return;
+    if (SIGNED_REPORTS.has(preview.type)) {
+      const edited = JSON.stringify(editableRows) !== JSON.stringify(preview.rows);
+      setSignPrompt({ file: format === "PDF" ? "pdf" : format === "Excel" ? "xlsx" : "csv", edited });
+      return;
+    }
     if (format === "PDF") {
       exportPDF(previewName, editableRows);
     } else if (format === "Excel") {
@@ -318,7 +318,21 @@ export default function Reports() {
     }
   }
 
+  /** An edited preview of a signed-type report: in-browser file, clearly marked as an unsigned edited copy. */
+  function downloadEditedCopy(file: "xlsx" | "csv" | "pdf") {
+    if (!preview || !previewName) return;
+    const name = `${previewName} — UNSIGNED edited copy`;
+    if (file === "pdf") exportPDF(name, editableRows);
+    else if (file === "xlsx") exportExcel(name, editableRows);
+    else downloadCSV(`${preview.type}-unsigned-edited-${new Date().toISOString().slice(0, 10)}.csv`, editableRows);
+  }
+
   async function downloadHistoryItem(item: ReportHistoryItem) {
+    if (SIGNED_REPORTS.has(item.type)) {
+      const fmt = String(item.format).toUpperCase();
+      setSignPrompt({ file: fmt === "PDF" ? "pdf" : fmt === "CSV" ? "csv" : "xlsx", historyId: item.id, edited: false });
+      return;
+    }
     const saved = await api.getReportHistoryItem(item.id);
     if (saved.format === "PDF") {
       exportPDF(saved.name, saved.rows);
@@ -335,14 +349,18 @@ export default function Reports() {
   return (
     <AppLayout>
       <Head title="Reports" />
-      <PageHeader eyebrow="Insight" title="Reports" description="Generate and export reports across all practice areas"
-        actions={canSignedExport ? (
-          <>
-            <Button size="sm" variant="outline" onClick={() => openSignedExport("financial-summary")}>Financial summary · signed export</Button>
-            <Button size="sm" className="bg-gold text-black hover:bg-gold/90" onClick={() => openSignedExport("payment-collection")}>Payment collection · signed export</Button>
-          </>
-        ) : undefined} />
-      {signedExport && <PaymentExportDialog clients={exportClients} initialType={signedExport} onClose={() => setSignedExport(null)} />}
+      <PageHeader eyebrow="Insight" title="Reports" description="Generate and export reports across all practice areas" />
+      {signPrompt && (
+        <SignDownloadDialog file={signPrompt.file} edited={signPrompt.edited}
+          onClose={() => setSignPrompt(null)}
+          onEditedCopy={() => { const f = signPrompt.file; setSignPrompt(null); downloadEditedCopy(f); }}
+          onDownload={async (pin) => {
+            if (signPrompt.historyId) await api.downloadReportHistory(signPrompt.historyId, signPrompt.file, pin);
+            else if (lastFilters) await api.downloadPaymentReport({ type: lastFilters.type, file: signPrompt.file, client_code: lastFilters.clientCode || undefined,
+              from_date: lastFilters.fromDate || undefined, to_date: lastFilters.toDate || undefined, pin });
+            loadHistory();
+          }} />
+      )}
       {verifyCode && <ReportVerifyDialog code={verifyCode} onClose={() => { setVerifyCode(null); window.history.replaceState(window.history.state, "", "/reports"); }} />}
 
       <div className="px-8 py-6 space-y-8">
@@ -500,6 +518,11 @@ export default function Reports() {
                     <Calendar className="h-3.5 w-3.5" /> To Date
                   </label>
                   <Input type="date" value={generator.toDate} onChange={(event) => setGenerator((state) => ({ ...state, toDate: event.target.value }))} />
+                  {activeReport && SIGNED_REPORTS.has(activeReport.id) && generator.fromDate && (
+                    <button type="button" className="text-[11px] text-gold hover:underline" onClick={() => setGenerator((state) => ({ ...state, toDate: state.fromDate }))}>
+                      Only {generator.fromDate} (one date)
+                    </button>
+                  )}
                 </div>
                 <div className="space-y-1.5 sm:col-span-2">
                   <label className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Export Format</label>

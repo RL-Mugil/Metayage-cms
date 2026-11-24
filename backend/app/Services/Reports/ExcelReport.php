@@ -32,12 +32,12 @@ class ExcelReport
      * @param  array<string, mixed>  $letterhead  Letterhead::get()
      * @param  array<string, string>|null  $signature  name, role, at, code, url
      */
-    public function render(string $title, array $data, array $letterhead, ?array $signature, bool $financialSummary): string
+    public function render(string $title, array $data, array $letterhead, ?array $signature, bool $financialSummary, ?string $sealPng = null): string
     {
         $book = new Spreadsheet();
         $book->getProperties()->setCreator($letterhead['company_name'])->setTitle($title);
         $summary = $book->getActiveSheet()->setTitle('Summary');
-        $this->summarySheet($summary, $title, $data, $letterhead, $signature);
+        $this->summarySheet($summary, $title, $data, $letterhead, $signature, $sealPng);
 
         $this->table($book, 'Follow-up', ['Invoice', 'Client', 'Client code', 'Contact', 'Email', 'Phone', 'Case', 'Invoice date', 'Due date', 'Days overdue', 'Status', 'Billed', 'Received', 'Waived', 'Balance', 'Last follow-up'],
             array_map(fn ($r) => [$r['invoice'], $r['client'], $r['client_code'], $r['contact'], $r['email'], $r['phone'], $r['case'], $r['invoice_date'], $r['due_date'], $r['days_overdue'], $r['status'], $r['billed'], $r['received'], $r['waived'], $r['balance'], $r['follow_up']], $data['pending']),
@@ -66,8 +66,24 @@ class ExcelReport
         return (string) ob_get_clean();
     }
 
-    private function summarySheet(Worksheet $sheet, string $title, array $data, array $letterhead, ?array $signature): void
+    private function summarySheet(Worksheet $sheet, string $title, array $data, array $letterhead, ?array $signature, ?string $sealPng): void
     {
+        // Small 3D seal top-right with three short lines beside it.
+        if ($sealPng) {
+            $tmp = tempnam(storage_path('app'), 'seal');
+            file_put_contents($tmp, $sealPng);
+            $seal = new Drawing();
+            $seal->setPath($tmp)->setHeight(54)->setCoordinates('I1')->setOffsetX(4)->setWorksheet($sheet);
+            register_shutdown_function(fn () => @unlink($tmp));
+        }
+        $sheet->setCellValue('J1', $signature ? 'Digitally signed · '.$signature['name'].' ('.$signature['role'].')' : 'Unsigned draft');
+        $sheet->setCellValue('J2', $signature ? $signature['at'] : 'Not signed with a signature PIN');
+        $sheet->setCellValue('J3', $signature ? 'Code '.$signature['code'] : '');
+        $sheet->getStyle('J1')->getFont()->setBold(true)->setSize(9)->getColor()->setRGB($signature ? 'B45309' : '64748B');
+        $sheet->getStyle('J2:J3')->getFont()->setSize(8)->getColor()->setRGB('6B7280');
+        if ($signature) {
+            $sheet->getCell('J3')->getHyperlink()->setUrl($signature['url']);
+        }
         if (is_file($letterhead['logo_path'])) {
             $logo = new Drawing();
             $logo->setPath($letterhead['logo_path'])->setHeight(46)->setCoordinates('C1')->setWorksheet($sheet);
@@ -125,11 +141,7 @@ class ExcelReport
         $ageing->setTopLeftPosition('G20')->setBottomRightPosition('L38');
         $sheet->addChart($ageing);
 
-        $row = 40;
-        $sheet->setCellValue("A{$row}", $signature
-            ? "Digitally signed by {$signature['name']} ({$signature['role']}) on {$signature['at']} · Verification code {$signature['code']} · Verify at {$signature['url']}"
-            : 'UNSIGNED DRAFT — not signed with a signature PIN.');
-        $sheet->getStyle("A{$row}")->getFont()->setBold(true)->getColor()->setRGB($signature ? '047857' : 'B91C1C');
+        $row = 39;
         $sheet->setCellValue('A'.($row + 2), $letterhead['company_name'])->getStyle('A'.($row + 2))->getFont()->setBold(true)->getColor()->setRGB('15803D');
         $sheet->setCellValue('A'.($row + 3), $letterhead['address']);
         $sheet->setCellValue('A'.($row + 4), $letterhead['phone'].' | Web: '.$letterhead['web']);

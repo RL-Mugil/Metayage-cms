@@ -27,8 +27,13 @@
   .bar { height: 9px; background: #3b82f6; display: inline-block; vertical-align: middle; border-radius: 2px; }
   .bar.c { background: #10b981; }
   .chart td { padding: 2px 3px; font-size: 8px; vertical-align: middle; }
-  .sig { margin-top: 14px; border: 1px solid #a7f3d0; background: #ecfdf5; border-radius: 6px; padding: 8px 10px; }
-  .sig.uns { border-color: #fecaca; background: #fef2f2; }
+  .seal { margin-top: 12px; width: 260px; margin-left: auto; }
+  .seal td { vertical-align: middle; }
+  .seal img { width: 52px; height: 52px; }
+  .seal .n { font-weight: bold; font-size: 8.6px; color: #92400e; }
+  .seal .n.u { color: #475569; }
+  .seal .m { font-size: 7.4px; color: #6b7280; line-height: 1.35; }
+  .more { font-size: 7.6px; color: #6b7280; font-style: italic; padding-top: 3px; }
   .split td { vertical-align: top; }
 </style>
 </head>
@@ -49,7 +54,7 @@
 
 <h1>{{ $title }}</h1>
 <div class="muted">
-  Period: {{ ($data['filters']['from'] || $data['filters']['to']) ? (($data['filters']['from'] ?? 'start').' to '.($data['filters']['to'] ?? 'today')) : 'All dates' }}
+  Period: {{ ($data['filters']['from'] || $data['filters']['to']) ? (($data['filters']['from'] ?? 'start').' to '.($data['filters']['to'] ?? 'today')) : 'All invoices · payments from '.($data['filters']['payments_from'] ?? 'start') }}
   · Client: {{ $data['filters']['client'] }} · Generated {{ now()->format('d M Y, H:i') }}
 </div>
 
@@ -95,6 +100,7 @@
         <td class="r">{{ $inr($r['billed']) }}</td><td class="r"><b>{{ $inr($r['balance']) }}</b></td></tr>
   @empty <tr><td colspan="8" class="muted">Nothing pending.</td></tr> @endforelse
 </table>
+@if (($cut['pending'] ?? 0) > 0)<div class="more">{{ $cut['pending'] }} more pending invoices — see the Excel export.</div>@endif
 
 <h2>Payments received ({{ count($data['payments']) }})</h2>
 <table class="data">
@@ -103,6 +109,7 @@
     <tr><td>{{ $p['date'] }}</td><td>{{ $p['invoice'] }}</td><td>{{ $p['client'] }}</td><td>{{ $p['mode'] }}</td><td>{{ $p['source'] }}</td><td class="r">{{ $inr($p['amount']) }}</td></tr>
   @empty <tr><td colspan="6" class="muted">No payments in this period.</td></tr> @endforelse
 </table>
+@if (($cut['payments'] ?? 0) > 0)<div class="more">{{ $cut['payments'] }} more payments — see the Excel export.</div>@endif
 
 @if (count($data['waivers']))
 <h2>Waivers ({{ count($data['waivers']) }})</h2>
@@ -112,25 +119,40 @@
     <tr><td>{{ $w['date'] }}</td><td>{{ $w['invoice'] }}</td><td>{{ $w['client'] }}</td><td>{{ $w['reason'] }}</td><td>{{ $w['approved_by'] }}</td><td class="r">{{ $inr($w['amount']) }}</td></tr>
   @endforeach
 </table>
+@if (($cut['waivers'] ?? 0) > 0)<div class="more">{{ $cut['waivers'] }} more waivers — see the Excel export.</div>@endif
 @endif
+
+@if ($financialSummary ?? false)
+<h2>Invoices</h2>
+<table class="data">
+  <tr><th>Invoice</th><th>Client</th><th>Invoice date</th><th>Status</th><th class="r">Billed</th><th class="r">Received</th><th class="r">Waived</th><th class="r">Balance</th></tr>
+  @foreach ($data['invoices'] as $i)
+    <tr><td>{{ $i['invoice'] }}</td><td>{{ $i['client'] }}</td><td>{{ $i['invoice_date'] }}</td><td><span class="pill {{ $pill($i['status']) }}">{{ $i['status'] }}</span></td>
+        <td class="r">{{ $inr($i['billed']) }}</td><td class="r">{{ $inr($i['received']) }}</td><td class="r">{{ $inr($i['waived']) }}</td><td class="r">{{ $inr($i['balance']) }}</td></tr>
+  @endforeach
+</table>
+@if (($cut['invoices'] ?? 0) > 0)<div class="more">{{ $cut['invoices'] }} more invoices — see the Excel export.</div>@endif
 
 <h2>By client</h2>
 <table class="data">
   <tr><th>Client</th><th class="r">Invoices</th><th class="r">Billed</th><th class="r">Received</th><th class="r">Waived</th><th class="r">Outstanding</th></tr>
-  @foreach (array_slice($data['by_client'], 0, 40) as $c)
+  @foreach ($data['by_client'] as $c)
     <tr><td>{{ $c['client'] }} <span class="muted">{{ $c['client_code'] }}</span></td><td class="r">{{ $c['invoices'] }}</td><td class="r">{{ $inr($c['billed']) }}</td>
         <td class="r">{{ $inr($c['received']) }}</td><td class="r">{{ $inr($c['waived']) }}</td><td class="r"><b>{{ $inr($c['outstanding']) }}</b></td></tr>
   @endforeach
 </table>
 
-@if ($signature)
-  <div class="sig">
-    <b>Digitally signed</b> by {{ $signature['name'] }} ({{ $signature['role'] }}) on {{ $signature['at'] }}<br>
-    Verification code <b>{{ $signature['code'] }}</b> · verify at {{ $signature['url'] }}<br>
-    <span class="muted">Internal approval signature (tamper-evident). Any change to this report's data invalidates the code.</span>
-  </div>
-@else
-  <div class="sig uns"><b>UNSIGNED DRAFT</b> — generated without a signature PIN.</div>
-@endif
+<table class="seal"><tr>
+  <td width="58"><img src="{{ $seal }}" alt=""></td>
+  <td>
+    @if ($signature)
+      <div class="n">Digitally signed · {{ $signature['name'] }}</div>
+      <div class="m">{{ $signature['role'] }} · {{ $signature['at'] }}<br>Code {{ $signature['code'] }} · verify at {{ $signature['url'] }}</div>
+    @else
+      <div class="n u">Unsigned draft</div>
+      <div class="m">Generated without a signature PIN.</div>
+    @endif
+  </td>
+</tr></table>
 </body>
 </html>

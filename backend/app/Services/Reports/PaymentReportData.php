@@ -29,6 +29,9 @@ class PaymentReportData
     {
         $today = now()->startOfDay();
         $inRange = fn (?Carbon $d) => $d && (! $from || $d->gte($from->copy()->startOfDay())) && (! $to || $d->lte($to->copy()->endOfDay()));
+        // With no dates chosen, payments and waivers cover the last 12 months (open invoices are always all of them).
+        $periodFrom = $from ?? (! $to ? $today->copy()->subYear()->addDay() : null);
+        $inPeriod = fn (?Carbon $d) => $d && (! $periodFrom || $d->gte($periodFrom->copy()->startOfDay())) && (! $to || $d->lte($to->copy()->endOfDay()));
 
         $invoices = $this->figures->registerInvoices($user, $clientId)
             ->with('client:id,legal_name,company_name,client_code,contact_name,contact_email,phone', 'project:id,docket_number')
@@ -62,7 +65,7 @@ class PaymentReportData
             ->whereIn('patent_invoice_in_id', $this->figures->registerInvoices($user, $clientId)->select('id'))
             ->with('invoice:id,invoice_uin,client_id,client_name', 'invoice.client:id,legal_name,company_name,client_code', 'recordedBy:id,name')
             ->orderByDesc('payment_date')->get()
-            ->filter(fn ($p) => (! $from && ! $to) || $inRange($p->payment_date))
+            ->filter(fn ($p) => $inPeriod($p->payment_date))
             ->map(fn (RegisterPayment $p) => [
                 'date' => $p->payment_date?->toDateString(), 'invoice' => $p->invoice?->invoice_uin,
                 'client' => $p->invoice?->client?->legal_name ?: $p->invoice?->client?->company_name ?: $p->invoice?->client_name ?: '—',
@@ -73,7 +76,7 @@ class PaymentReportData
 
         $waivers = $this->figures->registerInvoices($user, $clientId)->where('waived_amount', '>', 0)
             ->with('client:id,legal_name,company_name,client_code', 'settledBy:id,name')->get()
-            ->filter(fn ($i) => (! $from && ! $to) || $inRange($i->settled_at))
+            ->filter(fn ($i) => $inPeriod($i->settled_at))
             ->map(fn (PatentInvoiceIn $i) => [
                 'date' => $i->settled_at?->toDateString(), 'invoice' => $i->invoice_uin, 'client' => $clientName($i),
                 'client_code' => $i->client?->client_code, 'amount' => round((float) $i->waived_amount * ((float) ($i->exchange_rate ?? 1) ?: 1), 2),
@@ -108,6 +111,7 @@ class PaymentReportData
             'filters' => [
                 'from' => $from?->toDateString(), 'to' => $to?->toDateString(),
                 'client' => $clientRow ? ($clientRow->legal_name ?: $clientRow->company_name).' ('.$clientRow->client_code.')' : 'All clients',
+                'payments_from' => $periodFrom?->toDateString(),
             ],
             'summary' => [
                 'billed' => round($billed, 2), 'received' => round($received, 2), 'outstanding' => round($outstanding, 2),

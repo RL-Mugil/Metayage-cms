@@ -6,14 +6,15 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { api } from "@/lib/api-client"
 
 /** Signed, letterhead export: report, format, client and one date or a range; PIN signs it. */
-export function PaymentExportDialog({ clients, initialClient = "", initialType = "payment-collection", onClose }: { clients: { id: number; name: string; code: string | null }[]; initialClient?: string; initialType?: "payment-collection" | "financial-summary"; onClose: () => void }) {
+/** Pending Payments shortcut to the Payment Collection report (Reports module), pre-filled with the current view. */
+export function PaymentExportDialog({ clients, initialClient = "", initialType = "payment-collection", initialFrom = "", initialTo = "", onClose }: { clients: { id: number; name: string; code: string | null }[]; initialClient?: string; initialType?: "payment-collection" | "financial-summary"; initialFrom?: string; initialTo?: string; onClose: () => void }) {
   const [type, setType] = useState<"payment-collection" | "financial-summary">(initialType);
   const [file, setFile] = useState<"xlsx" | "csv" | "pdf">("xlsx");
   const [client, setClient] = useState(() => clients.find((c) => String(c.id) === initialClient)?.code ?? "");
-  const [dateMode, setDateMode] = useState<"all" | "one" | "range">("all");
+  const [dateMode, setDateMode] = useState<"all" | "one" | "range">(initialFrom || initialTo ? "range" : "all");
   const [date, setDate] = useState("");
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
+  const [from, setFrom] = useState(initialFrom);
+  const [to, setTo] = useState(initialTo);
   const [pin, setPin] = useState("");
   const [busy, setBusy] = useState(false);
   const valid = useMemo(() => (dateMode !== "one" || !!date) && (pin === "" || /^\d{4}$/.test(pin)), [dateMode, date, pin]);
@@ -36,7 +37,8 @@ export function PaymentExportDialog({ clients, initialClient = "", initialType =
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-lg">
-        <DialogHeader><DialogTitle>Export for follow-up</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>{type === "payment-collection" ? "Payment Collection report" : "Financial Summary report"}</DialogTitle></DialogHeader>
+        <p className="-mt-2 text-[11px] text-muted-foreground">The same report as Reports → {type === "payment-collection" ? "Payment Collection" : "Financial Summary"}; it is also saved under Recent Reports.</p>
         <div className="space-y-3 text-xs">
           <div className="grid grid-cols-2 gap-2">
             {([["payment-collection", "Payment collection", "Pending follow-up, payments, waivers, ageing"], ["financial-summary", "Financial summary", "Every invoice with billed / received / waived / balance"]] as const).map(([k, l, h]) => (

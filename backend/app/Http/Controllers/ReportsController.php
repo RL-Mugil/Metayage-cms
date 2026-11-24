@@ -740,47 +740,102 @@ class ReportsController extends Controller
      * Signed, letterhead export of Payment Collection / Financial Summary: Excel (tabs, charts,
      * filter dropdowns), CSV (one consolidated sheet) or PDF (data sheet with charts).
      */
-    public function download(Request $request, \App\Services\Reports\PaymentReportData $reportData, \App\Services\Reports\ReportSigner $signer,
-        \App\Services\Letterhead $letterhead)
+    /** Report types whose exports are rendered on the server (letterhead, charts, signature). */
+    public const SIGNED_TYPES = ['payment-collection', 'financial-summary'];
+
+    /** PDF keeps to a size dompdf lays out comfortably; Excel and CSV always carry every row. */
+    private const PDF_LIMITS = ['pending' => 150, 'payments' => 150, 'waivers' => 100, 'by_client' => 60, 'invoices' => 150];
+
+    /**
+     * Payment Collection / Financial Summary export from the report module: Excel (tabs, charts,
+     * filter dropdowns), CSV (one consolidated sheet) or PDF (data sheet with charts), on the
+     * letterhead, signed with the generator's signature PIN or marked as an unsigned draft.
+     */
+    public function download(Request $request, \App\Services\Reports\PaymentReportData $reportData, \App\Services\Reports\ReportSigner $signer)
     {
         $request->validate([
-            'type' => ['required', Rule::in(['payment-collection', 'financial-summary'])],
+            'type' => ['required', Rule::in(self::SIGNED_TYPES)],
             'file' => ['required', Rule::in(['xlsx', 'csv', 'pdf'])],
             'pin' => ['nullable', 'digits:4'],
         ]);
         [$type, $user, , , $from, $to, $clientCode] = $this->resolveContext($request);
         $data = $reportData->build($user, $from, $to, $this->clientIdFor($clientCode));
         $file = (string) $request->input('file');
-        $title = self::REPORT_NAMES[$type] ?? $type;
 
         $export = ReportExport::create([
-            'generated_by_id' => $user->id, 'report_type' => $type, 'report_name' => $title,
-            'format' => strtoupper($file === 'xlsx' ? 'EXCEL' : $file),
+            'generated_by_id' => $user->id, 'report_type' => $type, 'report_name' => self::REPORT_NAMES[$type] ?? $type,
+            'format' => $file === 'xlsx' ? 'EXCEL' : strtoupper($file),
             'filters' => ['from_date' => $from?->toDateString(), 'to_date' => $to?->toDateString(), 'client_code' => $clientCode],
             'row_count' => count($data['pending']) + count($data['payments']) + count($data['invoices']),
             'snapshot' => $data,
         ]);
-        $signature = null;
         if ($request->filled('pin')) {
-            $signed = $signer->sign($export, $data, $user, (string) $request->input('pin'));
-            $signature = ['name' => $user->name, 'role' => ucwords(str_replace('_', ' ', (string) $user->role)),
-                'at' => $signed->signed_at?->timezone('Asia/Kolkata')->format('d M Y, H:i').' IST', 'code' => $signed->verification_code,
-                'url' => rtrim((string) config('app.url'), '/').'/reports?verify='.$signed->verification_code];
+            $signer->sign($export, $data, $user, (string) $request->input('pin'));
         }
+
+        return $this->renderExport($request, $export, $data, $file);
+    }
+
+    /** Download a saved Payment Collection / Financial Summary again from its snapshot (keeps its signature; can be signed now). */
+    public function downloadHistory(Request $request, int $id, \App\Services\Reports\ReportSigner $signer)
+    {
+        $request->validate(['file' => ['required', Rule::in(['xlsx', 'csv', 'pdf'])], 'pin' => ['nullable', 'digits:4']]);
+        $export = ReportExport::where('generated_by_id', $request->user()->id)->findOrFail($id);
+        abort_unless(in_array($export->report_type, self::SIGNED_TYPES, true) && is_array($export->snapshot) && isset($export->snapshot['summary']), 422,
+            'This saved report is from before the register-based version; generate it again.');
+        $data = $export->snapshot;
+        if ($request->filled('pin') && ! $signer->find((string) $this->signatureFor($export)?->verification_code)) {
+            $signer->sign($export, $data, $request->user(), (string) $request->input('pin'));
+        }
+
+        return $this->renderExport($request, $export, $data, (string) $request->input('file'));
+    }
+
+    private function signatureFor(ReportExport $export): ?\App\Models\InternalDocumentSignature
+    {
+        return \App\Models\InternalDocumentSignature::with('signedBy:id,name')
+            ->where('document_type', \App\Services\Reports\ReportSigner::DOCUMENT_TYPE)->where('document_id', $export->id)->first();
+    }
+
+    /** Render one export (PDF / Excel / CSV) with its signature, if any. */
+    private function renderExport(Request $request, ReportExport $export, array $data, string $file)
+    {
+        $user = $request->user();
+        $signed = $this->signatureFor($export);
+        $seal = app(\App\Services\Reports\SignatureSeal::class);
+        $signature = $signed ? [
+            'name' => $signed->signedBy?->name ?? $user->name, 'role' => ucwords(str_replace('_', ' ', (string) $signed->signer_role)),
+            'at' => $signed->signed_at?->timezone('Asia/Kolkata')->format('d M Y, H:i').' IST', 'code' => $signed->verification_code,
+            'url' => rtrim((string) config('app.url'), '/').'/reports?verify='.$signed->verification_code,
+        ] : null;
         AuditLog::create(['user_id' => $user->id, 'action' => 'report_download', 'subject_type' => 'ReportExport', 'subject_id' => $export->id,
-            'metadata' => ['type' => $type, 'file' => $file, 'signed' => (bool) $signature, 'client_code' => $clientCode],
+            'metadata' => ['type' => $export->report_type, 'file' => $file, 'signed' => (bool) $signature, 'filters' => $export->filters],
             'ip_address' => $request->ip(), 'user_agent' => $request->userAgent()]);
 
-        $head = $letterhead->get();
-        $name = str_replace(' ', '-', $title).'-'.now()->format('Y-m-d').($clientCode ? "-{$clientCode}" : '');
+        $title = $export->report_name;
+        $head = app(\App\Services\Letterhead::class)->get();
+        $clientCode = $export->filters['client_code'] ?? null;
+        $name = str_replace(' ', '-', $title).'-'.$export->created_at->format('Y-m-d').($clientCode ? "-{$clientCode}" : '');
+        $sealUri = $seal->dataUri((bool) $signature);
+
         if ($file === 'pdf') {
-            $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.payment-report', ['title' => $title, 'data' => $data, 'letterhead' => $head, 'signature' => $signature])
+            @ini_set('memory_limit', '512M');
+            $cut = [];
+            $pdfData = $data;
+            foreach (self::PDF_LIMITS as $key => $limit) {
+                $rows = $data[$key] ?? [];
+                $cut[$key] = max(0, count($rows) - $limit);
+                $pdfData[$key] = array_slice($rows, 0, $limit);
+            }
+            $pdf = \Barryvdh\DomPDF\Facade\Pdf::setOptions(['isRemoteEnabled' => false, 'isFontSubsettingEnabled' => true])
+                ->loadView('pdf.payment-report', ['title' => $title, 'data' => $pdfData, 'cut' => $cut, 'letterhead' => $head,
+                    'signature' => $signature, 'seal' => $sealUri, 'financialSummary' => $export->report_type === 'financial-summary'])
                 ->setPaper('a4', 'landscape');
 
             return $pdf->download("{$name}.pdf");
         }
         if ($file === 'xlsx') {
-            $bytes = app(\App\Services\Reports\ExcelReport::class)->render($title, $data, $head, $signature, $type === 'financial-summary');
+            $bytes = app(\App\Services\Reports\ExcelReport::class)->render($title, $data, $head, $signature, $export->report_type === 'financial-summary', $seal->png((bool) $signature));
 
             return response($bytes, 200, [
                 'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',

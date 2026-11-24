@@ -302,6 +302,7 @@ Route::middleware(['auth:sanctum', 'firm.context', 'throttle:120,1'])->group(fun
     Route::get('/reports/history', [ReportsController::class, 'history']);
     // Signed letterhead exports (PIN tries limited) and their verification.
     Route::post('/reports/download', [ReportsController::class, 'download'])->middleware('throttle:15,1');
+    Route::post('/reports/history/{id}/download', [ReportsController::class, 'downloadHistory'])->middleware('throttle:15,1');
     Route::get('/reports/verify/{code}', [ReportsController::class, 'verify'])->middleware('throttle:30,1');
     Route::get('/reports/history/{id}', [ReportsController::class, 'showHistory']);
 

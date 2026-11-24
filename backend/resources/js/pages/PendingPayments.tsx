@@ -128,7 +128,7 @@ export default function PendingPayments() {
         summary={isClient ? "Invoices awaiting payment. Pay by bank transfer, then upload the payment proof here." : "Every unpaid invoice — portal renewals and Zoho Books — colour coded by how late it is."}
         actions={isStaff && (
           <Button size="sm" className="bg-gold text-black hover:bg-gold/90" onClick={() => setExportOpen(true)}>
-            <Download className="mr-1.5 h-4 w-4" /> Export follow-up
+            <Download className="mr-1.5 h-4 w-4" /> Payment Collection report
           </Button>
         )}>
         <div className="flex min-h-0 flex-1 flex-col gap-2.5">
@@ -306,7 +306,7 @@ export default function PendingPayments() {
       {payRow && <MarkPaidDialog row={payRow} onClose={() => setPayRow(null)} onDone={() => { setPayRow(null); load(); }} />}
       {waiveRow && <WaiveDialog row={waiveRow} onClose={() => setWaiveRow(null)} onDone={() => { setWaiveRow(null); load(); }} />}
       {noteRow && <NoteDialog row={noteRow} onClose={() => setNoteRow(null)} onDone={() => { setNoteRow(null); load(); }} />}
-      {exportOpen && <ExportDialog clients={extra.clients} initialClient={clientId} onClose={() => setExportOpen(false)} />}
+      {exportOpen && <ExportDialog clients={extra.clients} initialClient={clientId} initialFrom={from} initialTo={to} onClose={() => setExportOpen(false)} />}
     </AppLayout>
   );
 }

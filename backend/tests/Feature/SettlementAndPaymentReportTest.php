@@ -100,6 +100,32 @@ class SettlementAndPaymentReportTest extends TestCase
         Queue::assertPushed(ZohoSettlementWriteback::class, fn ($job) => $job->invoiceId === $this->invoice->id && $job->kind === 'payment');
     }
 
+    public function test_large_pdf_renders_and_history_redownload_keeps_the_signature(): void
+    {
+        $partner = $this->user('partner', 'p4@set.test');
+        $employee = Employee::create(['employee_code' => 'EMP-2026-0098', 'user_id' => $partner->id, 'full_name' => 'Partner', 'work_email' => 'p4@set.test',
+            'status' => 'Active', 'date_of_joining' => '2024-01-01']);
+        $employee->setInternalSignaturePin('2468');
+        $employee->save();
+        // 400 payments: more than the PDF shows; it must still render (it ran out of memory before).
+        foreach (range(1, 400) as $n) {
+            RegisterPayment::create(['patent_invoice_in_id' => $this->invoice->id, 'client_id' => $this->client->id, 'source' => 'zoho', 'zoho_payment_id' => "p{$n}",
+                'payment_date' => now()->subDays($n % 300)->toDateString(), 'amount' => 1, 'currency' => 'INR', 'exchange_rate' => 1, 'amount_bcy' => 1]);
+        }
+        Sanctum::actingAs($partner);
+        $pdf = $this->post('/api/reports/download', ['type' => 'payment-collection', 'file' => 'pdf', 'pin' => '2468'], ['Accept' => 'application/json'])->assertOk();
+        $this->assertStringStartsWith('%PDF', (string) $pdf->getContent());
+
+        $export = \App\Models\ReportExport::latest('id')->first();
+        $code = \App\Models\InternalDocumentSignature::where('document_type', 'report_export')->where('document_id', $export->id)->value('verification_code');
+        $this->post("/api/reports/history/{$export->id}/download", ['file' => 'xlsx'], ['Accept' => 'application/json'])->assertOk();
+        $this->assertSame($code, \App\Models\InternalDocumentSignature::where('document_type', 'report_export')->where('document_id', $export->id)->value('verification_code'));
+        $this->getJson("/api/reports/verify/{$code}")->assertOk()->assertJsonPath('valid', true);
+
+        $png = app(\App\Services\Reports\SignatureSeal::class)->png(true);
+        $this->assertStringStartsWith("\x89PNG", $png);
+    }
+
     public function test_reports_come_from_the_register_and_downloads_are_signed(): void
     {
         $partner = $this->user('partner', 'p3@set.test');

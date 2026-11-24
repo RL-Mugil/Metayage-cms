@@ -741,6 +741,25 @@ export const api = {
     link.click()
     URL.revokeObjectURL(url)
   },
+  /** Download a saved Payment Collection / Financial Summary again (server-rendered; keeps its signature, or signs it now with a PIN). */
+  async downloadReportHistory(id: number, file: 'xlsx' | 'csv' | 'pdf', pin?: string): Promise<void> {
+    const response = await fetch(`/api/reports/history/${id}/download`, {
+      method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-XSRF-TOKEN': getCsrfToken() },
+      body: JSON.stringify({ file, pin }),
+    })
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}))
+      throw new Error((err as { message?: string }).message || 'Download failed')
+    }
+    const name = /filename="?([^";]+)"?/.exec(response.headers.get('content-disposition') ?? '')?.[1] ?? `report.${file}`
+    const url = URL.createObjectURL(await response.blob())
+    const link = document.createElement('a')
+    link.href = url
+    link.download = name
+    link.click()
+    URL.revokeObjectURL(url)
+  },
   async verifyReport(code: string): Promise<{ valid: boolean; report: string; format: string; filters: Record<string, string | null>; signed_by: string; signer_role: string; signed_at: string; rows: number }> {
     return this.request(`/reports/verify/${encodeURIComponent(code)}`)
   },
