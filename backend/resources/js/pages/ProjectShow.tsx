@@ -14,7 +14,18 @@ export default function ProjectShow({ projectId }: Props) {
   const [data, setData] = useState<MatterWorkspaceData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [tab, setTab] = useState<WorkspaceTab>("overview")
+  // ?tab=deadlines (etc.) opens the case on that tab, e.g. from Patent Portfolio → Action Required.
+  const TABS: WorkspaceTab[] = ["overview", "lifecycle", "deadlines", "family", "documents", "forms", "discussion", "tasks", "costs", "audit"]
+  const [tab, setTabState] = useState<WorkspaceTab>(() => {
+    const wanted = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("tab")
+    return wanted && (TABS as string[]).includes(wanted) ? (wanted as WorkspaceTab) : "overview"
+  })
+  const setTab = (next: WorkspaceTab) => {
+    setTabState(next)
+    const url = new URL(window.location.href)
+    if (next === "overview") url.searchParams.delete("tab"); else url.searchParams.set("tab", next)
+    window.history.replaceState(window.history.state, "", url.toString())
+  }
 
   useEffect(() => {
     let active = true

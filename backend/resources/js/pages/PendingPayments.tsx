@@ -56,8 +56,10 @@ export default function PendingPayments() {
   const [meta, setMeta] = useState({ current_page: 1, last_page: 1, total: 0 });
   const [pendingTotals, setPendingTotals] = useState<Record<string, number>>({});
   const [overdueCount, setOverdueCount] = useState(0);
-  const [search, setSearch] = useState("");
-  const [query, setQuery] = useState("");
+  // ?search=<UIN or docket> (links from Patent Portfolio) arrives already filtered.
+  const initialSearch = typeof window === "undefined" ? "" : new URLSearchParams(window.location.search).get("search") ?? "";
+  const [search, setSearch] = useState(initialSearch);
+  const [query, setQuery] = useState(initialSearch.trim());
   const [overdueOnly, setOverdueOnly] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");

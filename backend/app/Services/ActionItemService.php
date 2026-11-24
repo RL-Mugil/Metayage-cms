@@ -162,7 +162,46 @@ class ActionItemService
             'is_renewal' => $isRenewal,
             'owner' => $this->ownerFor($stageName, $svcCode, $isRenewal),
             'finance_relevant' => $isRenewal,
+            'action_target' => $this->actionTarget($p, $stageName, $svcCode, $pendingAction, $isRenewal),
         ];
+    }
+
+    /**
+     * Where the row's next action is actually done (Patent Portfolio → Action Required):
+     * the case page opened on the right tab, or Pending Payments for a renewal.
+     *
+     * @return array{tab: string, label: string, url: string}
+     */
+    public function actionTarget(Project $p, string $stageName, string $svcCode, string $pendingAction, bool $isRenewal): array
+    {
+        $stage = strtolower($stageName);
+        $action = strtolower($pendingAction);
+        $has = fn (array $words, string $text) => collect($words)->contains(fn ($w) => str_contains($text, $w));
+        $case = fn (string $tab, string $label) => ['tab' => $tab, 'label' => $label, 'url' => "/projects/{$p->id}?tab={$tab}"];
+
+        if ($isRenewal) {
+            return ['tab' => 'payments', 'label' => 'Follow up renewal payment',
+                'url' => '/pending-payments?search='.rawurlencode((string) ($p->docket_number ?? ''))];
+        }
+        if ($has(['idf', 'disclosure'], $stage) || $action === 'awaiting idf') {
+            return $case('documents', 'Upload IDF / documents');
+        }
+        if ($has(['client review', 'shared with client', 'client feedback', 'claims shared', 'client approval'], $stage)
+            || str_contains($action, 'awaiting client approval') || str_contains($action, 'claims — awaiting')) {
+            return $case('discussion', 'Follow up with client');
+        }
+        if ($has(['forms prepared', 'government fees', 'forms and filing', 'ready to file'], $stage) || str_contains($action, 'ready to file')) {
+            return strtoupper((string) $p->patent_office_code) === 'IN' || $p->patent_office_code === null
+                ? $case('forms', 'Prepare forms')
+                : $case('deadlines', 'Open deadline');
+        }
+        if (in_array($svcCode, ['FER', 'SER', 'TER', 'HRG', 'NFO', 'FOA', 'OAR', 'RRT', 'QOA', 'NOA', 'MFE'], true)
+            || $has(['examination', 'office action', 'hearing', 'deadline', 'objection', 'response'], $stage)
+            || in_array($p->urgency, ['Critical', 'High'], true)) {
+            return $case('deadlines', 'Open deadline');
+        }
+
+        return $case('lifecycle', 'Update stage');
     }
 
     /**

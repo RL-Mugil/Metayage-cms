@@ -1,4 +1,4 @@
-import { Head, Link, usePage } from "@inertiajs/react";
+import { Head, Link, router, usePage } from "@inertiajs/react";
 import { useEffect, useState, useMemo } from "react";
 import { AnalystRoleFilter, useAnalystRoleFilter } from "@/components/analyst-role-filter";
 import {
@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api-client";
 import { ProjectDetailPanel } from "@/components/project-detail-panel";
 import { DonutChart, StatusBar, officeLabel as ol, officeColor as oc } from "@/components/portfolio-charts";
+import { SectionDialog } from "@/components/portfolio/section-dialog";
 
 /** Each section (renewals, payments, stages, action required) shows 5 rows per page. */
 const PAGE_SIZE = 5;
@@ -35,6 +36,44 @@ function SectionPager({ page, total, onPage }: { page: number; total: number; on
 }
 
 const pageOf = <T,>(rows: T[], page: number): T[] => rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+const fmtShort = (value?: string | null) =>
+  value ? new Date(value).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "2-digit" }) : "—";
+
+/** Section header: title on the left; search and "View all" in the top-right corner. */
+function SectionHead({ icon, title, badge, search, onSearch, onViewAll, extra }: {
+  icon?: React.ReactNode
+  title: string
+  badge?: string
+  search: string
+  onSearch: (value: string) => void
+  onViewAll: () => void
+  extra?: React.ReactNode
+}) {
+  return (
+    <CardHeader className="pb-2 flex-shrink-0">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <CardTitle className="font-display text-sm flex items-center gap-2">
+          {icon}{title}
+          {badge && <span className="text-[10px] text-gold font-normal">{badge}</span>}
+        </CardTitle>
+        <div className="flex items-center gap-2">
+          {extra}
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
+            <input value={search} onChange={(e) => onSearch(e.target.value)} placeholder="Search…"
+              className="h-7 w-32 rounded-md border border-border bg-background pl-6 pr-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold sm:w-40" />
+          </div>
+          <button onClick={onViewAll} className="whitespace-nowrap rounded-md border border-border px-2 py-1 text-xs text-gold hover:bg-gold/10">View all</button>
+        </div>
+      </div>
+    </CardHeader>
+  );
+}
+
+/** Lower-cased text of the given fields, for the section search boxes. */
+const matches = (row: any, q: string, fields: string[]) =>
+  !q || fields.some((f) => String(f.split(".").reduce((v: any, k) => v?.[k], row) ?? "").toLowerCase().includes(q));
 
 // ── Sort header ──────────────────────────────────────────────────────────────
 function SortTh({
@@ -81,6 +120,10 @@ export default function PatentPortfolio() {
   const [renewalPage, setRenewalPage] = useState(1);
   const [paymentPage, setPaymentPage] = useState(1);
   const [stagePage, setStagePage]     = useState(1);
+  const [renewalSearch, setRenewalSearch] = useState("");
+  const [paymentSearch, setPaymentSearch] = useState("");
+  const [stageSearch, setStageSearch]     = useState("");
+  const [viewAll, setViewAll] = useState<"renewals" | "stages" | "actions" | null>(null);
 
   const [detailId, setDetailId] = useState<number | null>(null);
 
@@ -169,6 +212,25 @@ export default function PatentPortfolio() {
     : [], [data]);
   const maxStage = stageData.reduce((m: number, d: any) => Math.max(m, d.count), 0);
 
+  // Each section's own search (paging restarts at 1 when it changes).
+  const renewalRows: any[] = useMemo(() => ((data?.upcoming_renewals ?? []) as any[])
+    .filter((r) => matches(r, renewalSearch.trim().toLowerCase(), ["docket_number", "project_name", "patent_office_code", "client.company_name", "client.legal_name"])),
+  [data, renewalSearch]);
+  const paymentRows: any[] = useMemo(() => ((data?.pending_invoices ?? []) as any[])
+    .filter((r) => matches(r, paymentSearch.trim().toLowerCase(), ["invoice_code", "docket_number", "status", "currency"])),
+  [data, paymentSearch]);
+  const stageRows: any[] = useMemo(() => stageData
+    .filter((s: any) => matches(s, stageSearch.trim().toLowerCase(), ["name"])),
+  [stageData, stageSearch]);
+
+  /** Go to a page in the app (the case on a tab, or Pending Payments). */
+  const goTo = (url: string) => router.visit(url);
+  /** An Action Required row opens where its action is done. */
+  const goToAction = (row: any) => {
+    if (row.action_target?.url) goTo(row.action_target.url);
+    else if (row.id) setDetailId(row.id);
+  };
+
   // Filtered + sorted Action Required
   const actionRows: any[] = data?.action_required ?? [];
   const filtered = useMemo(() => {
@@ -209,6 +271,10 @@ export default function PatentPortfolio() {
     : "All Clients";
 
   const hasFilters = activeOffice || activeStatus || activeStage || actionSearch;
+  // The client picked above, so "View all" on Pending Payments opens that client's list.
+  const selectedClientCode: string | null = selectedClientId
+    ? ((data?.clients as any[])?.find((c: any) => c.id === selectedClientId)?.client_code ?? null)
+    : null;
 
   return (
     <AppLayout>
@@ -315,195 +381,164 @@ export default function PatentPortfolio() {
               </Card>
             </div>
 
-            {/* Row 2: Renewals + Payments */}
-            <div className="grid gap-4 lg:grid-cols-2">
+            {/* Row 2: Renewals + Payments — same height side by side */}
+            <div className="grid gap-4 lg:grid-cols-2 items-stretch">
               {/* Upcoming Renewals */}
-              <Card className="border-border">
-                <CardHeader className="pb-2">
-                  <CardTitle className="font-display text-sm flex items-center gap-2">
-                    <Calendar className="h-4 w-4 text-gold" /> Upcoming Renewals
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="p-0">
-                  {(data.upcoming_renewals as any[]).length === 0 ? (
-                    <p className="text-xs text-muted-foreground px-4 py-6">No upcoming renewals.</p>
-                  ) : pageOf(data.upcoming_renewals as any[], renewalPage).map((r: any, i: number) => (
-                    <button key={i} onClick={() => r.id && setDetailId(r.id)}
-                      className="block w-full text-left px-4 py-3 border-b border-border last:border-0 hover:bg-muted/20 transition-colors group">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-1.5 text-xs font-mono font-medium text-foreground group-hover:text-gold transition-colors">
-                          <FileText className="h-3 w-3 text-muted-foreground" />
-                          {r.docket_number ?? r.project_name ?? "—"}
+              <Card className="border-border h-full flex flex-col">
+                <SectionHead icon={<Calendar className="h-4 w-4 text-gold" />} title="Upcoming Renewals"
+                  search={renewalSearch} onSearch={(v) => { setRenewalSearch(v); setRenewalPage(1); }} onViewAll={() => setViewAll("renewals")} />
+                <CardContent className="p-0 flex-1 flex flex-col">
+                  <div className="flex-1">
+                    {renewalRows.length === 0 ? (
+                      <p className="text-xs text-muted-foreground px-4 py-6">{renewalSearch ? "No matching renewals." : "No upcoming renewals."}</p>
+                    ) : pageOf(renewalRows, renewalPage).map((r: any, i: number) => (
+                      <button key={i} onClick={() => r.id && goTo(`/projects/${r.id}?tab=deadlines`)}
+                        className="block w-full text-left px-4 py-3 border-b border-border last:border-0 hover:bg-muted/20 transition-colors group">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-1.5 text-xs font-mono font-medium text-foreground group-hover:text-gold transition-colors">
+                            <FileText className="h-3 w-3 text-muted-foreground" />
+                            {r.docket_number ?? r.project_name ?? "—"}
+                            <ExternalLink className="h-2.5 w-2.5 opacity-0 group-hover:opacity-100 transition-opacity" />
+                          </div>
+                          <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                            <MapPin className="h-3 w-3" />{ol(r.patent_office_code ?? "")}
+                          </div>
                         </div>
-                        <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                          <MapPin className="h-3 w-3" />{ol(r.patent_office_code ?? "")}
+                        <div className="flex items-center justify-between mt-1.5">
+                          <span className="text-[10px] text-muted-foreground truncate">{r.client?.company_name ?? r.client?.legal_name ?? r.project_name ?? ""}</span>
+                          <span className="text-xs font-medium text-foreground">Due {fmtShort(r.hard_deadline)}</span>
                         </div>
-                      </div>
-                      <div className="flex items-center justify-between mt-1.5">
-                        <span className="text-[10px] text-muted-foreground">Due Date</span>
-                        <span className="text-xs font-medium text-foreground">
-                          {r.hard_deadline ? new Date(r.hard_deadline).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "2-digit" }) : "—"}
-                        </span>
-                      </div>
-                    </button>
-                  ))}
-                  <SectionPager page={renewalPage} total={(data.upcoming_renewals as any[]).length} onPage={setRenewalPage} />
+                      </button>
+                    ))}
+                  </div>
+                  <SectionPager page={renewalPage} total={renewalRows.length} onPage={setRenewalPage} />
                 </CardContent>
               </Card>
 
               {/* Pending Payments */}
-              <Card className="border-border">
-                <CardHeader className="pb-2">
-                  <CardTitle className="font-display text-sm flex items-center gap-2">
-                    <CreditCard className="h-4 w-4 text-gold" /> Pending Payments
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="p-0">
-                  {(data.pending_invoices as any[]).length === 0 ? (
-                    <p className="text-xs text-muted-foreground px-4 py-6">No pending payments.</p>
-                  ) : pageOf(data.pending_invoices as any[], paymentPage).map((inv: any, i: number) => (
-                    <div key={i} className="px-4 py-3 border-b border-border last:border-0 hover:bg-muted/20 transition-colors">
-                      <div className="flex items-center justify-between gap-2 text-[10px] text-muted-foreground mb-1">
-                        <div className="flex items-center gap-1">
-                          <FileText className="h-3 w-3" />
-                          <span>Docket <span className="font-mono text-foreground font-medium">{inv.docket_number}</span></span>
-                        </div>
-                        <span>{inv.due_date ? `Due ${new Date(inv.due_date).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "2-digit" })}` : inv.created_at ? new Date(inv.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "2-digit" }) : "—"}</span>
-                      </div>
-                      <div className="flex items-center justify-between rounded-md bg-gold/10 px-2.5 py-1.5">
-                        <span className="text-[10px] text-muted-foreground">Amount Due</span>
-                        <span className="text-xs font-semibold text-gold">
-                          {inv.currency ?? "INR"} {Number(inv.balance_due ?? inv.total_amount ?? 0).toLocaleString("en-IN")}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                  <SectionPager page={paymentPage} total={(data.pending_invoices as any[]).length} onPage={setPaymentPage} />
-                  {(data.pending_invoices as any[]).length > 0 && (
-                    <div className="px-4 py-2 text-right">
-                      <a href="/pending-payments" className="text-xs text-gold hover:underline">View All →</a>
-                    </div>
-                  )}
+              <Card className="border-border h-full flex flex-col">
+                <SectionHead icon={<CreditCard className="h-4 w-4 text-gold" />} title="Pending Payments"
+                  search={paymentSearch} onSearch={(v) => { setPaymentSearch(v); setPaymentPage(1); }}
+                  onViewAll={() => goTo(`/pending-payments${selectedClientCode ? `?search=${encodeURIComponent(selectedClientCode)}` : ""}`)} />
+                <CardContent className="p-0 flex-1 flex flex-col">
+                  <div className="flex-1">
+                    {paymentRows.length === 0 ? (
+                      <p className="text-xs text-muted-foreground px-4 py-6">{paymentSearch ? "No matching payments." : "No pending payments."}</p>
+                    ) : pageOf(paymentRows, paymentPage).map((inv: any, i: number) => {
+                      const overdue = inv.due_date ? Math.floor((Date.now() - new Date(inv.due_date).getTime()) / 86400000) : 0;
+                      return (
+                        <button key={i} onClick={() => goTo(`/pending-payments?search=${encodeURIComponent(inv.invoice_code ?? inv.docket_number ?? "")}`)}
+                          className="block w-full text-left px-4 py-3 border-b border-border last:border-0 hover:bg-muted/20 transition-colors group">
+                          <div className="flex items-center justify-between gap-2 text-[10px] text-muted-foreground mb-1">
+                            <div className="flex items-center gap-1">
+                              <FileText className="h-3 w-3" />
+                              <span className="font-mono text-foreground font-medium group-hover:text-gold">{inv.invoice_code ?? inv.docket_number}</span>
+                              {overdue > 0 && <span className="rounded bg-red-500/15 px-1.5 py-0.5 text-[9px] font-semibold text-red-500">{overdue}d overdue</span>}
+                            </div>
+                            <span>{inv.due_date ? `Due ${fmtShort(inv.due_date)}` : fmtShort(inv.created_at)}</span>
+                          </div>
+                          <div className="flex items-center justify-between rounded-md bg-gold/10 px-2.5 py-1.5">
+                            <span className="text-[10px] text-muted-foreground">Amount Due</span>
+                            <span className="text-xs font-semibold text-gold">
+                              {inv.currency ?? "INR"} {Number(inv.balance_due ?? inv.total_amount ?? 0).toLocaleString("en-IN")}
+                            </span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <SectionPager page={paymentPage} total={paymentRows.length} onPage={setPaymentPage} />
                 </CardContent>
               </Card>
             </div>
 
-            {/* Row 3: Status bars + Action Required */}
-            <div className="grid gap-4 lg:grid-cols-2">
-              {/* Pending by Stage — clickable bars (backed by pending_by_stage / stage_name,
-                  not project.status — filters Action Required via current_stage) */}
-              <Card className="border-border">
-                <CardHeader className="pb-1">
-                  <div className="flex items-center justify-between">
-                    <CardTitle className="font-display text-sm">Pending Patents by Stage</CardTitle>
-                    {activeStage && (
-                      <button onClick={() => setActiveStage(null)}
-                        className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
-                        <X className="h-3 w-3" /> Clear
-                      </button>
-                    )}
-                  </div>
-                  {activeStage && (
-                    <p className="text-[10px] text-muted-foreground">Click again to clear filter</p>
-                  )}
-                </CardHeader>
-                <CardContent className="pt-2">
-                  {stageData.length === 0 ? (
-                    <p className="text-xs text-muted-foreground py-6 text-center">No pending patents.</p>
+            {/* Row 3: Pending by Stage + Action Required — same height side by side */}
+            <div className="grid gap-4 lg:grid-cols-2 items-stretch">
+              {/* Pending by Stage — clickable bars filter Action Required */}
+              <Card className="border-border h-full flex flex-col">
+                <SectionHead title="Pending Patents by Stage" search={stageSearch}
+                  onSearch={(v) => { setStageSearch(v); setStagePage(1); }} onViewAll={() => setViewAll("stages")}
+                  extra={activeStage ? (
+                    <button onClick={() => setActiveStage(null)} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+                      <X className="h-3 w-3" /> Clear
+                    </button>
+                  ) : null} />
+                <CardContent className="pt-2 flex-1 flex flex-col">
+                  {stageRows.length === 0 ? (
+                    <p className="text-xs text-muted-foreground py-6 text-center flex-1">{stageSearch ? "No matching stages." : "No pending patents."}</p>
                   ) : (
-                    <>
-                      <div className="space-y-1.5">
-                        {pageOf(stageData, stagePage).map((s: any) => (
-                          <StatusBar key={s.name} name={s.name} count={s.count} max={maxStage}
-                            active={activeStage === s.name} onClick={() => toggleStage(s.name)} />
-                        ))}
-                      </div>
-                      <div className="-mx-6 mt-2"><SectionPager page={stagePage} total={stageData.length} onPage={setStagePage} /></div>
-                    </>
+                    <div className="space-y-2 flex-1">
+                      {pageOf(stageRows, stagePage).map((s: any) => (
+                        <StatusBar key={s.name} name={s.name} count={s.count} max={maxStage}
+                          active={activeStage === s.name} onClick={() => toggleStage(s.name)} />
+                      ))}
+                      {activeStage && <p className="pt-1 text-[10px] text-muted-foreground">Filtering Action Required by "{activeStage}" · click again to clear</p>}
+                    </div>
                   )}
+                  <div className="-mx-6 -mb-6 mt-2"><SectionPager page={stagePage} total={stageRows.length} onPage={setStagePage} /></div>
                 </CardContent>
               </Card>
 
-              {/* Action Required — filterable, sortable, searchable */}
-              <Card className="border-border flex flex-col">
-                <CardHeader className="pb-2 flex-shrink-0">
-                  <div className="flex items-center justify-between gap-2">
-                    <CardTitle className="font-display text-sm flex items-center gap-2">
-                      <AlertCircle className="h-4 w-4 text-amber-500" />
-                      Action Required
-                      {filtered.length !== actionRows.length && (
-                        <span className="text-[10px] text-gold font-normal">{filtered.length} of {actionRows.length}</span>
-                      )}
-                    </CardTitle>
-                    {hasFilters && (
-                      <button onClick={() => { setActiveOffice(null); setActiveStatus(null); setActiveStage(null); setActionSearch(""); setPage(1); }}
-                        className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1">
-                        <X className="h-3 w-3" /> Clear all
-                      </button>
+              {/* Action Required — filterable, sortable, searchable; a row opens its action */}
+              <Card className="border-border h-full flex flex-col">
+                <SectionHead icon={<AlertCircle className="h-4 w-4 text-amber-500" />} title="Action Required"
+                  badge={filtered.length !== actionRows.length ? `${filtered.length} of ${actionRows.length}` : undefined}
+                  search={actionSearch} onSearch={(v) => { setActionSearch(v); setPage(1); }} onViewAll={() => setViewAll("actions")}
+                  extra={hasFilters ? (
+                    <button onClick={() => { setActiveOffice(null); setActiveStatus(null); setActiveStage(null); setActionSearch(""); setPage(1); }}
+                      className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1">
+                      <X className="h-3 w-3" /> Clear all
+                    </button>
+                  ) : null} />
+                {(activeOffice || activeStatus || activeStage) && (
+                  <div className="flex flex-wrap gap-1.5 px-6 pb-2">
+                    {activeOffice && (
+                      <span className="flex items-center gap-1 rounded-full bg-gold/15 text-gold border border-gold/30 px-2 py-0.5 text-[10px] font-medium">
+                        <MapPin className="h-2.5 w-2.5" />{ol(activeOffice)}
+                        <button onClick={() => setActiveOffice(null)}><X className="h-2.5 w-2.5" /></button>
+                      </span>
+                    )}
+                    {activeStatus && (
+                      <span className="flex items-center gap-1 rounded-full bg-blue-500/15 text-blue-400 border border-blue-500/30 px-2 py-0.5 text-[10px] font-medium">
+                        {activeStatus}
+                        <button onClick={() => setActiveStatus(null)}><X className="h-2.5 w-2.5" /></button>
+                      </span>
+                    )}
+                    {activeStage && (
+                      <span className="flex items-center gap-1 rounded-full bg-purple-500/15 text-purple-400 border border-purple-500/30 px-2 py-0.5 text-[10px] font-medium">
+                        {activeStage}
+                        <button onClick={() => setActiveStage(null)}><X className="h-2.5 w-2.5" /></button>
+                      </span>
                     )}
                   </div>
-                  {/* Active filter chips */}
-                  {hasFilters && (
-                    <div className="flex flex-wrap gap-1.5 mt-1">
-                      {activeOffice && (
-                        <span className="flex items-center gap-1 rounded-full bg-gold/15 text-gold border border-gold/30 px-2 py-0.5 text-[10px] font-medium">
-                          <MapPin className="h-2.5 w-2.5" />{ol(activeOffice)}
-                          <button onClick={() => setActiveOffice(null)}><X className="h-2.5 w-2.5" /></button>
-                        </span>
-                      )}
-                      {activeStatus && (
-                        <span className="flex items-center gap-1 rounded-full bg-blue-500/15 text-blue-400 border border-blue-500/30 px-2 py-0.5 text-[10px] font-medium">
-                          {activeStatus}
-                          <button onClick={() => setActiveStatus(null)}><X className="h-2.5 w-2.5" /></button>
-                        </span>
-                      )}
-                      {activeStage && (
-                        <span className="flex items-center gap-1 rounded-full bg-purple-500/15 text-purple-400 border border-purple-500/30 px-2 py-0.5 text-[10px] font-medium">
-                          {activeStage}
-                          <button onClick={() => setActiveStage(null)}><X className="h-2.5 w-2.5" /></button>
-                        </span>
-                      )}
-                    </div>
-                  )}
-                  {/* Search */}
-                  <div className="relative mt-1">
-                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
-                    <input type="text" placeholder="Search docket or status…" value={actionSearch}
-                      onChange={e => { setActionSearch(e.target.value); setPage(1); }}
-                      className="w-full h-7 pl-7 pr-3 rounded-md border border-border bg-background text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
-                  </div>
-                </CardHeader>
-                <CardContent className="p-0 flex-1 overflow-auto">
+                )}
+                <CardContent className="p-0 flex-1 flex flex-col">
                   {filtered.length === 0 ? (
-                    <p className="text-xs text-muted-foreground px-4 py-8 text-center">No matching actions.</p>
+                    <p className="text-xs text-muted-foreground px-4 py-8 text-center flex-1">No matching actions.</p>
                   ) : (
-                    <>
+                    <div className="flex-1 overflow-auto">
                       <table className="w-full text-xs">
                         <thead className="sticky top-0 bg-muted/60 backdrop-blur text-[10px] uppercase tracking-wider text-muted-foreground">
                           <tr>
                             <SortTh col="docket_number" active={sortCol === "docket_number"} dir={sortDir} onClick={() => toggleSort("docket_number")}>Docket No.</SortTh>
-                            <SortTh col="filing_date" active={sortCol === "filing_date"} dir={sortDir} onClick={() => toggleSort("filing_date")}>Filing Date</SortTh>
                             <SortTh col="status" active={sortCol === "status"} dir={sortDir} onClick={() => toggleSort("status")}>Status</SortTh>
                             <th className="px-3 py-2.5 text-left">Current Stage</th>
                             <th className="px-3 py-2.5 text-left">Pending Action</th>
+                            <th className="px-3 py-2.5 text-right"></th>
                           </tr>
                         </thead>
                         <tbody>
                           {paged.map((row: any, i: number) => (
-                            <tr key={i} className="border-t border-border hover:bg-muted/20 transition-colors group">
+                            <tr key={i} onClick={() => goToAction(row)} className="border-t border-border hover:bg-muted/20 transition-colors group cursor-pointer">
                               <td className="px-3 py-2.5">
-                                <button onClick={() => row.id && setDetailId(row.id)}
-                                  className="font-mono font-medium text-foreground group-hover:text-gold transition-colors flex items-center gap-1">
+                                <button onClick={(e) => { e.stopPropagation(); if (row.id) setDetailId(row.id); }} title="Quick look at the case"
+                                  className="font-mono font-medium text-foreground hover:text-gold hover:underline transition-colors">
                                   {row.docket_number}
-                                  {row.id && <ExternalLink className="h-2.5 w-2.5 opacity-0 group-hover:opacity-100 transition-opacity" />}
                                 </button>
-                              </td>
-                              <td className="px-3 py-2.5 text-muted-foreground">
-                                {row.filing_date ? new Date(row.filing_date).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "2-digit" }) : "—"}
                               </td>
                               <td className="px-3 py-2.5">
                                 <button
-                                  onClick={() => toggleStatus(row.status)}
+                                  onClick={(e) => { e.stopPropagation(); toggleStatus(row.status); }}
                                   className={`rounded px-1.5 py-0.5 text-[10px] font-medium transition-colors ${
                                     activeStatus === row.status
                                       ? "bg-gold/20 text-gold border border-gold/40"
@@ -515,30 +550,72 @@ export default function PatentPortfolio() {
                                   {row.status}
                                 </button>
                               </td>
-                              <td className="px-3 py-2.5 text-xs text-muted-foreground max-w-[180px] truncate" title={row.current_stage ?? ""}>
+                              <td className="px-3 py-2.5 text-xs text-muted-foreground max-w-[150px] truncate" title={row.current_stage ?? ""}>
                                 {row.current_stage ?? "—"}
                               </td>
-                              <td className="px-3 py-2.5 text-muted-foreground">{row.pending_action}</td>
+                              <td className="px-3 py-2.5 text-muted-foreground max-w-[180px] truncate" title={row.pending_action}>{row.pending_action}</td>
+                              <td className="px-3 py-2.5 text-right whitespace-nowrap">
+                                <span className="inline-flex items-center gap-1 rounded border border-gold/40 px-1.5 py-0.5 text-[10px] font-medium text-gold group-hover:bg-gold/10">
+                                  {row.action_target?.label ?? "Open"} <ExternalLink className="h-2.5 w-2.5" />
+                                </span>
+                              </td>
                             </tr>
                           ))}
                         </tbody>
                       </table>
-                      {totalPages > 1 && (
-                        <div className="flex items-center justify-between px-3 py-2 border-t border-border text-xs text-muted-foreground">
-                          <span>{filtered.length} results · page {page}/{totalPages}</span>
-                          <div className="flex gap-1">
-                            <button disabled={page === 1} onClick={() => setPage(p => p - 1)}
-                              className="px-2 py-1 rounded border border-border hover:bg-muted disabled:opacity-40">‹</button>
-                            <button disabled={page === totalPages} onClick={() => setPage(p => p + 1)}
-                              className="px-2 py-1 rounded border border-border hover:bg-muted disabled:opacity-40">›</button>
-                          </div>
-                        </div>
-                      )}
-                    </>
+                    </div>
+                  )}
+                  {totalPages > 1 && (
+                    <div className="flex items-center justify-between px-3 py-2 border-t border-border text-xs text-muted-foreground">
+                      <span>{(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, filtered.length)} of {filtered.length}</span>
+                      <div className="flex gap-1">
+                        <button disabled={page === 1} onClick={() => setPage(p => p - 1)}
+                          className="px-2 py-1 rounded border border-border hover:bg-muted disabled:opacity-40">‹</button>
+                        <span className="px-1 py-1">{page}/{totalPages}</span>
+                        <button disabled={page === totalPages} onClick={() => setPage(p => p + 1)}
+                          className="px-2 py-1 rounded border border-border hover:bg-muted disabled:opacity-40">›</button>
+                      </div>
+                    </div>
                   )}
                 </CardContent>
               </Card>
             </div>
+
+            {viewAll === "renewals" && (
+              <SectionDialog title="Upcoming Renewals" rows={data.upcoming_renewals as any[]} onClose={() => setViewAll(null)}
+                initialSort={{ key: "hard_deadline", dir: "asc" }} empty="No upcoming renewals."
+                onRowClick={(r: any) => goTo(`/projects/${r.id}?tab=deadlines`)}
+                columns={[
+                  { key: "docket_number", label: "Docket", render: (r: any) => <span className="font-mono text-gold">{r.docket_number ?? "—"}</span> },
+                  { key: "project_name", label: "Case" },
+                  { key: "client", label: "Client", value: (r: any) => r.client?.company_name ?? r.client?.legal_name ?? "" },
+                  { key: "patent_office_code", label: "Office", value: (r: any) => r.patent_office_code ?? "" },
+                  { key: "hard_deadline", label: "Due", value: (r: any) => r.hard_deadline ?? "", render: (r: any) => fmtShort(r.hard_deadline) },
+                ]} />
+            )}
+            {viewAll === "stages" && (
+              <SectionDialog title="Pending Patents by Stage" rows={stageData} onClose={() => setViewAll(null)}
+                initialSort={{ key: "count", dir: "desc" }} empty="No pending patents."
+                onRowClick={(s: any) => { setActiveStage(s.name); setPage(1); setViewAll(null); }}
+                columns={[
+                  { key: "name", label: "Stage" },
+                  { key: "count", label: "Cases", align: "right", value: (s: any) => Number(s.count) },
+                ]} />
+            )}
+            {viewAll === "actions" && (
+              <SectionDialog title="Action Required" rows={filtered} onClose={() => setViewAll(null)}
+                initialSort={{ key: "hard_deadline", dir: "asc" }} empty="No actions."
+                onRowClick={(row: any) => goToAction(row)}
+                columns={[
+                  { key: "docket_number", label: "Docket", render: (r: any) => <span className="font-mono text-gold">{r.docket_number}</span> },
+                  { key: "project_name", label: "Case" },
+                  { key: "status", label: "Status" },
+                  { key: "current_stage", label: "Current stage", value: (r: any) => r.current_stage ?? "" },
+                  { key: "pending_action", label: "Pending action" },
+                  { key: "hard_deadline", label: "Deadline", value: (r: any) => r.hard_deadline ?? "", render: (r: any) => fmtShort(r.hard_deadline) },
+                  { key: "action", label: "", value: (r: any) => r.action_target?.label ?? "", render: (r: any) => <span className="text-xs font-medium text-gold">{r.action_target?.label ?? "Open"} →</span> },
+                ]} />
+            )}
           </>
         )}
       </div>
