@@ -414,6 +414,10 @@ class RenewalActionController extends Controller
         if ($invoice->payment_status === 'Confirmed') {
             return response()->json(['message' => 'Already confirmed.'], 422);
         }
+        if ($invoice->isFromZoho()) {
+            // Zoho owns this invoice's payments: recording it there updates the portal within minutes.
+            return response()->json(['message' => 'Record this payment in Zoho Books; the portal updates automatically.'], 422);
+        }
 
         DB::transaction(function () use ($invoice, $user) {
             $confirmedAt = now();
@@ -466,12 +470,9 @@ class RenewalActionController extends Controller
     public function index(Request $request)
     {
         $user = $request->user();
-        $query = PatentInvoiceIn::with(['project:id,docket_number,project_name', 'client:id,company_name,legal_name', 'proofDocument:id,file_name,storage_path'])
+        $query = PatentInvoiceIn::with(['project:id,docket_number,project_name', 'client:id,company_name,legal_name,client_code', 'proofDocument:id,file_name,storage_path'])
             ->whereNotNull('payment_status')
-            // Invoices imported from Zoho are listed in the Zoho section below (their payment is
-            // recorded in Zoho), so they are not listed twice.
-            ->where(fn ($q) => $q->where('source', 'portal')->orWhereNull('source'))
-            ->orderByDesc('invoice_date');
+            ->whereNotIn('status', ['Draft', 'Cancelled']);
 
         if ($user->isClientRole()) {
             $client = $request->attributes->get('portal_client') ?? Client::forUser($user);
@@ -488,60 +489,45 @@ class RenewalActionController extends Controller
         if ($request->filled('payment_status')) {
             $query->where('payment_status', $request->get('payment_status'));
         } else {
-            // payment_status is set to 'Pending' at creation and never nulled — every row ever
-            // created matches the whereNotNull() above, including already-Confirmed (paid)
-            // ones. Default this "Pending Payments" list to actually excluding Confirmed; an
-            // explicit ?payment_status=X above still overrides this (e.g. to look up history).
-            $query->where('payment_status', '!=', 'Confirmed');
+            // Every unpaid invoice in the register: portal renewals and invoices imported from Zoho
+            // (a Zoho invoice is pending while Zoho shows a balance). Confirmed = paid.
+            $query->where('payment_status', '!=', 'Confirmed')
+                ->where(fn ($q) => $q->whereNull('balance_due')->orWhere('balance_due', '>', 0));
+        }
+        if ($request->filled('search')) {
+            $like = '%'.str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], trim((string) $request->get('search'))).'%';
+            $query->where(fn ($q) => $q->where('invoice_uin', 'ilike', $like)->orWhere('client_name', 'ilike', $like)
+                ->orWhere('docket_number', 'ilike', $like)->orWhere('invention_title', 'ilike', $like)
+                ->orWhereHas('client', fn ($c) => $c->where('client_code', 'ilike', $like)->orWhere('company_name', 'ilike', $like)->orWhere('legal_name', 'ilike', $like)));
+        }
+        if ($request->boolean('overdue')) {
+            $query->whereNotNull('due_date')->where('due_date', '<', now()->toDateString());
         }
 
-        $renewalPage = $query->paginate(
-            min((int) $request->get('per_page', 25), 100), ['*'], 'page'
-        );
-        $renewalTotals = (clone $query)->reorder()->select('currency')->selectRaw('COALESCE(SUM(invoice_amount), 0) AS amount')->groupBy('currency')->pluck('amount', 'currency');
-        $renewalCount = (clone $query)->count();
+        $balanceSql = 'COALESCE(balance_due, invoice_amount)';
+        $totals = (clone $query)->reorder()->select('currency')->selectRaw("COALESCE(SUM({$balanceSql}), 0) AS amount")->groupBy('currency')
+            ->pluck('amount', 'currency')->map(fn ($amount) => round((float) $amount, 2));
+        $overdue = (clone $query)->whereNotNull('due_date')->where('due_date', '<', now()->toDateString())->count();
 
-        // Zoho Books pending balances are served from the local mirror. This is
-        // deliberately separate from renewal invoices because the two workflows
-        // have different proof/approval actions.
-        $zohoQuery = ZohoInvoice::with(['project:id,docket_number,project_name', 'client:id,company_name,legal_name'])
-            ->where('zoho_type', 'invoice')->where('balance', '>', 0)
-            ->whereNotIn(DB::raw('LOWER(status)'), ['paid', 'cancelled', 'void']);
-        if ($user->isClientRole()) {
-            $client = $request->attributes->get('portal_client') ?? Client::forUser($user);
-            $zohoQuery->where('client_id', $client?->id ?? 0);
-        } elseif ($user->isGalvanizer()) {
-            $zohoQuery->whereHas('project', fn ($q) => $user->applyProjectScope($q));
-        }
-        $zohoPage = $zohoQuery->orderByDesc('txn_date')->paginate(
-            min((int) $request->get('zoho_per_page', 25), 100), ['*'], 'zoho_page'
-        );
-        $zohoTotals = (clone $zohoQuery)->reorder()->select('currency')->selectRaw('COALESCE(SUM(balance), 0) AS amount')->groupBy('currency')->pluck('amount', 'currency');
-        $pendingTotals = $renewalTotals->union($zohoTotals)->mapWithKeys(fn ($amount, $currency) => [
-            $currency => round((float) $amount + (float) ($zohoTotals->get($currency, 0)), 2),
-        ]);
-        foreach ($zohoTotals as $currency => $amount) {
-            if (! $renewalTotals->has($currency)) {
-                $pendingTotals[$currency] = round((float) $amount, 2);
+        // Most overdue first, then the newest.
+        $page = $query->orderByRaw('due_date ASC NULLS LAST')->orderByDesc('invoice_date')->orderByDesc('id')
+            ->paginate(min((int) $request->get('per_page', 25), 100));
+        $today = now()->startOfDay();
+        $page->getCollection()->transform(function (PatentInvoiceIn $row) use ($today) {
+            $row->setAttribute('balance', (float) ($row->balance_due ?? $row->invoice_amount));
+            $row->setAttribute('days_overdue', $row->due_date && $row->due_date->lt($today) ? (int) $row->due_date->diffInDays($today) : 0);
+            if ($row->isFromZoho()) {
+                // Internal fees never go to the client side.
+                $row->makeHidden(['attorney_fees', 'consultant_fees', 'referral_fees', 'net_revenue']);
             }
-        }
 
-        return response()->json(array_merge($renewalPage->toArray(), [
-            'pending_totals' => $pendingTotals,
-            'pending_count' => $renewalCount + $zohoPage->total(),
-            'zoho' => [
-                'data' => $zohoPage->getCollection()->map(fn (ZohoInvoice $row) => [
-                    'id' => $row->id, 'type' => 'zoho_invoice', 'status' => $row->status,
-                    'invoice_uin' => $row->number, 'docket_number' => $row->project?->docket_number,
-                    'invoice_date' => $row->txn_date?->toDateString(), 'invoice_amount' => (float) $row->total,
-                    'balance' => (float) $row->balance, 'currency' => $row->currency,
-                    'payment_status' => 'Pending', 'source' => 'Zoho Books',
-                    'project' => $row->project ? ['id' => $row->project->id, 'docket_number' => $row->project->docket_number, 'project_name' => $row->project->project_name] : null,
-                    'client' => $row->client ? ['id' => $row->client->id, 'company_name' => $row->client->company_name, 'legal_name' => $row->client->legal_name] : null,
-                ])->values()->all(),
-                'total' => $zohoPage->total(), 'per_page' => $zohoPage->perPage(),
-                'current_page' => $zohoPage->currentPage(), 'last_page' => $zohoPage->lastPage(),
-            ],
+            return $row;
+        });
+
+        return response()->json(array_merge($page->toArray(), [
+            'pending_totals' => $totals,
+            'pending_count' => $page->total(),
+            'overdue_count' => $overdue,
         ]));
     }
 }

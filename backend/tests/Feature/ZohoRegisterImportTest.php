@@ -153,6 +153,25 @@ class ZohoRegisterImportTest extends TestCase
         $this->assertSame(4000.0, (float) $this->getJson("/api/clients/{$this->client->id}/detail")->assertOk()->json('invoice_summary.total_pending'));
     }
 
+    public function test_pending_payments_lists_unpaid_zoho_invoices(): void
+    {
+        $this->paidInvoice();   // paid: not pending
+        ZohoInvoice::create(['zoho_id' => 'inv-7', 'zoho_type' => 'invoice', 'number' => '940M007INCPT', 'status' => 'overdue',
+            'total' => 5000, 'balance' => 3000, 'currency' => 'INR', 'txn_date' => now()->subDays(40)->toDateString(), 'due_date' => now()->subDays(10)->toDateString()]);
+
+        $response = $this->getJson('/api/pending-payments')->assertOk()->json();
+        $this->assertSame(1, $response['total']);
+        $this->assertSame('940M007INCPT', $response['data'][0]['invoice_uin']);
+        $this->assertEquals(3000, $response['data'][0]['balance']);
+        $this->assertSame(10, $response['data'][0]['days_overdue']);
+        $this->assertEquals(3000, $response['pending_totals']['INR']);
+        $this->assertSame(1, $response['overdue_count']);
+        $this->assertSame(0, $this->getJson('/api/pending-payments?search=nomatch')->json('total'));
+
+        // Staff can't confirm a Zoho invoice here: its payment is recorded in Zoho.
+        $this->postJson('/api/pending-payments/'.$response['data'][0]['id'].'/confirm')->assertStatus(422);
+    }
+
     public function test_dry_run_reports_without_writing(): void
     {
         $mirror = ZohoInvoice::withoutEvents(fn () => ZohoInvoice::create(['scope' => app(ZohoBooksService::class)->scope(), 'zoho_id' => 'inv-9', 'zoho_type' => 'invoice', 'number' => '940M009INCPT',

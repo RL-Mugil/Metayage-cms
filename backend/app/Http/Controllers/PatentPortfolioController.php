@@ -156,18 +156,21 @@ class PatentPortfolioController extends Controller
             ->whereNotIn('status', ['Closed'])
             ->with('client')
             ->orderBy('hard_deadline')
-            ->limit(5)
+            ->limit(200)   // shown 5 per page on the portfolio
             ->get(['id', 'docket_number', 'project_name', 'hard_deadline', 'patent_office_code', 'client_id']);
 
         // Pending invoices for the client(s) — oldest due date first (most overdue/urgent),
         // undated invoices last, so a badly overdue invoice can't be silently pushed out of
         // this 5-row widget by newer ones. Portable NULLS-LAST idiom (works on Postgres, which
         // production runs, and MySQL).
-        $invoicesQ = DB::table('invoices')
-            ->whereIn('status', ['Sent', 'Overdue', 'Partially Paid', 'Viewed'])
-            ->orderByRaw('due_date IS NULL')
-            ->orderBy('due_date')
-            ->limit(5);
+        // Unpaid invoices from the portal register (portal renewals + invoices imported from
+        // Zoho Books), most overdue first, undated last. Shown 5 per page on the portfolio.
+        $invoicesQ = \App\Models\PatentInvoiceIn::query()->with('project:id,docket_number')
+            ->where('type', 'invoice')->whereNotIn('status', ['Draft', 'Cancelled'])
+            ->where(fn ($q) => $q->whereNull('payment_status')->orWhere('payment_status', '!=', 'Confirmed'))
+            ->where(fn ($q) => $q->whereNull('balance_due')->orWhere('balance_due', '>', 0))
+            ->orderByRaw('due_date IS NULL')->orderBy('due_date')
+            ->limit(200);
         if ($clientId) {
             $invoicesQ->where('client_id', $clientId);
         }
@@ -175,17 +178,13 @@ class PatentPortfolioController extends Controller
         if ($analystIds !== null) {
             $invoicesQ->whereIn('project_id', $analystIds ?: [-1]);
         }
-        $invoices = $invoicesQ->get(['id', 'invoice_code', 'client_id', 'project_id', 'total_amount', 'balance_due', 'currency', 'created_at', 'status']);
-
-        // Enrich invoices with docket number from project — single batched lookup
-        // instead of one query per invoice.
-        $projectDockets = DB::table('projects')
-            ->whereIn('id', $invoices->pluck('project_id')->filter()->unique())
-            ->pluck('docket_number', 'id');
-        $invoices = $invoices->map(function ($inv) use ($projectDockets) {
-            $inv->docket_number = $projectDockets->get($inv->project_id) ?? $inv->invoice_code;
-            return $inv;
-        });
+        $invoices = $invoicesQ->get()->map(fn ($inv) => (object) [
+            'id' => $inv->id, 'invoice_code' => $inv->invoice_uin, 'client_id' => $inv->client_id, 'project_id' => $inv->project_id,
+            'docket_number' => $inv->project?->docket_number ?? $inv->invoice_uin,
+            'total_amount' => (float) $inv->invoice_amount, 'balance_due' => (float) ($inv->balance_due ?? $inv->invoice_amount),
+            'currency' => $inv->currency ?: 'INR', 'created_at' => $inv->invoice_date?->toDateString(),
+            'due_date' => $inv->due_date?->toDateString(), 'status' => $inv->zoho_status ?: $inv->status,
+        ]);
 
         // Action required: active (non-terminal) projects only. Derivation lives in
         // ActionItemService, shared with the client dashboard's interactive feed. No SQL-level

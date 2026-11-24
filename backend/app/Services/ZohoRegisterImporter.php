@@ -93,6 +93,10 @@ class ZohoRegisterImporter
         }
 
         $previousClient = $row?->client_id;
+        // A client's uploaded payment proof stays "Proof Submitted" until Zoho records the payment.
+        if ($row && $row->payment_status === 'Proof Submitted' && ($attrs['payment_status'] ?? null) !== 'Confirmed') {
+            unset($attrs['payment_status']);
+        }
         if ($row) {
             // A portal-raised row keeps its own UIN/fees; it gains the Zoho link, status and balance.
             if ($row->source !== 'zoho' && $action === 'linked') {

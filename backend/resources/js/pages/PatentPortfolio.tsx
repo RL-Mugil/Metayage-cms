@@ -13,7 +13,28 @@ import { api } from "@/lib/api-client";
 import { ProjectDetailPanel } from "@/components/project-detail-panel";
 import { DonutChart, StatusBar, officeLabel as ol, officeColor as oc } from "@/components/portfolio-charts";
 
-const PAGE_SIZE = 10;
+/** Each section (renewals, payments, stages, action required) shows 5 rows per page. */
+const PAGE_SIZE = 5;
+
+/** Previous / next for a section's list; hidden when everything fits on one page. */
+function SectionPager({ page, total, onPage }: { page: number; total: number; onPage: (page: number) => void }) {
+  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  if (pages <= 1) return null;
+  return (
+    <div className="flex items-center justify-between border-t border-border px-4 py-2 text-xs text-muted-foreground">
+      <span>{(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, total)} of {total}</span>
+      <div className="flex gap-1">
+        <button disabled={page <= 1} onClick={() => onPage(page - 1)}
+          className="rounded border border-border px-2 py-1 hover:bg-muted disabled:opacity-40">‹</button>
+        <span className="px-1 py-1">{page}/{pages}</span>
+        <button disabled={page >= pages} onClick={() => onPage(page + 1)}
+          className="rounded border border-border px-2 py-1 hover:bg-muted disabled:opacity-40">›</button>
+      </div>
+    </div>
+  );
+}
+
+const pageOf = <T,>(rows: T[], page: number): T[] => rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
 // ── Sort header ──────────────────────────────────────────────────────────────
 function SortTh({
@@ -57,6 +78,9 @@ export default function PatentPortfolio() {
   const [sortCol, setSortCol]     = useState<"docket_number" | "filing_date" | "status">("docket_number");
   const [sortDir, setSortDir]     = useState<"asc" | "desc">("asc");
   const [page, setPage]           = useState(1);
+  const [renewalPage, setRenewalPage] = useState(1);
+  const [paymentPage, setPaymentPage] = useState(1);
+  const [stagePage, setStagePage]     = useState(1);
 
   const [detailId, setDetailId] = useState<number | null>(null);
 
@@ -136,6 +160,9 @@ export default function PatentPortfolio() {
   const closedTotal = closedData.reduce((s, d) => s + d.value, 0);
 
   const chartsTotal = grantedTotal + activeTotal + refusedTotal + closedTotal;
+
+  // A new client / role filter starts every section from its first page.
+  useEffect(() => { setRenewalPage(1); setPaymentPage(1); setStagePage(1); }, [data]);
 
   const stageData = useMemo(() => data
     ? (data.pending_by_stage as any[]).map((s: any) => ({ name: s.stage_name, count: Number(s.count) }))
@@ -300,7 +327,7 @@ export default function PatentPortfolio() {
                 <CardContent className="p-0">
                   {(data.upcoming_renewals as any[]).length === 0 ? (
                     <p className="text-xs text-muted-foreground px-4 py-6">No upcoming renewals.</p>
-                  ) : (data.upcoming_renewals as any[]).map((r: any, i: number) => (
+                  ) : pageOf(data.upcoming_renewals as any[], renewalPage).map((r: any, i: number) => (
                     <button key={i} onClick={() => r.id && setDetailId(r.id)}
                       className="block w-full text-left px-4 py-3 border-b border-border last:border-0 hover:bg-muted/20 transition-colors group">
                       <div className="flex items-center justify-between gap-2">
@@ -320,6 +347,7 @@ export default function PatentPortfolio() {
                       </div>
                     </button>
                   ))}
+                  <SectionPager page={renewalPage} total={(data.upcoming_renewals as any[]).length} onPage={setRenewalPage} />
                 </CardContent>
               </Card>
 
@@ -333,14 +361,14 @@ export default function PatentPortfolio() {
                 <CardContent className="p-0">
                   {(data.pending_invoices as any[]).length === 0 ? (
                     <p className="text-xs text-muted-foreground px-4 py-6">No pending payments.</p>
-                  ) : (data.pending_invoices as any[]).map((inv: any, i: number) => (
+                  ) : pageOf(data.pending_invoices as any[], paymentPage).map((inv: any, i: number) => (
                     <div key={i} className="px-4 py-3 border-b border-border last:border-0 hover:bg-muted/20 transition-colors">
                       <div className="flex items-center justify-between gap-2 text-[10px] text-muted-foreground mb-1">
                         <div className="flex items-center gap-1">
                           <FileText className="h-3 w-3" />
                           <span>Docket <span className="font-mono text-foreground font-medium">{inv.docket_number}</span></span>
                         </div>
-                        <span>{inv.created_at ? new Date(inv.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "2-digit" }) : "—"}</span>
+                        <span>{inv.due_date ? `Due ${new Date(inv.due_date).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "2-digit" })}` : inv.created_at ? new Date(inv.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "2-digit" }) : "—"}</span>
                       </div>
                       <div className="flex items-center justify-between rounded-md bg-gold/10 px-2.5 py-1.5">
                         <span className="text-[10px] text-muted-foreground">Amount Due</span>
@@ -350,9 +378,10 @@ export default function PatentPortfolio() {
                       </div>
                     </div>
                   ))}
+                  <SectionPager page={paymentPage} total={(data.pending_invoices as any[]).length} onPage={setPaymentPage} />
                   {(data.pending_invoices as any[]).length > 0 && (
                     <div className="px-4 py-2 text-right">
-                      <a href="/financial" className="text-xs text-gold hover:underline">View All →</a>
+                      <a href="/pending-payments" className="text-xs text-gold hover:underline">View All →</a>
                     </div>
                   )}
                 </CardContent>
@@ -382,12 +411,15 @@ export default function PatentPortfolio() {
                   {stageData.length === 0 ? (
                     <p className="text-xs text-muted-foreground py-6 text-center">No pending patents.</p>
                   ) : (
-                    <div className="space-y-1.5">
-                      {stageData.map((s: any) => (
-                        <StatusBar key={s.name} name={s.name} count={s.count} max={maxStage}
-                          active={activeStage === s.name} onClick={() => toggleStage(s.name)} />
-                      ))}
-                    </div>
+                    <>
+                      <div className="space-y-1.5">
+                        {pageOf(stageData, stagePage).map((s: any) => (
+                          <StatusBar key={s.name} name={s.name} count={s.count} max={maxStage}
+                            active={activeStage === s.name} onClick={() => toggleStage(s.name)} />
+                        ))}
+                      </div>
+                      <div className="-mx-6 mt-2"><SectionPager page={stagePage} total={stageData.length} onPage={setStagePage} /></div>
+                    </>
                   )}
                 </CardContent>
               </Card>

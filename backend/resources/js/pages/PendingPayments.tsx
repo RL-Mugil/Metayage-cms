@@ -1,6 +1,6 @@
 import { Head, usePage } from "@inertiajs/react";
 import { useEffect, useRef, useState } from "react";
-import { Loader2, Upload, CheckCircle2, FileText, MessageSquare, Download } from "lucide-react";
+import { Loader2, Upload, CheckCircle2, FileText, MessageSquare, Download, Search } from "lucide-react";
 import AppLayout from "@/layouts/AppLayout";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent } from "@/components/ui/card";
@@ -9,27 +9,28 @@ import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api-client";
 import { fmtDate } from "@/lib/date-utils";
 
+/** One unpaid invoice from the portal register (portal renewals and invoices imported from Zoho). */
 interface PendingPaymentRow {
   id: number;
   type: string;
   status: string;
+  source?: "portal" | "zoho";
   invoice_uin: string;
-  docket_number: string;
-  invoice_date: string;
+  docket_number: string | null;
+  invoice_date: string | null;
+  due_date?: string | null;
+  days_overdue?: number;
   invoice_amount: string | number;
+  balance?: number;
   currency: string;
   payment_status: string;
-  remarks?: string | null;
+  invention_title?: string | null;
+  client_name?: string | null;
   status_note?: string | null;
   status_note_at?: string | null;
   project?: { id: number; docket_number: string; project_name: string } | null;
-  client?: { id: number; company_name?: string; legal_name?: string } | null;
+  client?: { id: number; company_name?: string; legal_name?: string; client_code?: string } | null;
   proof_document?: { id: number; file_name: string; storage_path: string } | null;
-}
-
-interface ZohoPendingRow extends PendingPaymentRow {
-  balance: number;
-  source: "Zoho Books";
 }
 
 function paymentStatusVariant(status: string): "default" | "secondary" | "outline" | "destructive" {
@@ -42,6 +43,8 @@ function formatMoney(amount: string | number, currency: string) {
   return `${currency} ${Number(amount).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 }
 
+const PER_PAGE = 25;
+
 export default function PendingPayments() {
   const { props } = usePage() as any;
   const role = props.auth?.user?.role;
@@ -49,11 +52,13 @@ export default function PendingPayments() {
   const isStaff = !isClient;
 
   const [rows, setRows] = useState<PendingPaymentRow[]>([]);
-  const [zohoRows, setZohoRows] = useState<ZohoPendingRow[]>([]);
-  const [zohoPage, setZohoPage] = useState(1);
-  const [zohoMeta, setZohoMeta] = useState({ current_page: 1, last_page: 1, total: 0 });
+  const [page, setPage] = useState(1);
+  const [meta, setMeta] = useState({ current_page: 1, last_page: 1, total: 0 });
   const [pendingTotals, setPendingTotals] = useState<Record<string, number>>({});
-  const [pendingCount, setPendingCount] = useState(0);
+  const [overdueCount, setOverdueCount] = useState(0);
+  const [search, setSearch] = useState("");
+  const [query, setQuery] = useState("");
+  const [overdueOnly, setOverdueOnly] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [uploadingId, setUploadingId] = useState<number | null>(null);
@@ -63,19 +68,31 @@ export default function PendingPayments() {
   const [savingNoteId, setSavingNoteId] = useState<number | null>(null);
   const fileInputRefs = useRef<Record<number, HTMLInputElement | null>>({});
 
+  // Search waits for a pause in typing, then starts again from page 1.
+  useEffect(() => {
+    const timer = window.setTimeout(() => { setQuery(search.trim()); setPage(1); }, 300);
+    return () => window.clearTimeout(timer);
+  }, [search]);
+
   const load = () => {
     setLoading(true);
-    api.getPendingPayments(new URLSearchParams({ zoho_page: String(zohoPage), zoho_per_page: "25" }))
-      .then((res: any) => { setRows(res?.data ?? []); setZohoRows(res?.zoho?.data ?? []); setZohoMeta({ current_page: res?.zoho?.current_page ?? 1, last_page: res?.zoho?.last_page ?? 1, total: res?.zoho?.total ?? 0 }); setPendingTotals(res?.pending_totals ?? {}); setPendingCount(res?.pending_count ?? 0); })
+    const params = new URLSearchParams({ page: String(page), per_page: String(PER_PAGE) });
+    if (query) params.set("search", query);
+    if (overdueOnly) params.set("overdue", "1");
+    api.getPendingPayments(params)
+      .then((res: any) => {
+        setRows(res?.data ?? []);
+        setMeta({ current_page: res?.current_page ?? 1, last_page: res?.last_page ?? 1, total: res?.total ?? 0 });
+        setPendingTotals(res?.pending_totals ?? {});
+        setOverdueCount(res?.overdue_count ?? 0);
+        setError("");
+      })
       .catch((e: any) => setError(e?.message || "Failed to load pending payments."))
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { load(); }, [zohoPage]);
-
-  async function handleZohoPdf(row: ZohoPendingRow) {
-    try { await api.downloadZohoPdf(row.id); } catch (e: any) { setError(e?.message || "This local Zoho PDF is not available yet."); }
-  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { load(); }, [page, query, overdueOnly]);
 
   async function handleProofUpload(row: PendingPaymentRow, file: File) {
     setUploadingId(row.id);
@@ -129,13 +146,19 @@ export default function PendingPayments() {
     }
   }
 
+  const totalLabel = Object.entries(pendingTotals).map(([currency, amount]) => formatMoney(amount, currency)).join(" + ") || "INR 0";
+  const from = meta.total === 0 ? 0 : (meta.current_page - 1) * PER_PAGE + 1;
+  const to = Math.min(meta.current_page * PER_PAGE, meta.total);
+
   return (
     <AppLayout>
       <Head title="Pending Payments" />
       <PageHeader
         eyebrow="Billing"
         title="Pending Payments"
-        description="Renewal invoices awaiting payment proof and confirmation."
+        description={isClient
+          ? "Invoices awaiting payment. Pay by bank transfer, then upload the payment proof here."
+          : "Every unpaid invoice: renewals raised in the portal and invoices from Zoho Books."}
       />
 
       <div className="px-8 py-6 space-y-4">
@@ -143,131 +166,156 @@ export default function PendingPayments() {
           <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">{error}</div>
         )}
 
-        <div className="grid gap-4 md:grid-cols-2">
-          <Card className="border-border"><CardContent className="p-5"><p className="text-xs uppercase tracking-wider text-muted-foreground">Total pending</p><p className="mt-1 font-display text-2xl font-semibold text-amber-600">{Object.entries(pendingTotals).map(([currency, amount]) => formatMoney(amount, currency)).join(" + ") || "₹0"}</p><p className="mt-1 text-xs text-muted-foreground">{pendingCount.toLocaleString("en-IN")} pending payment records across portal and Zoho Books</p></CardContent></Card>
-          <Card className="border-border"><CardContent className="p-5"><p className="text-xs uppercase tracking-wider text-muted-foreground">Zoho pending</p><p className="mt-1 font-display text-2xl font-semibold text-blue-600">{zohoMeta.total.toLocaleString("en-IN")}</p><p className="mt-1 text-xs text-muted-foreground">Local Zoho mirror records with an outstanding balance</p></CardContent></Card>
+        <div className="grid gap-4 md:grid-cols-3">
+          <Card className="border-border"><CardContent className="p-5"><p className="text-xs uppercase tracking-wider text-muted-foreground">Total pending</p><p className="mt-1 font-display text-2xl font-semibold text-amber-600">{totalLabel}</p><p className="mt-1 text-xs text-muted-foreground">Balance still to be received</p></CardContent></Card>
+          <Card className="border-border"><CardContent className="p-5"><p className="text-xs uppercase tracking-wider text-muted-foreground">Unpaid invoices</p><p className="mt-1 font-display text-2xl font-semibold">{meta.total.toLocaleString("en-IN")}</p><p className="mt-1 text-xs text-muted-foreground">{query || overdueOnly ? "Matching the filter" : "All pending"}</p></CardContent></Card>
+          <button type="button" onClick={() => { setOverdueOnly((v) => !v); setPage(1); }} className="text-left">
+            <Card className={`border-border transition-colors ${overdueOnly ? "ring-1 ring-red-500" : "hover:bg-muted/30"}`}><CardContent className="p-5"><p className="text-xs uppercase tracking-wider text-muted-foreground">Overdue</p><p className="mt-1 font-display text-2xl font-semibold text-red-600">{overdueCount.toLocaleString("en-IN")}</p><p className="mt-1 text-xs text-muted-foreground">{overdueOnly ? "Showing overdue only · click to show all" : "Past the due date · click to show only these"}</p></CardContent></Card>
+          </button>
+        </div>
+
+        <div className="relative max-w-md">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search UIN, client, case or title…"
+            className="h-9 w-full rounded-md border border-border bg-background pl-8 pr-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
         </div>
 
         {loading ? (
           <div className="flex items-center justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-gold" /></div>
         ) : rows.length === 0 ? (
           <Card className="border-border">
-            <CardContent className="py-16 text-center text-sm text-muted-foreground">No pending payments right now.</CardContent>
+            <CardContent className="py-16 text-center text-sm text-muted-foreground">
+              {query || overdueOnly ? "No pending payments match this filter." : "No pending payments right now."}
+            </CardContent>
           </Card>
         ) : (
           <div className="space-y-3">
-            {rows.map((row) => (
-              <Card key={row.id} className="border-border">
-                <CardContent className="py-4 space-y-3">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono text-xs font-semibold text-gold">{row.invoice_uin}</span>
-                        {row.type === "quote" ? (
-                          <Badge variant="outline">Estimate{row.status === "Accepted" ? " · Approved" : ""}</Badge>
-                        ) : (
-                          <Badge variant={paymentStatusVariant(row.payment_status)}>{row.payment_status}</Badge>
+            {rows.map((row) => {
+              const clientName = row.client?.company_name ?? row.client?.legal_name ?? row.client_name;
+              const fromZoho = row.source === "zoho";
+              const balance = Number(row.balance ?? row.invoice_amount);
+              return (
+                <Card key={row.id} className="border-border">
+                  <CardContent className="py-4 space-y-3">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-mono text-xs font-semibold text-gold">{row.invoice_uin}</span>
+                          {row.type === "quote" ? (
+                            <Badge variant="outline">Estimate{row.status === "Accepted" ? " · Approved" : ""}</Badge>
+                          ) : (
+                            <Badge variant={paymentStatusVariant(row.payment_status)}>{row.payment_status}</Badge>
+                          )}
+                          {!!row.days_overdue && row.days_overdue > 0 && <Badge variant="destructive">{row.days_overdue} days overdue</Badge>}
+                          {fromZoho && isStaff && <Badge variant="outline" className="text-[10px]">Zoho Books</Badge>}
+                        </div>
+                        <div className="mt-1 text-sm font-medium">{row.project?.project_name ?? row.invention_title ?? row.docket_number ?? "—"}</div>
+                        {isStaff && clientName && (
+                          <div className="text-xs text-muted-foreground">{row.client?.client_code ? `${row.client.client_code} · ` : ""}{clientName}</div>
+                        )}
+                        <div className="mt-1 text-xs text-muted-foreground font-mono">
+                          {row.project?.docket_number ?? row.docket_number ?? "Case not linked"} · Invoice {fmtDate(row.invoice_date)}{row.due_date ? ` · Due ${fmtDate(row.due_date)}` : ""}
+                        </div>
+                        {row.type === "quote" && (
+                          <div className="mt-1 text-xs text-amber-600">Estimate only — subject to change. Not a final invoice.</div>
                         )}
                       </div>
-                      <div className="mt-1 text-sm font-medium">{row.project?.project_name ?? row.docket_number}</div>
-                      {isStaff && row.client && (
-                        <div className="text-xs text-muted-foreground">{row.client.company_name ?? row.client.legal_name}</div>
-                      )}
-                      <div className="mt-1 text-xs text-muted-foreground font-mono">{row.docket_number} · {fmtDate(row.invoice_date)}</div>
-                      {row.type === "quote" && (
-                        <div className="mt-1 text-xs text-amber-600">Estimate only — subject to change. Not a final invoice.</div>
-                      )}
-                    </div>
-                    <div className="text-right">
-                      <div className="font-display text-xl font-semibold">{formatMoney(row.invoice_amount, row.currency)}</div>
-                    </div>
-                  </div>
-
-                  {row.status_note && (
-                    <div className="flex items-start gap-2 rounded-md bg-muted/40 px-3 py-2 text-xs">
-                      <MessageSquare className="h-3.5 w-3.5 mt-0.5 flex-shrink-0 text-muted-foreground" />
-                      <div>
-                        <span className="text-foreground">{row.status_note}</span>
-                        {row.status_note_at && <span className="ml-2 text-muted-foreground">· {fmtDate(row.status_note_at)}</span>}
+                      <div className="text-right">
+                        <div className="font-display text-xl font-semibold">{formatMoney(balance, row.currency)}</div>
+                        {balance < Number(row.invoice_amount) && (
+                          <div className="text-xs text-muted-foreground">of {formatMoney(row.invoice_amount, row.currency)}</div>
+                        )}
                       </div>
                     </div>
-                  )}
 
-                  <div className="flex flex-wrap items-center gap-2 pt-1">
-                    {row.proof_document && (
-                      <Button size="sm" variant="outline" className="h-8 text-xs"
-                        onClick={() => api.downloadDocument(row.proof_document!.storage_path, row.proof_document!.file_name)}>
-                        <Download className="h-3 w-3 mr-1" />{row.proof_document.file_name}
-                      </Button>
+                    {row.status_note && (
+                      <div className="flex items-start gap-2 rounded-md bg-muted/40 px-3 py-2 text-xs">
+                        <MessageSquare className="h-3.5 w-3.5 mt-0.5 flex-shrink-0 text-muted-foreground" />
+                        <div>
+                          <span className="text-foreground">{row.status_note}</span>
+                          {row.status_note_at && <span className="ml-2 text-muted-foreground">· {fmtDate(row.status_note_at)}</span>}
+                        </div>
+                      </div>
                     )}
 
-                    {isClient && row.type === "quote" && row.status !== "Accepted" && row.status !== "Cancelled" && (
-                      <Button size="sm" className="h-8 text-xs bg-gold hover:bg-gold/90 text-black"
-                        disabled={approvingId === row.id}
-                        onClick={() => handleApproveQuote(row)}>
-                        {approvingId === row.id ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <CheckCircle2 className="h-3 w-3 mr-1" />}
-                        Approve Estimate
-                      </Button>
-                    )}
-
-                    {isClient && row.type !== "quote" && row.payment_status !== "Confirmed" && (
-                      <>
-                        <input
-                          type="file"
-                          className="hidden"
-                          ref={(el) => { fileInputRefs.current[row.id] = el; }}
-                          onChange={(e) => { const f = e.target.files?.[0]; if (f) handleProofUpload(row, f); e.target.value = ""; }}
-                        />
+                    <div className="flex flex-wrap items-center gap-2 pt-1">
+                      {row.proof_document && (
                         <Button size="sm" variant="outline" className="h-8 text-xs"
-                          disabled={uploadingId === row.id}
-                          onClick={() => fileInputRefs.current[row.id]?.click()}>
-                          {uploadingId === row.id ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Upload className="h-3 w-3 mr-1" />}
-                          {row.payment_status === "Proof Submitted" ? "Re-upload Proof" : "Upload Payment Proof"}
+                          onClick={() => api.downloadDocument(row.proof_document!.storage_path, row.proof_document!.file_name)}>
+                          <Download className="h-3 w-3 mr-1" />{row.proof_document.file_name}
                         </Button>
-                      </>
-                    )}
+                      )}
 
-                    {isStaff && row.type !== "quote" && row.payment_status === "Proof Submitted" && (
-                      <Button size="sm" className="h-8 text-xs bg-gold hover:bg-gold/90 text-black"
-                        disabled={confirmingId === row.id}
-                        onClick={() => handleConfirm(row)}>
-                        {confirmingId === row.id ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <CheckCircle2 className="h-3 w-3 mr-1" />}
-                        Confirm Receipt
-                      </Button>
-                    )}
-
-                    {row.payment_status !== "Confirmed" && (
-                      <div className="flex items-center gap-1.5 flex-1 min-w-[220px]">
-                        <input
-                          value={noteDraft[row.id] ?? ""}
-                          onChange={(e) => setNoteDraft((p) => ({ ...p, [row.id]: e.target.value }))}
-                          placeholder="Status update (e.g. paying by 13 Aug)…"
-                          className="h-8 flex-1 rounded-md border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold"
-                        />
-                        <Button size="sm" variant="ghost" className="h-8 text-xs"
-                          disabled={savingNoteId === row.id || !(noteDraft[row.id] ?? "").trim()}
-                          onClick={() => handleSaveNote(row)}>
-                          {savingNoteId === row.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <FileText className="h-3 w-3" />}
+                      {isClient && row.type === "quote" && row.status !== "Accepted" && row.status !== "Cancelled" && (
+                        <Button size="sm" className="h-8 text-xs bg-gold hover:bg-gold/90 text-black"
+                          disabled={approvingId === row.id}
+                          onClick={() => handleApproveQuote(row)}>
+                          {approvingId === row.id ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <CheckCircle2 className="h-3 w-3 mr-1" />}
+                          Approve Estimate
                         </Button>
-                      </div>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+                      )}
+
+                      {isClient && row.type !== "quote" && row.payment_status !== "Confirmed" && (
+                        <>
+                          <input
+                            type="file"
+                            className="hidden"
+                            ref={(el) => { fileInputRefs.current[row.id] = el; }}
+                            onChange={(e) => { const f = e.target.files?.[0]; if (f) handleProofUpload(row, f); e.target.value = ""; }}
+                          />
+                          <Button size="sm" variant="outline" className="h-8 text-xs"
+                            disabled={uploadingId === row.id}
+                            onClick={() => fileInputRefs.current[row.id]?.click()}>
+                            {uploadingId === row.id ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Upload className="h-3 w-3 mr-1" />}
+                            {row.payment_status === "Proof Submitted" ? "Re-upload Proof" : "Upload Payment Proof"}
+                          </Button>
+                        </>
+                      )}
+
+                      {isStaff && row.type !== "quote" && row.payment_status === "Proof Submitted" && !fromZoho && (
+                        <Button size="sm" className="h-8 text-xs bg-gold hover:bg-gold/90 text-black"
+                          disabled={confirmingId === row.id}
+                          onClick={() => handleConfirm(row)}>
+                          {confirmingId === row.id ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <CheckCircle2 className="h-3 w-3 mr-1" />}
+                          Confirm Receipt
+                        </Button>
+                      )}
+                      {isStaff && fromZoho && row.payment_status === "Proof Submitted" && (
+                        <span className="text-xs text-muted-foreground">Proof received: record the payment in Zoho Books and it updates here.</span>
+                      )}
+
+                      {row.payment_status !== "Confirmed" && (
+                        <div className="flex items-center gap-1.5 flex-1 min-w-[220px]">
+                          <input
+                            value={noteDraft[row.id] ?? ""}
+                            onChange={(e) => setNoteDraft((p) => ({ ...p, [row.id]: e.target.value }))}
+                            placeholder="Status update (e.g. paying by 13 Aug)…"
+                            className="h-8 flex-1 rounded-md border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold"
+                          />
+                          <Button size="sm" variant="ghost" className="h-8 text-xs"
+                            disabled={savingNoteId === row.id || !(noteDraft[row.id] ?? "").trim()}
+                            onClick={() => handleSaveNote(row)}>
+                            {savingNoteId === row.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <FileText className="h-3 w-3" />}
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
           </div>
         )}
 
-        <Card className="border-border">
-          <CardContent className="py-5 space-y-4">
-            <div className="flex items-center justify-between gap-3">
-              <div><h2 className="font-display text-lg font-semibold">Zoho Books pending balances</h2><p className="text-xs text-muted-foreground">Local Zoho mirror data · {zohoMeta.total} records with an outstanding balance</p></div>
-              <span className="text-xs text-muted-foreground">Page {zohoMeta.current_page} / {zohoMeta.last_page}</span>
+        {meta.total > 0 && (
+          <div className="flex items-center justify-between text-sm text-muted-foreground">
+            <span>Showing {from}–{to} of {meta.total.toLocaleString("en-IN")}</span>
+            <div className="flex gap-2">
+              <Button size="sm" variant="outline" disabled={page <= 1 || loading} onClick={() => setPage((p) => p - 1)}>Previous</Button>
+              <Button size="sm" variant="outline" disabled={page >= meta.last_page || loading} onClick={() => setPage((p) => p + 1)}>Next</Button>
             </div>
-            {zohoRows.length === 0 ? <p className="py-6 text-center text-sm text-muted-foreground">No pending Zoho Books balances.</p> : <div className="overflow-x-auto rounded-lg border"><table className="w-full text-sm"><thead className="bg-muted/40 text-left text-xs uppercase text-muted-foreground"><tr><th className="px-3 py-3">UIN / Number</th><th className="px-3 py-3">Case</th><th className="px-3 py-3">Client</th><th className="px-3 py-3">Date</th><th className="px-3 py-3 text-right">Total</th><th className="px-3 py-3 text-right">Pending</th><th className="px-3 py-3">PDF</th></tr></thead><tbody>{zohoRows.map(row => <tr key={`zoho-${row.id}`} className="border-t"><td className="px-3 py-3 font-mono text-xs font-semibold text-gold">{row.invoice_uin}</td><td className="px-3 py-3">{row.project?.docket_number ?? "Unlinked"}</td><td className="px-3 py-3">{row.client?.company_name ?? row.client?.legal_name ?? "—"}</td><td className="px-3 py-3">{row.invoice_date ? fmtDate(row.invoice_date) : "—"}</td><td className="px-3 py-3 text-right">{formatMoney(row.invoice_amount, row.currency)}</td><td className="px-3 py-3 text-right font-semibold text-blue-600">{formatMoney(row.balance, row.currency)}</td><td className="px-3 py-3"><Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => handleZohoPdf(row)}><FileText className="mr-1 h-3 w-3" />PDF</Button></td></tr>)}</tbody></table></div>}
-            {zohoMeta.last_page > 1 && <div className="flex items-center justify-between text-sm text-muted-foreground"><span>Showing page {zohoMeta.current_page} of {zohoMeta.last_page}</span><div className="flex gap-2"><Button size="sm" variant="outline" disabled={zohoPage <= 1} onClick={() => setZohoPage(page => page - 1)}>Previous</Button><Button size="sm" variant="outline" disabled={zohoPage >= zohoMeta.last_page} onClick={() => setZohoPage(page => page + 1)}>Next</Button></div></div>}
-          </CardContent>
-        </Card>
+          </div>
+        )}
       </div>
     </AppLayout>
   );
