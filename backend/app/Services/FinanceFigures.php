@@ -169,4 +169,125 @@ class FinanceFigures
 
         return $register->concat($legacy)->values();
     }
+
+    /**
+     * Outstanding balance by how late it is: current (not yet due), 1-30, 31-60, 61-90, 90+ days.
+     *
+     * @return array<int, array{key: string, label: string, amount: float, count: int}>
+     */
+    public function ageing(User $user, ?int $clientId = null): array
+    {
+        $buckets = [
+            'current' => ['label' => 'Not yet due', 'amount' => 0.0, 'count' => 0],
+            '1_30' => ['label' => '1–30 days', 'amount' => 0.0, 'count' => 0],
+            '31_60' => ['label' => '31–60 days', 'amount' => 0.0, 'count' => 0],
+            '61_90' => ['label' => '61–90 days', 'amount' => 0.0, 'count' => 0],
+            '90_plus' => ['label' => '90+ days', 'amount' => 0.0, 'count' => 0],
+        ];
+        $today = now()->startOfDay();
+        foreach ($this->rows($user, $clientId) as $row) {
+            if ($row['outstanding'] <= 0) {
+                continue;
+            }
+            $late = $row['due_date'] && $row['due_date']->lt($today) ? (int) $row['due_date']->diffInDays($today) : 0;
+            $key = match (true) {
+                $late <= 0 => 'current',
+                $late <= 30 => '1_30',
+                $late <= 60 => '31_60',
+                $late <= 90 => '61_90',
+                default => '90_plus',
+            };
+            $buckets[$key]['amount'] += $row['outstanding'];
+            $buckets[$key]['count']++;
+        }
+
+        return collect($buckets)->map(fn ($b, $key) => ['key' => $key, 'amount' => round($b['amount'], 2)] + $b)->values()->all();
+    }
+
+    /**
+     * Billed (by invoice date) and collected (by payment date) for the last 12 months, INR.
+     *
+     * @return array<int, array{month: string, key: string, billed: float, collected: float}>
+     */
+    public function monthly(User $user, ?int $clientId = null): array
+    {
+        $months = [];
+        for ($i = 11; $i >= 0; $i--) {
+            $date = now()->startOfMonth()->subMonths($i);
+            $months[$date->format('Y-m')] = ['month' => $date->format('M y'), 'key' => $date->format('Y-m'), 'billed' => 0.0, 'collected' => 0.0];
+        }
+        foreach ($this->rows($user, $clientId) as $row) {
+            $key = $row['date']?->format('Y-m');
+            if ($key && isset($months[$key])) {
+                $months[$key]['billed'] += $row['billed'];
+            }
+        }
+        foreach ($this->collectedByMonth($user, $clientId) as $key => $amount) {
+            if (isset($months[$key])) {
+                $months[$key]['collected'] += $amount;
+            }
+        }
+
+        return array_values(array_map(fn ($m) => ['billed' => round($m['billed'], 2), 'collected' => round($m['collected'], 2)] + $m, $months));
+    }
+
+    /** The latest invoices (register and older), newest first. */
+    public function recent(User $user, int $limit = 8, ?int $clientId = null): array
+    {
+        $clients = \App\Models\Client::query()->pluck('legal_name', 'id');
+        $today = now()->startOfDay();
+
+        return $this->rows($user, $clientId)
+            ->sortByDesc(fn (array $row) => ($row['date']?->timestamp ?? 0) * 1000 + $row['id'])
+            ->take($limit)
+            ->map(function (array $row) use ($clients, $today) {
+                $late = $row['due_date'] && $row['due_date']->lt($today) ? (int) $row['due_date']->diffInDays($today) : 0;
+                $dueIn = $row['due_date'] && ! $row['due_date']->lt($today) ? (int) $today->diffInDays($row['due_date']) : null;
+
+                return [
+                    'id' => $row['id'], 'source' => $row['source'], 'number' => $row['number'],
+                    'client_id' => $row['client_id'], 'client' => $row['client_id'] ? ($clients[$row['client_id']] ?? null) : null,
+                    'date' => $row['date']?->toDateString(), 'due_date' => $row['due_date']?->toDateString(),
+                    'amount' => round($row['billed'], 2), 'outstanding' => round($row['outstanding'], 2),
+                    'state' => $row['outstanding'] <= 0 ? 'Paid' : ($late > 0 ? "{$late} days overdue" : ($dueIn !== null ? "Due in {$dueIn} days" : 'Unpaid')),
+                    'overdue' => $row['outstanding'] > 0 && $late > 0,
+                ];
+            })->values()->all();
+    }
+
+    /** The clients owing the most (INR), with how many unpaid invoices. */
+    public function topClients(User $user, int $limit = 5): array
+    {
+        $rows = $this->rows($user)->filter(fn ($row) => $row['outstanding'] > 0 && $row['client_id']);
+        $clients = \App\Models\Client::query()->whereIn('id', $rows->pluck('client_id')->unique())->get(['id', 'legal_name', 'company_name', 'client_code'])->keyBy('id');
+
+        return $rows->groupBy('client_id')
+            ->map(fn ($group, $id) => [
+                'client_id' => (int) $id,
+                'name' => $clients->get($id)?->legal_name ?: $clients->get($id)?->company_name ?: '—',
+                'client_code' => $clients->get($id)?->client_code,
+                'outstanding' => round($group->sum('outstanding'), 2),
+                'invoices' => $group->count(),
+            ])
+            ->sortByDesc('outstanding')->take($limit)->values()->all();
+    }
+
+    /**
+     * Quotes sent or accepted that have not been turned into an invoice yet (work in the
+     * pipeline). A Zoho quote marked "invoiced" or a cancelled one is excluded.
+     */
+    public function quotedNotInvoiced(User $user, ?int $clientId = null): Builder
+    {
+        $query = PatentInvoiceIn::query()->where('type', 'quote')->whereIn('status', ['Sent', 'Accepted'])
+            ->where(fn ($q) => $q->whereNull('zoho_status')->orWhereRaw('LOWER(zoho_status) <> ?', ['invoiced']));
+        if ($clientId !== null) {
+            $query->where('client_id', $clientId);
+        } elseif ($user->isClientRole()) {
+            $query->whereIn('client_id', Client::query()->visibleToUser($user)->select('id'));
+        } elseif ($user->isGalvanizer()) {
+            $query->whereHas('project', fn ($q) => $user->applyProjectScope($q));
+        }
+
+        return $query;
+    }
 }

@@ -1,4 +1,4 @@
-import { Head, Link } from "@inertiajs/react";
+import { Head, Link, router } from "@inertiajs/react";
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { Briefcase, Users, Wallet, Clock, ArrowUpRight, TrendingUp, Loader2, Download, X, Search, ChevronLeft, ChevronRight, Archive, Landmark, MapPin, GitBranch, PieChart as PieChartIcon } from "lucide-react";
 import AppLayout from "@/layouts/AppLayout";
@@ -18,6 +18,7 @@ import { InventorDashboard } from "@/pages/dashboard/InventorDashboard";
 import { ActionItem, ActionItemRow, RenewalApproveModal } from "@/components/action-item-row";
 import { DonutChart, StatusBar, JurisdictionStackedBar, officeLabel } from "@/components/portfolio-charts";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { FinanceTab } from "@/components/dashboard/finance-tab";
 import { useMiniPager, MiniPager } from "@/components/mini-pager";
 
 function formatCurrency(val: number) {
@@ -25,13 +26,25 @@ function formatCurrency(val: number) {
   return `₹ ${val.toLocaleString()}`;
 }
 
-type DrillKey = "active_cases" | "inactive_cases" | "active_clients" | "wip" | "revenue";
+type DrillKey = "active_cases" | "inactive_cases" | "active_clients" | "quoted" | "collected"
+  | "dl_overdue" | "dl_next_7_days" | "dl_unreviewed" | "dl_critical";
+
+/** An unpaged list endpoint shown in the drill dialog's pages. */
+const pagedFrom = (load: () => Promise<any[]>) => async (params: URLSearchParams) => {
+  const rows = await load();
+  const page = Number(params.get("page") ?? 1); const per = Number(params.get("per_page") ?? 20);
+  const q = (params.get("search") ?? "").toLowerCase();
+  const list = q ? rows.filter((r) => JSON.stringify(r).toLowerCase().includes(q)) : rows;
+  return { data: list.slice((page - 1) * per, page * per), total: list.length };
+};
 
 interface DrillConfig {
   title: string;
   subtitle: string;
   fetchFn: (params: URLSearchParams) => Promise<any>;
   columns: { label: string; render: (row: any) => React.ReactNode }[];
+  /** Clicking a row (e.g. a deadline → the case's Deadlines tab). */
+  onRowClick?: (row: any) => void;
 }
 
 function DashboardDrillModal({ config, onClose }: { config: DrillConfig; onClose: () => void }) {
@@ -92,9 +105,10 @@ function DashboardDrillModal({ config, onClose }: { config: DrillConfig; onClose
               </thead>
               <tbody>
                 {result.data.map((row, i) => (
-                  <tr key={row.id ?? i} className="border-t border-border hover:bg-muted/30">
-                    {config.columns.map((col) => (
-                      <td key={col.label} className="px-4 py-2.5">{col.render(row)}</td>
+                  <tr key={row.id ?? i} onClick={() => config.onRowClick?.(row)}
+                    className={`border-t border-border hover:bg-muted/30 ${config.onRowClick ? "cursor-pointer" : ""}`}>
+                    {config.columns.map((col, c) => (
+                      <td key={`${col.label}-${c}`} className="px-4 py-2.5">{col.render(row)}</td>
                     ))}
                   </tr>
                 ))}
@@ -301,36 +315,59 @@ function StaffDashboard() {
         { label: "Onboarded", render: (r) => <span className="text-xs font-mono text-muted-foreground">{fmtD(r.date_onboarded)}</span> },
       ],
     },
-    wip: {
-      title: "WIP (Unbilled)",
-      subtitle: "Draft & Sent invoices",
-      fetchFn: (params) => {
-        params.set("status", "Draft");
-        return api.getInvoicesPaged(params);
-      },
+    quoted: {
+      title: "Quoted, not invoiced",
+      subtitle: "Quotes sent or accepted, not yet turned into an invoice",
+      fetchFn: pagedFrom(() => api.getDashboardQuoted()),
+      onRowClick: (r: any) => router.visit(`/financial`),
       columns: [
-        { label: "Invoice #", render: (r) => <span className="font-mono text-xs text-gold font-semibold">{r.invoice_code ?? "—"}</span> },
-        { label: "Client", render: (r) => <span className="text-sm">{r.client?.company_name ?? "—"}</span> },
-        { label: "Amount", render: (r) => <span className="text-sm font-medium">{formatCurrency(parseFloat(r.total_amount ?? 0))}</span> },
-        { label: "Status", render: (r) => <span className="text-xs">{r.status}</span> },
-        { label: "Due", render: (r) => <span className="text-xs font-mono text-muted-foreground">{fmtD(r.due_date)}</span> },
+        { label: "Quote", render: (r) => <span className="font-mono text-xs text-gold font-semibold">{r.number ?? "—"}</span> },
+        { label: "Client", render: (r) => <span className="text-sm">{r.client ?? "—"}</span> },
+        { label: "Amount", render: (r) => <span className="text-sm font-medium">{formatCurrency(r.amount)}</span> },
+        { label: "Status", render: (r) => <span className="text-xs capitalize">{r.status}</span> },
+        { label: "Date", render: (r) => <span className="text-xs font-mono text-muted-foreground">{fmtD(r.date)}</span> },
       ],
     },
-    revenue: {
-      title: "MTD Revenue",
-      subtitle: "Paid invoices",
-      fetchFn: (params) => {
-        params.set("status", "Paid");
-        return api.getInvoicesPaged(params);
-      },
+    collected: {
+      title: "Collected this month",
+      subtitle: "Payments received this month, by payment date",
+      fetchFn: pagedFrom(() => api.getDashboardCollected()),
       columns: [
-        { label: "Invoice #", render: (r) => <span className="font-mono text-xs text-gold font-semibold">{r.invoice_code ?? "—"}</span> },
-        { label: "Client", render: (r) => <span className="text-sm">{r.client?.company_name ?? "—"}</span> },
-        { label: "Amount", render: (r) => <span className="text-sm font-medium text-success">{formatCurrency(parseFloat(r.total_amount ?? 0))}</span> },
-        { label: "Issue Date", render: (r) => <span className="text-xs font-mono text-muted-foreground">{fmtD(r.issue_date)}</span> },
-        { label: "Project", render: (r) => <span className="text-xs font-mono text-muted-foreground">{r.project?.project_code ?? "—"}</span> },
+        { label: "Date", render: (r) => <span className="text-xs font-mono">{fmtD(r.date)}</span> },
+        { label: "Invoice", render: (r) => <span className="font-mono text-xs text-gold font-semibold">{r.number ?? "—"}</span> },
+        { label: "Client", render: (r) => <span className="text-sm">{r.client ?? "—"}</span> },
+        { label: "Amount", render: (r) => <span className="text-sm font-medium text-success">{formatCurrency(r.amount)}</span> },
+        { label: "Mode", render: (r) => <span className="text-xs text-muted-foreground">{r.estimated ? "Date estimated" : (r.mode ?? "—")}</span> },
       ],
     },
+    dl_overdue: { title: "Overdue deadlines", subtitle: "Open statutory deadlines past their due date", fetchFn: pagedFrom(() => api.getDashboardDeadlines("overdue")), onRowClick: (r: any) => router.visit(`/projects/${r.project_id}?tab=deadlines`), columns: [
+        { label: "Docket", render: (r) => <span className="font-mono text-xs text-gold font-semibold">{r.docket_number ?? "—"}</span> },
+        { label: "Deadline", render: (r) => <span className="text-sm">{r.title}</span> },
+        { label: "Client", render: (r) => <span className="text-xs text-muted-foreground">{r.client ?? "—"}</span> },
+        { label: "Due", render: (r) => <span className="text-xs font-mono">{fmtD(r.due_date)}</span> },
+        { label: "", render: (r) => <span className={`text-xs font-semibold ${r.days != null && r.days < 0 ? "text-destructive" : "text-muted-foreground"}`}>{r.days == null ? "" : r.days < 0 ? `${-r.days}d overdue` : `in ${r.days}d`}</span> },
+      ] },
+    dl_next_7_days: { title: "Deadlines in the next 7 days", subtitle: "Open statutory deadlines due this week", fetchFn: pagedFrom(() => api.getDashboardDeadlines("next_7_days")), onRowClick: (r: any) => router.visit(`/projects/${r.project_id}?tab=deadlines`), columns: [
+        { label: "Docket", render: (r) => <span className="font-mono text-xs text-gold font-semibold">{r.docket_number ?? "—"}</span> },
+        { label: "Deadline", render: (r) => <span className="text-sm">{r.title}</span> },
+        { label: "Client", render: (r) => <span className="text-xs text-muted-foreground">{r.client ?? "—"}</span> },
+        { label: "Due", render: (r) => <span className="text-xs font-mono">{fmtD(r.due_date)}</span> },
+        { label: "", render: (r) => <span className={`text-xs font-semibold ${r.days != null && r.days < 0 ? "text-destructive" : "text-muted-foreground"}`}>{r.days == null ? "" : r.days < 0 ? `${-r.days}d overdue` : `in ${r.days}d`}</span> },
+      ] },
+    dl_unreviewed: { title: "Unreviewed deadlines", subtitle: "Computed deadlines awaiting a reviewer", fetchFn: pagedFrom(() => api.getDashboardDeadlines("unreviewed")), onRowClick: (r: any) => router.visit(`/projects/${r.project_id}?tab=deadlines`), columns: [
+        { label: "Docket", render: (r) => <span className="font-mono text-xs text-gold font-semibold">{r.docket_number ?? "—"}</span> },
+        { label: "Deadline", render: (r) => <span className="text-sm">{r.title}</span> },
+        { label: "Client", render: (r) => <span className="text-xs text-muted-foreground">{r.client ?? "—"}</span> },
+        { label: "Due", render: (r) => <span className="text-xs font-mono">{fmtD(r.due_date)}</span> },
+        { label: "", render: (r) => <span className={`text-xs font-semibold ${r.days != null && r.days < 0 ? "text-destructive" : "text-muted-foreground"}`}>{r.days == null ? "" : r.days < 0 ? `${-r.days}d overdue` : `in ${r.days}d`}</span> },
+      ] },
+    dl_critical: { title: "Critical deadlines", subtitle: "Open deadlines marked Critical", fetchFn: pagedFrom(() => api.getDashboardDeadlines("critical")), onRowClick: (r: any) => router.visit(`/projects/${r.project_id}?tab=deadlines`), columns: [
+        { label: "Docket", render: (r) => <span className="font-mono text-xs text-gold font-semibold">{r.docket_number ?? "—"}</span> },
+        { label: "Deadline", render: (r) => <span className="text-sm">{r.title}</span> },
+        { label: "Client", render: (r) => <span className="text-xs text-muted-foreground">{r.client ?? "—"}</span> },
+        { label: "Due", render: (r) => <span className="text-xs font-mono">{fmtD(r.due_date)}</span> },
+        { label: "", render: (r) => <span className={`text-xs font-semibold ${r.days != null && r.days < 0 ? "text-destructive" : "text-muted-foreground"}`}>{r.days == null ? "" : r.days < 0 ? `${-r.days}d overdue` : `in ${r.days}d`}</span> },
+      ] },
   };
 
   return (
@@ -342,7 +379,7 @@ function StaffDashboard() {
         <PageHeader
           eyebrow="Overview"
           title={`Good morning, ${welcomeName}`}
-          description={`${metrics.active_matters} active · ${metrics.inactive_matters ?? 0} inactive · ${metrics.clients} clients · WIP ${formatCurrency(metrics.wip_balance)}`}
+          description={`${metrics.active_matters} active · ${metrics.inactive_matters ?? 0} inactive · ${metrics.clients} clients · ${formatCurrency(metrics.zoho_outstanding ?? 0)} outstanding`}
           actions={
             <>
               <AnalystRoleFilter value={roleFilter} onChange={setRoleFilter} />
@@ -377,8 +414,8 @@ function StaffDashboard() {
           <StatCard
             label="Active Cases"
             value={metrics.active_matters.toString()}
-            delta={metrics.active_matters_delta ?? undefined}
-            trend={metrics.active_matters_delta_trend ?? "up"}
+            delta={metrics.opened_this_month != null ? `+${metrics.opened_this_month} opened this month` : undefined}
+            trend="up"
             icon={Briefcase}
             accent="primary"
             onClick={() => setDrillKey("active_cases")}
@@ -388,15 +425,22 @@ function StaffDashboard() {
           />
           <StatCard label="Inactive Cases" value={(metrics.inactive_matters ?? 0).toString()} icon={Archive} accent="neutral" onClick={() => setDrillKey("inactive_cases")} />
           <StatCard label="Active Clients" value={metrics.clients.toString()} delta={metrics.clients_delta ?? undefined} trend={metrics.clients_delta_trend ?? "up"} icon={Users} accent="gold" onClick={() => setDrillKey("active_clients")} />
-          <StatCard label="WIP (unbilled)" value={formatCurrency(metrics.wip_balance)} delta={metrics.wip_delta ?? undefined} trend={metrics.wip_delta_trend ?? "neutral"} icon={Clock} accent="info" onClick={() => setDrillKey("wip")} />
-          <StatCard label="MTD Revenue" value={formatCurrency(metrics.received_payments)} delta={metrics.revenue_delta ?? undefined} trend={metrics.revenue_delta_trend ?? "up"} icon={Wallet} accent="success" onClick={() => setDrillKey("revenue")} />
-          <StatCard label="Zoho Outstanding" value={formatCurrency(metrics.zoho_outstanding ?? 0)} icon={Landmark} accent="info" subtitle={`Collected MTD ${formatCurrency(metrics.zoho_collected_mtd ?? 0)}`} />
+          <StatCard label="Quoted, not invoiced" value={formatCurrency(metrics.quoted_open ?? 0)} icon={Clock} accent="info" subtitle={`${metrics.quoted_count ?? 0} open quotes`} onClick={() => setDrillKey("quoted")} />
+          <StatCard label="Collected this month" value={formatCurrency(metrics.collected_mtd ?? 0)} delta={metrics.revenue_delta ?? undefined} trend={metrics.revenue_delta_trend ?? "up"} icon={Wallet} accent="success" onClick={() => setDrillKey("collected")} />
+          <StatCard label="Outstanding" value={formatCurrency(metrics.zoho_outstanding ?? 0)} icon={Landmark} accent="info" subtitle={`${metrics.overdue_invoices ?? 0} invoices overdue`} onClick={() => router.visit("/pending-payments")} />
         </div>
 
         <section className="border-y border-border py-4">
           <div className="mb-3 flex items-center justify-between"><div><h2 className="text-sm font-semibold">Statutory deadline risk</h2><p className="mt-1 text-xs text-muted-foreground">Open deadlines visible within your matter scope</p></div><Link href="/projects" className="text-xs font-medium text-gold hover:underline">Open matters</Link></div>
           <div className="grid grid-cols-2 gap-px overflow-hidden rounded-md border border-border bg-border lg:grid-cols-4">
-            {[["Overdue", metrics.deadline_risk?.overdue ?? 0], ["Next 7 days", metrics.deadline_risk?.next_7_days ?? 0], ["Unreviewed", metrics.deadline_risk?.unreviewed ?? 0], ["Critical", metrics.deadline_risk?.critical ?? 0]].map(([label, value]) => <div key={label as string} className="bg-background px-4 py-3"><p className="text-xs text-muted-foreground">{label}</p><p className={`mt-1 text-2xl font-semibold ${label === "Overdue" && Number(value) > 0 ? "text-destructive" : ""}`}>{value}</p></div>)}
+            {([["Overdue", "dl_overdue", metrics.deadline_risk?.overdue ?? 0], ["Next 7 days", "dl_next_7_days", metrics.deadline_risk?.next_7_days ?? 0], ["Unreviewed", "dl_unreviewed", metrics.deadline_risk?.unreviewed ?? 0], ["Critical", "dl_critical", metrics.deadline_risk?.critical ?? 0]] as [string, DrillKey, number][]).map(([label, key, value]) => (
+              <button key={label} onClick={() => Number(value) > 0 && setDrillKey(key)} title={Number(value) > 0 ? `Show the ${String(label).toLowerCase()} deadlines` : undefined}
+                className={`px-4 py-3 text-left transition-colors ${Number(value) > 0 ? "cursor-pointer hover:bg-muted/40" : "cursor-default"} ${(label === "Overdue" || label === "Critical") && Number(value) > 0 ? "bg-destructive/5" : "bg-background"}`}>
+                <p className="text-xs text-muted-foreground">{label}</p>
+                <p className={`mt-1 text-2xl font-semibold ${(label === "Overdue" || label === "Critical") && Number(value) > 0 ? "text-destructive" : ""}`}>{value}</p>
+                {Number(value) > 0 && <p className="mt-0.5 text-[10px] text-muted-foreground">Click to view →</p>}
+              </button>
+            ))}
           </div>
         </section>
 
@@ -585,47 +629,7 @@ function StaffDashboard() {
           </TabsContent>
 
           <TabsContent value="financial" className="mt-0 flex-1 overflow-y-auto px-8 py-6 space-y-6">
-        <div className="grid gap-6 lg:grid-cols-3">
-          <Card className="border-border">
-            <CardHeader>
-              <CardTitle className="font-display flex items-center gap-2">
-                <TrendingUp className="h-4 w-4 text-gold" /> Collection Rate
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="font-display text-4xl font-semibold">{metrics.realization_rate}%</div>
-              <p className="text-xs text-muted-foreground mt-2">Paid vs. Billed ratio</p>
-              <div className="mt-4 h-2 w-full rounded-full bg-muted overflow-hidden">
-                <div className="h-full rounded-full bg-gradient-to-r from-primary to-gold"
-                  style={{ width: `${Math.min(metrics.realization_rate, 100)}%` }} />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="lg:col-span-2 border-border">
-            <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle className="font-display">Recent invoices</CardTitle>
-              <Button asChild variant="ghost" size="sm">
-                <Link href="/financial">View all <ArrowUpRight className="ml-1 h-3 w-3" /></Link>
-              </Button>
-            </CardHeader>
-            <CardContent className="p-0">
-              <table className="w-full text-sm">
-                <tbody>
-                  {invoices.slice(0, 4).map((i) => (
-                    <tr key={i.id} className="border-t border-border hover:bg-muted/30">
-                      <td className="px-4 py-3 font-mono text-xs">{i.invoice_code}</td>
-                      <td className="px-4 py-3">{i.client?.company_name}</td>
-                      <td className="px-4 py-3 font-medium">{formatCurrency(parseFloat(i.total_amount))}</td>
-                      <td className="px-4 py-3"><Badge variant={statusColor(i.status)}>{i.status}</Badge></td>
-                    </tr>
-                  ))}
-                  {invoices.length === 0 && <tr><td colSpan={4} className="px-4 py-6 text-center text-muted-foreground text-sm">No invoices yet</td></tr>}
-                </tbody>
-              </table>
-            </CardContent>
-          </Card>
-        </div>
+            <FinanceTab />
           </TabsContent>
         </Tabs>
       </div>

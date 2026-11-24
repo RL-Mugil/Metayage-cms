@@ -60,7 +60,7 @@ export default function PendingPayments() {
   const initialSearch = typeof window === "undefined" ? "" : new URLSearchParams(window.location.search).get("search") ?? "";
   const [search, setSearch] = useState(initialSearch);
   const [query, setQuery] = useState(initialSearch.trim());
-  const [overdueOnly, setOverdueOnly] = useState(false);
+  const [overdueOnly, setOverdueOnly] = useState(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("overdue") === "1");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [uploadingId, setUploadingId] = useState<number | null>(null);

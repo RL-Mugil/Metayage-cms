@@ -115,6 +115,11 @@ Route::middleware(['auth:sanctum', 'firm.context', 'throttle:120,1'])->group(fun
 
     // Dashboard
     Route::get('/dashboard/metrics', [DashboardController::class, 'metrics']);
+    // Dashboard drill-downs and Financial tab (portal register).
+    Route::get('/dashboard/deadlines', [\App\Http\Controllers\DashboardInsightsController::class, 'deadlines']);
+    Route::get('/dashboard/drill/quoted', [\App\Http\Controllers\DashboardInsightsController::class, 'quoted']);
+    Route::get('/dashboard/drill/collected', [\App\Http\Controllers\DashboardInsightsController::class, 'collected']);
+    Route::get('/dashboard/finance', [\App\Http\Controllers\DashboardInsightsController::class, 'finance']);
 
     // CRM / Clients
     Route::get('/clients/stats', [ClientController::class, 'stats']);

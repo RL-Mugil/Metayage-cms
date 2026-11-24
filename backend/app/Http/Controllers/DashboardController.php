@@ -218,6 +218,9 @@ class DashboardController extends Controller
         $canSeeFinancials = in_array($user->role, ['super_admin', 'partner', 'manager', 'finance', 'galvanizer', 'client', 'client_admin']);
 
         $wipAmount      = 0;
+        $quotedOpen = 0;
+        $quotedCount = 0;
+        $overdueInvoices = 0;
         $invoicedAmount = 0;
         $receivedAmount = 0;
         $zohoOutstanding  = 0;
@@ -252,6 +255,10 @@ class DashboardController extends Controller
 
             $invoicedAmount = $summary['billed'];
             $receivedAmount = $summary['received'];
+            $overdueInvoices = $summary['overdue_count'];
+            $quoted = $figures->quotedNotInvoiced($user);
+            $quotedOpen = (float) (clone $quoted)->sum(DB::raw('COALESCE(total_bcy, invoice_amount)'));
+            $quotedCount = (clone $quoted)->count();
         }
 
         // Interactive action feed — client/client_admin only. Renewals-first, urgency,
@@ -333,6 +340,12 @@ class DashboardController extends Controller
                 'pending_tasks'         => $tasksCount,
                 'wip_balance'           => $wipAmount,
                 'received_payments'     => $receivedAmount,
+                // This month's collections (by payment date) and work quoted but not invoiced yet.
+                'collected_mtd'         => $zohoCollectedMtd,
+                'quoted_open'           => round($quotedOpen, 2),
+                'quoted_count'          => $quotedCount,
+                'overdue_invoices'      => $overdueInvoices,
+                'opened_this_month'     => $mattersThisMonth,
                 'invoiced_total'        => $invoicedAmount,
                 'realization_rate'      => $invoicedAmount > 0 ? round(($receivedAmount / $invoicedAmount) * 100, 1) : 100,
                 'active_matters_delta'  => $fmtDelta($mattersThisMonth, $mattersLastMonth),

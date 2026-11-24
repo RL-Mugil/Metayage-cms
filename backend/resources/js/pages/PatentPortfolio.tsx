@@ -18,12 +18,12 @@ import { SectionDialog } from "@/components/portfolio/section-dialog";
 const PAGE_SIZE = 5;
 
 /** Previous / next for a section's list; hidden when everything fits on one page. */
-function SectionPager({ page, total, onPage }: { page: number; total: number; onPage: (page: number) => void }) {
-  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+function SectionPager({ page, total, onPage, size = PAGE_SIZE }: { page: number; total: number; onPage: (page: number) => void; size?: number }) {
+  const pages = Math.max(1, Math.ceil(total / size));
   if (pages <= 1) return null;
   return (
     <div className="flex items-center justify-between border-t border-border px-4 py-2 text-xs text-muted-foreground">
-      <span>{(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, total)} of {total}</span>
+      <span>{(page - 1) * size + 1}–{Math.min(page * size, total)} of {total}</span>
       <div className="flex gap-1">
         <button disabled={page <= 1} onClick={() => onPage(page - 1)}
           className="rounded border border-border px-2 py-1 hover:bg-muted disabled:opacity-40">‹</button>
@@ -35,7 +35,11 @@ function SectionPager({ page, total, onPage }: { page: number; total: number; on
   );
 }
 
-const pageOf = <T,>(rows: T[], page: number): T[] => rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+const pageOf = <T,>(rows: T[], page: number, size = PAGE_SIZE): T[] => rows.slice((page - 1) * size, page * size);
+
+/** Rows per page that fill each card: renewal rows are shorter than payment rows, stage bars shorter still. */
+const RENEWAL_PAGE = 6;
+const STAGE_PAGE = 8;
 
 const fmtShort = (value?: string | null) =>
   value ? new Date(value).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "2-digit" }) : "—";
@@ -214,7 +218,7 @@ export default function PatentPortfolio() {
 
   // Each section's own search (paging restarts at 1 when it changes).
   const renewalRows: any[] = useMemo(() => ((data?.upcoming_renewals ?? []) as any[])
-    .filter((r) => matches(r, renewalSearch.trim().toLowerCase(), ["docket_number", "project_name", "patent_office_code", "client.company_name", "client.legal_name"])),
+    .filter((r) => matches(r, renewalSearch.trim().toLowerCase(), ["docket_number", "project_name", "patent_office_code", "label", "client.company_name", "client.legal_name", "application_number"])),
   [data, renewalSearch]);
   const paymentRows: any[] = useMemo(() => ((data?.pending_invoices ?? []) as any[])
     .filter((r) => matches(r, paymentSearch.trim().toLowerCase(), ["invoice_code", "docket_number", "status", "currency"])),
@@ -391,7 +395,7 @@ export default function PatentPortfolio() {
                   <div className="flex-1">
                     {renewalRows.length === 0 ? (
                       <p className="text-xs text-muted-foreground px-4 py-6">{renewalSearch ? "No matching renewals." : "No upcoming renewals."}</p>
-                    ) : pageOf(renewalRows, renewalPage).map((r: any, i: number) => (
+                    ) : pageOf(renewalRows, renewalPage, RENEWAL_PAGE).map((r: any, i: number) => (
                       <button key={i} onClick={() => r.id && goTo(`/projects/${r.id}?tab=deadlines`)}
                         className="block w-full text-left px-4 py-3 border-b border-border last:border-0 hover:bg-muted/20 transition-colors group">
                         <div className="flex items-center justify-between gap-2">
@@ -404,14 +408,19 @@ export default function PatentPortfolio() {
                             <MapPin className="h-3 w-3" />{ol(r.patent_office_code ?? "")}
                           </div>
                         </div>
-                        <div className="flex items-center justify-between mt-1.5">
-                          <span className="text-[10px] text-muted-foreground truncate">{r.client?.company_name ?? r.client?.legal_name ?? r.project_name ?? ""}</span>
-                          <span className="text-xs font-medium text-foreground">Due {fmtShort(r.hard_deadline)}</span>
+                        <div className="flex items-center justify-between gap-2 mt-1.5">
+                          <span className="text-[10px] text-muted-foreground truncate">{r.label ? `${r.label} · ` : ""}{r.client?.legal_name ?? r.client?.company_name ?? r.project_name ?? ""}</span>
+                          <span className="flex items-center gap-1.5 text-xs font-medium text-foreground whitespace-nowrap">
+                            {typeof r.days === "number" && (r.days < 0
+                              ? <span className="rounded bg-red-500/15 px-1.5 py-0.5 text-[9px] font-semibold text-red-500">{-r.days}d overdue</span>
+                              : r.days <= 60 ? <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-semibold text-amber-600">in {r.days}d</span> : null)}
+                            Due {fmtShort(r.due_date ?? r.hard_deadline)}
+                          </span>
                         </div>
                       </button>
                     ))}
                   </div>
-                  <SectionPager page={renewalPage} total={renewalRows.length} onPage={setRenewalPage} />
+                  <SectionPager page={renewalPage} total={renewalRows.length} onPage={setRenewalPage} size={RENEWAL_PAGE} />
                 </CardContent>
               </Card>
 
@@ -468,14 +477,14 @@ export default function PatentPortfolio() {
                     <p className="text-xs text-muted-foreground py-6 text-center flex-1">{stageSearch ? "No matching stages." : "No pending patents."}</p>
                   ) : (
                     <div className="space-y-2 flex-1">
-                      {pageOf(stageRows, stagePage).map((s: any) => (
+                      {pageOf(stageRows, stagePage, STAGE_PAGE).map((s: any) => (
                         <StatusBar key={s.name} name={s.name} count={s.count} max={maxStage}
                           active={activeStage === s.name} onClick={() => toggleStage(s.name)} />
                       ))}
                       {activeStage && <p className="pt-1 text-[10px] text-muted-foreground">Filtering Action Required by "{activeStage}" · click again to clear</p>}
                     </div>
                   )}
-                  <div className="-mx-6 -mb-6 mt-2"><SectionPager page={stagePage} total={stageRows.length} onPage={setStagePage} /></div>
+                  <div className="-mx-6 -mb-6 mt-2"><SectionPager page={stagePage} total={stageRows.length} onPage={setStagePage} size={STAGE_PAGE} /></div>
                 </CardContent>
               </Card>
 
@@ -516,30 +525,29 @@ export default function PatentPortfolio() {
                   {filtered.length === 0 ? (
                     <p className="text-xs text-muted-foreground px-4 py-8 text-center flex-1">No matching actions.</p>
                   ) : (
-                    <div className="flex-1 overflow-auto">
-                      <table className="w-full text-xs">
+                    <div className="flex-1 overflow-y-auto overflow-x-hidden">
+                      <table className="w-full table-fixed text-xs">
+                        <colgroup><col className="w-[30%]" /><col className="w-[17%]" /><col className="w-[53%]" /></colgroup>
                         <thead className="sticky top-0 bg-muted/60 backdrop-blur text-[10px] uppercase tracking-wider text-muted-foreground">
                           <tr>
                             <SortTh col="docket_number" active={sortCol === "docket_number"} dir={sortDir} onClick={() => toggleSort("docket_number")}>Docket No.</SortTh>
                             <SortTh col="status" active={sortCol === "status"} dir={sortDir} onClick={() => toggleSort("status")}>Status</SortTh>
-                            <th className="px-3 py-2.5 text-left">Current Stage</th>
-                            <th className="px-3 py-2.5 text-left">Pending Action</th>
-                            <th className="px-3 py-2.5 text-right"></th>
+                            <th className="px-3 py-2.5 text-left">Stage · next action</th>
                           </tr>
                         </thead>
                         <tbody>
                           {paged.map((row: any, i: number) => (
                             <tr key={i} onClick={() => goToAction(row)} className="border-t border-border hover:bg-muted/20 transition-colors group cursor-pointer">
-                              <td className="px-3 py-2.5">
+                              <td className="px-3 py-2.5 truncate">
                                 <button onClick={(e) => { e.stopPropagation(); if (row.id) setDetailId(row.id); }} title="Quick look at the case"
-                                  className="font-mono font-medium text-foreground hover:text-gold hover:underline transition-colors">
+                                  className="font-mono font-medium text-foreground hover:text-gold hover:underline transition-colors truncate max-w-full">
                                   {row.docket_number}
                                 </button>
                               </td>
                               <td className="px-3 py-2.5">
                                 <button
                                   onClick={(e) => { e.stopPropagation(); toggleStatus(row.status); }}
-                                  className={`rounded px-1.5 py-0.5 text-[10px] font-medium transition-colors ${
+                                  className={`rounded px-1.5 py-0.5 text-[10px] font-medium leading-tight whitespace-nowrap transition-colors ${
                                     activeStatus === row.status
                                       ? "bg-gold/20 text-gold border border-gold/40"
                                       : row.status === "In Progress" ? "bg-blue-500/15 text-blue-400"
@@ -550,14 +558,12 @@ export default function PatentPortfolio() {
                                   {row.status}
                                 </button>
                               </td>
-                              <td className="px-3 py-2.5 text-xs text-muted-foreground max-w-[150px] truncate" title={row.current_stage ?? ""}>
-                                {row.current_stage ?? "—"}
-                              </td>
-                              <td className="px-3 py-2.5 text-muted-foreground max-w-[180px] truncate" title={row.pending_action}>{row.pending_action}</td>
-                              <td className="px-3 py-2.5 text-right whitespace-nowrap">
-                                <span className="inline-flex items-center gap-1 rounded border border-gold/40 px-1.5 py-0.5 text-[10px] font-medium text-gold group-hover:bg-gold/10">
-                                  {row.action_target?.label ?? "Open"} <ExternalLink className="h-2.5 w-2.5" />
-                                </span>
+                              <td className="px-3 py-2">
+                                <div className="truncate text-foreground" title={row.current_stage ?? ""}>{row.current_stage ?? "—"}</div>
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="truncate text-[10px] text-muted-foreground" title={row.pending_action}>{row.pending_action}</span>
+                                  <span className="shrink-0 text-[10px] font-medium text-gold group-hover:underline">{row.action_target?.label ?? "Open"} →</span>
+                                </div>
                               </td>
                             </tr>
                           ))}
@@ -589,8 +595,11 @@ export default function PatentPortfolio() {
                   { key: "docket_number", label: "Docket", render: (r: any) => <span className="font-mono text-gold">{r.docket_number ?? "—"}</span> },
                   { key: "project_name", label: "Case" },
                   { key: "client", label: "Client", value: (r: any) => r.client?.company_name ?? r.client?.legal_name ?? "" },
+                  { key: "label", label: "Fee", value: (r: any) => r.label ?? "" },
                   { key: "patent_office_code", label: "Office", value: (r: any) => r.patent_office_code ?? "" },
-                  { key: "hard_deadline", label: "Due", value: (r: any) => r.hard_deadline ?? "", render: (r: any) => fmtShort(r.hard_deadline) },
+                  { key: "hard_deadline", label: "Due", value: (r: any) => r.due_date ?? r.hard_deadline ?? "", render: (r: any) => (
+                    <span className={typeof r.days === "number" && r.days < 0 ? "text-red-500 font-medium" : ""}>{fmtShort(r.due_date ?? r.hard_deadline)}{typeof r.days === "number" && r.days < 0 ? ` (${-r.days}d overdue)` : ""}</span>
+                  ) },
                 ]} />
             )}
             {viewAll === "stages" && (

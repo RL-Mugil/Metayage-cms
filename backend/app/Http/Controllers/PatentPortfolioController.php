@@ -150,14 +150,9 @@ class PatentPortfolioController extends Controller
             ->orderByDesc('count')
             ->get();
 
-        // Upcoming renewals (projects nearing hard_deadline, sorted soonest first)
-        $renewals = (clone $base)
-            ->whereNotNull('hard_deadline')
-            ->whereNotIn('status', ['Closed'])
-            ->with('client')
-            ->orderBy('hard_deadline')
-            ->limit(200)   // shown 5 per page on the portfolio
-            ->get(['id', 'docket_number', 'project_name', 'hard_deadline', 'patent_office_code', 'client_id']);
+        // Upcoming renewals: the next unpaid renewal / annuity / US maintenance fee of each
+        // granted application in scope (renewal_schedules), overdue first, then soonest.
+        $renewals = \App\Services\RenewalOutlook::nextDue((clone $base)->whereNotNull('patent_application_id')->select('patent_application_id'), 200);
 
         // Pending invoices for the client(s) — oldest due date first (most overdue/urgent),
         // undated invoices last, so a badly overdue invoice can't be silently pushed out of

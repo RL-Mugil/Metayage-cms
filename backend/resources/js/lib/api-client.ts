@@ -244,6 +244,17 @@ export interface ZohoExportResult {
   }
 }
 
+export interface DashboardFinance {
+  billed: number
+  collected: number
+  outstanding: number
+  rate: number
+  ageing: Array<{ key: string; label: string; amount: number; count: number }>
+  monthly: Array<{ month: string; key: string; billed: number; collected: number }>
+  recent: Array<{ id: number; source: string; number: string | null; client: string | null; client_id: number | null; date: string | null; due_date: string | null; amount: number; outstanding: number; state: string; overdue: boolean }>
+  top_clients: Array<{ client_id: number; name: string; client_code: string | null; outstanding: number; invoices: number }>
+}
+
 export const api = {
   async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     const method = (options.method || 'GET').toUpperCase()
@@ -288,6 +299,18 @@ export const api = {
   async getStaffPickerUsers(): Promise<User[]> { return this.request('/users?staff=1') },
 
   // ── Dashboard ──
+  /** Dashboard → Financial tab: totals, ageing, 12 months, recent invoices, top clients (portal register). */
+  async getDashboardFinance(): Promise<DashboardFinance> {
+    return this.request('/dashboard/finance')
+  },
+  /** Open docket deadlines in a dashboard risk bucket. */
+  async getDashboardDeadlines(bucket: 'overdue' | 'next_7_days' | 'unreviewed' | 'critical'): Promise<any[]> {
+    return this.request(`/dashboard/deadlines?bucket=${bucket}`)
+  },
+  async getDashboardQuoted(): Promise<any[]> { return this.request('/dashboard/drill/quoted') },
+  async getDashboardCollected(month?: string): Promise<any[]> {
+    return this.request(`/dashboard/drill/collected${month ? `?month=${month}` : ''}`)
+  },
   async getDashboardMetrics(roleFilter?: string): Promise<DashboardMetrics> {
     const q = roleFilter && roleFilter !== 'all' ? `?role_filter=${roleFilter}` : ''
     return this.request(`/dashboard/metrics${q}`)
