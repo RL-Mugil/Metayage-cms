@@ -1,7 +1,7 @@
 import { Head, usePage } from "@inertiajs/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { AlertTriangle, BadgeCheck, CheckCircle2, CloudOff, Download, FileSpreadsheet, FileText, HandCoins, Loader2, MessageSquare, RefreshCw, Search, ShieldCheck, Upload, X } from "lucide-react";
+import { AlertTriangle, BadgeCheck, CheckCircle2, CloudOff, Download, FileSpreadsheet, FileText, HandCoins, Loader2, MessageSquare, RefreshCw, Search, ShieldCheck, TrendingUp, Upload, X } from "lucide-react";
 import AppLayout from "@/layouts/AppLayout";
 import { FitPage } from "@/components/modern/fit-page";
 import { AnimatedNumber } from "@/components/modern/animated-number";
@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { api } from "@/lib/api-client";
 import { fmtDate } from "@/lib/date-utils";
-import { PaymentExportDialog as ExportDialog } from "@/components/reports/payment-export-dialog";
+import { ReportDownloadDialog } from "@/components/reports/report-download-dialog";
 
 /** One unpaid invoice from the portal register (portal renewals and invoices imported from Zoho). */
 interface Row {
@@ -306,7 +306,15 @@ export default function PendingPayments() {
       {payRow && <MarkPaidDialog row={payRow} onClose={() => setPayRow(null)} onDone={() => { setPayRow(null); load(); }} />}
       {waiveRow && <WaiveDialog row={waiveRow} onClose={() => setWaiveRow(null)} onDone={() => { setWaiveRow(null); load(); }} />}
       {noteRow && <NoteDialog row={noteRow} onClose={() => setNoteRow(null)} onDone={() => { setNoteRow(null); load(); }} />}
-      {exportOpen && <ExportDialog clients={extra.clients} initialClient={clientId} initialFrom={from} initialTo={to} onClose={() => setExportOpen(false)} />}
+      {exportOpen && (
+        <ReportDownloadDialog
+          report={{ id: "payment-collection", name: "Payment Collection", clientFilter: true, icon: TrendingUp, color: "text-green-500",
+            description: "Pending follow-up with client contacts, payments, waivers and ageing per client — same report as Reports → Payment Collection" }}
+          clients={extra.clients}
+          initialClientCode={extra.clients.find((c) => String(c.id) === String(clientId))?.code ?? ""}
+          initialFrom={from} initialTo={to}
+          onClose={() => setExportOpen(false)} />
+      )}
     </AppLayout>
   );
 }

@@ -19,9 +19,17 @@ class ReportSigner
 
     public function __construct(private readonly InternalDocumentSignatureService $signatures) {}
 
-    /** @param array<string, mixed> $data */
+    /** @param array<string, mixed> $data  payment report data, or ['rows' => [...]] for any other report */
     public function fingerprint(ReportExport $export, array $data): string
     {
+        if (! isset($data['summary'])) {
+            // Generic report: every row, in order, plus the filters.
+            return $this->signatures->fingerprint(self::DOCUMENT_TYPE, $export->id, [
+                'type' => $export->report_type, 'filters' => $export->filters,
+                'rows' => hash('sha256', json_encode(array_values($data['rows'] ?? $data))),
+            ]);
+        }
+
         return $this->signatures->fingerprint(self::DOCUMENT_TYPE, $export->id, [
             'type' => $export->report_type, 'filters' => $export->filters, 'summary' => $data['summary'] ?? [],
             'rows' => count($data['pending'] ?? []) + count($data['payments'] ?? []) + count($data['invoices'] ?? []),

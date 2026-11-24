@@ -747,26 +747,34 @@ class ReportsController extends Controller
     private const PDF_LIMITS = ['pending' => 150, 'payments' => 150, 'waivers' => 100, 'by_client' => 60, 'invoices' => 150];
 
     /**
-     * Payment Collection / Financial Summary export from the report module: Excel (tabs, charts,
-     * filter dropdowns), CSV (one consolidated sheet) or PDF (data sheet with charts), on the
-     * letterhead, signed with the generator's signature PIN or marked as an unsigned draft.
+     * Any report, downloaded straight from the report module on the letterhead: PDF (data sheet),
+     * Excel (Summary with chart + data tabs with filter dropdowns) or CSV, signed with the
+     * generator's signature PIN or marked as an unsigned draft. Payment Collection / Financial
+     * Summary use the register-based payment data; every other report its rows.
      */
     public function download(Request $request, \App\Services\Reports\PaymentReportData $reportData, \App\Services\Reports\ReportSigner $signer)
     {
         $request->validate([
-            'type' => ['required', Rule::in(self::SIGNED_TYPES)],
+            'type' => ['required', Rule::in(array_keys(self::REPORT_ACCESS))],
             'file' => ['required', Rule::in(['xlsx', 'csv', 'pdf'])],
             'pin' => ['nullable', 'digits:4'],
         ]);
+        @ini_set('memory_limit', '512M');
         [$type, $user, , , $from, $to, $clientCode] = $this->resolveContext($request);
-        $data = $reportData->build($user, $from, $to, $this->clientIdFor($clientCode));
         $file = (string) $request->input('file');
+        if (in_array($type, self::SIGNED_TYPES, true)) {
+            $data = $reportData->build($user, $from, $to, $this->clientIdFor($clientCode));
+            $rowCount = count($data['pending']) + count($data['payments']) + count($data['invoices']);
+        } else {
+            $data = array_values($this->buildCompleteReportPayload($type, $user, $from, $to, $clientCode)['rows']);
+            $rowCount = count($data);
+        }
 
         $export = ReportExport::create([
             'generated_by_id' => $user->id, 'report_type' => $type, 'report_name' => self::REPORT_NAMES[$type] ?? $type,
             'format' => $file === 'xlsx' ? 'EXCEL' : strtoupper($file),
             'filters' => ['from_date' => $from?->toDateString(), 'to_date' => $to?->toDateString(), 'client_code' => $clientCode],
-            'row_count' => count($data['pending']) + count($data['payments']) + count($data['invoices']),
+            'row_count' => $rowCount,
             'snapshot' => $data,
         ]);
         if ($request->filled('pin')) {
@@ -776,14 +784,24 @@ class ReportsController extends Controller
         return $this->renderExport($request, $export, $data, $file);
     }
 
-    /** Download a saved Payment Collection / Financial Summary again from its snapshot (keeps its signature; can be signed now). */
-    public function downloadHistory(Request $request, int $id, \App\Services\Reports\ReportSigner $signer)
+    /** Download a saved report again from its snapshot (keeps its signature; can be signed now). */
+    public function downloadHistory(Request $request, int $id, \App\Services\Reports\PaymentReportData $reportData, \App\Services\Reports\ReportSigner $signer)
     {
         $request->validate(['file' => ['required', Rule::in(['xlsx', 'csv', 'pdf'])], 'pin' => ['nullable', 'digits:4']]);
-        $export = ReportExport::where('generated_by_id', $request->user()->id)->findOrFail($id);
-        abort_unless(in_array($export->report_type, self::SIGNED_TYPES, true) && is_array($export->snapshot) && isset($export->snapshot['summary']), 422,
-            'This saved report is from before the register-based version; generate it again.');
-        $data = $export->snapshot;
+        @ini_set('memory_limit', '512M');
+        $user = $request->user();
+        $export = ReportExport::where('generated_by_id', $user->id)->findOrFail($id);
+        abort_unless(in_array($user->role, self::REPORT_ACCESS[$export->report_type] ?? ['super_admin'], true), 403, 'Forbidden');
+        $data = (array) ($export->snapshot ?? []);
+        if (in_array($export->report_type, self::SIGNED_TYPES, true) && ! isset($data['summary'])) {
+            // Saved before the register-based version: rebuild from the same filters (no signature on it yet).
+            $f = $export->filters ?? [];
+            $data = $reportData->build($user, ! empty($f['from_date']) ? Carbon::parse($f['from_date'])->startOfDay() : null,
+                ! empty($f['to_date']) ? Carbon::parse($f['to_date'])->endOfDay() : null, $this->clientIdFor($f['client_code'] ?? null));
+            if (! $this->signatureFor($export)) {
+                $export->update(['snapshot' => $data]);
+            }
+        }
         if ($request->filled('pin') && ! $signer->find((string) $this->signatureFor($export)?->verification_code)) {
             $signer->sign($export, $data, $request->user(), (string) $request->input('pin'));
         }
@@ -818,8 +836,10 @@ class ReportsController extends Controller
         $name = str_replace(' ', '-', $title).'-'.$export->created_at->format('Y-m-d').($clientCode ? "-{$clientCode}" : '');
         $sealUri = $seal->dataUri((bool) $signature);
 
+        if (! isset($data['summary'])) {
+            return $this->renderGeneric($export, array_values($data), $file, $name, $title, $head, $signature, $seal);
+        }
         if ($file === 'pdf') {
-            @ini_set('memory_limit', '512M');
             $cut = [];
             $pdfData = $data;
             foreach (self::PDF_LIMITS as $key => $limit) {
@@ -855,6 +875,46 @@ class ReportsController extends Controller
             }
             foreach ($data['waivers'] as $w) {
                 fputcsv($out, ['Waiver', $w['date'], $w['invoice'], $w['client'], $w['client_code'], '', '', '', '', '', '', '', '', $w['amount'], '', '', $w['reason'], $w['approved_by']], ',', '"', '');
+            }
+            fputcsv($out, [], ',', '"', '');
+            fputcsv($out, [$signature ? "Digitally signed by {$signature['name']} ({$signature['role']}) on {$signature['at']} - verification code {$signature['code']} - {$signature['url']}" : 'UNSIGNED DRAFT'], ',', '"', '');
+            fputcsv($out, [$head['company_name'].' - '.$head['address'].' - '.$head['phone'].' - '.$head['web']], ',', '"', '');
+            fclose($out);
+        }, "{$name}.csv", ['Content-Type' => 'text/csv; charset=UTF-8']);
+    }
+
+    /** Any non-payment report: letterhead PDF / Excel (Summary + Data) / CSV with the seal. */
+    private function renderGeneric(ReportExport $export, array $rows, string $file, string $name, string $title, array $head, ?array $signature, \App\Services\Reports\SignatureSeal $seal)
+    {
+        $generic = app(\App\Services\Reports\GenericReport::class);
+        $filters = $export->filters ?? [];
+        if ($file === 'pdf') {
+            $shape = $generic->shape($rows);
+            $pdf = \Barryvdh\DomPDF\Facade\Pdf::setOptions(['isRemoteEnabled' => false, 'isFontSubsettingEnabled' => true])
+                ->loadView('pdf.generic-report', [
+                    'title' => $title, 'rows' => array_slice($rows, 0, \App\Services\Reports\GenericReport::PDF_ROW_LIMIT),
+                    'cut' => max(0, count($rows) - \App\Services\Reports\GenericReport::PDF_ROW_LIMIT), 'total' => count($rows),
+                    'columns' => $shape['columns'], 'numeric' => array_keys($shape['totals']), 'totals' => $shape['totals'],
+                    'filterLine' => $generic->filterLine($filters), 'letterhead' => $head, 'signature' => $signature, 'seal' => $seal->dataUri((bool) $signature),
+                ])
+                ->setPaper('a4', count($shape['columns']) <= 5 ? 'portrait' : 'landscape');
+
+            return $pdf->download("{$name}.pdf");
+        }
+        if ($file === 'xlsx') {
+            return response($generic->excel($title, $rows, $filters, $head, $signature, $seal->png((bool) $signature)), 200, [
+                'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                'Content-Disposition' => "attachment; filename=\"{$name}.xlsx\"",
+            ]);
+        }
+
+        return response()->streamDownload(function () use ($rows, $generic, $signature, $head) {
+            $out = fopen('php://output', 'w');
+            fwrite($out, "\xEF\xBB\xBF");
+            $columns = $generic->shape($rows)['columns'];
+            fputcsv($out, array_map([\App\Services\Reports\GenericReport::class, 'heading'], $columns), ',', '"', '');
+            foreach ($rows as $r) {
+                fputcsv($out, array_map(fn ($c) => is_scalar($r[$c] ?? null) || ($r[$c] ?? null) === null ? ($r[$c] ?? '') : json_encode($r[$c]), $columns), ',', '"', '');
             }
             fputcsv($out, [], ',', '"', '');
             fputcsv($out, [$signature ? "Digitally signed by {$signature['name']} ({$signature['role']}) on {$signature['at']} - verification code {$signature['code']} - {$signature['url']}" : 'UNSIGNED DRAFT'], ',', '"', '');

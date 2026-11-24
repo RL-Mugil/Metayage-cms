@@ -126,6 +126,41 @@ class SettlementAndPaymentReportTest extends TestCase
         $this->assertStringStartsWith("\x89PNG", $png);
     }
 
+    public function test_every_report_downloads_on_the_letterhead_and_signs(): void
+    {
+        $admin = $this->user('super_admin', 'sa@set.test');
+        $employee = Employee::create(['employee_code' => 'EMP-2026-0097', 'user_id' => $admin->id, 'full_name' => 'Admin', 'work_email' => 'sa@set.test',
+            'status' => 'Active', 'date_of_joining' => '2024-01-01']);
+        $employee->setInternalSignaturePin('1357');
+        $employee->save();
+        Sanctum::actingAs($admin);
+        $types = ['client-portfolio', 'matter-status', 'financial-summary', 'hrms', 'ip-deadline', 'productivity', 'tracker-workload', 'overdue-cases',
+            'deadline-forecast', 'payment-collection', 'zoho-summary', 'payroll-cost-summary', 'tds-pf-esi-summary'];
+        foreach ($types as $type) {
+            $pdf = $this->post('/api/reports/download', ['type' => $type, 'file' => 'pdf'], ['Accept' => 'application/json']);
+            $pdf->assertOk();
+            $this->assertStringStartsWith('%PDF', (string) $pdf->getContent(), $type);
+            $this->post('/api/reports/download', ['type' => $type, 'file' => 'csv', 'date' => now()->toDateString()], ['Accept' => 'application/json'])->assertOk();
+        }
+
+        // A generic report: Excel has Summary + Data, signing works and verifies, history keeps the code.
+        $xlsx = $this->post('/api/reports/download', ['type' => 'client-portfolio', 'file' => 'xlsx', 'pin' => '1357'], ['Accept' => 'application/json'])->assertOk();
+        $path = tempnam(sys_get_temp_dir(), 'gen').'.xlsx';
+        file_put_contents($path, $xlsx->getContent());
+        $this->assertSame(['Summary', 'Data'], \PhpOffice\PhpSpreadsheet\IOFactory::load($path)->getSheetNames());
+        $export = \App\Models\ReportExport::latest('id')->first();
+        $code = \App\Models\InternalDocumentSignature::where('document_type', 'report_export')->where('document_id', $export->id)->value('verification_code');
+        $this->assertNotNull($code);
+        $this->getJson("/api/reports/verify/{$code}")->assertOk()->assertJsonPath('valid', true);
+        $this->post("/api/reports/history/{$export->id}/download", ['file' => 'pdf'], ['Accept' => 'application/json'])->assertOk();
+        $this->assertSame(1, \App\Models\InternalDocumentSignature::where('document_type', 'report_export')->where('document_id', $export->id)->count());
+
+        // Role access is the same as the report module's.
+        Sanctum::actingAs($this->user('hr', 'hr@set.test'));
+        $this->post('/api/reports/download', ['type' => 'hrms', 'file' => 'csv'], ['Accept' => 'application/json'])->assertOk();
+        $this->post('/api/reports/download', ['type' => 'financial-summary', 'file' => 'csv'], ['Accept' => 'application/json'])->assertForbidden();
+    }
+
     public function test_reports_come_from_the_register_and_downloads_are_signed(): void
     {
         $partner = $this->user('partner', 'p3@set.test');

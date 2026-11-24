@@ -1,9 +1,9 @@
 import { Head, usePage } from "@inertiajs/react";
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import {
   FileText,
   Download,
-  Calendar,
   BarChart3,
   Clock,
   Wallet,
@@ -12,34 +12,17 @@ import {
   Loader2,
   AlertTriangle,
   TrendingUp,
-  Check,
-  ChevronsUpDown,
+  PenLine,
 } from "lucide-react";
 import AppLayout from "@/layouts/AppLayout";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { api, downloadCSV } from "@/lib/api-client";
-import { cn } from "@/lib/utils";
-import type { Client, ReportResponse } from "@/types";
 import { fmtDateTime } from "@/lib/date-utils";
 import { ReportVerifyDialog } from "@/components/reports/report-verify";
-import { SignDownloadDialog } from "@/components/reports/sign-download-dialog";
-
-/** Reports whose files are rendered on the server: letterhead, charts and the signature seal. */
-const SIGNED_REPORTS = new Set(["payment-collection", "financial-summary"]);
+import { ReportDownloadDialog } from "@/components/reports/report-download-dialog";
 
 interface ReportTemplate {
   id: string;
@@ -64,14 +47,14 @@ interface ReportHistoryItem {
 const REPORT_TEMPLATES: ReportTemplate[] = [
   { id: "client-portfolio", name: "Client Portfolio Report", description: "All clients with case summary, GST type, billed, received, and outstanding totals", icon: Users, color: "text-blue-400", roles: ["super_admin", "partner", "manager", "galvanizer"] },
   { id: "matter-status", name: "Case Status Report", description: "Current status of all active cases by stage and priority", icon: FolderOpen, color: "text-green-400", roles: ["super_admin", "partner", "manager", "finance", "galvanizer"] },
-  { id: "financial-summary", name: "Financial Summary", description: "Every invoice with billed, received, waived and balance — signed letterhead PDF / Excel", icon: Wallet, color: "text-gold", roles: ["super_admin", "partner", "manager", "finance", "galvanizer"] },
+  { id: "financial-summary", name: "Financial Summary", description: "Every invoice with billed, received, waived and balance", icon: Wallet, color: "text-gold", roles: ["super_admin", "partner", "manager", "finance", "galvanizer"] },
   { id: "hrms", name: "HRMS Report", description: "Employee attendance, date-adjusted leave, and latest payroll summary", icon: Users, color: "text-purple-400", roles: ["super_admin", "partner", "hr"] },
   { id: "ip-deadline", name: "IP Deadline Report", description: "Upcoming matter, statutory docket, and patent renewal deadlines", icon: Clock, color: "text-red-400", roles: ["super_admin", "partner", "manager", "galvanizer"] },
   { id: "productivity", name: "Productivity Report", description: "Scoped time logs, billability, approval status, and work descriptions", icon: BarChart3, color: "text-cyan-400", roles: ["super_admin", "partner", "manager", "galvanizer"] },
   { id: "tracker-workload", name: "Team Workload Report", description: "Cases per PCM / SCM / PR with overdue count from Project Tracker", icon: Users, color: "text-indigo-400", roles: ["super_admin", "partner", "manager", "galvanizer"] },
   { id: "overdue-cases", name: "Overdue Cases Report", description: "All past-due delivery dates with assigned team member details", icon: AlertTriangle, color: "text-red-500", roles: ["super_admin", "partner", "manager", "galvanizer"] },
   { id: "deadline-forecast", name: "Deadline Forecast", description: "Upcoming delivery deadlines in the next 60 days by default", icon: Clock, color: "text-amber-400", roles: ["super_admin", "partner", "manager", "galvanizer"] },
-  { id: "payment-collection", name: "Payment Collection", description: "Pending follow-up with client contacts, payments, waivers and ageing per client — signed letterhead PDF / Excel", icon: TrendingUp, color: "text-green-400", roles: ["super_admin", "partner", "manager", "finance", "galvanizer"] },
+  { id: "payment-collection", name: "Payment Collection", description: "Pending follow-up with client contacts, payments, waivers and ageing per client", icon: TrendingUp, color: "text-green-400", roles: ["super_admin", "partner", "manager", "finance", "galvanizer"] },
   { id: "zoho-summary", name: "Zoho Books Summary", description: "Synced Zoho invoices and estimates with balances and case matches", icon: Wallet, color: "text-teal-400", roles: ["super_admin", "partner", "manager", "finance", "galvanizer"] },
   { id: "payroll-cost-summary", name: "Payroll Cost Summary", description: "Gross, deductions, and net totals per payroll run", icon: Wallet, color: "text-gold", roles: ["super_admin", "partner", "finance"] },
   { id: "tds-pf-esi-summary", name: "TDS / PF / ESI Summary", description: "Statutory withholding totals per payroll run", icon: TrendingUp, color: "text-purple-400", roles: ["super_admin", "partner", "finance"] },
@@ -104,85 +87,9 @@ const SAMPLE_COLUMNS: Record<string, string[]> = {
   "tds-pf-esi-summary": ["period", "status", "employee_count", "total_tds", "total_pf", "total_esi", "total_professional_tax", "total_educational_cess"],
 };
 
-const PROTECTED_COLUMNS = new Set([
-  "client code", "client_code", "case code", "case_code", "project code", "project_code",
-  "docket #", "docket_number", "title", "project name", "project_name",
-  "application number", "application_number", "invoice code", "invoice_code", "employee code", "employee_code",
-]);
-
 interface ReportsPageProps {
   [key: string]: unknown;
   auth?: { user?: { role?: string } };
-}
-
-interface GeneratorState {
-  reportId: string;
-  fromDate: string;
-  toDate: string;
-  clientCode: string;
-  format: "PDF" | "Excel" | "CSV";
-}
-
-function exportPDF(reportName: string, rows: Record<string, unknown>[]) {
-  if (!rows.length) return;
-  const headers = Object.keys(rows[0]);
-  const escapeHtml = (value: unknown) => String(value ?? "")
-    .replaceAll("&", "&amp;").replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;");
-  const html = `<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
-<title>${reportName}</title>
-<style>
-  body{font-family:Arial,sans-serif;font-size:11px;margin:24px;color:#111}
-  h1{font-size:17px;font-weight:700;margin:0 0 4px}
-  .meta{color:#666;font-size:10px;margin-bottom:14px}
-  table{width:100%;border-collapse:collapse}
-  th{background:#f4f4f4;font-weight:600;text-align:left;padding:6px 8px;border:1px solid #ddd;font-size:10px;text-transform:uppercase;letter-spacing:.05em}
-  td{padding:5px 8px;border:1px solid #eee;vertical-align:top;font-size:11px}
-  tr:nth-child(even) td{background:#fafafa}
-  @media print{body{margin:0}@page{margin:1.2cm}}
-</style>
-</head>
-<body>
-<h1>${escapeHtml(reportName)}</h1>
-<div class="meta">Generated: ${new Date().toLocaleString("en-IN")} | ${rows.length} records</div>
-<table>
-<thead><tr>${headers.map((header) => `<th>${escapeHtml(header)}</th>`).join("")}</tr></thead>
-<tbody className="table-rows-3d">${rows.map((row) => `<tr>${headers.map((header) => `<td>${escapeHtml(row[header])}</td>`).join("")}</tr>`).join("")}</tbody>
-</table>
-</body></html>`;
-  const win = window.open("", "_blank");
-  if (!win) {
-    alert("Allow popups to export PDF.");
-    return;
-  }
-  win.document.write(html);
-  win.document.close();
-  setTimeout(() => win.print(), 600);
-}
-
-function exportExcel(reportName: string, rows: Record<string, unknown>[]) {
-  if (!rows.length) return;
-  const headers = Object.keys(rows[0]);
-  const escapeXml = (value: unknown) => String(value ?? "")
-    .replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
-  const table = `<table><thead><tr>${headers.map((h) => `<th>${escapeXml(h)}</th>`).join("")}</tr></thead>`
-    + `<tbody className="table-rows-3d">${rows.map((row) => `<tr>${headers.map((h) => `<td>${escapeXml(row[h])}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
-  const blob = new Blob([`<html><head><meta charset="utf-8"></head><body>${table}</body></html>`], {
-    type: "application/vnd.ms-excel;charset=utf-8",
-  });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = `${reportName.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.xls`;
-  link.click();
-  URL.revokeObjectURL(url);
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "Failed to generate report.";
 }
 
 function formatBadgeVariant(format: string): "default" | "secondary" | "outline" | "destructive" {
@@ -191,8 +98,9 @@ function formatBadgeVariant(format: string): "default" | "secondary" | "outline"
   return "outline";
 }
 
-function isProtectedColumn(column: string): boolean {
-  return PROTECTED_COLUMNS.has(column.trim().toLowerCase());
+function fileFor(format: string): "pdf" | "xlsx" | "csv" {
+  const f = format.toUpperCase();
+  return f === "PDF" ? "pdf" : f === "CSV" ? "csv" : "xlsx";
 }
 
 function downloadSample(template: ReportTemplate) {
@@ -209,31 +117,14 @@ export default function Reports() {
   const { props } = usePage<ReportsPageProps>();
   const role = props.auth?.user?.role ?? "";
   const availableTemplates = REPORT_TEMPLATES.filter((template) => template.roles.includes(role));
+  // Every report: one form, then the file downloads straight away (letterhead, signature seal).
   const [activeReport, setActiveReport] = useState<ReportTemplate | null>(null);
-  const [generator, setGenerator] = useState<GeneratorState>({
-    reportId: "",
-    fromDate: "",
-    toDate: "",
-    clientCode: "",
-    format: "PDF",
-  });
-  const [generating, setGenerating] = useState(false);
-  // Payment Collection / Financial Summary: files rendered on the server (letterhead, charts, signature).
   const [verifyCode, setVerifyCode] = useState<string | null>(() => typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("verify"));
-  const [lastFilters, setLastFilters] = useState<{ type: string; fromDate: string; toDate: string; clientCode: string } | null>(null);
-  const [signPrompt, setSignPrompt] = useState<{ file: "xlsx" | "csv" | "pdf"; historyId?: number; edited: boolean } | null>(null);
-  const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [history, setHistory] = useState<ReportHistoryItem[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
-  const [preview, setPreview] = useState<ReportResponse | null>(null);
-  const [editableRows, setEditableRows] = useState<Record<string, unknown>[]>([]);
-  const [previewName, setPreviewName] = useState("");
-  const [clients, setClients] = useState<Client[]>([]);
-  const [clientsLoading, setClientsLoading] = useState(false);
-  const [clientPickerOpen, setClientPickerOpen] = useState(false);
+  const [downloadingId, setDownloadingId] = useState<number | null>(null);
 
   function loadHistory() {
-    setHistoryLoading(true);
     api.getReportHistory()
       .then(setHistory)
       .catch(() => setHistory([]))
@@ -244,154 +135,49 @@ export default function Reports() {
     loadHistory();
   }, []);
 
-  useEffect(() => {
-    if (!activeReport || !CLIENT_FILTER_REPORTS.has(activeReport.id) || clients.length > 0) return;
-
-    setClientsLoading(true);
-    api.getClients(new URLSearchParams({ per_page: "2000" }))
-      .then((response) => setClients(response.data))
-      .catch(() => setClients([]))
-      .finally(() => setClientsLoading(false));
-  }, [activeReport, clients.length]);
-
-  function openGenerator(template: ReportTemplate) {
-    setActiveReport(template);
-    setGenerator({
-      reportId: template.id,
-      fromDate: "",
-      toDate: "",
-      clientCode: "",
-      format: "PDF",
-    });
-    setSuccessMsg(null);
-    setPreview(null);
-    setClientPickerOpen(false);
-  }
-
-  async function handleGenerate() {
-    if (!activeReport) return;
-    setGenerating(true);
-    setSuccessMsg(null);
-
-    try {
-      const result = await api.generateReport({
-        type: activeReport.id,
-        format: generator.format,
-        fromDate: generator.fromDate,
-        toDate: generator.toDate,
-        clientCode: generator.clientCode,
-      });
-      setPreview(result);
-      setLastFilters({ type: activeReport.id, fromDate: generator.fromDate, toDate: generator.toDate, clientCode: generator.clientCode });
-      setEditableRows(result.rows.map((row) => ({ ...row })));
-      setPreviewName(activeReport.name);
-      setActiveReport(null);
-      setSuccessMsg(`${activeReport.name} generated. Review and edit the preview before downloading.`);
-
-      loadHistory();
-    } catch (e: unknown) {
-      setSuccessMsg(null);
-      alert(errorMessage(e));
-    } finally {
-      setGenerating(false);
-    }
-  }
-
-  function updatePreviewCell(rowIndex: number, column: string, value: string) {
-    if (isProtectedColumn(column)) return;
-    setEditableRows((rows) => rows.map((row, index) => index === rowIndex ? { ...row, [column]: value } : row));
-  }
-
-  function downloadEditedPreview(format: "PDF" | "Excel" | "CSV") {
-    if (!preview || !previewName) return;
-    if (SIGNED_REPORTS.has(preview.type)) {
-      const edited = JSON.stringify(editableRows) !== JSON.stringify(preview.rows);
-      setSignPrompt({ file: format === "PDF" ? "pdf" : format === "Excel" ? "xlsx" : "csv", edited });
-      return;
-    }
-    if (format === "PDF") {
-      exportPDF(previewName, editableRows);
-    } else if (format === "Excel") {
-      exportExcel(previewName, editableRows);
-    } else {
-      downloadCSV(`${preview.type}-${new Date().toISOString().slice(0, 10)}.csv`, editableRows);
-    }
-  }
-
-  /** An edited preview of a signed-type report: in-browser file, clearly marked as an unsigned edited copy. */
-  function downloadEditedCopy(file: "xlsx" | "csv" | "pdf") {
-    if (!preview || !previewName) return;
-    const name = `${previewName} — UNSIGNED edited copy`;
-    if (file === "pdf") exportPDF(name, editableRows);
-    else if (file === "xlsx") exportExcel(name, editableRows);
-    else downloadCSV(`${preview.type}-unsigned-edited-${new Date().toISOString().slice(0, 10)}.csv`, editableRows);
-  }
-
+  /** Recent Reports: the same file again from its saved snapshot, keeping its signature. */
   async function downloadHistoryItem(item: ReportHistoryItem) {
-    if (SIGNED_REPORTS.has(item.type)) {
-      const fmt = String(item.format).toUpperCase();
-      setSignPrompt({ file: fmt === "PDF" ? "pdf" : fmt === "CSV" ? "csv" : "xlsx", historyId: item.id, edited: false });
-      return;
+    setDownloadingId(item.id);
+    try {
+      await api.downloadReportHistory(item.id, fileFor(String(item.format)));
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setDownloadingId(null);
     }
-    const saved = await api.getReportHistoryItem(item.id);
-    if (saved.format === "PDF") {
-      exportPDF(saved.name, saved.rows);
-      return;
-    }
-
-    if (saved.format === "EXCEL") {
-      exportExcel(saved.name, saved.rows);
-      return;
-    }
-    downloadCSV(`${saved.type}-${item.generated_at.slice(0, 10)}.csv`, saved.rows);
   }
 
   return (
     <AppLayout>
       <Head title="Reports" />
-      <PageHeader eyebrow="Insight" title="Reports" description="Generate and export reports across all practice areas" />
-      {signPrompt && (
-        <SignDownloadDialog file={signPrompt.file} edited={signPrompt.edited}
-          onClose={() => setSignPrompt(null)}
-          onEditedCopy={() => { const f = signPrompt.file; setSignPrompt(null); downloadEditedCopy(f); }}
-          onDownload={async (pin) => {
-            if (signPrompt.historyId) await api.downloadReportHistory(signPrompt.historyId, signPrompt.file, pin);
-            else if (lastFilters) await api.downloadPaymentReport({ type: lastFilters.type, file: signPrompt.file, client_code: lastFilters.clientCode || undefined,
-              from_date: lastFilters.fromDate || undefined, to_date: lastFilters.toDate || undefined, pin });
-            loadHistory();
-          }} />
+      <PageHeader eyebrow="Insight" title="Reports" description="Download any report on the company letterhead, signed with your signature PIN" />
+      {activeReport && (
+        <ReportDownloadDialog
+          report={{ ...activeReport, clientFilter: CLIENT_FILTER_REPORTS.has(activeReport.id) }}
+          onClose={() => setActiveReport(null)}
+          onDownloaded={loadHistory}
+        />
       )}
       {verifyCode && <ReportVerifyDialog code={verifyCode} onClose={() => { setVerifyCode(null); window.history.replaceState(window.history.state, "", "/reports"); }} />}
 
       <div className="px-8 py-6 space-y-8">
-        {successMsg && (
-          <div className="rounded-lg border border-green-500/40 bg-green-500/10 px-4 py-3 text-sm text-green-400 flex items-start gap-2">
-            <FileText className="h-4 w-4 mt-0.5 flex-shrink-0" />
-            <span>{successMsg}</span>
-            <button onClick={() => setSuccessMsg(null)} className="ml-auto text-green-400/60 hover:text-green-400">
-              x
-            </button>
-          </div>
-        )}
-
         <section>
           <div className="mb-4">
             <h2 className="text-base font-semibold font-display">Report Templates</h2>
-            <p className="text-xs text-muted-foreground mt-0.5">Select a template to configure and generate</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Choose a report, set the client and dates, and download — PDF, Excel or CSV</p>
           </div>
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {availableTemplates.map((template) => {
               const Icon = template.icon;
-              const isActive = activeReport?.id === template.id;
               return (
                 <Card
                   key={template.id}
-                  className={`border-border transition-colors cursor-pointer ${isActive ? "border-gold/50 bg-gold/5" : "hover:border-border/80 hover:bg-muted/20"}`}
-                  onClick={() => openGenerator(template)}
+                  className="group border-border cursor-pointer transition hover:-translate-y-0.5 hover:border-gold/40 hover:shadow-lg"
+                  onClick={() => setActiveReport(template)}
                 >
                   <CardContent className="p-3.5">
                     <div className="flex items-start gap-3">
-                      <div className="h-9 w-9 rounded-lg bg-muted flex items-center justify-center flex-shrink-0">
+                      <div className="shadow-3d h-9 w-9 rounded-lg bg-muted flex items-center justify-center flex-shrink-0">
                         <Icon className={`h-5 w-5 ${template.color}`} />
                       </div>
                       <div className="flex-1 min-w-0">
@@ -413,13 +199,14 @@ export default function Reports() {
                       </Button>
                       <Button
                         size="sm"
-                        variant={isActive ? "default" : "outline"}
+                        className="bg-gold text-black hover:bg-gold/90"
                         onClick={(event) => {
                           event.stopPropagation();
-                          openGenerator(template);
+                          setActiveReport(template);
                         }}
                       >
-                        Generate
+                        <PenLine className="mr-1.5 h-3.5 w-3.5" />
+                        Download
                       </Button>
                     </div>
                   </CardContent>
@@ -429,187 +216,10 @@ export default function Reports() {
           </div>
         </section>
 
-        <Dialog open={activeReport !== null} onOpenChange={(open) => { if (!open && !generating) setActiveReport(null); }}>
-          {activeReport && (
-            <DialogContent className="max-w-xl">
-              <DialogHeader>
-                <div className="flex items-center gap-2 pr-8">
-                  <activeReport.icon className={`h-5 w-5 ${activeReport.color}`} />
-                  <DialogTitle className="font-display">Generate {activeReport.name}</DialogTitle>
-                </div>
-                <DialogDescription>{activeReport.description}</DialogDescription>
-              </DialogHeader>
-
-              <div className="grid gap-4 py-2 sm:grid-cols-2">
-                {CLIENT_FILTER_REPORTS.has(activeReport.id) && (
-                  <div className="space-y-1.5 sm:col-span-2">
-                    <label className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                      Client <span className="normal-case font-normal">(optional)</span>
-                    </label>
-                    <Popover open={clientPickerOpen} onOpenChange={setClientPickerOpen}>
-                      <PopoverTrigger asChild>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          role="combobox"
-                          aria-expanded={clientPickerOpen}
-                          className="w-full justify-between font-normal"
-                          disabled={clientsLoading}
-                        >
-                          <span className="truncate">
-                            {clientsLoading
-                              ? "Loading clients..."
-                              : generator.clientCode
-                                ? (() => {
-                                    const selected = clients.find((client) => client.client_code === generator.clientCode);
-                                    return selected ? `${selected.client_code} — ${selected.company_name ?? selected.legal_name ?? "Unnamed client"}` : generator.clientCode;
-                                  })()
-                                : "All clients"}
-                          </span>
-                          {clientsLoading ? <Loader2 className="ml-2 h-4 w-4 animate-spin" /> : <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />}
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent align="start" className="w-[var(--radix-popover-trigger-width)] p-0">
-                        <Command>
-                          <CommandInput autoFocus placeholder="Search by company name or client code..." />
-                          <CommandList>
-                            <CommandEmpty>No matching client found.</CommandEmpty>
-                            <CommandGroup>
-                              <CommandItem
-                                value="all clients"
-                                onSelect={() => {
-                                  setGenerator((state) => ({ ...state, clientCode: "" }));
-                                  setClientPickerOpen(false);
-                                }}
-                              >
-                                <Check className={cn("h-4 w-4", generator.clientCode === "" ? "opacity-100" : "opacity-0")} />
-                                <span>All clients</span>
-                              </CommandItem>
-                              {clients.map((client) => (
-                                <CommandItem
-                                  key={client.id}
-                                  value={`${client.client_code} ${client.company_name ?? ""} ${client.legal_name ?? ""}`}
-                                  onSelect={() => {
-                                    setGenerator((state) => ({ ...state, clientCode: client.client_code }));
-                                    setClientPickerOpen(false);
-                                  }}
-                                >
-                                  <Check className={cn("h-4 w-4", generator.clientCode === client.client_code ? "opacity-100" : "opacity-0")} />
-                                  <span className="font-mono text-xs text-gold">{client.client_code}</span>
-                                  <span className="truncate">{client.company_name ?? client.legal_name ?? "Unnamed client"}</span>
-                                </CommandItem>
-                              ))}
-                            </CommandGroup>
-                          </CommandList>
-                        </Command>
-                      </PopoverContent>
-                    </Popover>
-                    <p className="text-xs text-muted-foreground">Search by company name or code, then select the exact client. Choose All clients for the complete report.</p>
-                  </div>
-                )}
-                <div className="space-y-1.5">
-                  <label className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                    <Calendar className="h-3.5 w-3.5" /> From Date
-                  </label>
-                  <Input type="date" value={generator.fromDate} onChange={(event) => setGenerator((state) => ({ ...state, fromDate: event.target.value }))} />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                    <Calendar className="h-3.5 w-3.5" /> To Date
-                  </label>
-                  <Input type="date" value={generator.toDate} onChange={(event) => setGenerator((state) => ({ ...state, toDate: event.target.value }))} />
-                  {activeReport && SIGNED_REPORTS.has(activeReport.id) && generator.fromDate && (
-                    <button type="button" className="text-[11px] text-gold hover:underline" onClick={() => setGenerator((state) => ({ ...state, toDate: state.fromDate }))}>
-                      Only {generator.fromDate} (one date)
-                    </button>
-                  )}
-                </div>
-                <div className="space-y-1.5 sm:col-span-2">
-                  <label className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Export Format</label>
-                  <div className="grid grid-cols-3 gap-2">
-                    {(["PDF", "Excel", "CSV"] as const).map((format) => (
-                      <button
-                        key={format}
-                        type="button"
-                        onClick={() => setGenerator((state) => ({ ...state, format }))}
-                        className={`rounded-md border px-3 py-2 text-xs font-medium transition-colors ${generator.format === format ? "border-gold bg-gold/10 text-gold" : "border-border text-muted-foreground hover:border-gold/30"}`}
-                      >
-                        {format}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              <DialogFooter className="gap-2 sm:space-x-0">
-                <Button variant="outline" onClick={() => setActiveReport(null)} disabled={generating}>Cancel</Button>
-                <Button onClick={handleGenerate} disabled={generating}>
-                  {generating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileText className="mr-2 h-4 w-4" />}
-                  {generating ? "Generating..." : "Generate Report"}
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          )}
-        </Dialog>
-
-        {preview && (
-          <section>
-            <div className="mb-4 flex items-end justify-between gap-4">
-              <div>
-                <h2 className="text-base font-semibold font-display">Generated Report Preview</h2>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  {preview.total.toLocaleString("en-IN")} records generated at {fmtDateTime(preview.generated_at)}
-                </p>
-              </div>
-              <div className="flex flex-wrap justify-end gap-2">
-                {(["PDF", "Excel", "CSV"] as const).map((format) => (
-                  <Button key={format} size="sm" variant={generator.format === format ? "default" : "outline"} onClick={() => downloadEditedPreview(format)} disabled={editableRows.length === 0}>
-                    <Download className="mr-1.5 h-3.5 w-3.5" />
-                    {format}
-                  </Button>
-                ))}
-              </div>
-            </div>
-            <p className="mb-3 text-xs text-muted-foreground">
-              Edit any unlocked cell before downloading. Client code, case code, docket number, title, invoice/employee code, and application number are protected.
-            </p>
-            <Card className="border-border overflow-hidden">
-              <CardContent className="p-0 overflow-x-auto">
-                {editableRows.length === 0 ? (
-                  <div className="px-6 py-10 text-sm text-muted-foreground">No records match the selected date range.</div>
-                ) : (
-                  <table className="w-full min-w-max text-sm">
-                    <thead className="bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground">
-                      <tr>{Object.keys(editableRows[0]).map((header) => <th key={header} className="px-4 py-3 text-left">{header.replaceAll("_", " ")}</th>)}</tr>
-                    </thead>
-                    <tbody className="table-rows-3d">
-                      {editableRows.map((row, index) => (
-                        <tr key={index} className="border-t border-border hover:bg-muted/30">
-                          {Object.keys(editableRows[0]).map((header) => (
-                            <td key={header} className="min-w-40 px-2 py-2 text-muted-foreground">
-                              <Input
-                                value={String(row[header] ?? "")}
-                                readOnly={isProtectedColumn(header)}
-                                aria-label={`${header} row ${index + 1}`}
-                                onChange={(event) => updatePreviewCell(index, header, event.target.value)}
-                                className={cn("h-8 min-w-36", isProtectedColumn(header) && "cursor-not-allowed bg-muted/50 font-mono text-xs")}
-                              />
-                            </td>
-                          ))}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-              </CardContent>
-            </Card>
-          </section>
-        )}
-
         <section>
           <div className="mb-4">
             <h2 className="text-base font-semibold font-display">Recent Reports</h2>
-            <p className="text-xs text-muted-foreground mt-0.5">Saved point-in-time report snapshots</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Saved point-in-time reports — downloads again exactly as saved, with its signature</p>
           </div>
           <Card className="border-border">
             <CardContent className="p-0">
@@ -644,8 +254,8 @@ export default function Reports() {
                         </td>
                         <td className="px-4 py-3 text-muted-foreground">{item.row_count}</td>
                         <td className="px-4 py-3 text-right">
-                          <Button variant="ghost" size="sm" className="h-8 gap-1.5" onClick={() => downloadHistoryItem(item)}>
-                            <Download className="h-3.5 w-3.5" />
+                          <Button variant="ghost" size="sm" className="h-8 gap-1.5" disabled={downloadingId === item.id} onClick={() => downloadHistoryItem(item)}>
+                            {downloadingId === item.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
                             Download
                           </Button>
                         </td>
