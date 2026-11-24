@@ -44,8 +44,11 @@ export function splitAddress(text: string | null | undefined, state = "", countr
       t = t.slice(0, last.index) + "," + t.slice(last.index + last[0].length)
     }
   } else {
-    const m = t.match(/[\s,]([A-Z0-9]{2,5}[ -]?[A-Z0-9]{0,4}\d[A-Z0-9]*)\s*$/i)
-    if (m && /\d/.test(m[1])) { out.pincode = m[1].trim().toUpperCase(); t = t.slice(0, -m[0].length) }
+    // Numeric ZIP / postcode (incl. ZIP+4), UK postcode, Canadian postal code — at the end.
+    for (const re of [/[\s,](\d{3,6}(?:-\d{3,4})?)\s*$/, /[\s,]([A-Z]{1,2}\d[A-Z\d]?\s?\d[A-Z]{2})\s*$/i, /[\s,]([A-Z]\d[A-Z]\s?\d[A-Z]\d)\s*$/i]) {
+      const m = t.match(re)
+      if (m) { out.pincode = m[1].trim().toUpperCase(); t = t.slice(0, -m[0].length); break }
+    }
   }
 
   const clean = (p: string) => p.trim().replace(/^[-–—.:\s]+|[-–—.:\s]+$/g, "").replace(/\b(pin(code)?|pin code|zip)\s*[:-]?\s*$/i, "").trim()

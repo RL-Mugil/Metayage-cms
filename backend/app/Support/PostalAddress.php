@@ -55,9 +55,15 @@ class PostalAddress
             $last = count($m[0]) - 1;
             $out['pincode'] = $m[1][$last][0].$m[2][$last][0];
             $text = substr_replace($text, ',', $m[0][$last][1], strlen($m[0][$last][0]));
-        } elseif (! $india && preg_match('/[\s,]([A-Z0-9]{2,5}[ -]?[A-Z0-9]{0,4}\d[A-Z0-9]*)\s*$/i', $text, $m) && preg_match('/\d/', $m[1])) {
-            $out['pincode'] = strtoupper(trim($m[1]));
-            $text = substr($text, 0, -strlen($m[0]));
+        } elseif (! $india) {
+            // Numeric ZIP / postcode (incl. ZIP+4), UK postcode, Canadian postal code — at the end.
+            foreach (['/[\s,](\d{3,6}(?:-\d{3,4})?)\s*$/', '/[\s,]([A-Z]{1,2}\d[A-Z\d]?\s?\d[A-Z]{2})\s*$/i', '/[\s,]([A-Z]\d[A-Z]\s?\d[A-Z]\d)\s*$/i'] as $re) {
+                if (preg_match($re, $text, $m)) {
+                    $out['pincode'] = strtoupper(trim($m[1]));
+                    $text = substr($text, 0, -strlen($m[0]));
+                    break;
+                }
+            }
         }
 
         $parts = collect(explode(',', $text))
