@@ -100,7 +100,7 @@ class FinancialController extends Controller
         $this->authorize('viewAny', \App\Models\Invoice::class);
 
         // The portal register (portal-raised + imported from Zoho Books) is the single source.
-        $cacheKey = "financial_stats_{$user->id}_{$user->role}_v" . Cache::get('dashboard_v', 0);
+        $cacheKey = "financial_stats_{$user->id}_".\App\Support\DataAccess::financeScopeKey($user).'_v'.Cache::get('dashboard_v', 0);
         $stats = Cache::remember($cacheKey, 300, function () use ($user) {
             $figures = app(\App\Services\FinanceFigures::class)->summary($user);
             return [
@@ -174,10 +174,9 @@ class FinancialController extends Controller
             $query->whereHas('client', function ($q) use ($user) {
                 $q->visibleToUser($user);
             });
-        } elseif ($user->isGalvanizer()) {
-            $query->whereHas('project', fn ($q) => $user->applyProjectScope($q));
-        } elseif ($user->role === 'associate') {
-            $query->whereHas('project', fn ($q) => $q->where($this->analystProjectScope($user)));
+        } else {
+            // Staff: all finance, their circle (galvanizer) or their CM / SCM cases.
+            \App\Support\DataAccess::scopeFinance($query, $user);
         }
 
         if ($request->filled('status')) {
@@ -208,10 +207,9 @@ class FinancialController extends Controller
             $query->whereHas('client', function ($q) use ($user) {
                 $q->visibleToUser($user);
             });
-        } elseif ($user->isGalvanizer()) {
-            $query->whereHas('project', fn ($q) => $user->applyProjectScope($q));
-        } elseif ($user->role === 'associate') {
-            $query->whereHas('project', fn ($q) => $q->where($this->analystProjectScope($user)));
+        } else {
+            // Staff: all finance, their circle (galvanizer) or their CM / SCM cases.
+            \App\Support\DataAccess::scopeFinance($query, $user);
         }
 
         return response()->json(PaginationHelper::paginate($query->orderBy('created_at', 'desc'), $request));

@@ -50,7 +50,7 @@ class SettlementController extends Controller
     /** Try the Zoho write-back again after a failure. */
     public function retryZoho(Request $request, int $id): JsonResponse
     {
-        abort_unless(in_array($request->user()->role, InvoiceSettlement::PAY_ROLES, true), 403);
+        abort_unless(InvoiceSettlement::canPay($request->user()), 403);
         $invoice = $this->invoice($request, $id);
         abort_unless($invoice->zoho_writeback === 'failed', 422, 'Nothing to retry.');
         $pending = RegisterPayment::where('patent_invoice_in_id', $invoice->id)->where('source', 'portal')->where('zoho_payment_id', 'like', 'portal:%')->latest('id')->first();

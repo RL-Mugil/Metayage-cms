@@ -36,8 +36,9 @@ class FinanceFigures
             $query->where('client_id', $clientId);
         } elseif ($user->isClientRole()) {
             $query->whereIn('client_id', Client::query()->visibleToUser($user)->select('id'));
-        } elseif ($user->isGalvanizer()) {
-            $query->whereHas('project', fn ($q) => $user->applyProjectScope($q));
+        } else {
+            // Staff: all finance, their circle (galvanizer) or their CM / SCM cases.
+            \App\Support\DataAccess::scopeFinance($query, $user);
         }
 
         return $query;
@@ -50,8 +51,9 @@ class FinanceFigures
             $query->where('client_id', $clientId);
         } elseif ($user->isClientRole()) {
             $query->whereHas('client', fn ($q) => $q->visibleToUser($user));
-        } elseif ($user->isGalvanizer()) {
-            $query->whereHas('project', fn ($q) => $user->applyProjectScope($q));
+        } else {
+            // Staff: all finance, their circle (galvanizer) or their CM / SCM cases.
+            \App\Support\DataAccess::scopeFinance($query, $user);
         }
 
         return $query;
@@ -294,8 +296,9 @@ class FinanceFigures
             $query->where('client_id', $clientId);
         } elseif ($user->isClientRole()) {
             $query->whereIn('client_id', Client::query()->visibleToUser($user)->select('id'));
-        } elseif ($user->isGalvanizer()) {
-            $query->whereHas('project', fn ($q) => $user->applyProjectScope($q));
+        } else {
+            // Staff: all finance, their circle (galvanizer) or their CM / SCM cases.
+            \App\Support\DataAccess::scopeFinance($query, $user);
         }
 
         return $query;
@@ -325,7 +328,7 @@ class FinanceFigures
         }
         $apps = \App\Models\Project::query()->whereNotNull('patent_application_id')
             ->when($user->isClientRole(), fn ($q) => $q->whereIn('client_id', Client::query()->visibleToUser($user)->select('id')))
-            ->when($user->isGalvanizer(), fn ($q) => $user->applyProjectScope($q))
+            ->when(! $user->isClientRole(), fn ($q) => \App\Support\DataAccess::scopeFinance($q, $user, 'id'))
             ->select('patent_application_id');
         foreach (RenewalOutlook::nextDue($apps, 2000) as $renewal) {
             $key = $renewal['days'] < 0 ? $current : substr((string) $renewal['due_date'], 0, 7);
@@ -361,7 +364,7 @@ class FinanceFigures
     {
         $quotes = PatentInvoiceIn::query()->where('type', 'quote')->whereNotIn('status', ['Draft'])
             ->when($user->isClientRole(), fn ($q) => $q->whereIn('client_id', Client::query()->visibleToUser($user)->select('id')))
-            ->when($user->isGalvanizer(), fn ($q) => $q->whereHas('project', fn ($p) => $user->applyProjectScope($p)))
+            ->when(! $user->isClientRole(), fn ($q) => \App\Support\DataAccess::scopeFinance($q, $user))
             ->get(['status', 'zoho_status', 'total_bcy', 'invoice_amount']);
         $amount = fn ($set) => round((float) $set->sum(fn ($q) => (float) ($q->total_bcy ?? $q->invoice_amount)), 2);
         $accepted = $quotes->filter(fn ($q) => $q->status === 'Accepted');
@@ -395,9 +398,7 @@ class FinanceFigures
                 ->where('patent_invoices_in.type', 'invoice')->where('patent_invoices_in.status', '!=', 'Cancelled')
                 ->where(fn ($w) => $w->whereColumn('patent_invoices_in.project_id', 'projects.id')
                     ->orWhereRaw("UPPER(patent_invoices_in.invoice_uin) LIKE UPPER(projects.docket_number) || '%'")));
-        if ($user->isGalvanizer()) {
-            $user->applyProjectScope($query);
-        }
+        \App\Support\DataAccess::scopeFinance($query, $user, 'projects.id');
 
         return [
             'count' => (clone $query)->count(),

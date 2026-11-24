@@ -24,18 +24,24 @@ use Illuminate\Validation\ValidationException;
 
 class ReportsController extends Controller
 {
+    /** Firm staff: each sees the cases they may see (App\Support\DataAccess). */
+    private const STAFF = ['super_admin', 'partner', 'director', 'manager', 'hr', 'finance', 'associate', 'paralegal', 'galvanizer'];
+
+    /** Finance reports also need finance access (all finance, circle, or CM / SCM cases). */
+    private const FINANCE_REPORTS = ['financial-summary', 'payment-collection', 'zoho-summary'];
+
     private const REPORT_ACCESS = [
-        'client-portfolio' => ['super_admin', 'partner', 'manager', 'galvanizer'],
-        'matter-status' => ['super_admin', 'partner', 'manager', 'finance', 'galvanizer'],
-        'financial-summary' => ['super_admin', 'partner', 'manager', 'finance', 'galvanizer'],
+        'client-portfolio' => self::STAFF,
+        'matter-status' => self::STAFF,
+        'financial-summary' => self::STAFF,
         'hrms' => ['super_admin', 'partner', 'hr'],
-        'ip-deadline' => ['super_admin', 'partner', 'manager', 'galvanizer'],
-        'productivity' => ['super_admin', 'partner', 'manager', 'galvanizer'],
-        'tracker-workload' => ['super_admin', 'partner', 'manager', 'galvanizer'],
-        'overdue-cases' => ['super_admin', 'partner', 'manager', 'galvanizer'],
-        'deadline-forecast' => ['super_admin', 'partner', 'manager', 'galvanizer'],
-        'payment-collection' => ['super_admin', 'partner', 'manager', 'finance', 'galvanizer'],
-        'zoho-summary' => ['super_admin', 'partner', 'manager', 'finance', 'galvanizer'],
+        'ip-deadline' => self::STAFF,
+        'productivity' => self::STAFF,
+        'tracker-workload' => self::STAFF,
+        'overdue-cases' => self::STAFF,
+        'deadline-forecast' => self::STAFF,
+        'payment-collection' => self::STAFF,
+        'zoho-summary' => self::STAFF,
         // Payroll/salary data — director (partner), accountant (finance), and
         // system admin only. See User::PAYROLL_ACCESS_ROLES.
         'payroll-cost-summary' => \App\Models\User::PAYROLL_ACCESS_ROLES,
@@ -166,6 +172,7 @@ class ReportsController extends Controller
 
         $allowedRoles = self::REPORT_ACCESS[$type] ?? ['super_admin'];
         abort_unless(in_array($user->role, $allowedRoles, true), 403, 'Forbidden');
+        abort_if(in_array($type, self::FINANCE_REPORTS, true) && ! \App\Support\DataAccess::canOpenFinance($user), 403, 'Finance reports need finance access (Settings → Financial access).');
 
         if ($clientCode && ! Client::query()->where('client_code', $clientCode)->exists()) {
             throw ValidationException::withMessages([
@@ -258,8 +265,9 @@ class ReportsController extends Controller
         }
         $query->when($clientCode, fn ($q) => $q->where('client_code', $clientCode));
 
-        if ($user->role === 'manager') {
-            $query->where('account_manager_id', $user->id);
+        if (self::caseScoped($user)) {
+            $query->where(fn ($c) => $c->where('account_manager_id', $user->id)
+                ->orWhereHas('projects', fn ($q) => \App\Support\DataAccess::scopeManagedCases($q, $user)));
         } elseif ($user->isGalvanizer()) {
             $user->applyClientScope($query);
         }
@@ -291,8 +299,8 @@ class ReportsController extends Controller
             ->whereNotIn('status', ['Completed', 'Closed', 'Granted', 'Abandoned']);
         $this->applyProjectOperationalDateRange($query, $from, $to);
         $query->when($clientCode, fn ($q) => $q->whereHas('client', fn ($client) => $client->where('client_code', $clientCode)));
-        if ($user->role === 'manager') {
-            $query->where('assigned_manager_id', $user->id);
+        if (self::caseScoped($user)) {
+            \App\Support\DataAccess::scopeManagedCases($query, $user);
         } elseif ($user->isGalvanizer()) {
             $user->applyProjectScope($query);
         }
@@ -336,8 +344,8 @@ class ReportsController extends Controller
         $query = ZohoInvoice::with('client:id,client_code,company_name', 'project.patentApplication')->orderByDesc('txn_date');
         $this->applyDateRange($query, 'txn_date', $from, $to);
         $query->when($clientCode, fn ($q) => $q->whereHas('client', fn ($client) => $client->where('client_code', $clientCode)));
-        if ($user->role === 'manager') {
-            $query->whereHas('project', fn ($q) => $q->where('assigned_manager_id', $user->id));
+        if (self::caseScoped($user)) {
+            $query->whereHas('project', fn ($q) => \App\Support\DataAccess::scopeManagedCases($q, $user));
         } elseif ($user->isGalvanizer()) {
             $query->whereHas('project', fn ($q) => $user->applyProjectScope($q));
         }
@@ -500,8 +508,8 @@ class ReportsController extends Controller
         $projectQuery = Project::with('client', 'patentApplication')->whereNotNull('hard_deadline');
         $this->applyDateRange($projectQuery, 'hard_deadline', $from, $to);
         $projectQuery->when($clientCode, fn ($q) => $q->whereHas('client', fn ($client) => $client->where('client_code', $clientCode)));
-        if ($user->role === 'manager') {
-            $projectQuery->where('assigned_manager_id', $user->id);
+        if (self::caseScoped($user)) {
+            \App\Support\DataAccess::scopeManagedCases($projectQuery, $user);
         } elseif ($user->isGalvanizer()) {
             $user->applyProjectScope($projectQuery);
         }
@@ -524,8 +532,8 @@ class ReportsController extends Controller
             ->whereNotIn('status', ['Completed', 'Waived']);
         $this->applyDateRange($docketQuery, 'due_date', $from, $to);
         $docketQuery->when($clientCode, fn ($q) => $q->whereHas('project.client', fn ($client) => $client->where('client_code', $clientCode)));
-        if ($user->role === 'manager') {
-            $docketQuery->whereHas('project', fn ($q) => $q->where('assigned_manager_id', $user->id));
+        if (self::caseScoped($user)) {
+            $docketQuery->whereHas('project', fn ($q) => \App\Support\DataAccess::scopeManagedCases($q, $user));
         } elseif ($user->isGalvanizer()) {
             $docketQuery->whereHas('project', fn ($q) => $user->applyProjectScope($q));
         }
@@ -547,8 +555,8 @@ class ReportsController extends Controller
             ->whereNotIn('status', ['Paid', 'Waived', 'Lapsed']);
         $this->applyDateRange($renewalQuery, 'due_date', $from, $to);
         $renewalQuery->when($clientCode, fn ($q) => $q->whereHas('application.client', fn ($client) => $client->where('client_code', $clientCode)));
-        if ($user->role === 'manager') {
-            $renewalQuery->whereHas('application.projects', fn ($q) => $q->where('assigned_manager_id', $user->id));
+        if (self::caseScoped($user)) {
+            $renewalQuery->whereHas('application.projects', fn ($q) => \App\Support\DataAccess::scopeManagedCases($q, $user));
         } elseif ($user->isGalvanizer()) {
             $renewalQuery->whereHas('application.projects', fn ($q) => $user->applyProjectScope($q));
         }
@@ -581,8 +589,8 @@ class ReportsController extends Controller
     {
         $query = TimeEntry::with(['user', 'project.client', 'project.patentApplication', 'task', 'approvedBy']);
         $this->applyDateRange($query, 'entry_date', $from, $to);
-        if ($user->role === 'manager') {
-            $query->whereHas('project', fn ($q) => $q->where('assigned_manager_id', $user->id));
+        if (self::caseScoped($user)) {
+            $query->whereHas('project', fn ($q) => \App\Support\DataAccess::scopeManagedCases($q, $user));
         } elseif ($user->isGalvanizer()) {
             $query->whereHas('project', fn ($q) => $user->applyProjectScope($q));
         }
@@ -659,8 +667,8 @@ class ReportsController extends Controller
         $query->when($clientCode, fn ($q) => $q->whereHas('project.client', fn ($client) => $client->where('client_code', $clientCode)));
         if ($user->isGalvanizer()) {
             $query->whereIn('circle_id', $this->allowedTrackerCircleIds($user));
-        } elseif ($user->role === 'manager') {
-            $query->whereHas('project', fn ($q) => $q->where('assigned_manager_id', $user->id));
+        } elseif (self::caseScoped($user)) {
+            $query->whereHas('project', fn ($q) => \App\Support\DataAccess::scopeManagedCases($q, $user));
         }
 
         $paginator = $query->paginate($perPage, ['*'], 'page', $page);
@@ -696,8 +704,8 @@ class ReportsController extends Controller
         $query->when($clientCode, fn ($q) => $q->whereHas('project.client', fn ($client) => $client->where('client_code', $clientCode)));
         if ($user->isGalvanizer()) {
             $query->whereIn('circle_id', $this->allowedTrackerCircleIds($user));
-        } elseif ($user->role === 'manager') {
-            $query->whereHas('project', fn ($q) => $q->where('assigned_manager_id', $user->id));
+        } elseif (self::caseScoped($user)) {
+            $query->whereHas('project', fn ($q) => \App\Support\DataAccess::scopeManagedCases($q, $user));
         }
 
         $paginator = $query->paginate($perPage, ['*'], 'page', $page);
@@ -995,8 +1003,8 @@ class ReportsController extends Controller
 
     private function trackerCircleSql($user): string
     {
-        if ($user->role === 'manager') {
-            return ' AND project_id IN (SELECT id FROM projects WHERE assigned_manager_id = '.((int) $user->id).')';
+        if (self::caseScoped($user)) {
+            return ' AND project_id IN (SELECT id FROM projects WHERE assigned_manager_id = '.((int) $user->id).' OR secondary_manager_id = '.((int) $user->id).')';
         }
 
         if (! $user->isGalvanizer()) {
@@ -1057,5 +1065,11 @@ class ReportsController extends Controller
                     });
             });
         }
+    }
+
+    /** Staff who see only their CM / SCM cases (not all-case roles, not galvanizers — they use their circle). */
+    private static function caseScoped($user): bool
+    {
+        return ! \App\Support\DataAccess::seesAllCases($user) && ! $user->isGalvanizer() && ! $user->isClientRole();
     }
 }

@@ -83,54 +83,6 @@ class DocketFoundationTest extends TestCase
         $this->assertDatabaseHas('audit_logs', ['action' => 'delete_docket_deadline', 'subject_id' => $deadlineId]);
     }
 
-    public function test_partner_can_create_a_canonical_trademark_asset(): void
-    {
-        $partner = $this->user('partner', 'asset@docket.test');
-        $client = $this->client();
-        Sanctum::actingAs($partner);
-
-        $this->postJson('/api/ip-records', [
-            'client_id' => $client->id, 'record_type' => 'Trademark', 'jurisdiction' => 'in',
-            'title' => 'MYIPSTRATEGY', 'responsible_user_id' => $partner->id,
-            'trademark' => ['application_number' => '7654321', 'mark_text' => 'MYIPSTRATEGY', 'nice_classes' => [42]],
-        ])->assertCreated()->assertJsonPath('data.record_type', 'Trademark')->assertJsonPath('data.jurisdiction', 'IN');
-
-        $this->assertDatabaseHas('ip_records', ['client_id' => $client->id, 'record_type' => 'Trademark', 'title' => 'MYIPSTRATEGY']);
-        $this->assertDatabaseHas('trademark_applications', ['application_number' => '7654321']);
-        $this->assertDatabaseHas('audit_logs', ['action' => 'create', 'subject_type' => 'IpRecord']);
-    }
-
-    public function test_ip_portfolio_returns_and_searches_linked_uins(): void
-    {
-        $partner = $this->user('partner', 'portfolio@docket.test');
-        $client = $this->client();
-        $record = IpRecord::create([
-            'client_id' => $client->id,
-            'record_code' => 'IPR-2026-00001',
-            'record_type' => 'Patent',
-            'jurisdiction' => 'IN',
-            'title' => 'Linked invention',
-            'legal_status' => 'Pending',
-        ]);
-        Project::create([
-            'ip_record_id' => $record->id,
-            'project_code' => 'DCK002INFER',
-            'docket_number' => 'DCK002INFER',
-            'client_id' => $client->id,
-            'project_type' => 'Patent',
-            'project_name' => 'Linked FER response',
-            'patent_office_code' => 'IN',
-            'service_code' => 'FER',
-            'status' => 'Open',
-        ]);
-        Sanctum::actingAs($partner);
-
-        $this->getJson('/api/ip-records?search=DCK002INFER')
-            ->assertOk()
-            ->assertJsonPath('total', 1)
-            ->assertJsonPath('data.0.uins.0', 'DCK002INFER');
-    }
-
     private function user(string $role, string $email): User
     {
         return User::create(['name' => ucfirst($role), 'email' => $email, 'password' => bcrypt('password'), 'role' => $role, 'status' => 'Active']);

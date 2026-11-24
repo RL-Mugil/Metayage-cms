@@ -29,14 +29,14 @@ class ProjectPolicy
             return $project->inventors()->where('inventors.user_id', $user->id)->exists();
         }
 
-        // Patent Analysts, paralegals and HR see only cases they created or are
+        // Patent Analysts / Engineers and Patent Attorneys see only cases they created or are
         // assigned to (PR, PCM, SCM, attorney, or a task). Mirrors
         // Project::scopeAssignedTo(), which scopes the list endpoints.
         if ($user->seesOnlyOwnCases()) {
             return $project->isAssignedTo($user->id);
         }
 
-        return in_array($user->role, ['super_admin', 'partner', 'director', 'manager', 'finance'], true);
+        return in_array($user->role, \App\Support\DataAccess::ALL_CASE_ROLES, true);
     }
 
     /** Any firm staff member may open a case; client-portal users and inventors may not. */

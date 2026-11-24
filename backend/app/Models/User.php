@@ -113,8 +113,12 @@ class User extends Authenticatable
         return Project::whereHas('inventors', fn ($q) => $q->where('inventors.user_id', $this->id));
     }
 
-    /** Staff who see only cases they created or are assigned to (Project::scopeAssignedTo). */
-    public const CASE_SCOPED_ROLES = ['associate', 'paralegal', 'hr'];
+    /**
+     * Staff who see only cases they created or are assigned to (Project::scopeAssignedTo):
+     * Patent Analysts / Engineers (associate) and Patent Attorneys (manager). System Admin,
+     * Director, Accountant, HR and Paralegal see every case — see App\Support\DataAccess.
+     */
+    public const CASE_SCOPED_ROLES = ['associate', 'manager'];
 
     public function seesOnlyOwnCases(): bool
     {

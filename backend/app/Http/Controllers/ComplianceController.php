@@ -122,11 +122,18 @@ class ComplianceController extends Controller
     private function visibleQuery(Request $request): Builder
     {
         $query = ComplianceItem::query();
-        if ($request->user()->isGalvanizer()) {
-            $codes = $request->user()->galvanizerCircleCodes();
-            $query->where(function (Builder $scope) use ($request, $codes): void {
-                $scope->where('assignee_id', $request->user()->id)
+        $user = $request->user();
+        if ($user->isGalvanizer()) {
+            $codes = $user->galvanizerCircleCodes();
+            $query->where(function (Builder $scope) use ($user, $codes): void {
+                $scope->where('assignee_id', $user->id)
                     ->orWhereHas('project', fn (Builder $projects) => $projects->whereIn('circle', $codes ?: ['__none__']));
+            });
+        } elseif (! \App\Support\DataAccess::seesAllCases($user)) {
+            // Patent Analysts / Engineers / Attorneys: deadlines of their CM / SCM cases, plus items assigned to them.
+            $query->where(function (Builder $scope) use ($user): void {
+                $scope->where('assignee_id', $user->id)
+                    ->orWhereHas('project', fn (Builder $projects) => \App\Support\DataAccess::scopeManagedCases($projects, $user));
             });
         }
         return $query;

@@ -23,7 +23,6 @@ use Throwable;
  */
 class ZohoBooksController extends Controller
 {
-    private const READ_ROLES  = ['super_admin', 'partner', 'manager', 'hr', 'associate', 'paralegal', 'finance', 'galvanizer'];
     private const WRITE_ROLES = ['super_admin', 'manager', 'galvanizer'];
 
     public function __construct(private ZohoBooksService $zoho)
@@ -78,7 +77,7 @@ class ZohoBooksController extends Controller
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
-        if (! in_array($user->role, self::READ_ROLES, true)) {
+        if (! \App\Support\DataAccess::canOpenFinance($user)) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
@@ -105,11 +104,8 @@ class ZohoBooksController extends Controller
             });
         }
 
-        if ($user->isGalvanizer()) {
-            $query->whereHas('project', fn ($q) => $user->applyProjectScope($q));
-        } elseif ($user->role === 'manager') {
-            $query->whereHas('project', fn ($q) => $q->where('assigned_manager_id', $user->id));
-        }
+        // All finance, their circle (galvanizer) or their CM / SCM cases.
+        \App\Support\DataAccess::scopeFinance($query, $user);
 
         $perPage = min((int) $request->get('per_page', 100), 500);
         $duplicates = (clone $query)->reorder()->select('zoho_type', 'number')->whereNotNull('number')
@@ -150,7 +146,7 @@ class ZohoBooksController extends Controller
     public function openingBalances(Request $request): JsonResponse
     {
         $user = $request->user();
-        if (! in_array($user->role, self::READ_ROLES, true)) {
+        if (! \App\Support\DataAccess::canOpenFinance($user)) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
         $query = ZohoOpeningBalance::with('client:id,company_name,client_code')->orderByDesc('balance_date');
@@ -161,10 +157,12 @@ class ZohoBooksController extends Controller
                     ->orWhere('zoho_contact_id', 'ilike', "%{$search}%");
             });
         }
-        if ($user->isGalvanizer()) {
-            $query->whereHas('client.projects', fn ($q) => $user->applyProjectScope($q));
-        } elseif ($user->role === 'manager') {
-            $query->whereHas('client.projects', fn ($q) => $q->where('assigned_manager_id', $user->id));
+        // Opening balances are per client: staff who don't see all finance get the clients of
+        // their circle (galvanizer) or of their CM / SCM cases.
+        if (! \App\Support\DataAccess::seesAllFinance($user)) {
+            $query->whereHas('client.projects', fn ($q) => $user->isGalvanizer()
+                ? $user->applyProjectScope($q)
+                : \App\Support\DataAccess::scopeManagedCases($q, $user));
         }
         $result = $query->paginate(min((int) $request->get('per_page', 100), 500));
         return response()->json([
@@ -189,14 +187,16 @@ class ZohoBooksController extends Controller
     /** Batch UIN lookup against the local mirror only — no live Zoho calls. Used by the India Records table. */
     public function matchBatch(Request $request): JsonResponse
     {
-        if (! in_array($request->user()->role, self::READ_ROLES, true)) {
+        if (! \App\Support\DataAccess::canOpenFinance($request->user())) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
         $validated = $request->validate(['uins' => 'required|array|max:500', 'uins.*' => 'string']);
         $uins      = array_map(fn ($u) => strtoupper(trim($u)), $validated['uins']);
 
-        $rows = ZohoInvoice::whereIn(DB::raw('UPPER(number)'), $uins)->get(['number', 'status', 'balance', 'total', 'url']);
+        $lookup = ZohoInvoice::whereIn(DB::raw('UPPER(number)'), $uins);
+        \App\Support\DataAccess::scopeFinance($lookup, $request->user());
+        $rows = $lookup->get(['number', 'status', 'balance', 'total', 'url']);
 
         $map = [];
         // Ambiguous document numbers cannot safely identify a single Zoho record.
@@ -213,15 +213,15 @@ class ZohoBooksController extends Controller
     public function monthlyAnalytics(Request $request): JsonResponse
     {
         $user = $request->user();
-        if (! $user->isClientRole() && ! in_array($user->role, self::READ_ROLES, true)) {
+        if (! $user->isClientRole() && ! \App\Support\DataAccess::canOpenFinance($user)) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
         $query = ZohoInvoice::where('zoho_type', 'invoice')->where('status', 'paid');
         if ($user->isClientRole()) {
             $query->where('client_id', optional(Client::forUser($user))->id ?? 0);
-        } elseif ($user->isGalvanizer()) {
-            $query->whereHas('project', fn ($q) => $user->applyProjectScope($q));
+        } else {
+            \App\Support\DataAccess::scopeFinance($query, $user);
         }
 
         $since = now()->subMonths(11)->startOfMonth();
@@ -343,10 +343,15 @@ class ZohoBooksController extends Controller
         if ($user->isClientRole()) {
             return $client->isVisibleToUser($user) ? null : response()->json(['message' => 'Forbidden'], 403);
         }
-        if (! in_array($user->role, self::READ_ROLES, true)) {
+        if (! \App\Support\DataAccess::canOpenFinance($user)) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
         if ($user->isGalvanizer() && ! $user->canAccessCircle($client->circle)) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+        // Case-scoped staff: only clients of their CM / SCM cases.
+        if (! $user->isGalvanizer() && ! \App\Support\DataAccess::seesAllFinance($user)
+            && ! $client->projects()->where(fn ($q) => \App\Support\DataAccess::scopeManagedCases($q, $user))->exists()) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
         return null;

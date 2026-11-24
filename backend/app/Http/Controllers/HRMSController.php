@@ -475,14 +475,19 @@ class HRMSController extends Controller
 
     public function employeeWorkload(Request $request)
     {
-        $projectCounts = \DB::table('projects')
-            ->select('patent_engineer_id as user_id', \DB::raw('COUNT(*) as project_count'))
-            ->whereNull('deleted_at')
-            ->whereNotNull('patent_engineer_id')
-            ->whereNotIn('status', ['Completed', 'Archived'])
-            ->groupBy('patent_engineer_id')
-            ->get()
-            ->keyBy('user_id');
+        // Open cases a person works on as Patent Engineer, Client Manager or Secondary CM
+        // (each case counted once per person).
+        $projectCounts = collect(\DB::select("
+            SELECT uid AS user_id, COUNT(DISTINCT pid) AS project_count
+            FROM (
+                SELECT id AS pid, patent_engineer_id AS uid FROM projects WHERE deleted_at IS NULL AND patent_engineer_id IS NOT NULL AND status NOT IN ('Completed', 'Archived', 'Closed')
+                UNION ALL
+                SELECT id, assigned_manager_id FROM projects WHERE deleted_at IS NULL AND assigned_manager_id IS NOT NULL AND status NOT IN ('Completed', 'Archived', 'Closed')
+                UNION ALL
+                SELECT id, secondary_manager_id FROM projects WHERE deleted_at IS NULL AND secondary_manager_id IS NOT NULL AND status NOT IN ('Completed', 'Archived', 'Closed')
+            ) p
+            GROUP BY uid
+        "))->keyBy('user_id');
 
         $trackerCounts = \DB::select("
             SELECT uid AS user_id, COUNT(*) AS tracker_count

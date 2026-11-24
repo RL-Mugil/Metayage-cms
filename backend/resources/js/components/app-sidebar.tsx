@@ -116,7 +116,6 @@ const groups = [
     items: [
       { to: "/clients", title: "Clients", icon: Users },
       { to: "/projects", title: "Projects", icon: Briefcase },
-      { to: "/ip-records", title: "IP Portfolio", icon: Award },
       { to: "/project-tracker", title: "Project Tracker", icon: TableProperties },
       { to: "/tasks", title: "Tasks", icon: ListChecks },
       { to: "/kanban", title: "Kanban Board", icon: Layers },
@@ -145,9 +144,9 @@ const groups = [
   {
     label: "Finance & Insight",
     items: [
-      { to: "/financial", title: "Financial Suite", icon: Wallet },
-      { to: "/pending-payments", title: "Pending Payments", icon: CreditCard },
-      { to: "/analytics", title: "Financial Analytics", icon: BarChart3 },
+      { to: "/financial", title: "Financial Suite", icon: Wallet, finance: true },
+      { to: "/pending-payments", title: "Pending Payments", icon: CreditCard, finance: true },
+      { to: "/analytics", title: "Financial Analytics", icon: BarChart3, finance: true },
       { to: "/reports", title: "Reports", icon: FileBarChart2 },
     ],
   },
@@ -258,6 +257,8 @@ export function AppSidebar() {
                   {g.items.filter((it: any) => {
                     if (it.adminOnly && user?.role !== "super_admin") return false;
                     if (it.roles && !it.roles.includes(user?.role)) return false;
+                    // Finance pages: only for logins with finance access (all finance, circle, or their CM / SCM cases).
+                    if (it.finance && user?.access && !user.access.finance) return false;
                     return true;
                   }).map((it) => (
                     <SidebarMenuItem key={it.to}>

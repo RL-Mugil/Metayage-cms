@@ -32,8 +32,11 @@ class FinancialAnalyticsService
             $zohoInvoices = $zohoInvoices->where('client_id', $clientId)->values();
             $zohoQuotes = $zohoQuotes->where('client_id', $clientId)->values();
             $zohoOpeningBalances = $zohoOpeningBalances->where('client_id', $clientId)->values();
-        } elseif ($user->isGalvanizer()) {
-            $projectIds = Project::query()->where(fn ($q) => $user->applyProjectScope($q))->pluck('id');
+        } elseif (! \App\Support\DataAccess::seesAllFinance($user)) {
+            // Galvanizer: their circle; other staff: their CM / SCM cases (none for a paralegal off the list).
+            $projectIds = $user->isGalvanizer()
+                ? Project::query()->where(fn ($q) => $user->applyProjectScope($q))->pluck('id')
+                : (\App\Support\DataAccess::canOpenFinance($user) ? collect(\App\Support\DataAccess::managedCaseIds($user)) : collect());
             $portalQuotes = $portalQuotes->whereIn('project_id', $projectIds)->values();
             $zohoInvoices = $zohoInvoices->whereIn('project_id', $projectIds)->values();
             $zohoQuotes = $zohoQuotes->whereIn('project_id', $projectIds)->values();

@@ -97,18 +97,19 @@ class PatentInvoiceController extends Controller
             });
         }
 
-        // Client role: own records only
-        if (in_array($user->role, ['client', 'client_admin'])) {
-            $q->where('client_id', $user->client_id);
-        } elseif ($user->isGalvanizer()) {
-            $q->whereHas('project', fn ($project) => $user->applyProjectScope($project));
+        // Client logins (incl. client finance): their own client only. Staff: all finance, their
+        // circle (galvanizer) or their CM / SCM cases — App\Support\DataAccess.
+        if ($user->isClientRole()) {
+            $q->where('client_id', $user->client_id ?: 0);
+        } else {
+            \App\Support\DataAccess::scopeFinance($q, $user);
         }
 
         $perPage = min((int) $request->get('per_page', 50), 200);
         $result  = $q->paginate($perPage);
 
         // Strip internal fields for client roles
-        $isInternal = !in_array($user->role, ['client', 'client_admin', 'associate', 'paralegal']);
+        $isInternal = \App\Support\DataAccess::seesAllFinance($user) || $user->isGalvanizer();
 
         $data = $result->map(function ($r) use ($isInternal) {
             $arr = $r->toArray();
@@ -132,7 +133,7 @@ class PatentInvoiceController extends Controller
     public function store(Request $request)
     {
         $user = $request->user();
-        if (in_array($user->role, ['client', 'client_admin'])) abort(403);
+        abort_unless(\App\Support\DataAccess::canActOnFinance($user) || $user->isGalvanizer(), 403, 'Only Accounts, a Director, a System Admin or someone on the Financial access list can change invoices.');
 
         $v = $request->validate([
             'type'                             => 'required|in:invoice,quote',
@@ -207,7 +208,7 @@ class PatentInvoiceController extends Controller
         $user   = $request->user();
         $record = PatentInvoiceIn::findOrFail($id);
 
-        if (in_array($user->role, ['client', 'client_admin'])) abort(403);
+        abort_unless(\App\Support\DataAccess::canActOnFinance($user) || $user->isGalvanizer(), 403, 'Only Accounts, a Director, a System Admin or someone on the Financial access list can change invoices.');
         if ($user->isGalvanizer() && ! $this->galvanizerCanAccessRecord($user, $record)) abort(403);
 
         $v = $request->validate([
@@ -285,7 +286,7 @@ class PatentInvoiceController extends Controller
         $user   = $request->user();
         $record = PatentInvoiceIn::findOrFail($id);
 
-        if (!in_array($user->role, ['super_admin', 'partner', 'finance', 'manager', 'galvanizer'])) abort(403);
+        abort_unless(\App\Support\DataAccess::canActOnFinance($user) || $user->isGalvanizer(), 403);
         if ($user->isGalvanizer() && ! $this->galvanizerCanAccessRecord($user, $record)) abort(403);
         if ($record->isFromZoho()) abort(422, 'This record comes from Zoho Books: void or delete it in Zoho and it is cancelled here automatically.');
 
@@ -309,7 +310,7 @@ class PatentInvoiceController extends Controller
     public function batch(Request $request)
     {
         $user = $request->user();
-        if (in_array($user->role, ['client', 'client_admin'])) abort(403);
+        abort_unless(\App\Support\DataAccess::canActOnFinance($user) || $user->isGalvanizer(), 403, 'Only Accounts, a Director, a System Admin or someone on the Financial access list can change invoices.');
 
         $v = $request->validate([
             'ids'    => 'required|array|min:1',
@@ -358,7 +359,7 @@ class PatentInvoiceController extends Controller
         $user   = $request->user();
         $record = PatentInvoiceIn::findOrFail($id);
 
-        if (in_array($user->role, ['client', 'client_admin'])) abort(403);
+        abort_unless(\App\Support\DataAccess::canActOnFinance($user) || $user->isGalvanizer(), 403, 'Only Accounts, a Director, a System Admin or someone on the Financial access list can change invoices.');
         if ($user->isGalvanizer() && ! $this->galvanizerCanAccessRecord($user, $record)) abort(403);
         if ($record->type !== 'quote') abort(422, 'Only quotations can be converted to invoices.');
         if ($record->isFromZoho()) abort(422, 'Convert this quote to an invoice in Zoho Books; the invoice is imported here automatically.');

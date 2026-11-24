@@ -188,10 +188,6 @@ Route::middleware(['auth:sanctum', 'firm.context', 'throttle:120,1'])->group(fun
     Route::post('/projects/docket-import/preview', [\App\Http\Controllers\ProjectDocketImportController::class, 'preview'])->middleware('throttle:60,1');
     Route::post('/projects/docket-import/import', [\App\Http\Controllers\ProjectDocketImportController::class, 'import'])->middleware('throttle:30,1');
 
-    // Canonical IP assets — durable legal records linked to one or more service engagements.
-    Route::get('/ip-records', [\App\Http\Controllers\IpRecordController::class, 'index']);
-    Route::post('/ip-records', [\App\Http\Controllers\IpRecordController::class, 'store']);
-    Route::get('/ip-records/{ipRecord}', [\App\Http\Controllers\IpRecordController::class, 'show']);
 
     // Docketing engine — events, statutory deadlines, renewals
     Route::get('/docket/upcoming', [\App\Http\Controllers\DocketController::class, 'upcoming']);
@@ -412,6 +408,7 @@ Route::middleware(['auth:sanctum', 'firm.context', 'throttle:120,1'])->group(fun
     Route::put('/settings/project-tabs',  [\App\Http\Controllers\SettingsController::class, 'updateProjectTabs']);
     Route::put('/settings/renewal-fee-rates', [\App\Http\Controllers\SettingsController::class, 'updateRenewalFeeRates']);
     Route::put('/settings/payroll', [\App\Http\Controllers\SettingsController::class, 'updatePayrollSettings']);
+    Route::put('/settings/finance-access', [\App\Http\Controllers\SettingsController::class, 'updateFinanceAccess']);
     Route::get('/settings/ipo', [\App\Http\Controllers\Ipo\IpoSettingsController::class, 'show']);
     Route::put('/settings/ipo/service', [\App\Http\Controllers\Ipo\IpoSettingsController::class, 'updateService']);
     Route::put('/settings/escalation-cadence', [\App\Http\Controllers\SettingsController::class, 'updateEscalationCadence']);

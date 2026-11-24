@@ -44,18 +44,23 @@ interface ReportHistoryItem {
   filters: Record<string, string | null>;
 }
 
+/** Firm staff: each report shows the cases the person may see (their CM / SCM cases, or all). */
+const STAFF_ROLES = ["super_admin", "partner", "director", "manager", "hr", "finance", "associate", "paralegal", "galvanizer"];
+/** Finance reports also need finance access (Settings → Financial access for a paralegal). */
+const FINANCE_REPORTS = new Set(["financial-summary", "payment-collection", "zoho-summary"]);
+
 const REPORT_TEMPLATES: ReportTemplate[] = [
-  { id: "client-portfolio", name: "Client Portfolio Report", description: "All clients with case summary, GST type, billed, received, and outstanding totals", icon: Users, color: "text-blue-400", roles: ["super_admin", "partner", "manager", "galvanizer"] },
-  { id: "matter-status", name: "Case Status Report", description: "Current status of all active cases by stage and priority", icon: FolderOpen, color: "text-green-400", roles: ["super_admin", "partner", "manager", "finance", "galvanizer"] },
-  { id: "financial-summary", name: "Financial Summary", description: "Every invoice with billed, received, waived and balance", icon: Wallet, color: "text-gold", roles: ["super_admin", "partner", "manager", "finance", "galvanizer"] },
+  { id: "client-portfolio", name: "Client Portfolio Report", description: "All clients with case summary, GST type, billed, received, and outstanding totals", icon: Users, color: "text-blue-400", roles: STAFF_ROLES },
+  { id: "matter-status", name: "Case Status Report", description: "Current status of all active cases by stage and priority", icon: FolderOpen, color: "text-green-400", roles: STAFF_ROLES },
+  { id: "financial-summary", name: "Financial Summary", description: "Every invoice with billed, received, waived and balance", icon: Wallet, color: "text-gold", roles: STAFF_ROLES },
   { id: "hrms", name: "HRMS Report", description: "Employee attendance, date-adjusted leave, and latest payroll summary", icon: Users, color: "text-purple-400", roles: ["super_admin", "partner", "hr"] },
-  { id: "ip-deadline", name: "IP Deadline Report", description: "Upcoming matter, statutory docket, and patent renewal deadlines", icon: Clock, color: "text-red-400", roles: ["super_admin", "partner", "manager", "galvanizer"] },
-  { id: "productivity", name: "Productivity Report", description: "Scoped time logs, billability, approval status, and work descriptions", icon: BarChart3, color: "text-cyan-400", roles: ["super_admin", "partner", "manager", "galvanizer"] },
-  { id: "tracker-workload", name: "Team Workload Report", description: "Cases per PCM / SCM / PR with overdue count from Project Tracker", icon: Users, color: "text-indigo-400", roles: ["super_admin", "partner", "manager", "galvanizer"] },
-  { id: "overdue-cases", name: "Overdue Cases Report", description: "All past-due delivery dates with assigned team member details", icon: AlertTriangle, color: "text-red-500", roles: ["super_admin", "partner", "manager", "galvanizer"] },
-  { id: "deadline-forecast", name: "Deadline Forecast", description: "Upcoming delivery deadlines in the next 60 days by default", icon: Clock, color: "text-amber-400", roles: ["super_admin", "partner", "manager", "galvanizer"] },
-  { id: "payment-collection", name: "Payment Collection", description: "Pending follow-up with client contacts, payments, waivers and ageing per client", icon: TrendingUp, color: "text-green-400", roles: ["super_admin", "partner", "manager", "finance", "galvanizer"] },
-  { id: "zoho-summary", name: "Zoho Books Summary", description: "Synced Zoho invoices and estimates with balances and case matches", icon: Wallet, color: "text-teal-400", roles: ["super_admin", "partner", "manager", "finance", "galvanizer"] },
+  { id: "ip-deadline", name: "IP Deadline Report", description: "Upcoming matter, statutory docket, and patent renewal deadlines", icon: Clock, color: "text-red-400", roles: STAFF_ROLES },
+  { id: "productivity", name: "Productivity Report", description: "Scoped time logs, billability, approval status, and work descriptions", icon: BarChart3, color: "text-cyan-400", roles: STAFF_ROLES },
+  { id: "tracker-workload", name: "Team Workload Report", description: "Cases per PCM / SCM / PR with overdue count from Project Tracker", icon: Users, color: "text-indigo-400", roles: STAFF_ROLES },
+  { id: "overdue-cases", name: "Overdue Cases Report", description: "All past-due delivery dates with assigned team member details", icon: AlertTriangle, color: "text-red-500", roles: STAFF_ROLES },
+  { id: "deadline-forecast", name: "Deadline Forecast", description: "Upcoming delivery deadlines in the next 60 days by default", icon: Clock, color: "text-amber-400", roles: STAFF_ROLES },
+  { id: "payment-collection", name: "Payment Collection", description: "Pending follow-up with client contacts, payments, waivers and ageing per client", icon: TrendingUp, color: "text-green-400", roles: STAFF_ROLES },
+  { id: "zoho-summary", name: "Zoho Books Summary", description: "Synced Zoho invoices and estimates with balances and case matches", icon: Wallet, color: "text-teal-400", roles: STAFF_ROLES },
   { id: "payroll-cost-summary", name: "Payroll Cost Summary", description: "Gross, deductions, and net totals per payroll run", icon: Wallet, color: "text-gold", roles: ["super_admin", "partner", "finance"] },
   { id: "tds-pf-esi-summary", name: "TDS / PF / ESI Summary", description: "Statutory withholding totals per payroll run", icon: TrendingUp, color: "text-purple-400", roles: ["super_admin", "partner", "finance"] },
 ];
@@ -89,7 +94,7 @@ const SAMPLE_COLUMNS: Record<string, string[]> = {
 
 interface ReportsPageProps {
   [key: string]: unknown;
-  auth?: { user?: { role?: string } };
+  auth?: { user?: { role?: string; access?: { finance?: boolean } } };
 }
 
 function formatBadgeVariant(format: string): "default" | "secondary" | "outline" | "destructive" {
@@ -116,7 +121,8 @@ function downloadSample(template: ReportTemplate) {
 export default function Reports() {
   const { props } = usePage<ReportsPageProps>();
   const role = props.auth?.user?.role ?? "";
-  const availableTemplates = REPORT_TEMPLATES.filter((template) => template.roles.includes(role));
+  const canFinance = props.auth?.user?.access?.finance ?? false;
+  const availableTemplates = REPORT_TEMPLATES.filter((template) => template.roles.includes(role) && (!FINANCE_REPORTS.has(template.id) || canFinance));
   // Every report: one form, then the file downloads straight away (letterhead, signature seal).
   const [activeReport, setActiveReport] = useState<ReportTemplate | null>(null);
   const [verifyCode, setVerifyCode] = useState<string | null>(() => typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("verify"));

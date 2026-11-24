@@ -687,6 +687,33 @@ class SettingsController extends Controller
      * this request's cached shared-prop view, since payroll generation runs
      * in a queue worker.
      */
+    /**
+     * Settings → Finance → Financial access (System Admin only): staff logins that see every
+     * invoice, payment and finance report and may act on them (mark paid, waivers, register
+     * edits). Director, Accountant, HR and System Admin always see all finance.
+     */
+    public function updateFinanceAccess(Request $request)
+    {
+        $user = $request->user();
+        abort_unless($user->role === 'super_admin', 403, 'Only a System Admin can change who sees all finance.');
+        $validated = $request->validate([
+            'user_ids' => 'present|array|max:200',
+            'user_ids.*' => ['integer', \Illuminate\Validation\Rule::exists('users', 'id')->whereIn('role', User::FIRM_STAFF_ROLES)],
+        ]);
+        $before = \App\Support\DataAccess::financeAccessList();
+        $ids = array_values(array_unique(array_map('intval', $validated['user_ids'])));
+        DB::table('system_settings')->updateOrInsert(['key' => \App\Support\DataAccess::SETTING_KEY], ['value' => json_encode($ids), 'updated_at' => now()]);
+        Cache::forget('system_settings_shared');
+        \App\Support\DataAccess::forgetFinanceList();
+        AuditLog::create([
+            'user_id' => $user->id, 'action' => 'update_finance_access',
+            'metadata' => ['before' => $before, 'after' => $ids],
+            'ip_address' => $request->ip(), 'user_agent' => $request->userAgent(),
+        ]);
+
+        return response()->json(['user_ids' => $ids]);
+    }
+
     public function updatePayrollSettings(Request $request)
     {
         $user = $request->user();

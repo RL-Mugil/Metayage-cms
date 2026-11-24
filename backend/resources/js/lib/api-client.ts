@@ -87,23 +87,6 @@ export interface DocketWorklistItem {
   client: { id: number; code: string; name: string } | null
 }
 
-export interface IpRecord {
-  id: number
-  record_code: string
-  record_type: 'Patent' | 'Trademark'
-  jurisdiction: string
-  title: string
-  client_reference: string | null
-  legal_status: string
-  status_date: string | null
-  data_quality_status: string
-  tags: string[]
-  uins: string[]
-  client?: { id: number; client_code: string; name: string }
-  responsible_user?: { id: number; name: string } | null
-  backup_user?: { id: number; name: string } | null
-}
-
 export interface ZohoBooksCase {
   project_id: number
   docket_number: string
@@ -1451,9 +1434,6 @@ export const api = {
   async getDocketWorklist(params?: URLSearchParams): Promise<PaginatedResponse<DocketWorklistItem>> {
     return this.request(`/docket/worklist${params ? `?${params.toString()}` : ''}`)
   },
-  async getIpRecords(params?: URLSearchParams): Promise<PaginatedResponse<IpRecord>> {
-    return this.request(`/ip-records${params ? `?${params.toString()}` : ''}`)
-  },
   async getEmployeeWorkload(): Promise<{ user_id: number; project_count: number; tracker_count: number; total: number }[]> {
     return this.request('/hrms/employees/workload')
   },
@@ -1988,6 +1968,10 @@ export const api = {
   },
   async updateTaxSlabConfig(id: number | string, data: Record<string, unknown>): Promise<any> {
     return this.request(`/tax-slab-configs/${id}`, { method: 'PUT', body: JSON.stringify(data) })
+  },
+  /** Settings → Finance → Financial access (System Admin): logins that see all finance. */
+  async updateFinanceAccess(userIds: number[]): Promise<{ user_ids: number[] }> {
+    return this.request('/settings/finance-access', { method: 'PUT', body: JSON.stringify({ user_ids: userIds }) })
   },
   async updatePayrollSettings(data: {
     signatory_user_id?: number | null

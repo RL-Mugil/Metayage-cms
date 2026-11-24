@@ -13,7 +13,7 @@ const PAGES: { label: string; url: string; icon: React.ComponentType<{ className
   { label: "Cases", url: "/projects", icon: FileText, staff: true },
   { label: "Clients", url: "/clients", icon: Users, staff: true },
   { label: "Financial Suite", url: "/financial", icon: Receipt, staff: true },
-  { label: "Project Tracker", url: "/tracker", icon: GitBranch, staff: true },
+  { label: "Project Tracker", url: "/project-tracker", icon: GitBranch, staff: true },
   { label: "Discussions", url: "/discussions", icon: Inbox, staff: true, client: true },
   { label: "Notifications", url: "/notifications", icon: CalendarClock, staff: true, client: true },
 ]

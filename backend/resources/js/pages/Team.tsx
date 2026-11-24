@@ -288,7 +288,7 @@ export default function Team() {
   }
 
   const filtered = employees.filter((e) => {
-    const name = (e.user?.name ?? "").toLowerCase();
+    const name = (e.user?.name ?? e.full_name ?? "").toLowerCase();
     const role = (e.designation?.title ?? "").toLowerCase();
     const q = search.toLowerCase();
     return name.includes(q) || role.includes(q);
@@ -638,8 +638,8 @@ export default function Team() {
         {viewMode === "grid" && (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {filtered.map((emp) => {
-              const name = emp.user?.name ?? "Unknown";
-              const email = emp.user?.email ?? "";
+              const name = emp.user?.name ?? emp.full_name ?? "Unknown";
+              const email = emp.user?.email ?? emp.work_email ?? "";
               const role = emp.designation?.title ?? "—";
               const dept = emp.department?.name ?? "—";
               const status = emp.employment_status ?? "Active";
@@ -656,7 +656,7 @@ export default function Team() {
                       </div>
                     )}
                     <div>
-                      <div className="font-medium text-foreground">{name}</div>
+                      <div className="font-medium text-foreground">{name}{!emp.user && <span className="ml-1.5 rounded-full border border-amber-300 bg-amber-50 px-1.5 py-0.5 align-middle text-[9px] font-medium text-amber-700">No login</span>}</div>
                       <div className="text-xs text-muted-foreground mt-0.5">{role}</div>
                     </div>
                     <Badge variant="secondary" className="text-[10px]">
@@ -687,6 +687,8 @@ export default function Team() {
                         variant="outline"
                         className="flex-1 text-xs"
                         onClick={() => openAssignedProjects(emp)}
+                        disabled={!(emp.user_id ?? emp.user?.id)}
+                        title={(emp.user_id ?? emp.user?.id) ? undefined : "No portal login"}
                       >
                         <FolderOpen className="h-3.5 w-3.5 mr-1" />
                         Projects
@@ -696,6 +698,8 @@ export default function Team() {
                         variant="outline"
                         className="flex-1 text-xs"
                         onClick={() => openClientManagerModal(emp)}
+                        disabled={!(emp.user_id ?? emp.user?.id)}
+                        title={(emp.user_id ?? emp.user?.id) ? undefined : "No portal login"}
                       >
                         <Building2 className="h-3.5 w-3.5 mr-1" />
                         Clients
@@ -731,8 +735,8 @@ export default function Team() {
                 </thead>
                 <tbody className="table-rows-3d">
                   {filtered.map((emp) => {
-                    const name = emp.user?.name ?? "Unknown";
-                    const email = emp.user?.email ?? "";
+                    const name = emp.user?.name ?? emp.full_name ?? "Unknown";
+                    const email = emp.user?.email ?? emp.work_email ?? "";
                     const role = emp.designation?.title ?? "—";
                     const dept = emp.department?.name ?? "—";
                     const status = emp.employment_status ?? "Active";
@@ -749,7 +753,7 @@ export default function Team() {
                                 {getInitials(name)}
                               </div>
                             )}
-                            <span className="font-medium">{name}</span>
+                            <span className="font-medium">{name}</span>{!emp.user && <span className="ml-1.5 rounded-full border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[9px] font-medium text-amber-700">No login</span>}
                           </div>
                         </td>
                         <td className="px-4 py-3 text-muted-foreground">{role}</td>

@@ -28,7 +28,17 @@ use Illuminate\Support\Facades\Mail;
  */
 class RenewalActionController extends Controller
 {
-    private const STAFF_CONFIRM_ROLES = ['super_admin', 'partner', 'manager', 'finance', 'galvanizer'];
+    /** A follow-up note: any staff member who may see this invoice (their CM / SCM case, circle, or all finance). */
+    private function staffMaySee($user, PatentInvoiceIn $invoice): bool
+    {
+        $query = PatentInvoiceIn::query()->whereKey($invoice->id);
+        if (! \App\Support\DataAccess::canOpenFinance($user)) {
+            return false;
+        }
+        \App\Support\DataAccess::scopeFinance($query, $user);
+
+        return $query->exists();
+    }
 
     /**
      * Sums the correct fee_rate_cards RNF band for each specific renewal year
@@ -403,7 +413,7 @@ class RenewalActionController extends Controller
     public function confirmReceipt(Request $request, $invoiceId)
     {
         $user = $request->user();
-        if (! in_array($user->role, self::STAFF_CONFIRM_ROLES, true)) {
+        if (! \App\Support\DataAccess::canActOnFinance($user) && ! $user->isGalvanizer()) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
@@ -448,7 +458,7 @@ class RenewalActionController extends Controller
             if (! $client || $invoice->client_id !== $client->id) {
                 return response()->json(['message' => 'Forbidden'], 403);
             }
-        } elseif (! in_array($user->role, self::STAFF_CONFIRM_ROLES, true)) {
+        } elseif (! $this->staffMaySee($user, $invoice)) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
@@ -481,10 +491,11 @@ class RenewalActionController extends Controller
                 return response()->json(['message' => 'No client record linked to your account.'], 404);
             }
             $query->where('client_id', $client->id);
-        } elseif ($user->isGalvanizer()) {
-            $query->whereHas('project', fn ($q) => $user->applyProjectScope($q));
-        } elseif (! in_array($user->role, self::STAFF_CONFIRM_ROLES, true)) {
+        } elseif (! \App\Support\DataAccess::canOpenFinance($user)) {
             return response()->json(['message' => 'Forbidden'], 403);
+        } else {
+            // All finance, their circle (galvanizer) or their CM / SCM cases.
+            \App\Support\DataAccess::scopeFinance($query, $user);
         }
 
         if ($request->filled('payment_status')) {
@@ -541,7 +552,7 @@ class RenewalActionController extends Controller
             ->pluck('amount', 'currency')->map(fn ($amount) => round((float) $amount, 2));
         $overdue = (clone $query)->whereNotNull('due_date')->where('due_date', '<', now()->toDateString())->count();
         $staff = ! $user->isClientRole();
-        $scoped = fn () => PatentInvoiceIn::query()->when($user->isGalvanizer(), fn ($q) => $q->whereHas('project', fn ($p) => $user->applyProjectScope($p)));
+        $scoped = fn () => PatentInvoiceIn::query()->when($staff, fn ($q) => \App\Support\DataAccess::scopeFinance($q, $user));
 
         // Most overdue first, then the newest.
         $page = $query->orderByRaw('due_date ASC NULLS LAST')->orderByDesc('invoice_date')->orderByDesc('id')
@@ -571,8 +582,8 @@ class RenewalActionController extends Controller
                 ->orderBy('legal_name')->get(['id', 'legal_name', 'company_name', 'client_code'])
                 ->map(fn ($c) => ['id' => $c->id, 'name' => $c->legal_name ?: $c->company_name, 'code' => $c->client_code])->values() : [],
             'can' => [
-                'mark_paid' => in_array($user->role, \App\Services\InvoiceSettlement::PAY_ROLES, true),
-                'request_waiver' => in_array($user->role, \App\Services\InvoiceSettlement::WAIVE_REQUEST_ROLES, true),
+                'mark_paid' => \App\Services\InvoiceSettlement::canPay($user),
+                'request_waiver' => \App\Services\InvoiceSettlement::canRequestWaiver($user),
                 'approve_waiver' => in_array($user->role, \App\Services\InvoiceSettlement::WAIVE_APPROVE_ROLES, true),
             ],
         ]));

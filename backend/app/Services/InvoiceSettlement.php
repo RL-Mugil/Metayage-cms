@@ -27,6 +27,18 @@ class InvoiceSettlement
 
     public const WAIVE_APPROVE_ROLES = ['super_admin', 'partner'];
 
+    /** Mark paid: finance roles and anyone on Settings → Financial access. */
+    public static function canPay(User $user): bool
+    {
+        return in_array($user->role, self::PAY_ROLES, true) || \App\Support\DataAccess::onFinanceList($user);
+    }
+
+    /** Request a waiver: as mark paid (a Director or System Admin then approves). */
+    public static function canRequestWaiver(User $user): bool
+    {
+        return in_array($user->role, ['super_admin', 'partner', 'finance'], true) || \App\Support\DataAccess::onFinanceList($user);
+    }
+
     public const MODES = ['Bank transfer', 'UPI', 'Cheque', 'Cash', 'Card', 'Other'];
 
     public function __construct(private readonly ClientLedgerSync $ledger) {}
@@ -34,7 +46,7 @@ class InvoiceSettlement
     /** Record a payment (full or part) against the invoice's balance. */
     public function markPaid(PatentInvoiceIn $invoice, float $amount, string $date, string $mode, ?string $reference, User $user, ?string $ip = null, ?string $agent = null): RegisterPayment
     {
-        abort_unless(in_array($user->role, self::PAY_ROLES, true), 403, 'Only finance, a partner or a super admin can mark invoices paid.');
+        abort_unless(self::canPay($user), 403, 'Only Accounts, a Director, a System Admin or someone on the Financial access list can mark invoices paid.');
 
         $payment = DB::transaction(function () use ($invoice, $amount, $date, $mode, $reference, $user, $ip, $agent) {
             $row = PatentInvoiceIn::whereKey($invoice->id)->lockForUpdate()->firstOrFail();
@@ -75,7 +87,7 @@ class InvoiceSettlement
     /** Ask for a waiver; partners and super admins are notified to approve it. */
     public function requestWaiver(PatentInvoiceIn $invoice, float $amount, string $reason, User $user, ?string $ip = null, ?string $agent = null): void
     {
-        abort_unless(in_array($user->role, self::WAIVE_REQUEST_ROLES, true), 403, 'You cannot request a waiver.');
+        abort_unless(self::canRequestWaiver($user), 403, 'You cannot request a waiver.');
         DB::transaction(function () use ($invoice, $amount, $reason, $user, $ip, $agent) {
             $row = PatentInvoiceIn::whereKey($invoice->id)->lockForUpdate()->firstOrFail();
             $this->assertOpenInvoice($row);

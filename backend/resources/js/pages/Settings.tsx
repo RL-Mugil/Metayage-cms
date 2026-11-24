@@ -1,3 +1,4 @@
+import { FinanceAccessCard } from "@/components/settings/finance-access-card";
 import { Head, usePage, router } from "@inertiajs/react";
 import { Fragment, useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
@@ -1866,6 +1867,7 @@ export default function Settings() {
           )}
 
           {tab === "finance" && canManageSystem && <div className="mb-6"><PaymentDetailsCard /></div>}
+          {tab === "finance" && isSuperAdmin && <div className="mb-6"><FinanceAccessCard /></div>}
           {tab === "finance" && isSuperAdmin && (
             <div className="space-y-6">
               <Card className="border-border">

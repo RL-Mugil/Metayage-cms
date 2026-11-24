@@ -30,6 +30,8 @@ class HandleInertiaRequests extends Middleware
                     'role'       => $user->role,
                     'status'     => $user->status,
                     'avatar_url' => $user->avatar_url,
+                    // What this login may see (App\Support\DataAccess) — drives the sidebar and pages.
+                    'access'     => fn () => \App\Support\DataAccess::forFrontend($user),
                     'unread_notifications' => fn () => DB::table('ip_notifications')
                         ->where('user_id', $user->id)
                         ->whereNull('read_at')
@@ -85,6 +87,8 @@ class HandleInertiaRequests extends Middleware
                 'payroll_pay_day'             => isset($rows['payroll_pay_day']) ? (int) $rows['payroll_pay_day'] : 1,
                 'payroll_signatory_name'         => $rows['payroll_signatory_name'] ?? '',
                 'payroll_signatory_designation'  => $rows['payroll_signatory_designation'] ?? '',
+                // Settings → Finance → Financial access: logins that see all finance (App\Support\DataAccess).
+                'finance_access_user_ids'        => array_values(array_map('intval', (array) $decode('finance_access_user_ids', []))),
                 'payroll_signatory_user_id'      => isset($rows['payroll_signatory_user_id']) && $rows['payroll_signatory_user_id'] !== '' ? (int) $rows['payroll_signatory_user_id'] : null,
             ];
         });
