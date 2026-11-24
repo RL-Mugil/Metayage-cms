@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { Canvas, useFrame, type ThreeEvent } from "@react-three/fiber"
 import * as THREE from "three"
 import { Minus, Plus, RotateCcw } from "lucide-react"
-import LAND from "./land-points.json"
+import WORLD from "./world-110m.json"
 
 /** Patent offices at their seat (lat, lon). Regional offices sit at their headquarters. */
 const OFFICES: Record<string, [number, number]> = {
@@ -30,19 +30,118 @@ export interface GlobeProps {
   onSelect: (code: string) => void
 }
 
-function LandDots() {
-  const ref = useRef<THREE.InstancedMesh>(null)
-  const points = LAND as [number, number][]
-  useEffect(() => {
-    const m = new THREE.Matrix4()
-    points.forEach(([lat, lon], i) => { m.setPosition(toVec(lat, lon, R * 1.002)); ref.current?.setMatrixAt(i, m) })
-    if (ref.current) ref.current.instanceMatrix.needsUpdate = true
-  }, [points])
+type Ring = [number, number][]
+const GEO = WORLD as { land: Ring[][]; borders: Ring[] }
+
+/** Make a ring's longitudes continuous (no ±180 jumps) so it can be drawn at -360 / 0 / +360. */
+const unwrap = (ring: Ring): Ring => {
+  const out: Ring = []
+  let shift = 0
+  ring.forEach(([lon, lat], i) => {
+    if (i > 0) {
+      const prev = ring[i - 1][0]
+      if (lon - prev > 180) shift -= 360
+      else if (prev - lon > 180) shift += 360
+    }
+    out.push([lon + shift, lat])
+  })
+  return out
+}
+
+/** Draw every land polygon (with holes) onto an equirectangular canvas, wrapped across the date line. */
+function traceLand(ctx: CanvasRenderingContext2D, w: number, h: number) {
+  const x = (lon: number) => ((lon + 180) / 360) * w
+  const y = (lat: number) => ((90 - lat) / 180) * h
+  ctx.beginPath()
+  for (const poly of GEO.land) {
+    for (const ring of poly) {
+      const u = unwrap(ring)
+      for (const off of [-360, 0, 360]) {
+        u.forEach(([lon, lat], i) => (i ? ctx.lineTo(x(lon + off), y(lat)) : ctx.moveTo(x(lon + off), y(lat))))
+        ctx.closePath()
+      }
+    }
+  }
+}
+
+function strokeLines(ctx: CanvasRenderingContext2D, w: number, h: number, lines: Ring[]) {
+  const x = (lon: number) => ((lon + 180) / 360) * w
+  const y = (lat: number) => ((90 - lat) / 180) * h
+  ctx.beginPath()
+  for (const line of lines) {
+    const u = unwrap(line)
+    for (const off of [-360, 0, 360]) u.forEach(([lon, lat], i) => (i ? ctx.lineTo(x(lon + off), y(lat)) : ctx.moveTo(x(lon + off), y(lat))))
+  }
+  ctx.stroke()
+}
+
+/** Colour, height and roughness maps for a natural-colour globe, drawn once. */
+function buildTextures() {
+  const W = 4096, H = 2048
+  const canvas = (w: number, h: number) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c }
+
+  // Colour: ocean gradient, shallow-shelf glow, land tinted by latitude, coastlines, borders, graticule.
+  const color = canvas(W, H)
+  const c = color.getContext("2d")!
+  const ocean = c.createLinearGradient(0, 0, 0, H)
+  ocean.addColorStop(0, "#0a2e55"); ocean.addColorStop(0.3, "#0f4c8a"); ocean.addColorStop(0.5, "#1666ad")
+  ocean.addColorStop(0.7, "#0f4c8a"); ocean.addColorStop(1, "#0a2e55")
+  c.fillStyle = ocean; c.fillRect(0, 0, W, H)
+  c.save(); c.shadowColor = "rgba(125, 211, 252, 0.75)"; c.shadowBlur = 28; c.fillStyle = "#2a7fc0"; traceLand(c, W, H); c.fill("evenodd"); c.restore()
+
+  const land = canvas(W, H)
+  const l = land.getContext("2d")!
+  traceLand(l, W, H); l.fillStyle = "#fff"; l.fill("evenodd")
+  l.globalCompositeOperation = "source-in"
+  const tint = l.createLinearGradient(0, 0, 0, H)
+  const stop = (lat: number, col: string) => tint.addColorStop((90 - lat) / 180, col)
+  stop(90, "#f1f5f4"); stop(72, "#c9d6c3"); stop(62, "#6f8f58"); stop(50, "#4f8a3c"); stop(40, "#7f9a4a"); stop(30, "#c8a96a")
+  stop(22, "#c49a5a"); stop(12, "#4c8a36"); stop(0, "#2f7a2e"); stop(-12, "#4c8a36"); stop(-25, "#b8955a"); stop(-38, "#6e9a4c")
+  stop(-55, "#8aa37a"); stop(-64, "#e8eeec"); stop(-90, "#f8fafc")
+  l.fillStyle = tint; l.fillRect(0, 0, W, H)
+  c.drawImage(land, 0, 0)
+
+  c.lineJoin = "round"
+  c.strokeStyle = "rgba(22, 60, 30, 0.55)"; c.lineWidth = 2.2; traceLand(c, W, H); c.stroke()
+  c.strokeStyle = "rgba(255, 255, 255, 0.55)"; c.lineWidth = 1.4; strokeLines(c, W, H, GEO.borders)
+  c.strokeStyle = "rgba(255, 255, 255, 0.16)"; c.lineWidth = 1.6
+  c.beginPath()
+  for (let lon = -180; lon <= 180; lon += 15) { const px = ((lon + 180) / 360) * W; c.moveTo(px, 0); c.lineTo(px, H) }
+  for (let lat = -75; lat <= 75; lat += 15) { const py = ((90 - lat) / 180) * H; c.moveTo(0, py); c.lineTo(W, py) }
+  c.stroke()
+
+  // Height: land raised, softened coast. Roughness: glossy sea, matte land.
+  const height = canvas(2048, 1024)
+  const hc = height.getContext("2d")!
+  hc.fillStyle = "#000"; hc.fillRect(0, 0, 2048, 1024)
+  hc.filter = "blur(3px)"; hc.fillStyle = "#fff"; traceLand(hc, 2048, 1024); hc.fill("evenodd"); hc.filter = "none"
+  const rough = canvas(1024, 512)
+  const rc = rough.getContext("2d")!
+  rc.fillStyle = "#4a4a4a"; rc.fillRect(0, 0, 1024, 512)
+  rc.fillStyle = "#e0e0e0"; traceLand(rc, 1024, 512); rc.fill("evenodd")
+
+  const tex = (cv: HTMLCanvasElement, srgb = false) => {
+    const t = new THREE.CanvasTexture(cv)
+    if (srgb) t.colorSpace = THREE.SRGBColorSpace
+    t.anisotropy = 4
+    t.needsUpdate = true
+    return t
+  }
+  return { map: tex(color, true), height: tex(height), rough: tex(rough) }
+}
+
+/** How far land stands above the sea (scene units); office columns start on top of it. */
+const LIFT = 0.022
+
+function Earth() {
+  const t = useMemo(buildTextures, [])
+  useEffect(() => () => { t.map.dispose(); t.height.dispose(); t.rough.dispose() }, [t])
   return (
-    <instancedMesh ref={ref} args={[undefined, undefined, points.length]}>
-      <sphereGeometry args={[0.0085, 6, 6]} />
-      <meshStandardMaterial color="#1d4ed8" emissive="#1e3a8a" emissiveIntensity={0.25} roughness={0.5} />
-    </instancedMesh>
+    <mesh>
+      <sphereGeometry args={[R, 256, 128]} />
+      <meshStandardMaterial map={t.map} displacementMap={t.height} displacementScale={LIFT} bumpMap={t.height} bumpScale={2.5}
+        roughnessMap={t.rough} roughness={1} metalness={0.05} />
+    </mesh>
   )
 }
 
@@ -57,7 +156,7 @@ function OfficeBar({ code, counts, max, selected, onHover, onSelect }: {
   const segs = [["granted", "#16a34a"], ["active", "#f59e0b"], ["other", "#94a3b8"]] as const
   const group = useRef<THREE.Group>(null)
   useEffect(() => {
-    const base = toVec(lat, lon, R)
+    const base = toVec(lat, lon, R + LIFT)
     group.current?.position.copy(base)
     group.current?.lookAt(base.clone().multiplyScalar(2))
   }, [lat, lon])
@@ -74,7 +173,7 @@ function OfficeBar({ code, counts, max, selected, onHover, onSelect }: {
         return (
           <mesh key={key} position={[0, 0, z]}>
             <boxGeometry args={[w, w, h]} />
-            <meshStandardMaterial color={color} emissive={selected ? color : "#000"} emissiveIntensity={selected ? 0.45 : 0} roughness={0.35} metalness={0.15} />
+            <meshStandardMaterial color={color} emissive={color} emissiveIntensity={selected ? 0.7 : 0.28} roughness={0.35} metalness={0.15} />
           </mesh>
         )
       })}
@@ -102,15 +201,11 @@ function Globe({ props, rot, dragging, onHover }: {
 
   return (
     <group ref={group}>
-      <mesh>
+      <Earth />
+      <mesh scale={1.1}>
         <sphereGeometry args={[R, 64, 64]} />
-        <meshStandardMaterial color="#eff6ff" emissive="#bfdbfe" emissiveIntensity={0.35} roughness={0.85} metalness={0} />
+        <meshBasicMaterial color="#60a5fa" transparent opacity={0.16} side={THREE.BackSide} blending={THREE.AdditiveBlending} depthWrite={false} />
       </mesh>
-      <mesh scale={1.08}>
-        <sphereGeometry args={[R, 48, 48]} />
-        <meshBasicMaterial color="#93c5fd" transparent opacity={0.12} side={THREE.BackSide} />
-      </mesh>
-      <LandDots />
       {codes.map((c) => (
         <OfficeBar key={c} code={c} counts={counts(c)} max={max} selected={props.selected === c} onHover={onHover} onSelect={props.onSelect} />
       ))}
@@ -149,14 +244,15 @@ export default function OfficeGlobe(props: GlobeProps) {
   const t = tip ? { g: props.granted[tip.code] ?? 0, a: props.active[tip.code] ?? 0, o: props.other[tip.code] ?? 0 } : null
 
   return (
-    <div ref={wrap} className="relative h-[380px] fit:h-auto fit:min-h-[300px] fit:flex-1 w-full touch-none select-none overflow-hidden rounded-xl bg-gradient-to-b from-sky-50 to-white dark:from-slate-900 dark:to-slate-950"
+    <div ref={wrap} className="relative h-[380px] fit:h-auto fit:min-h-[300px] fit:flex-1 w-full touch-none select-none overflow-hidden rounded-xl bg-[radial-gradient(circle_at_50%_45%,#1e293b_0%,#0b1220_55%,#020617_100%)]"
       onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerLeave={up}>
       <Canvas camera={{ position: [0, 0, 3.6], fov: 40 }} dpr={[1, 1.5]} gl={{ antialias: true, alpha: true }}
         onCreated={({ camera }) => camera.lookAt(0, 0, 0)}>
         <CameraZoom z={zoom} />
-        <ambientLight intensity={0.85} />
-        <directionalLight position={[3, 2, 4]} intensity={1.1} />
-        <directionalLight position={[-3, -1, -2]} intensity={0.3} color="#fde68a" />
+        <ambientLight intensity={0.55} />
+        <directionalLight position={[-3, 2.5, 4]} intensity={1.6} />
+        <directionalLight position={[3, -1, 2]} intensity={0.35} color="#bfdbfe" />
+        <directionalLight position={[0, 1, -4]} intensity={0.6} color="#fbbf24" />
         <Globe props={props} rot={rot} dragging={dragging} onHover={hover} />
       </Canvas>
       {tip && t && (
@@ -175,7 +271,7 @@ export default function OfficeGlobe(props: GlobeProps) {
             className="glass flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground"><Icon className="h-3.5 w-3.5" /></button>
         ))}
       </div>
-      <div className="pointer-events-none absolute bottom-2 left-3 flex gap-3 text-[10px] text-muted-foreground">
+      <div className="pointer-events-none absolute bottom-2 left-3 flex gap-3 text-[10px] text-slate-300">
         <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-green-600" />Granted</span>
         <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-amber-500" />Active</span>
         <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-slate-400" />Other</span>

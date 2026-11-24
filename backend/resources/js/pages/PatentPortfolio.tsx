@@ -102,8 +102,12 @@ const STAGE_PAGE = 8;
 const fmtShort = (value?: string | null) =>
   value ? new Date(value).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "2-digit" }) : "—";
 
-/** Section header: title on the left; search and "View all" in the top-right corner. */
-function SectionHead({ icon, title, badge, search, onSearch, onViewAll, extra }: {
+/**
+ * Section header on one line: title (truncates) on the left; extra control, search and
+ * "View all" packed in the top-right corner. With `compact` (narrow cards) the search box
+ * folds into an icon that opens it, so nothing wraps under the title.
+ */
+function SectionHead({ icon, title, badge, search, onSearch, onViewAll, extra, compact }: {
   icon?: React.ReactNode
   title: string
   badge?: string
@@ -111,22 +115,33 @@ function SectionHead({ icon, title, badge, search, onSearch, onViewAll, extra }:
   onSearch: (value: string) => void
   onViewAll: () => void
   extra?: React.ReactNode
+  compact?: boolean
 }) {
+  const [open, setOpen] = useState(false);
+  const showBox = !compact || open || search !== "";
   return (
-    <CardHeader className="pb-2 flex-shrink-0">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <CardTitle className="font-display text-sm flex items-center gap-2">
-          {icon}{title}
-          {badge && <span className="text-[10px] text-gold font-normal">{badge}</span>}
+    <CardHeader className="px-4 pt-3.5 pb-2 flex-shrink-0">
+      <div className="flex flex-nowrap items-center gap-2">
+        <CardTitle className="font-display text-sm flex min-w-0 items-center gap-2">
+          <span className="shrink-0">{icon}</span><span className="truncate">{title}</span>
+          {badge && <span className="shrink-0 text-[10px] text-gold font-normal">{badge}</span>}
         </CardTitle>
-        <div className="flex items-center gap-2">
+        <div className="ml-auto flex shrink-0 items-center gap-1.5">
           {extra}
-          <div className="relative">
-            <Search className="pointer-events-none absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
-            <input value={search} onChange={(e) => onSearch(e.target.value)} placeholder="Search…"
-              className="h-7 w-32 rounded-md border border-border bg-background pl-6 pr-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold sm:w-40" />
-          </div>
-          <button onClick={onViewAll} className="whitespace-nowrap rounded-md border border-border px-2 py-1 text-xs text-gold hover:bg-gold/10">View all</button>
+          {showBox ? (
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
+              <input value={search} onChange={(e) => onSearch(e.target.value)} placeholder="Search…" autoFocus={compact && open}
+                onBlur={() => { if (!search) setOpen(false); }}
+                className="h-7 w-24 rounded-full border border-border bg-background/70 pl-6 pr-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold xl:w-32" />
+            </div>
+          ) : (
+            <button onClick={() => setOpen(true)} title="Search" aria-label="Search"
+              className="flex h-7 w-7 items-center justify-center rounded-full border border-border text-muted-foreground hover:text-foreground">
+              <Search className="h-3 w-3" />
+            </button>
+          )}
+          <button onClick={onViewAll} className="whitespace-nowrap rounded-full border border-gold/40 px-2.5 py-1 text-[11px] font-medium text-gold hover:bg-gold/10">View all</button>
         </div>
       </div>
     </CardHeader>
@@ -186,6 +201,10 @@ export default function PatentPortfolio() {
   const [renewalView, setRenewalView] = useState<"list" | "calendar">("list");
   const [insights, setInsights] = useState<PortfolioInsights | null>(null);
   const [hubOpen, setHubOpen] = useState(false);
+  const [stuckSearch, setStuckSearch] = useState("");
+  const [stuckPage, setStuckPage] = useState(1);
+  const [changeSearch, setChangeSearch] = useState("");
+  const [changePage, setChangePage] = useState(1);
   const [tab, setTabState] = useState<PortfolioTab>(() => {
     const wanted = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("tab") : null;
     return (PORTFOLIO_TABS as readonly string[]).includes(wanted ?? "") ? (wanted as PortfolioTab) : "overview";
@@ -200,6 +219,12 @@ export default function PatentPortfolio() {
   const [actionsFit, actionsPer] = useFitRows(46, PAGE_SIZE, 78);
   const [renewalsFit, renewalsPer] = useFitRows(62, RENEWAL_PAGE);
   const [paymentsFit, paymentsPer] = useFitRows(70, PAGE_SIZE);
+  const [stuckFit, stuckPer] = useFitRows(56, 6);
+  const [changesFit, changesPer] = useFitRows(56, 6);
+  const stuckRows = useMemo(() => (insights?.stuck ?? []).filter((r) => matches(r, stuckSearch.trim().toLowerCase(), ["docket_number", "client", "stage", "project_name"])), [insights, stuckSearch]);
+  const changeRows = useMemo(() => (insights?.changes ?? []).filter((r) => matches(r, changeSearch.trim().toLowerCase(), ["text", "docket_number", "kind"])), [insights, changeSearch]);
+  useEffect(() => { setStuckPage(1); }, [stuckPer, stuckSearch]);
+  useEffect(() => { setChangePage(1); }, [changesPer, changeSearch]);
   useEffect(() => { setPage(1); }, [actionsPer]);
   useEffect(() => { setRenewalPage(1); }, [renewalsPer]);
   useEffect(() => { setPaymentPage(1); }, [paymentsPer]);
@@ -210,7 +235,7 @@ export default function PatentPortfolio() {
   const [renewalMonth, setRenewalMonth] = useState<string | null>(null);
   const [paymentSearch, setPaymentSearch] = useState("");
   const [stageSearch, setStageSearch]     = useState("");
-  const [viewAll, setViewAll] = useState<"renewals" | "stages" | "actions" | null>(null);
+  const [viewAll, setViewAll] = useState<"renewals" | "stages" | "actions" | "stuck" | "changes" | null>(null);
 
   const [detailId, setDetailId] = useState<number | null>(null);
 
@@ -477,12 +502,12 @@ export default function PatentPortfolio() {
                 ["Closed / Completed", closedData, closedTotal, "radial-gradient(closest-side, rgb(100 116 139 / 0.3), transparent)", "Work finished"],
               ] as [string, any[], number, string, string][]).map(([label, ring, total, glow, hint]) => (
                 <TiltCard key={label} glow={glow}>
-                  <div className="px-3 py-2.5">
-                    <div className="mb-1 flex items-center justify-between gap-2">
+                  <div className="px-3.5 py-3">
+                    <div className="mb-1.5 flex items-center justify-between gap-2">
                       <span className="font-display text-sm font-semibold">{label}</span>
                       <span className="truncate text-[10px] text-muted-foreground">{hint}</span>
                     </div>
-                    <Ring3D data={ring} total={total} label="cases" size={92} thickness={13} activeCode={activeOffice} onSelect={(c) => toggleOffice(c ?? activeOffice ?? "")} />
+                    <Ring3D data={ring} total={total} label="cases" size={128} thickness={17} activeCode={activeOffice} onSelect={(c) => toggleOffice(c ?? activeOffice ?? "")} />
                   </div>
                 </TiltCard>
               ))}
@@ -492,14 +517,14 @@ export default function PatentPortfolio() {
             <div className="grid min-h-0 gap-3 lg:grid-cols-12 items-stretch">
               {/* Pending by Stage — clickable bars filter Action Required */}
               <Card className="rounded-2xl border-[var(--glass-border)] bg-[var(--glass-bg)] shadow-3d backdrop-blur-xl h-full min-h-0 flex flex-col lg:col-span-4 lg:order-2">
-                <SectionHead title="Pending Patents by Stage" search={stageSearch}
+                <SectionHead title="Pending Patents by Stage" compact search={stageSearch}
                   onSearch={(v) => setStageSearch(v)} onViewAll={() => setViewAll("stages")}
                   extra={activeStage ? (
                     <button onClick={() => setActiveStage(null)} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
                       <X className="h-3 w-3" /> Clear
                     </button>
                   ) : null} />
-                <CardContent className="pt-2 pb-3 flex-1 min-h-0 flex flex-col">
+                <CardContent className="px-4 pt-1 pb-3 flex-1 min-h-0 flex flex-col">
                   {stageRows.length === 0 ? (
                     <p className="text-xs text-muted-foreground py-6 text-center flex-1">{stageSearch ? "No matching stages." : "No pending patents."}</p>
                   ) : (
@@ -708,41 +733,44 @@ export default function PatentPortfolio() {
             {!insights ? <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-gold" /></div> : (
               <div className="grid gap-3 lg:grid-cols-2 items-stretch fit:h-full fit:min-h-0">
                 <Card className="rounded-2xl border-[var(--glass-border)] bg-[var(--glass-bg)] shadow-3d backdrop-blur-xl h-full min-h-0 flex flex-col">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="font-display text-sm flex items-center gap-2">
-                      <Hourglass className="h-4 w-4 text-amber-500" /> Stuck in a stage
-                      <span className="text-[10px] font-normal text-muted-foreground">past the stage's target duration</span>
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="thin-scrollbar p-0 flex-1 min-h-0 max-h-[420px] fit:max-h-none overflow-y-auto">
-                    {insights.stuck.length === 0 ? <p className="px-4 py-6 text-xs text-muted-foreground">Nothing is running late.</p> : insights.stuck.map((r) => (
-                      <button key={r.id} onClick={() => goTo(`/projects/${r.id}?tab=lifecycle`)}
-                        className="flex w-full items-center justify-between gap-3 border-b border-border px-4 py-2.5 text-left last:border-0 hover:bg-muted/20">
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-1.5 font-mono text-xs font-medium"><HealthDot health={insights.health?.[r.id]} />{r.docket_number ?? "—"}</div>
-                          <div className="truncate text-[11px] text-muted-foreground"><GlossaryText text={r.stage} /> · {r.client ?? ""}</div>
-                        </div>
-                        <span className="shrink-0 rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-amber-600">{r.days}d / {r.target}d</span>
-                      </button>
-                    ))}
+                  <SectionHead icon={<Hourglass className="h-4 w-4 text-amber-500" />} title="Stuck in a stage"
+                    badge={stuckRows.length !== insights.stuck.length ? `${stuckRows.length} of ${insights.stuck.length}` : `${insights.stuck.length} past target`}
+                    search={stuckSearch} onSearch={setStuckSearch} onViewAll={() => setViewAll("stuck")} />
+                  <CardContent className="p-0 flex-1 min-h-0 flex flex-col">
+                    <div ref={stuckFit} className="flex-1 min-h-[280px] fit:min-h-0 overflow-hidden">
+                      {stuckRows.length === 0 ? <p className="px-4 py-6 text-xs text-muted-foreground">{stuckSearch ? "No matching cases." : "Nothing is running late."}</p> : pageOf(stuckRows, stuckPage, stuckPer).map((r) => (
+                        <button key={r.id} onClick={() => goTo(`/projects/${r.id}?tab=lifecycle`)}
+                          className="flex w-full items-center justify-between gap-3 border-b border-border px-4 py-2.5 text-left last:border-0 hover:bg-muted/20">
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5 font-mono text-xs font-medium"><HealthDot health={insights.health?.[r.id]} />{r.docket_number ?? "—"}</div>
+                            <div className="truncate text-[11px] text-muted-foreground"><GlossaryText text={r.stage} /> · {r.client ?? ""}</div>
+                          </div>
+                          <span className="shrink-0 rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-amber-600">{r.days}d / {r.target}d</span>
+                        </button>
+                      ))}
+                    </div>
+                    <SectionPager page={stuckPage} total={stuckRows.length} onPage={setStuckPage} size={stuckPer} />
                   </CardContent>
                 </Card>
 
                 <Card className="rounded-2xl border-[var(--glass-border)] bg-[var(--glass-bg)] shadow-3d backdrop-blur-xl h-full min-h-0 flex flex-col">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="font-display text-sm flex items-center gap-2"><Activity className="h-4 w-4 text-gold" /> What changed this week</CardTitle>
-                  </CardHeader>
-                  <CardContent className="thin-scrollbar p-0 flex-1 min-h-0 max-h-[420px] fit:max-h-none overflow-y-auto">
-                    {insights.changes.length === 0 ? <p className="px-4 py-6 text-xs text-muted-foreground">No changes in the last 7 days.</p> : insights.changes.map((c, i) => (
-                      <button key={i} onClick={() => c.project_id && goTo(`/projects/${c.project_id}${c.kind === "deadline" ? "?tab=deadlines" : c.kind === "stage" ? "?tab=lifecycle" : ""}`)}
-                        className="flex w-full items-start gap-3 border-b border-border px-4 py-2.5 text-left last:border-0 hover:bg-muted/20">
-                        <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${c.kind === "payment" ? "bg-emerald-500" : c.kind === "invoice" ? "bg-blue-500" : c.kind === "deadline" ? "bg-amber-500" : "bg-gold"}`} />
-                        <div className="min-w-0 flex-1">
-                          <div className="text-xs"><GlossaryText text={c.text} /></div>
-                          <div className="text-[10px] text-muted-foreground"><span className="font-mono">{c.docket_number ?? ""}</span> · {new Date(c.at).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}</div>
-                        </div>
-                      </button>
-                    ))}
+                  <SectionHead icon={<Activity className="h-4 w-4 text-gold" />} title="What changed this week"
+                    badge={changeRows.length !== insights.changes.length ? `${changeRows.length} of ${insights.changes.length}` : undefined}
+                    search={changeSearch} onSearch={setChangeSearch} onViewAll={() => setViewAll("changes")} />
+                  <CardContent className="p-0 flex-1 min-h-0 flex flex-col">
+                    <div ref={changesFit} className="flex-1 min-h-[280px] fit:min-h-0 overflow-hidden">
+                      {changeRows.length === 0 ? <p className="px-4 py-6 text-xs text-muted-foreground">{changeSearch ? "No matching changes." : "No changes in the last 7 days."}</p> : pageOf(changeRows, changePage, changesPer).map((c, i) => (
+                        <button key={i} onClick={() => c.project_id && goTo(`/projects/${c.project_id}${c.kind === "deadline" ? "?tab=deadlines" : c.kind === "stage" ? "?tab=lifecycle" : ""}`)}
+                          className="flex w-full items-start gap-3 border-b border-border px-4 py-2.5 text-left last:border-0 hover:bg-muted/20">
+                          <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${c.kind === "payment" ? "bg-emerald-500" : c.kind === "invoice" ? "bg-blue-500" : c.kind === "deadline" ? "bg-amber-500" : "bg-gold"}`} />
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-xs"><GlossaryText text={c.text} /></div>
+                            <div className="text-[10px] text-muted-foreground"><span className="font-mono">{c.docket_number ?? ""}</span> · {new Date(c.at).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}</div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                    <SectionPager page={changePage} total={changeRows.length} onPage={setChangePage} size={changesPer} />
                   </CardContent>
                 </Card>
               </div>
@@ -808,6 +836,30 @@ export default function PatentPortfolio() {
                 columns={[
                   { key: "name", label: "Stage" },
                   { key: "count", label: "Cases", align: "right", value: (s: any) => Number(s.count) },
+                ]} />
+            )}
+            {viewAll === "stuck" && insights && (
+              <SectionDialog title="Stuck in a stage" rows={insights.stuck} onClose={() => setViewAll(null)}
+                initialSort={{ key: "over", dir: "desc" }} empty="Nothing is running late."
+                onRowClick={(r: any) => goTo(`/projects/${r.id}?tab=lifecycle`)}
+                columns={[
+                  { key: "docket_number", label: "Docket", render: (r: any) => <span className="font-mono text-gold">{r.docket_number ?? "—"}</span> },
+                  { key: "client", label: "Client", value: (r: any) => r.client ?? "" },
+                  { key: "stage", label: "Stage" },
+                  { key: "days", label: "Days in stage", value: (r: any) => r.days },
+                  { key: "target", label: "Target", value: (r: any) => r.target },
+                  { key: "over", label: "Over by", value: (r: any) => r.over, render: (r: any) => <span className="font-medium text-amber-600">{r.over}d</span> },
+                ]} />
+            )}
+            {viewAll === "changes" && insights && (
+              <SectionDialog title="What changed this week" rows={insights.changes} onClose={() => setViewAll(null)}
+                initialSort={{ key: "at", dir: "desc" }} empty="No changes in the last 7 days."
+                onRowClick={(c: any) => c.project_id && goTo(`/projects/${c.project_id}`)}
+                columns={[
+                  { key: "at", label: "Date", value: (c: any) => c.at, render: (c: any) => new Date(c.at).toLocaleDateString("en-IN", { day: "numeric", month: "short" }) },
+                  { key: "docket_number", label: "Docket", value: (c: any) => c.docket_number ?? "", render: (c: any) => <span className="font-mono text-gold">{c.docket_number ?? "—"}</span> },
+                  { key: "text", label: "What happened" },
+                  { key: "kind", label: "Kind", render: (c: any) => <span className="capitalize">{c.kind}</span> },
                 ]} />
             )}
             {viewAll === "actions" && (
