@@ -49,13 +49,22 @@ class ClientLedgerSync
                     'notes' => $invoice->invention_title,
                 ];
             }
+            // Balances waived off in the portal (approved): a credit, like a credit note.
+            foreach ($invoices->filter(fn ($i) => (float) $i->waived_amount > 0) as $invoice) {
+                $wanted["reg-waive:{$invoice->id}"] = [
+                    'transaction_date' => $invoice->settled_at ?? now(), 'document_type' => 'Waiver',
+                    'document_reference' => 'Waived → '.($invoice->invoice_uin ?: "INV-{$invoice->id}"),
+                    'debit' => 0, 'credit' => round((float) $invoice->waived_amount * ((float) ($invoice->exchange_rate ?? 1) ?: 1), 2),
+                    'notes' => $invoice->waiver_reason,
+                ];
+            }
             $payments = RegisterPayment::whereIn('patent_invoice_in_id', $invoices->pluck('id'))->with('invoice:id,invoice_uin')->get();
             foreach ($payments as $payment) {
                 $wanted["reg-pay:{$payment->id}"] = [
                     'transaction_date' => $payment->payment_date, 'document_type' => 'Payment',
                     'document_reference' => trim(($payment->payment_number ?: 'Payment').' → '.($payment->invoice?->invoice_uin ?? '')),
                     'debit' => 0, 'credit' => (float) $payment->amount_bcy,
-                    'notes' => $payment->estimated ? 'Paid per Zoho (date estimated)' : $payment->payment_mode,
+                    'notes' => $payment->estimated ? 'Paid per Zoho (date estimated)' : trim(($payment->source === 'portal' ? 'Marked paid in portal · ' : '').($payment->payment_mode ?? ''), ' ·'),
                 ];
             }
 

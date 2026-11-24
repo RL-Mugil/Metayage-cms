@@ -97,6 +97,11 @@ class ZohoRegisterImporter
         if ($row && $row->payment_status === 'Proof Submitted' && ($attrs['payment_status'] ?? null) !== 'Confirmed') {
             unset($attrs['payment_status']);
         }
+        // Marked paid / waived in the portal: Zoho may not show it yet — never raise the balance
+        // back or undo the settlement until Zoho agrees (balance at or below the portal's).
+        if ($row && $row->settlement && isset($attrs['balance_due']) && (float) $attrs['balance_due'] > (float) $row->balance_due + 0.009) {
+            unset($attrs['balance_due'], $attrs['payment_status']);
+        }
         if ($row) {
             // A portal-raised row keeps its own UIN/fees; it gains the Zoho link, status and balance.
             if ($row->source !== 'zoho' && $action === 'linked') {

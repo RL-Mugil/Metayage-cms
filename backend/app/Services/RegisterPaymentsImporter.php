@@ -37,6 +37,15 @@ class RegisterPaymentsImporter
                 if (! $row || ! $date || $amount <= 0) {
                     continue;
                 }
+                // A payment marked in the portal and then recorded in Zoho (by hand, or a write-back
+                // whose reply was lost) is the same money: adopt the portal line instead of adding one.
+                if (! RegisterPayment::where('patent_invoice_in_id', $row->id)->where('zoho_payment_id', $paymentId)->exists()) {
+                    $portal = RegisterPayment::where('patent_invoice_in_id', $row->id)->where('source', 'portal')
+                        ->where('zoho_payment_id', 'like', 'portal:%')->where('amount', $amount)
+                        ->whereBetween('payment_date', [\Carbon\Carbon::parse($date)->subDays(7)->toDateString(), \Carbon\Carbon::parse($date)->addDays(7)->toDateString()])
+                        ->first();
+                    $portal?->update(['zoho_payment_id' => $paymentId]);
+                }
                 RegisterPayment::updateOrCreate(
                     ['patent_invoice_in_id' => $row->id, 'zoho_payment_id' => $paymentId],
                     [
@@ -74,7 +83,8 @@ class RegisterPaymentsImporter
 
             return;
         }
-        $paid = max(0, (float) $row->invoice_amount - (float) $row->balance_due);
+        // Waived amounts are not money received: they never become (estimated) payments.
+        $paid = max(0, (float) $row->invoice_amount - (float) $row->balance_due - (float) $row->waived_amount);
         $recorded = (float) RegisterPayment::where('patent_invoice_in_id', $row->id)->where('zoho_payment_id', '!=', $key)->sum('amount');
         $gap = round($paid - $recorded, 2);
         if ($gap <= 0.009) {

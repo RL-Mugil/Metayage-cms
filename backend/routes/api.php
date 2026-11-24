@@ -218,6 +218,11 @@ Route::middleware(['auth:sanctum', 'firm.context', 'throttle:120,1'])->group(fun
     Route::post('/pending-payments/{id}/proof', [\App\Http\Controllers\RenewalActionController::class, 'submitProof']);
     Route::post('/pending-payments/{id}/confirm', [\App\Http\Controllers\RenewalActionController::class, 'confirmReceipt']);
     Route::post('/pending-payments/{id}/status-note', [\App\Http\Controllers\RenewalActionController::class, 'postStatusNote']);
+    // Settling an invoice from the portal (written back to Zoho Books).
+    Route::post('/pending-payments/{id}/mark-paid', [\App\Http\Controllers\SettlementController::class, 'markPaid']);
+    Route::post('/pending-payments/{id}/waiver', [\App\Http\Controllers\SettlementController::class, 'requestWaiver']);
+    Route::post('/pending-payments/{id}/waiver/decision', [\App\Http\Controllers\SettlementController::class, 'decideWaiver']);
+    Route::post('/pending-payments/{id}/zoho-retry', [\App\Http\Controllers\SettlementController::class, 'retryZoho']);
 
     // Inventor role (Phase 3) — staff manage a case's inventors here.
     Route::get('/inventors', [\App\Http\Controllers\InventorController::class, 'index']);
@@ -295,6 +300,9 @@ Route::middleware(['auth:sanctum', 'firm.context', 'throttle:120,1'])->group(fun
     Route::get('/reports/data', [ReportsController::class, 'getData']);
     Route::post('/reports/generate', [ReportsController::class, 'generate']);
     Route::get('/reports/history', [ReportsController::class, 'history']);
+    // Signed letterhead exports (PIN tries limited) and their verification.
+    Route::post('/reports/download', [ReportsController::class, 'download'])->middleware('throttle:15,1');
+    Route::get('/reports/verify/{code}', [ReportsController::class, 'verify'])->middleware('throttle:30,1');
     Route::get('/reports/history/{id}', [ReportsController::class, 'showHistory']);
 
     // Patent Portfolio

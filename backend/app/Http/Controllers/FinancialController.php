@@ -128,7 +128,7 @@ class FinancialController extends Controller
         abort_unless(in_array($kind, ['billed', 'received', 'outstanding', 'overdue'], true), 422, 'Unknown list.');
         $today = now()->startOfDay();
         $rows = $figures->rows($request->user())->filter(fn ($r) => match ($kind) {
-            'received' => $r['billed'] - $r['outstanding'] > 0.009,
+            'received' => $r['billed'] - $r['outstanding'] - ($r['waived'] ?? 0) > 0.009,
             'outstanding' => $r['outstanding'] > 0.009,
             'overdue' => $r['outstanding'] > 0.009 && $r['due_date'] && $r['due_date']->lt($today),
             default => true,

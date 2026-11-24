@@ -58,7 +58,7 @@ class FinanceFigures
     }
 
     /**
-     * @return array{billed: float, received: float, outstanding: float, overdue_count: int, draft_count: int, paid_count: int, invoice_count: int}
+     * @return array{billed: float, received: float, outstanding: float, waived: float, overdue_count: int, draft_count: int, paid_count: int, invoice_count: int}
      */
     public function summary(User $user, ?int $clientId = null): array
     {
@@ -66,6 +66,7 @@ class FinanceFigures
         $register = $this->registerInvoices($user, $clientId)->selectRaw('
             COALESCE(SUM('.self::TOTAL_INR.'), 0) AS billed,
             COALESCE(SUM('.self::BALANCE_INR.'), 0) AS outstanding,
+            COALESCE(SUM(COALESCE(waived_amount, 0) * COALESCE(NULLIF(exchange_rate, 0), 1)), 0) AS waived,
             SUM(CASE WHEN due_date < ? AND '.self::BALANCE_INR.' > 0 THEN 1 ELSE 0 END) AS overdue_count,
             SUM(CASE WHEN '.self::BALANCE_INR.' <= 0 THEN 1 ELSE 0 END) AS paid_count,
             COUNT(*) AS invoice_count
@@ -82,11 +83,14 @@ class FinanceFigures
 
         $billed = (float) $register->billed + (float) $legacy->billed;
         $outstanding = (float) $register->outstanding + (float) $legacy->outstanding;
+        $waived = (float) $register->waived;
 
         return [
             'billed' => round($billed, 2),
-            'received' => round(max(0, $billed - $outstanding), 2),
+            // Waived-off balances are neither received nor outstanding.
+            'received' => round(max(0, $billed - $outstanding - $waived), 2),
             'outstanding' => round($outstanding, 2),
+            'waived' => round($waived, 2),
             'overdue_count' => (int) $register->overdue_count + (int) $legacy->overdue_count,
             'draft_count' => $drafts,
             'paid_count' => (int) $register->paid_count + (int) $legacy->paid_count,
@@ -155,8 +159,9 @@ class FinanceFigures
                 'id' => $row->id, 'source' => $row->source, 'number' => $row->invoice_uin, 'client_id' => $row->client_id,
                 'project_id' => $row->project_id, 'date' => $row->invoice_date, 'due_date' => $row->due_date,
                 'billed' => $billed, 'outstanding' => $outstanding,
-                'status' => $outstanding <= 0 ? 'paid' : (($row->due_date && $row->due_date->isPast()) ? 'overdue' : strtolower((string) ($row->zoho_status ?: 'sent'))),
+                'status' => $outstanding <= 0 ? ($row->settlement === 'waived' ? 'waived' : 'paid') : (($row->due_date && $row->due_date->isPast()) ? 'overdue' : strtolower((string) ($row->zoho_status ?: 'sent'))),
                 'currency' => $row->currency ?: 'INR', 'balance_due' => $row->balance_due, 'invoice_amount' => (float) $row->invoice_amount,
+                'waived' => round((float) $row->waived_amount * $rate, 2), 'settlement' => $row->settlement,
             ];
         });
         $legacy = $this->legacyInvoices($user, $clientId)->get()->map(fn (Invoice $invoice) => [

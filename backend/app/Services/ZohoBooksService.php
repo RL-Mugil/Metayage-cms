@@ -233,6 +233,42 @@ class ZohoBooksService
         return $invoice;
     }
 
+    /**
+     * Exactly one Books POST: record a customer payment applied to one invoice (portal "Mark
+     * paid" write-back). Returns Zoho's payment_id; throws when Zoho does not confirm it.
+     */
+    public function recordCustomerPayment(string $customerId, string $invoiceId, float $amount, string $date, ?string $mode, ?string $reference): string
+    {
+        abort_unless(preg_match('/^[0-9]{1,80}$/', $customerId) === 1 && preg_match('/^[0-9]{1,80}$/', $invoiceId) === 1, 422, 'Invalid Zoho customer or invoice ID.');
+        $response = $this->request('/customerpayments', [], [
+            'customer_id' => $customerId,
+            'payment_mode' => $mode ?: 'banktransfer',
+            'amount' => round($amount, 2),
+            'date' => $date,
+            'reference_number' => $reference ? mb_substr($reference, 0, 100) : null,
+            'description' => 'Recorded from the MyIPStrategy portal',
+            'invoices' => [['invoice_id' => $invoiceId, 'amount_applied' => round($amount, 2)]],
+        ], 'POST');
+        $data = $response->json();
+        $paymentId = $data['payment']['payment_id'] ?? null;
+        if (! is_array($data) || (int) ($data['code'] ?? -1) !== 0 || ! $paymentId) {
+            throw new RuntimeException('Zoho did not confirm the payment. Check Zoho before trying again.');
+        }
+
+        return (string) $paymentId;
+    }
+
+    /** Exactly one Books POST: write off an invoice's remaining balance (portal waiver write-back). */
+    public function writeOffInvoice(string $invoiceId): void
+    {
+        abort_unless(preg_match('/^[0-9]{1,80}$/', $invoiceId) === 1, 422, 'Invalid Zoho invoice ID.');
+        $response = $this->request('/invoices/' . rawurlencode($invoiceId) . '/writeoff', [], null, 'POST');
+        $data = $response->json();
+        if (! is_array($data) || (int) ($data['code'] ?? -1) !== 0) {
+            throw new RuntimeException('Zoho did not confirm the write-off. Check Zoho before trying again.');
+        }
+    }
+
     public const RESOURCES = [
         'invoices' => ['invoice_id', 'invoice'],
         'estimates' => ['estimate_id', 'estimate'],

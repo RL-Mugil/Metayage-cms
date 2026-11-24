@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\AuditLog;
 use App\Models\Client;
 use App\Models\Employee;
 use App\Models\Invoice;
@@ -140,6 +141,7 @@ class ReportsController extends Controller
             'page' => ['nullable', 'integer', 'min:1'],
             'format' => ['nullable', 'string', Rule::in(['PDF', 'CSV', 'Excel', 'EXCEL'])],
             'client_code' => ['nullable', 'string', 'max:50'],
+            'date' => ['nullable', 'date'],
         ]);
         $user = $request->user();
         $type = (string) ($validated['type'] ?? 'matter-status');
@@ -147,6 +149,10 @@ class ReportsController extends Controller
         $page = (int) ($validated['page'] ?? 1);
         $from = isset($validated['from_date']) ? Carbon::parse($validated['from_date'])->startOfDay() : null;
         $to = isset($validated['to_date']) ? Carbon::parse($validated['to_date'])->endOfDay() : null;
+        if (! empty($validated['date'])) {
+            $from = Carbon::parse($validated['date'])->startOfDay();
+            $to = Carbon::parse($validated['date'])->endOfDay();
+        }
         $clientCode = filled($validated['client_code'] ?? null)
             ? strtoupper(trim((string) $validated['client_code']))
             : null;
@@ -310,32 +316,14 @@ class ReportsController extends Controller
 
     private function financialSummary($user, int $perPage, int $page, ?Carbon $from, ?Carbon $to, ?string $clientCode): array
     {
-        $query = Invoice::with('client', 'project.patentApplication');
-        $this->applyDateRange($query, 'issue_date', $from, $to);
-        $query->when($clientCode, fn ($q) => $q->whereHas('client', fn ($client) => $client->where('client_code', $clientCode)));
-        if ($user->role === 'manager') {
-            $query->whereHas('project', fn ($q) => $q->where('assigned_manager_id', $user->id));
-        } elseif ($user->isGalvanizer()) {
-            $query->whereHas('project', fn ($q) => $user->applyProjectScope($q));
-        }
-
-        $paginator = $query->paginate($perPage, ['*'], 'page', $page);
-        $rows = $paginator->getCollection()->map(fn ($invoice) => [
-            'invoice_code' => $invoice->invoice_code,
-            'client_code' => $invoice->client?->client_code,
-            'project_code' => $invoice->project?->project_code,
-            'application_number' => $invoice->project?->application_number ?? $invoice->project?->patentApplication?->application_number,
-            'client' => $invoice->client?->company_name,
-            'issue_date' => $invoice->issue_date,
-            'due_date' => $invoice->due_date,
-            'total_amount' => $invoice->total_amount,
-            'amount_received' => round((float) $invoice->total_amount - (float) $invoice->balance_due, 2),
-            'balance_due' => $invoice->balance_due,
-            'status' => $invoice->status,
-            'currency' => $invoice->currency,
+        $data = app(\App\Services\Reports\PaymentReportData::class)->build($user, $from, $to, $this->clientIdFor($clientCode));
+        $rows = collect($data['invoices'])->map(fn ($r) => [
+            'Invoice' => $r['invoice'], 'Client' => $r['client'], 'Client code' => $r['client_code'], 'Case' => $r['case'],
+            'Invoice date' => $r['invoice_date'], 'Due date' => $r['due_date'], 'Status' => $r['status'],
+            'Billed' => $r['billed'], 'Received' => $r['received'], 'Waived' => $r['waived'], 'Balance' => $r['balance'],
         ]);
 
-        return $this->paginatedResponse('financial-summary', $rows, $paginator, $perPage);
+        return $this->collectionPaginatedResponse('financial-summary', $rows, $perPage, $page) + ['summary' => $data['summary']];
     }
 
     /**
@@ -733,41 +721,106 @@ class ReportsController extends Controller
 
     private function paymentCollection($user, int $perPage, int $page, ?Carbon $from, ?Carbon $to, ?string $clientCode): array
     {
-        $query = DB::table('tracker_rows')->whereNotNull('client_name');
-        $this->applyDateRange($query, 'delivery_due_date', $from, $to);
-        if ($clientCode) {
-            $query->whereIn('project_id', Project::query()
-                ->whereHas('client', fn ($client) => $client->where('client_code', $clientCode))
-                ->select('id'));
-        }
-        if ($user->isGalvanizer()) {
-            $query->whereIn('circle_id', $this->allowedTrackerCircleIds($user));
-        } elseif ($user->role === 'manager') {
-            $query->whereIn('project_id', Project::query()->where('assigned_manager_id', $user->id)->select('id'));
-        }
-        $paginator = $query
-            ->selectRaw("
-                client_name AS client,
-                COUNT(*) AS total_cases,
-                SUM(CASE WHEN payment_status = 'Paid' THEN 1 ELSE 0 END) AS paid,
-                SUM(CASE WHEN payment_status = 'Partial' THEN 1 ELSE 0 END) AS partial,
-                SUM(CASE WHEN payment_status = 'Pending' THEN 1 ELSE 0 END) AS pending,
-                SUM(CASE WHEN payment_status NOT IN ('Paid', 'Partial', 'Pending') OR payment_status IS NULL THEN 1 ELSE 0 END) AS not_set
-            ")
-            ->groupBy('client_name')
-            ->orderByDesc('total_cases')
-            ->paginate($perPage, ['*'], 'page', $page);
-
-        $rows = collect($paginator->items())->map(fn ($row) => [
-            'Client' => $row->client,
-            'Total Cases' => (int) $row->total_cases,
-            'Paid' => (int) $row->paid,
-            'Partial' => (int) $row->partial,
-            'Pending' => (int) $row->pending,
-            'Not Set' => (int) $row->not_set,
+        $data = app(\App\Services\Reports\PaymentReportData::class)->build($user, $from, $to, $this->clientIdFor($clientCode));
+        $rows = collect($data['pending'])->map(fn ($r) => [
+            'Invoice' => $r['invoice'], 'Client' => $r['client'], 'Client code' => $r['client_code'], 'Contact' => $r['contact'],
+            'Email' => $r['email'], 'Phone' => $r['phone'], 'Due date' => $r['due_date'], 'Days overdue' => $r['days_overdue'],
+            'Status' => $r['status'], 'Billed' => $r['billed'], 'Balance' => $r['balance'], 'Last follow-up' => $r['follow_up'],
         ]);
 
-        return $this->paginatedResponse('payment-collection', $rows, $paginator, $perPage);
+        return $this->collectionPaginatedResponse('payment-collection', $rows, $perPage, $page) + ['summary' => $data['summary']];
+    }
+
+    private function clientIdFor(?string $clientCode): ?int
+    {
+        return $clientCode ? Client::query()->where('client_code', $clientCode)->value('id') : null;
+    }
+
+    /**
+     * Signed, letterhead export of Payment Collection / Financial Summary: Excel (tabs, charts,
+     * filter dropdowns), CSV (one consolidated sheet) or PDF (data sheet with charts).
+     */
+    public function download(Request $request, \App\Services\Reports\PaymentReportData $reportData, \App\Services\Reports\ReportSigner $signer,
+        \App\Services\Letterhead $letterhead)
+    {
+        $request->validate([
+            'type' => ['required', Rule::in(['payment-collection', 'financial-summary'])],
+            'file' => ['required', Rule::in(['xlsx', 'csv', 'pdf'])],
+            'pin' => ['nullable', 'digits:4'],
+        ]);
+        [$type, $user, , , $from, $to, $clientCode] = $this->resolveContext($request);
+        $data = $reportData->build($user, $from, $to, $this->clientIdFor($clientCode));
+        $file = (string) $request->input('file');
+        $title = self::REPORT_NAMES[$type] ?? $type;
+
+        $export = ReportExport::create([
+            'generated_by_id' => $user->id, 'report_type' => $type, 'report_name' => $title,
+            'format' => strtoupper($file === 'xlsx' ? 'EXCEL' : $file),
+            'filters' => ['from_date' => $from?->toDateString(), 'to_date' => $to?->toDateString(), 'client_code' => $clientCode],
+            'row_count' => count($data['pending']) + count($data['payments']) + count($data['invoices']),
+            'snapshot' => $data,
+        ]);
+        $signature = null;
+        if ($request->filled('pin')) {
+            $signed = $signer->sign($export, $data, $user, (string) $request->input('pin'));
+            $signature = ['name' => $user->name, 'role' => ucwords(str_replace('_', ' ', (string) $user->role)),
+                'at' => $signed->signed_at?->timezone('Asia/Kolkata')->format('d M Y, H:i').' IST', 'code' => $signed->verification_code,
+                'url' => rtrim((string) config('app.url'), '/').'/reports?verify='.$signed->verification_code];
+        }
+        AuditLog::create(['user_id' => $user->id, 'action' => 'report_download', 'subject_type' => 'ReportExport', 'subject_id' => $export->id,
+            'metadata' => ['type' => $type, 'file' => $file, 'signed' => (bool) $signature, 'client_code' => $clientCode],
+            'ip_address' => $request->ip(), 'user_agent' => $request->userAgent()]);
+
+        $head = $letterhead->get();
+        $name = str_replace(' ', '-', $title).'-'.now()->format('Y-m-d').($clientCode ? "-{$clientCode}" : '');
+        if ($file === 'pdf') {
+            $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.payment-report', ['title' => $title, 'data' => $data, 'letterhead' => $head, 'signature' => $signature])
+                ->setPaper('a4', 'landscape');
+
+            return $pdf->download("{$name}.pdf");
+        }
+        if ($file === 'xlsx') {
+            $bytes = app(\App\Services\Reports\ExcelReport::class)->render($title, $data, $head, $signature, $type === 'financial-summary');
+
+            return response($bytes, 200, [
+                'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                'Content-Disposition' => "attachment; filename=\"{$name}.xlsx\"",
+            ]);
+        }
+
+        return response()->streamDownload(function () use ($data, $signature, $head) {
+            $out = fopen('php://output', 'w');
+            fwrite($out, "\xEF\xBB\xBF");   // Excel reads UTF-8 (₹, names) correctly
+            fputcsv($out, ['Row type', 'Date', 'Invoice', 'Client', 'Client code', 'Contact', 'Email', 'Phone', 'Due date', 'Days overdue', 'Status', 'Billed', 'Received', 'Waived', 'Balance', 'Payment amount', 'Mode / reason', 'Note'], ',', '"', '');
+            foreach ($data['pending'] as $r) {
+                fputcsv($out, ['Pending', $r['invoice_date'], $r['invoice'], $r['client'], $r['client_code'], $r['contact'], $r['email'], $r['phone'], $r['due_date'], $r['days_overdue'], $r['status'], $r['billed'], $r['received'], $r['waived'], $r['balance'], '', '', $r['follow_up']], ',', '"', '');
+            }
+            foreach ($data['payments'] as $p) {
+                fputcsv($out, ['Payment', $p['date'], $p['invoice'], $p['client'], $p['client_code'], '', '', '', '', '', '', '', '', '', '', $p['amount'], $p['mode'], $p['source']], ',', '"', '');
+            }
+            foreach ($data['waivers'] as $w) {
+                fputcsv($out, ['Waiver', $w['date'], $w['invoice'], $w['client'], $w['client_code'], '', '', '', '', '', '', '', '', $w['amount'], '', '', $w['reason'], $w['approved_by']], ',', '"', '');
+            }
+            fputcsv($out, [], ',', '"', '');
+            fputcsv($out, [$signature ? "Digitally signed by {$signature['name']} ({$signature['role']}) on {$signature['at']} - verification code {$signature['code']} - {$signature['url']}" : 'UNSIGNED DRAFT'], ',', '"', '');
+            fputcsv($out, [$head['company_name'].' - '.$head['address'].' - '.$head['phone'].' - '.$head['web']], ',', '"', '');
+            fclose($out);
+        }, "{$name}.csv", ['Content-Type' => 'text/csv; charset=UTF-8']);
+    }
+
+    /** Is a signed export intact? Rebuilds the fingerprint from the saved export data. */
+    public function verify(Request $request, string $code, \App\Services\Reports\ReportSigner $signer, \App\Services\InternalDocumentSignatureService $signatures): JsonResponse
+    {
+        $signature = $signer->find(strtoupper(trim($code)));
+        abort_unless($signature, 404, 'No signed report has this verification code.');
+        $export = ReportExport::with('generatedBy:id,name')->findOrFail($signature->document_id);
+        $intact = $signatures->verify($signature, $signer->fingerprint($export, (array) $export->snapshot));
+
+        return response()->json([
+            'valid' => $intact, 'report' => $export->report_name, 'format' => $export->format, 'filters' => $export->filters,
+            'signed_by' => $signature->signedBy?->name ?? $export->generatedBy?->name, 'signer_role' => $signature->signer_role,
+            'signed_at' => $signature->signed_at?->toDateTimeString(), 'rows' => $export->row_count,
+        ]);
     }
 
     private function paginatedResponse(string $type, Collection $rows, $paginator, int $perPage): array

@@ -29,6 +29,7 @@ class PatentInvoiceIn extends Model
         // Imported from Zoho Books (ZohoRegisterImporter): the register is the single source of truth.
         'source', 'zoho_invoice_id', 'zoho_number', 'zoho_status', 'due_date',
         'exchange_rate', 'total_bcy', 'balance_due', 'amount_split_pending',
+        'settlement', 'waived_amount', 'waiver_requested_amount', 'waiver_requested_by_id', 'waiver_requested_at', 'waiver_reason', 'settled_by_id', 'settled_at', 'zoho_writeback', 'zoho_writeback_error',
     ];
 
     /** Fields Zoho owns on an imported row; the portal keeps its internal fields (fees, notes). */
@@ -40,6 +41,10 @@ class PatentInvoiceIn extends Model
     ];
 
     protected $casts = [
+        'settled_at'          => 'datetime',
+        'waiver_requested_at' => 'datetime',
+        'waiver_requested_amount' => 'decimal:2',
+        'waived_amount'       => 'decimal:2',
         'invoice_date'        => 'date:Y-m-d',
         'tax_invoice_date'    => 'date:Y-m-d',
         'patent_office_fees'  => 'decimal:2',
@@ -87,6 +92,21 @@ class PatentInvoiceIn extends Model
     public function createdBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by_id');
+    }
+
+    public function settledBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'settled_by_id');
+    }
+
+    public function waiverRequestedBy(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->belongsTo(User::class, 'waiver_requested_by_id');
+    }
+
+    public function payments(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(RegisterPayment::class, 'patent_invoice_in_id');
     }
 
     public function proofDocument(): BelongsTo

@@ -11,6 +11,7 @@ class RegisterPayment extends Model
     protected $fillable = [
         'patent_invoice_in_id', 'client_id', 'zoho_payment_id', 'payment_number', 'payment_date',
         'amount', 'currency', 'exchange_rate', 'amount_bcy', 'payment_mode', 'reference', 'estimated',
+        'source', 'recorded_by_id',
     ];
 
     protected $casts = [
@@ -20,6 +21,11 @@ class RegisterPayment extends Model
         'amount_bcy' => 'decimal:2',
         'estimated' => 'boolean',
     ];
+
+    public function recordedBy(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->belongsTo(User::class, 'recorded_by_id');
+    }
 
     public function invoice(): BelongsTo
     {

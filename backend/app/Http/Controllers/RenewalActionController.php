@@ -470,7 +470,8 @@ class RenewalActionController extends Controller
     public function index(Request $request)
     {
         $user = $request->user();
-        $query = PatentInvoiceIn::with(['project:id,docket_number,project_name', 'client:id,company_name,legal_name,client_code', 'proofDocument:id,file_name,storage_path'])
+        $query = PatentInvoiceIn::with(['project:id,docket_number,project_name', 'client:id,company_name,legal_name,client_code,contact_name,contact_email,phone',
+                'proofDocument:id,file_name,storage_path', 'waiverRequestedBy:id,name'])
             ->whereNotNull('payment_status')
             ->whereNotIn('status', ['Draft', 'Cancelled']);
 
@@ -503,16 +504,48 @@ class RenewalActionController extends Controller
         if ($request->boolean('overdue')) {
             $query->whereNotNull('due_date')->where('due_date', '<', now()->toDateString());
         }
+        // Staff follow-up filters: one client, an ageing band, a date or date range, waivers to decide.
+        if (! $user->isClientRole() && $request->filled('client_id')) {
+            $query->where('client_id', (int) $request->get('client_id'));
+        }
+        $today = now()->startOfDay();
+        $age = (string) $request->get('age', '');
+        if ($age !== '') {
+            $daysAgo = fn (int $d) => $today->copy()->subDays($d)->toDateString();
+            match ($age) {
+                'not_due' => $query->where(fn ($q) => $q->whereNull('due_date')->orWhere('due_date', '>=', $today->toDateString())),
+                '1_30' => $query->where('due_date', '<', $today->toDateString())->where('due_date', '>=', $daysAgo(30)),
+                '31_60' => $query->where('due_date', '<', $daysAgo(30))->where('due_date', '>=', $daysAgo(60)),
+                '61_90' => $query->where('due_date', '<', $daysAgo(60))->where('due_date', '>=', $daysAgo(90)),
+                '90_plus' => $query->where('due_date', '<', $daysAgo(90)),
+                default => null,
+            };
+        }
+        $dateField = $request->get('date_field') === 'due' ? 'due_date' : 'invoice_date';
+        if ($request->filled('date')) {
+            $query->whereDate($dateField, $request->date('date')->toDateString());
+        } else {
+            if ($request->filled('from')) {
+                $query->whereDate($dateField, '>=', $request->date('from')->toDateString());
+            }
+            if ($request->filled('to')) {
+                $query->whereDate($dateField, '<=', $request->date('to')->toDateString());
+            }
+        }
+        if ($request->boolean('waivers')) {
+            $query->where('settlement', 'waiver_requested');
+        }
 
         $balanceSql = 'COALESCE(balance_due, invoice_amount)';
         $totals = (clone $query)->reorder()->select('currency')->selectRaw("COALESCE(SUM({$balanceSql}), 0) AS amount")->groupBy('currency')
             ->pluck('amount', 'currency')->map(fn ($amount) => round((float) $amount, 2));
         $overdue = (clone $query)->whereNotNull('due_date')->where('due_date', '<', now()->toDateString())->count();
+        $staff = ! $user->isClientRole();
+        $scoped = fn () => PatentInvoiceIn::query()->when($user->isGalvanizer(), fn ($q) => $q->whereHas('project', fn ($p) => $user->applyProjectScope($p)));
 
         // Most overdue first, then the newest.
         $page = $query->orderByRaw('due_date ASC NULLS LAST')->orderByDesc('invoice_date')->orderByDesc('id')
             ->paginate(min((int) $request->get('per_page', 25), 100));
-        $today = now()->startOfDay();
         $page->getCollection()->transform(function (PatentInvoiceIn $row) use ($today) {
             $row->setAttribute('balance', (float) ($row->balance_due ?? $row->invoice_amount));
             $row->setAttribute('days_overdue', $row->due_date && $row->due_date->lt($today) ? (int) $row->due_date->diffInDays($today) : 0);
@@ -528,6 +561,20 @@ class RenewalActionController extends Controller
             'pending_totals' => $totals,
             'pending_count' => $page->total(),
             'overdue_count' => $overdue,
+            // Staff only: waivers to decide, settlements not yet in Zoho, waived this year, clients for the filter.
+            'waivers_pending' => $staff ? $scoped()->where('settlement', 'waiver_requested')->count() : 0,
+            'writeback_pending' => $staff ? $scoped()->whereIn('zoho_writeback', ['pending', 'failed'])->count() : 0,
+            'waived_this_year' => $staff ? round((float) $scoped()->where('waived_amount', '>', 0)->whereYear('settled_at', now()->year)
+                ->sum(\Illuminate\Support\Facades\DB::raw('waived_amount * COALESCE(NULLIF(exchange_rate, 0), 1)')), 2) : 0,
+            'clients' => $staff ? Client::whereIn('id', $scoped()->whereNotNull('client_id')->where('type', 'invoice')->whereNotIn('status', ['Draft', 'Cancelled'])
+                ->where('payment_status', '!=', 'Confirmed')->where(fn ($q) => $q->whereNull('balance_due')->orWhere('balance_due', '>', 0))->select('client_id'))
+                ->orderBy('legal_name')->get(['id', 'legal_name', 'company_name', 'client_code'])
+                ->map(fn ($c) => ['id' => $c->id, 'name' => $c->legal_name ?: $c->company_name, 'code' => $c->client_code])->values() : [],
+            'can' => [
+                'mark_paid' => in_array($user->role, \App\Services\InvoiceSettlement::PAY_ROLES, true),
+                'request_waiver' => in_array($user->role, \App\Services\InvoiceSettlement::WAIVE_REQUEST_ROLES, true),
+                'approve_waiver' => in_array($user->role, \App\Services\InvoiceSettlement::WAIVE_APPROVE_ROLES, true),
+            ],
         ]));
     }
 }
