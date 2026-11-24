@@ -167,6 +167,7 @@ Route::middleware(['auth:sanctum', 'firm.context', 'throttle:120,1'])->group(fun
     Route::get('/invention-families/{family}', [InventionFamilyController::class, 'show']);
     Route::post('/invention-families/{family}/engagements', [InventionFamilyController::class, 'storeBranch']);
     Route::put('/projects/{id}', [ProjectController::class, 'update']);
+    Route::get('/projects/{id}/service-change-preview', [ProjectController::class, 'serviceChangePreview']);
     Route::delete('/projects/{id}', [ProjectController::class, 'destroy']);
     Route::post('/projects/{id}/stage', [ProjectController::class, 'updateStage']);
     // Work-stage log (case Lifecycle tab): record / back-log stage dates.

@@ -578,65 +578,12 @@ class ProjectController extends Controller
         // code + invention number + office code — since that's the same real-world case
         // regardless of which service engagement created the application first.
         $svc = strtoupper($validated['service_code'] ?? '');
-        $prosecutionSvcs = [
-            // India
-            'PRV', 'CPT', 'CPD', 'CVP', 'CPE', 'PCT', 'NAP', 'NPE', 'NAF', 'NPA',
-            'DVA', 'PAD', '9EP', '98A', '18F', '18A', 'FER', 'SER', 'TER',
-            'HRG', 'GRT', 'RNF', 'REN', 'OPP', 'PGO', '27F', 'ROA', 'ERH', '24F',
-            'RPO', 'ABN', 'WDR',
-            // US
-            'NPV', 'NPD', 'NPP', 'NPS', 'CNS', 'DIV', 'CIP', 'OAR', 'AFT', 'RCE',
-            'APP', 'ISF', 'M35', 'M75', 'M15', 'REI', 'XPR', 'REV', 'IPR', 'PGR',
-        ];
-        // The firm's own US codes (Settings → Service Codes, tagged US) on a US case.
-        $usFirmSvcs = ['PRD', 'CPT', 'PIA', 'NPE', 'CON', 'FMP', 'IDS', 'TRC', 'RRT', 'NFO', 'FOA', 'QOA', 'EXI', 'APL', 'APR', 'NOA', 'MFE', 'REN', 'PGV', 'PAM', 'C46'];
-        if (strtoupper((string) $project->patent_office_code) === 'US') {
-            $prosecutionSvcs = array_merge($prosecutionSvcs, $usFirmSvcs);
-        }
-        if (in_array($svc, $prosecutionSvcs, true)) {
-            $syncService = app(ApplicationNumberSyncService::class);
-            $prefix = $syncService->docketPrefix($project->docket_number, $project->service_code);
+        if (\App\Services\ServiceChangeService::isProsecution($svc, $project->patent_office_code)) {
+            // Same link as a later service change (ServiceChangeService): parent's or a
+            // same-prefix sibling's application, or a new one.
+            app(\App\Services\ServiceChangeService::class)->linkPatentApplication($project, $family);
+            $project->refresh();
 
-            $parentAppId = $project->parent_project_id
-                ? Project::where('id', $project->parent_project_id)->value('patent_application_id')
-                : null;
-
-            // Independently-created siblings sharing the same docket prefix — no
-            // formal parent/successor relationship, and no application number
-            // entered yet — are still the same real-world case; link immediately
-            // rather than waiting for someone to type an application number later.
-            $siblingAppId = (! $parentAppId && $prefix)
-                ? Project::where('client_id', $project->client_id)
-                    ->where('id', '!=', $project->id)
-                    ->where('docket_number', 'like', $prefix.'%')
-                    ->whereNotNull('patent_application_id')
-                    ->value('patent_application_id')
-                : null;
-
-            $appId = $parentAppId ?: $siblingAppId ?: \App\Models\PatentApplication::create([
-                'invention_family_id' => $family->id,
-                'client_id'          => $project->client_id,
-                'application_number' => $project->application_number,
-                'title'              => $project->invention_title ?: $project->project_name,
-                'priority_date'      => $project->priority_date,
-                'filing_date'        => $project->filing_date,
-                'legal_status'       => 'Pending',
-                'jurisdiction'       => $project->patent_office_code ?: 'IN',
-            ])->id;
-            $project->update(['patent_application_id' => $appId]);
-            // (Nothing to retag here: $project was just created, so it cannot yet
-            // have any DocketEvent/DocketDeadline history of its own — unlike
-            // ApplicationNumberSyncService::backfill(), which links pre-existing
-            // siblings and does need relinkDocketRecords().)
-
-            // A REN/RNF engagement existing at all means the underlying patent is
-            // already granted — covers legacy/manually-entered renewal cases that
-            // never went through an explicit "granted" status transition in this
-            // system. Sets patent_granted + syncs the shared application's
-            // legal_status (and, via that, auto-generates the renewal schedule) —
-            // but deliberately never touches this project's own `status` column
-            // (that stays whatever its normal lifecycle value is), since forcing it
-            // to "Granted" would exclude it from ActionItemService's action feed.
             if (in_array($svc, ['RNF', 'REN'], true)) {
                 $project->update(['patent_granted' => true]);
                 // No $user in scope here — this method is also called from bulk
@@ -662,28 +609,25 @@ class ProjectController extends Controller
         // from matching docket events (see StageAdvancementService). Fall back to the
         // legacy hardcoded stage list for any jurisdiction/service combination that
         // isn't templated yet, so project creation never hard-fails.
-        if (TrademarkMatterService::isTrademarkCode($svc)) {
-            app(TrademarkMatterService::class)->seedStages($project);
-            return $project;
-        }
-        try {
-            $template = app(JurisdictionLifecycleService::class)->resolve($project->patent_office_code ?: 'IN', $svc);
-            app(JurisdictionLifecycleService::class)->apply($project, $template);
-        } catch (ValidationException $e) {
-            $serviceStages = $this->stagesForServiceCode($svc);
-            foreach ($serviceStages as $index => $stageName) {
-                ProjectStage::create([
-                    'project_id'     => $project->id,
-                    'stage_name'     => $stageName,
-                    'status'         => $index === 0 ? 'In Progress' : 'Pending',
-                    'sequence_order' => $index,
-                    'duration_days'  => 15,
-                    'due_date'       => Carbon::now()->addDays(($index + 1) * 15),
-                ]);
-            }
-        }
+        app(\App\Services\ServiceChangeService::class)->seed($project);
 
         return $project;
+    }
+
+    /** What changing this case's service / office would do (docket, workflow, landing stage) — nothing is saved. */
+    public function serviceChangePreview(Request $request, $id)
+    {
+        $project = Project::findOrFail($id);
+        $this->authorize('update', $project);
+        $validated = $request->validate([
+            'office' => ['required', 'string', 'regex:/^[A-Za-z0-9]{2}$/'],
+            'service' => ['required', 'string', 'regex:/^[A-Za-z0-9]{3,5}$/'],
+        ]);
+
+        return response()->json([
+            'from_service' => $project->service_code, 'from_docket' => $project->docket_number,
+            ...app(\App\Services\ServiceChangeService::class)->preview($project, $validated['office'], $validated['service']),
+        ]);
     }
 
     public function update(UpdateProjectRequest $request, $id)
@@ -720,6 +664,9 @@ class ProjectController extends Controller
             });
         }
 
+        $fromService = strtoupper((string) $project->service_code);
+        $fromOffice = strtoupper((string) $project->patent_office_code);
+        $fromDocket = $project->docket_number;
         if (array_key_exists('patent_office_code', $validated) || array_key_exists('service_code', $validated)) {
             $validated = array_merge($validated, app(DocketNumberService::class)->recanonicalize(
                 $project,
@@ -729,6 +676,13 @@ class ProjectController extends Controller
         }
 
         $project->update($validated);
+
+        // The workflow follows the service: a changed service (or office) rebuilds the
+        // stages for the new one, carrying intake progress (ServiceChangeService).
+        if (strtoupper((string) $project->service_code) !== $fromService || strtoupper((string) $project->patent_office_code) !== $fromOffice) {
+            app(\App\Services\ServiceChangeService::class)->apply($project->fresh(), $fromService, $fromDocket, $user->id, 'edit');
+            $project->refresh();
+        }
 
         if (isset($inventorIds) || array_key_exists('patent_office_code', $validated)) {
             app(\App\Services\ForeignFilingPermission::class)->sync($project->fresh());
@@ -950,7 +904,7 @@ class ProjectController extends Controller
         return $this->stagesForServiceCode($svc);
     }
 
-    private function stagesForServiceCode(string $svc): array
+    public function stagesForServiceCode(string $svc): array
     {
         $trademarkTemplates = config('trademark_lifecycle.templates');
         if (isset($trademarkTemplates[$svc])) {

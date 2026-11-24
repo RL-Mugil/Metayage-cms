@@ -1,3 +1,4 @@
+import { ServiceChangeNotice } from "@/components/projects/service-change-notice";
 import { Head, Link, router, usePage } from "@inertiajs/react";
 import { useEffect, useState, useMemo, useRef, useCallback } from "react";
 import { FitPage } from "@/components/modern/fit-page";
@@ -2254,6 +2255,12 @@ export default function Projects() {
                       locked={featLockCodeDropdown}
                     />
                   </div>
+                  {editProj && (
+                    <div className="col-span-4 -mt-1">
+                      <ServiceChangeNotice projectId={editProj.id} fromService={String(editProj.service_code ?? "")} fromOffice={String(editProj.patent_office_code ?? "")}
+                        service={form.service_code} office={form.patent_office_code} />
+                    </div>
+                  )}
                   {!isTrademarkCode(form.service_code) && (<>
                   <div>
                     <FLbl>Technology Field</FLbl>

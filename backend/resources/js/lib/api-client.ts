@@ -312,6 +312,16 @@ export interface DashboardTrends {
   quoted: number[]
 }
 
+export interface ServiceChangePreview {
+  from_service: string
+  from_docket: string
+  docket: string | null
+  docket_error: string | null
+  workflow: string
+  stages: { name: string; status: string }[]
+  lands_on: string | null
+}
+
 export interface ManualPayslipInput {
   period: string
   lop_days?: number | null
@@ -1670,6 +1680,10 @@ export const api = {
   /** Sign & publish every payslip of a finalized or paid run with the signatory's PIN. */
   async publishPayrollRun(runId: number | string, pin: string): Promise<{ message: string; signed: number; total: number }> {
     return this.request(`/payroll/runs/${runId}/publish`, { method: 'POST', body: JSON.stringify({ pin }) })
+  },
+  /** What changing a case's service / office would do (docket, workflow, landing stage). Saves nothing. */
+  async getServiceChangePreview(projectId: number | string, office: string, service: string): Promise<ServiceChangePreview> {
+    return this.request(`/projects/${projectId}/service-change-preview?office=${encodeURIComponent(office)}&service=${encodeURIComponent(service)}`)
   },
   async previewManualPayslip(employeeId: number | string, data: ManualPayslipInput): Promise<ManualPayslipPreview> {
     return this.request(`/payroll/employees/${employeeId}/manual-payslip/preview`, { method: 'POST', body: JSON.stringify(data) })
