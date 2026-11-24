@@ -149,7 +149,7 @@ export default function OfficeGlobe(props: GlobeProps) {
   const t = tip ? { g: props.granted[tip.code] ?? 0, a: props.active[tip.code] ?? 0, o: props.other[tip.code] ?? 0 } : null
 
   return (
-    <div ref={wrap} className="relative h-[380px] w-full touch-none select-none overflow-hidden rounded-xl bg-gradient-to-b from-sky-50 to-white dark:from-slate-900 dark:to-slate-950"
+    <div ref={wrap} className="relative h-[380px] fit:h-auto fit:min-h-[300px] fit:flex-1 w-full touch-none select-none overflow-hidden rounded-xl bg-gradient-to-b from-sky-50 to-white dark:from-slate-900 dark:to-slate-950"
       onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerLeave={up}>
       <Canvas camera={{ position: [0, 0, 3.6], fov: 40 }} dpr={[1, 1.5]} gl={{ antialias: true, alpha: true }}
         onCreated={({ camera }) => camera.lookAt(0, 0, 0)}>

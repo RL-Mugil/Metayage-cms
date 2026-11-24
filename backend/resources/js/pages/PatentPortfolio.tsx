@@ -8,7 +8,8 @@ import { Ring3D } from "@/components/modern/ring-3d";
 import { HBar3D } from "@/components/modern/bar-3d";
 import { SegmentTabs } from "@/components/modern/segment-tabs";
 import { staggerParent } from "@/components/modern/glass-card";
-import { motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
+import { useFitRows } from "@/components/modern/use-fit-rows";
 
 const OfficeGlobe = lazy(() => import("@/components/portfolio/office-globe"));
 import { SavedViewsBar } from "@/components/saved-views-bar";
@@ -55,6 +56,9 @@ const pageOf = <T,>(rows: T[], page: number, size = PAGE_SIZE): T[] => rows.slic
 
 /** Rows per page that fill each card: renewal rows are shorter than payment rows, stage bars shorter still. */
 const RENEWAL_PAGE = 6;
+
+const PORTFOLIO_TABS = ["overview", "renewals", "insights", "map"] as const;
+type PortfolioTab = typeof PORTFOLIO_TABS[number];
 
 const monthLabel = (key: string) => new Date(`${key}-01T00:00:00`).toLocaleDateString("en-IN", { month: "short", year: "numeric" });
 const compactInr = (v: number) => (v >= 100000 ? `₹${(v / 100000).toFixed(1)}L` : `₹${Math.round(v / 1000)}k`);
@@ -182,6 +186,23 @@ export default function PatentPortfolio() {
   const [renewalView, setRenewalView] = useState<"list" | "calendar">("list");
   const [insights, setInsights] = useState<PortfolioInsights | null>(null);
   const [hubOpen, setHubOpen] = useState(false);
+  const [tab, setTabState] = useState<PortfolioTab>(() => {
+    const wanted = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("tab") : null;
+    return (PORTFOLIO_TABS as readonly string[]).includes(wanted ?? "") ? (wanted as PortfolioTab) : "overview";
+  });
+  const setTab = (next: PortfolioTab) => {
+    setTabState(next);
+    const url = new URL(window.location.href);
+    if (next === "overview") url.searchParams.delete("tab"); else url.searchParams.set("tab", next);
+    window.history.replaceState(window.history.state, "", url);
+  };
+  // Rows per page follow the card height on fit-to-screen layouts (header row + pager reserved).
+  const [actionsFit, actionsPer] = useFitRows(46, PAGE_SIZE, 78);
+  const [renewalsFit, renewalsPer] = useFitRows(62, RENEWAL_PAGE);
+  const [paymentsFit, paymentsPer] = useFitRows(70, PAGE_SIZE);
+  useEffect(() => { setPage(1); }, [actionsPer]);
+  useEffect(() => { setRenewalPage(1); }, [renewalsPer]);
+  useEffect(() => { setPaymentPage(1); }, [paymentsPer]);
   const [mapView, setMapView] = useState<"globe" | "tiles">("globe");
   const [globeOk] = useState(() => typeof window !== "undefined" && canUseWebGL()
     && !window.matchMedia("(prefers-reduced-motion: reduce)").matches && window.innerWidth >= 640);
@@ -326,8 +347,9 @@ export default function PatentPortfolio() {
     return rows;
   }, [actionRows, activeOffice, activeStatus, activeStage, actionSearch, sortCol, sortDir]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / actionsPer));
+  const paged = filtered.slice((page - 1) * actionsPer, page * actionsPer);
+  const overdueRenewals = ((data?.upcoming_renewals ?? []) as any[]).filter((r: any) => typeof r.days === "number" && r.days < 0).length;
 
   const filteredClients = data
     ? (data.clients as any[]).filter((c: any) => {
@@ -349,109 +371,105 @@ export default function PatentPortfolio() {
   return (
     <AppLayout>
       <Head title="Patent Portfolio" />
-      <PageHeader
-        eyebrow="Analytics"
-        title="Patent Portfolio"
-        description="Click chart segments or bars to filter the Action Required table."
-        actions={
-          <>
+      {/* One screen per tab (like the Dashboard): compact header, then the tab fills the window. */}
+      <div className="surface-mesh flex min-h-[calc(100dvh-3.5rem)] flex-col fit:h-[calc(100dvh-3.5rem)] fit:overflow-hidden">
+        <header className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 px-4 pt-4 pb-2 sm:px-6">
+          <div className="mr-auto min-w-0">
+            <h1 className="truncate font-display text-xl font-semibold tracking-tight sm:text-2xl">Patent Portfolio</h1>
+            <p className="truncate text-xs text-muted-foreground">
+              {data ? `${data.total_unique_cases} cases · ${activeTotal} active · ${grantedTotal} granted` : "Loading…"}
+            </p>
+          </div>
+          {/* Client selector — internal users only; clients are locked to their own data */}
+          {!isClientUser && (
+          <div className="relative w-56">
+            <button
+              onClick={() => setShowClientDrop(!showClientDrop)}
+              className="glass flex items-center gap-2 w-full rounded-full px-3 py-1.5 text-sm text-left hover:border-gold/50 transition-colors"
+            >
+              <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+              <span className="flex-1 truncate font-medium">{selectedClientName}</span>
+              <ChevronDown className="h-4 w-4 text-muted-foreground" />
+            </button>
+            {showClientDrop && (
+              <div className="absolute z-50 mt-1 w-full rounded-lg border border-border bg-background shadow-xl">
+                <div className="p-2 border-b border-border">
+                  <input autoFocus type="text" placeholder="Search client…" value={clientSearch}
+                    onChange={e => setClientSearch(e.target.value)}
+                    className="w-full h-8 rounded-md border border-border bg-background px-3 text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
+                </div>
+                <div className="max-h-56 overflow-y-auto">
+                  <button onClick={() => selectClient(null)} className="w-full text-left px-3 py-2 text-sm hover:bg-muted/40 text-muted-foreground">All Clients</button>
+                  {filteredClients.map((c: any) => (
+                    <button key={c.id} onClick={() => selectClient(c)}
+                      className="w-full text-left px-3 py-2 text-sm hover:bg-muted/40 flex items-center justify-between gap-2">
+                      <span className="font-medium">{c.company_name ?? c.legal_name}</span>
+                      <span className="text-xs text-muted-foreground font-mono">{c.client_code}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+          )}
+
+          <SegmentTabs value={tab} onChange={setTab} options={[
+            { value: "overview", label: "Overview" },
+            { value: "renewals", label: "Renewals & Payments", badge: overdueRenewals },
+            { value: "insights", label: "Insights", badge: insights?.stuck.length ?? 0 },
+            { value: "map", label: "Map" },
+          ]} />
+          <div className="flex items-center gap-2">
             <AnalystRoleFilter value={roleFilter} onChange={(v) => { setRoleFilter(v); }} />
             {!isClientUser && selectedClientId && ["super_admin", "partner", "director", "manager", "finance"].includes(role) && (
-              <button onClick={() => setHubOpen(true)}
-                className="flex items-center gap-1.5 rounded-md border border-gold/40 px-3 py-1.5 text-sm text-gold hover:bg-gold/10 transition-colors">
+              <button onClick={() => setHubOpen(true)} title="Client hub"
+                className="glass flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium text-gold hover:bg-gold/10 transition-colors">
                 <Inbox className="h-3.5 w-3.5" /> Client hub
               </button>
             )}
-            <button
-              onClick={() => load(selectedClientId, roleFilter)}
-              className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
-            >
-              <RefreshCw className="h-3.5 w-3.5" /> Refresh
+            <button onClick={() => load(selectedClientId, roleFilter)} title="Refresh" aria-label="Refresh"
+              className="glass flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground hover:text-foreground transition-colors">
+              <RefreshCw className="h-3.5 w-3.5" />
             </button>
-          </>
-        }
-      />
+          </div>
+        </header>
 
-      <div className="surface-mesh min-h-full px-4 py-4 sm:px-8 sm:py-6 space-y-5">
-        <SavedViewsBar page="patent_portfolio"
-          hasFilters={!!(activeOffice || activeStatus || activeStage || actionSearch || selectedClientId)}
-          current={{ client_id: selectedClientId, office: activeOffice, status: activeStatus, stage: activeStage, search: actionSearch, sort: sortCol, dir: sortDir }}
-          onApply={(f) => {
-            const client = (f.client_id as number | null) ?? null;
-            if (!isClientUser && client !== selectedClientId) { setSelectedClientId(client); load(client, roleFilter); }
-            setActiveOffice((f.office as string | null) ?? null);
-            setActiveStatus((f.status as string | null) ?? null);
-            setActiveStage((f.stage as string | null) ?? null);
-            setActionSearch((f.search as string) ?? "");
-            if (f.sort) setSortCol(f.sort as typeof sortCol);
-            if (f.dir) setSortDir(f.dir as typeof sortDir);
-            setPage(1);
-          }} />
+        <div className="flex shrink-0 flex-wrap items-center gap-2 px-4 pb-2 empty:hidden sm:px-6">
+          <SavedViewsBar page="patent_portfolio"
+            hasFilters={!!(activeOffice || activeStatus || activeStage || actionSearch || selectedClientId)}
+            current={{ client_id: selectedClientId, office: activeOffice, status: activeStatus, stage: activeStage, search: actionSearch, sort: sortCol, dir: sortDir }}
+            onApply={(f) => {
+              const client = (f.client_id as number | null) ?? null;
+              if (!isClientUser && client !== selectedClientId) { setSelectedClientId(client); load(client, roleFilter); }
+              setActiveOffice((f.office as string | null) ?? null);
+              setActiveStatus((f.status as string | null) ?? null);
+              setActiveStage((f.stage as string | null) ?? null);
+              setActionSearch((f.search as string) ?? "");
+              if (f.sort) setSortCol(f.sort as typeof sortCol);
+              if (f.dir) setSortDir(f.dir as typeof sortDir);
+              setPage(1);
+            }} />
 
-        {/* Phones: jump between sections */}
-        <nav className="sticky top-0 z-10 -mx-4 flex gap-1.5 overflow-x-auto bg-background/95 px-4 py-2 backdrop-blur sm:hidden">
-          {[["pf-actions", "Action Required"], ["pf-renewals", "Renewals"], ["pf-payments", "Payments"], ["pf-week", "This week"], ["pf-map", "Map"]].map(([id, label]) => (
-            <a key={id} href={`#${id}`} className="shrink-0 rounded-full border border-border px-3 py-1 text-xs">{label}</a>
-          ))}
-        </nav>
-
-        {/* Client selector — internal users only; clients are locked to their own data */}
-        {!isClientUser && (
-        <div className="relative max-w-xs">
-          <button
-            onClick={() => setShowClientDrop(!showClientDrop)}
-            className="flex items-center gap-2 w-full rounded-lg border border-border bg-card px-4 py-2.5 text-sm text-left hover:border-gold/50 transition-colors"
-          >
-            <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-            <span className="flex-1 font-medium">{selectedClientName}</span>
-            <ChevronDown className="h-4 w-4 text-muted-foreground" />
-          </button>
-          {showClientDrop && (
-            <div className="absolute z-50 mt-1 w-full rounded-lg border border-border bg-background shadow-xl">
-              <div className="p-2 border-b border-border">
-                <input autoFocus type="text" placeholder="Search client…" value={clientSearch}
-                  onChange={e => setClientSearch(e.target.value)}
-                  className="w-full h-8 rounded-md border border-border bg-background px-3 text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
-              </div>
-              <div className="max-h-56 overflow-y-auto">
-                <button onClick={() => selectClient(null)} className="w-full text-left px-3 py-2 text-sm hover:bg-muted/40 text-muted-foreground">All Clients</button>
-                {filteredClients.map((c: any) => (
-                  <button key={c.id} onClick={() => selectClient(c)}
-                    className="w-full text-left px-3 py-2 text-sm hover:bg-muted/40 flex items-center justify-between gap-2">
-                    <span className="font-medium">{c.company_name ?? c.legal_name}</span>
-                    <span className="text-xs text-muted-foreground font-mono">{c.client_code}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
+          {activeOffice && (
+            <span className="flex items-center gap-1 rounded-full bg-gold/15 text-gold border border-gold/30 px-2 py-0.5 text-xs font-medium">
+              <MapPin className="h-3 w-3" /> {ol(activeOffice)}
+              <button onClick={() => setActiveOffice(null)} aria-label="Clear office filter"><X className="h-3 w-3 ml-0.5" /></button>
+            </span>
           )}
         </div>
-        )}
 
-        {loading ? (
+        <main className="min-h-0 flex-1 px-4 pb-4 sm:px-6 fit:overflow-hidden">
+        {loading || !data ? (
           <div className="flex items-center justify-center py-24">
             <Loader2 className="h-8 w-8 animate-spin text-gold" />
           </div>
         ) : (
           <>
-            {/* Row 1: Status donuts — Granted / Active / Refused-Abandoned / Closed-Completed,
-                one card each, aligned left-to-right in a single line. Each case (deduped by
-                client+invention+office) lands in exactly one chart, so the four totals always
-                sum to Total Cases. */}
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-muted-foreground">
-                Total Cases: <span className="font-semibold text-foreground">{data.total_unique_cases}</span>
-                <span className="mx-1.5 text-border">·</span>
-                Chart sum: <span className={`font-semibold ${chartsTotal === data.total_unique_cases ? "text-foreground" : "text-destructive"}`}>{chartsTotal}</span>
-              </span>
-              {activeOffice && (
-                <span className="flex items-center gap-1 rounded-full bg-gold/15 text-gold border border-gold/30 px-2 py-0.5 text-xs font-medium">
-                  <MapPin className="h-3 w-3" /> {ol(activeOffice)}
-                  <button onClick={() => setActiveOffice(null)}><X className="h-3 w-3 ml-0.5" /></button>
-                </span>
-              )}
-            </div>
-            <motion.div variants={staggerParent} initial="hidden" animate="show" className="grid gap-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-4">
+          <AnimatePresence mode="wait">
+          <motion.div key={tab} className="h-full" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.18 }}>
+          {tab === "overview" && (
+            <div className="flex flex-col gap-3 fit:grid fit:h-full fit:grid-rows-[auto_minmax(0,1fr)]">
+            <motion.div variants={staggerParent} initial="hidden" animate="show" className="grid gap-3 grid-cols-1 sm:grid-cols-2 xl:grid-cols-4">
               {([
                 ["Granted", grantedData, grantedTotal, "radial-gradient(closest-side, rgb(34 197 94 / 0.35), transparent)", "Patents in force"],
                 ["Active", activeData, activeTotal, "radial-gradient(closest-side, rgb(245 158 11 / 0.35), transparent)", "Open · In Progress · On Hold"],
@@ -459,46 +477,45 @@ export default function PatentPortfolio() {
                 ["Closed / Completed", closedData, closedTotal, "radial-gradient(closest-side, rgb(100 116 139 / 0.3), transparent)", "Work finished"],
               ] as [string, any[], number, string, string][]).map(([label, ring, total, glow, hint]) => (
                 <TiltCard key={label} glow={glow}>
-                  <div className="p-4">
-                    <div className="mb-2 flex items-center justify-between">
+                  <div className="px-3 py-2.5">
+                    <div className="mb-1 flex items-center justify-between gap-2">
                       <span className="font-display text-sm font-semibold">{label}</span>
-                      <span className="text-[10px] text-muted-foreground">{hint}</span>
+                      <span className="truncate text-[10px] text-muted-foreground">{hint}</span>
                     </div>
-                    <Ring3D data={ring} total={total} label="cases" size={132} thickness={18} activeCode={activeOffice} onSelect={(c) => toggleOffice(c ?? activeOffice ?? "")} />
+                    <Ring3D data={ring} total={total} label="cases" size={92} thickness={13} activeCode={activeOffice} onSelect={(c) => toggleOffice(c ?? activeOffice ?? "")} />
                   </div>
                 </TiltCard>
               ))}
             </motion.div>
 
             {/* Row 3: Pending by Stage + Action Required — same height side by side */}
-            <div className="grid gap-4 lg:grid-cols-12 items-stretch">
+            <div className="grid min-h-0 gap-3 lg:grid-cols-12 items-stretch">
               {/* Pending by Stage — clickable bars filter Action Required */}
-              <Card className="rounded-2xl border-[var(--glass-border)] bg-[var(--glass-bg)] shadow-3d backdrop-blur-xl h-full flex flex-col lg:col-span-4 lg:order-2">
+              <Card className="rounded-2xl border-[var(--glass-border)] bg-[var(--glass-bg)] shadow-3d backdrop-blur-xl h-full min-h-0 flex flex-col lg:col-span-4 lg:order-2">
                 <SectionHead title="Pending Patents by Stage" search={stageSearch}
-                  onSearch={(v) => { setStageSearch(v); setStagePage(1); }} onViewAll={() => setViewAll("stages")}
+                  onSearch={(v) => setStageSearch(v)} onViewAll={() => setViewAll("stages")}
                   extra={activeStage ? (
                     <button onClick={() => setActiveStage(null)} className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
                       <X className="h-3 w-3" /> Clear
                     </button>
                   ) : null} />
-                <CardContent className="pt-2 flex-1 flex flex-col">
+                <CardContent className="pt-2 pb-3 flex-1 min-h-0 flex flex-col">
                   {stageRows.length === 0 ? (
                     <p className="text-xs text-muted-foreground py-6 text-center flex-1">{stageSearch ? "No matching stages." : "No pending patents."}</p>
                   ) : (
-                    <div className="space-y-2 flex-1">
-                      {pageOf(stageRows, stagePage, STAGE_PAGE).map((s: any) => (
+                    <div className="thin-scrollbar space-y-1 flex-1 min-h-0 overflow-y-auto pr-1">
+                      {stageRows.map((s: any) => (
                         <HBar3D key={s.name} label={s.name} value={s.count} max={maxStage}
                           active={activeStage === s.name} onClick={() => toggleStage(s.name)} />
                       ))}
                       {activeStage && <p className="pt-1 text-[10px] text-muted-foreground">Filtering Action Required by "{activeStage}" · click again to clear</p>}
                     </div>
                   )}
-                  <div className="-mx-6 -mb-6 mt-2"><SectionPager page={stagePage} total={stageRows.length} onPage={setStagePage} size={STAGE_PAGE} /></div>
                 </CardContent>
               </Card>
 
               {/* Action Required — filterable, sortable, searchable; a row opens its action */}
-              <Card id="pf-actions" className="rounded-2xl border-[var(--glass-border)] bg-[var(--glass-bg)] shadow-3d backdrop-blur-xl scroll-mt-14 h-full flex flex-col lg:col-span-8 lg:order-1">
+              <Card id="pf-actions" className="rounded-2xl border-[var(--glass-border)] bg-[var(--glass-bg)] shadow-3d backdrop-blur-xl h-full min-h-[360px] fit:min-h-0 flex flex-col lg:col-span-8 lg:order-1">
                 <SectionHead icon={<AlertCircle className="h-4 w-4 text-amber-500" />} title="Action Required"
                   badge={filtered.length !== actionRows.length ? `${filtered.length} of ${actionRows.length}` : undefined}
                   search={actionSearch} onSearch={(v) => { setActionSearch(v); setPage(1); }} onViewAll={() => setViewAll("actions")}
@@ -530,7 +547,7 @@ export default function PatentPortfolio() {
                     )}
                   </div>
                 )}
-                <CardContent className="p-0 flex-1 flex flex-col">
+                <CardContent ref={actionsFit} className="p-0 flex-1 min-h-0 flex flex-col">
                   {filtered.length === 0 ? (
                     <p className="text-xs text-muted-foreground px-4 py-8 text-center flex-1">No matching actions.</p>
                   ) : (
@@ -583,7 +600,7 @@ export default function PatentPortfolio() {
                   )}
                   {totalPages > 1 && (
                     <div className="flex items-center justify-between px-3 py-2 border-t border-border text-xs text-muted-foreground">
-                      <span>{(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, filtered.length)} of {filtered.length}</span>
+                      <span>{(page - 1) * actionsPer + 1}–{Math.min(page * actionsPer, filtered.length)} of {filtered.length}</span>
                       <div className="flex gap-1">
                         <button disabled={page === 1} onClick={() => setPage(p => p - 1)}
                           className="px-2 py-1 rounded border border-border hover:bg-muted disabled:opacity-40">‹</button>
@@ -597,10 +614,12 @@ export default function PatentPortfolio() {
               </Card>
             </div>
 
-            {/* Row 2: Renewals + Payments — same height side by side */}
-            <div className="grid gap-4 lg:grid-cols-2 items-stretch">
+            </div>
+          )}
+          {tab === "renewals" && (
+            <div className="grid gap-3 lg:grid-cols-2 items-stretch fit:h-full fit:min-h-0">
               {/* Upcoming Renewals */}
-              <Card id="pf-renewals" className="rounded-2xl border-[var(--glass-border)] bg-[var(--glass-bg)] shadow-3d backdrop-blur-xl scroll-mt-14  h-full flex flex-col">
+              <Card id="pf-renewals" className="rounded-2xl border-[var(--glass-border)] bg-[var(--glass-bg)] shadow-3d backdrop-blur-xl h-full min-h-0 flex flex-col">
                 <SectionHead icon={<Calendar className="h-4 w-4 text-gold" />} title="Upcoming Renewals"
                   search={renewalSearch} onSearch={(v) => { setRenewalSearch(v); setRenewalPage(1); }} onViewAll={() => { setRenewalMonth(null); setViewAll("renewals"); }}
                   extra={
@@ -610,14 +629,14 @@ export default function PatentPortfolio() {
                       ))}
                     </div>
                   } />
-                <CardContent className="p-0 flex-1 flex flex-col">
+                <CardContent className="p-0 flex-1 min-h-0 flex flex-col">
                   {renewalView === "calendar" ? (
                     <RenewalCalendar rows={renewalRows} onPick={(month) => { setRenewalMonth(month); setViewAll("renewals"); }} />
                   ) : (<>
-                  <div className="flex-1">
+                  <div ref={renewalsFit} className="flex-1 min-h-0 overflow-hidden">
                     {renewalRows.length === 0 ? (
                       <p className="text-xs text-muted-foreground px-4 py-6">{renewalSearch ? "No matching renewals." : "No upcoming renewals."}</p>
-                    ) : pageOf(renewalRows, renewalPage, RENEWAL_PAGE).map((r: any, i: number) => (
+                    ) : pageOf(renewalRows, renewalPage, renewalsPer).map((r: any, i: number) => (
                       <button key={i} onClick={() => r.id && goTo(`/projects/${r.id}?tab=deadlines`)}
                         className="block w-full text-left px-4 py-3 border-b border-border last:border-0 hover:bg-muted/20 transition-colors group">
                         <div className="flex items-center justify-between gap-2">
@@ -642,21 +661,21 @@ export default function PatentPortfolio() {
                       </button>
                     ))}
                   </div>
-                  <SectionPager page={renewalPage} total={renewalRows.length} onPage={setRenewalPage} size={RENEWAL_PAGE} />
+                  <SectionPager page={renewalPage} total={renewalRows.length} onPage={setRenewalPage} size={renewalsPer} />
                   </>)}
                 </CardContent>
               </Card>
 
               {/* Pending Payments */}
-              <Card id="pf-payments" className="rounded-2xl border-[var(--glass-border)] bg-[var(--glass-bg)] shadow-3d backdrop-blur-xl scroll-mt-14  h-full flex flex-col">
+              <Card id="pf-payments" className="rounded-2xl border-[var(--glass-border)] bg-[var(--glass-bg)] shadow-3d backdrop-blur-xl h-full min-h-0 flex flex-col">
                 <SectionHead icon={<CreditCard className="h-4 w-4 text-gold" />} title="Pending Payments"
                   search={paymentSearch} onSearch={(v) => { setPaymentSearch(v); setPaymentPage(1); }}
                   onViewAll={() => goTo(`/pending-payments${selectedClientCode ? `?search=${encodeURIComponent(selectedClientCode)}` : ""}`)} />
-                <CardContent className="p-0 flex-1 flex flex-col">
-                  <div className="flex-1">
+                <CardContent className="p-0 flex-1 min-h-0 flex flex-col">
+                  <div ref={paymentsFit} className="flex-1 min-h-0 overflow-hidden">
                     {paymentRows.length === 0 ? (
                       <p className="text-xs text-muted-foreground px-4 py-6">{paymentSearch ? "No matching payments." : "No pending payments."}</p>
-                    ) : pageOf(paymentRows, paymentPage).map((inv: any, i: number) => {
+                    ) : pageOf(paymentRows, paymentPage, paymentsPer).map((inv: any, i: number) => {
                       const overdue = inv.due_date ? Math.floor((Date.now() - new Date(inv.due_date).getTime()) / 86400000) : 0;
                       return (
                         <button key={i} onClick={() => goTo(`/pending-payments?search=${encodeURIComponent(inv.invoice_code ?? inv.docket_number ?? "")}`)}
@@ -679,22 +698,24 @@ export default function PatentPortfolio() {
                       );
                     })}
                   </div>
-                  <SectionPager page={paymentPage} total={paymentRows.length} onPage={setPaymentPage} />
+                  <SectionPager page={paymentPage} total={paymentRows.length} onPage={setPaymentPage} size={paymentsPer} />
                 </CardContent>
               </Card>
             </div>
 
-            {insights && (insights.stuck.length > 0 || insights.changes.length > 0) && (
-              <div id="pf-week" className="scroll-mt-14 grid gap-4 lg:grid-cols-2 items-stretch">
-                <Card className="rounded-2xl border-[var(--glass-border)] bg-[var(--glass-bg)] shadow-3d backdrop-blur-xl h-full flex flex-col">
+          )}
+          {tab === "insights" && (<>
+            {!insights ? <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-gold" /></div> : (
+              <div className="grid gap-3 lg:grid-cols-2 items-stretch fit:h-full fit:min-h-0">
+                <Card className="rounded-2xl border-[var(--glass-border)] bg-[var(--glass-bg)] shadow-3d backdrop-blur-xl h-full min-h-0 flex flex-col">
                   <CardHeader className="pb-2">
                     <CardTitle className="font-display text-sm flex items-center gap-2">
                       <Hourglass className="h-4 w-4 text-amber-500" /> Stuck in a stage
                       <span className="text-[10px] font-normal text-muted-foreground">past the stage's target duration</span>
                     </CardTitle>
                   </CardHeader>
-                  <CardContent className="p-0 flex-1 max-h-[320px] overflow-y-auto">
-                    {insights.stuck.length === 0 ? <p className="px-4 py-6 text-xs text-muted-foreground">Nothing is running late.</p> : insights.stuck.slice(0, 30).map((r) => (
+                  <CardContent className="thin-scrollbar p-0 flex-1 min-h-0 max-h-[420px] fit:max-h-none overflow-y-auto">
+                    {insights.stuck.length === 0 ? <p className="px-4 py-6 text-xs text-muted-foreground">Nothing is running late.</p> : insights.stuck.map((r) => (
                       <button key={r.id} onClick={() => goTo(`/projects/${r.id}?tab=lifecycle`)}
                         className="flex w-full items-center justify-between gap-3 border-b border-border px-4 py-2.5 text-left last:border-0 hover:bg-muted/20">
                         <div className="min-w-0">
@@ -707,11 +728,11 @@ export default function PatentPortfolio() {
                   </CardContent>
                 </Card>
 
-                <Card className="rounded-2xl border-[var(--glass-border)] bg-[var(--glass-bg)] shadow-3d backdrop-blur-xl h-full flex flex-col">
+                <Card className="rounded-2xl border-[var(--glass-border)] bg-[var(--glass-bg)] shadow-3d backdrop-blur-xl h-full min-h-0 flex flex-col">
                   <CardHeader className="pb-2">
                     <CardTitle className="font-display text-sm flex items-center gap-2"><Activity className="h-4 w-4 text-gold" /> What changed this week</CardTitle>
                   </CardHeader>
-                  <CardContent className="p-0 flex-1 max-h-[320px] overflow-y-auto">
+                  <CardContent className="thin-scrollbar p-0 flex-1 min-h-0 max-h-[420px] fit:max-h-none overflow-y-auto">
                     {insights.changes.length === 0 ? <p className="px-4 py-6 text-xs text-muted-foreground">No changes in the last 7 days.</p> : insights.changes.map((c, i) => (
                       <button key={i} onClick={() => c.project_id && goTo(`/projects/${c.project_id}${c.kind === "deadline" ? "?tab=deadlines" : c.kind === "stage" ? "?tab=lifecycle" : ""}`)}
                         className="flex w-full items-start gap-3 border-b border-border px-4 py-2.5 text-left last:border-0 hover:bg-muted/20">
@@ -727,27 +748,32 @@ export default function PatentPortfolio() {
               </div>
             )}
 
-            {/* Where the filings are — bottom of the page */}
-            <Card id="pf-map" className="rounded-2xl border-[var(--glass-border)] bg-[var(--glass-bg)] shadow-3d backdrop-blur-xl scroll-mt-14">
+          </>)}
+          {tab === "map" && (
+            <Card className="rounded-2xl border-[var(--glass-border)] bg-[var(--glass-bg)] shadow-3d backdrop-blur-xl flex flex-col fit:h-full fit:min-h-0">
               <CardHeader className="pb-2">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <CardTitle className="font-display text-sm flex items-center gap-2"><Globe2 className="h-4 w-4 text-gold" /> Portfolio map</CardTitle>
                   <SegmentTabs size="sm" value={mapView} onChange={setMapView} options={[{ value: "globe", label: "Globe" }, { value: "tiles", label: "Tiles" }]} />
                 </div>
               </CardHeader>
-              <CardContent>
+              <CardContent className="flex-1 min-h-0 flex flex-col">
                 {mapView === "globe" && globeOk ? (
-                  <Suspense fallback={<div className="flex h-[380px] items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-gold" /></div>}>
+                  <Suspense fallback={<div className="flex h-[380px] fit:h-full items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-gold" /></div>}>
                     <OfficeGlobe active={data.active_by_office ?? {}} granted={data.granted_by_office ?? {}} other={mapOther}
-                      label={ol} selected={activeOffice} onSelect={(c) => { toggleOffice(c); document.getElementById("pf-actions")?.scrollIntoView({ behavior: "smooth" }); }} />
+                      label={ol} selected={activeOffice} onSelect={(c) => { toggleOffice(c); setTab("overview"); }} />
                   </Suspense>
                 ) : (
                   <OfficeMap active={data.active_by_office ?? {}} granted={data.granted_by_office ?? {}} other={mapOther}
-                    label={ol} selected={activeOffice} onSelect={toggleOffice} />
+                    label={ol} selected={activeOffice} onSelect={(c) => { toggleOffice(c); setTab("overview"); }} />
                 )}
                 {mapView === "globe" && !globeOk && <p className="mt-2 text-[11px] text-muted-foreground">3D view is not available in this browser, showing tiles.</p>}
               </CardContent>
             </Card>
+
+          )}
+          </motion.div>
+          </AnimatePresence>
 
             {hubOpen && selectedClientId && (
               <Dialog open onOpenChange={(o) => !o && setHubOpen(false)}>
@@ -800,7 +826,9 @@ export default function PatentPortfolio() {
             )}
           </>
         )}
+        </main>
       </div>
+
       {detailId !== null && (
         <ProjectDetailPanel projectId={detailId} onClose={() => setDetailId(null)} />
       )}
