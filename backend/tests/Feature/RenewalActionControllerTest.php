@@ -139,7 +139,7 @@ class RenewalActionControllerTest extends TestCase
             ->assertJsonPath('payment_status', 'Proof Submitted');
 
         // Staff confirms.
-        $manager = $this->staff('manager');
+        $manager = $this->staff('finance');   // confirming receipt is Accounts' job
         Sanctum::actingAs($manager);
         $this->postJson("/api/pending-payments/{$invoice['id']}/confirm")
             ->assertOk()

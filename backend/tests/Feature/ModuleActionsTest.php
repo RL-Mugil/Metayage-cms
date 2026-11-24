@@ -77,7 +77,7 @@ class ModuleActionsTest extends TestCase
     public function test_compliance_index_derives_alert_level(): void
     {
         $this->complianceItem(); // 20 days out → Critical
-        Sanctum::actingAs($this->user('manager'));
+        Sanctum::actingAs($this->user('partner'));
 
         $this->getJson('/api/compliance')
             ->assertOk()
@@ -87,7 +87,7 @@ class ModuleActionsTest extends TestCase
     public function test_compliance_resolve_removes_item_from_index(): void
     {
         $item = $this->complianceItem();
-        Sanctum::actingAs($this->user('manager'));
+        Sanctum::actingAs($this->user('partner'));
 
         $this->putJson("/api/compliance/{$item->id}", ['resolved' => true])->assertOk();
         $this->assertEquals('Resolved', $item->fresh()->status);
@@ -97,7 +97,7 @@ class ModuleActionsTest extends TestCase
     public function test_compliance_note_and_assignee_persist(): void
     {
         $item = $this->complianceItem();
-        Sanctum::actingAs($this->user('manager'));
+        Sanctum::actingAs($this->user('partner'));
 
         $this->putJson("/api/compliance/{$item->id}", ['assignee' => 'Priya Sharma', 'note' => 'Called client'])->assertOk();
         $fresh = $item->fresh();
@@ -108,7 +108,7 @@ class ModuleActionsTest extends TestCase
     public function test_compliance_remind_creates_reminder_idempotently(): void
     {
         $item = $this->complianceItem();
-        Sanctum::actingAs($this->user('manager'));
+        Sanctum::actingAs($this->user('partner'));
 
         $this->postJson("/api/compliance/{$item->id}/remind")->assertOk();
         $this->postJson("/api/compliance/{$item->id}/remind")->assertOk();

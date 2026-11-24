@@ -55,7 +55,7 @@ class FeeRateCardTest extends TestCase
 
     public function test_discount_applies_to_service_fees_only_before_gst(): void
     {
-        $manager = $this->manager();
+        $manager = User::create(['name' => 'Accounts', 'email' => 'accounts@firm.test', 'password' => bcrypt('password'), 'role' => 'finance', 'status' => 'Active']);   // raising invoices is Accounts' job
         Sanctum::actingAs($manager);
 
         $client = Client::create(['client_code' => '397M', 'client_type' => 'organization', 'legal_name' => 'C', 'company_name' => 'C', 'nationality' => 'India', 'status' => 'Active', 'state' => 'Maharashtra']);

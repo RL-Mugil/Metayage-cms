@@ -160,7 +160,10 @@ class SettlementAndPaymentReportTest extends TestCase
         // Role access is the same as the report module's.
         Sanctum::actingAs($this->user('hr', 'hr@set.test'));
         $this->post('/api/reports/download', ['type' => 'hrms', 'file' => 'csv'], ['Accept' => 'application/json'])->assertOk();
+        // A paralegal sees all cases but finance only when on Settings → Financial access.
+        Sanctum::actingAs($this->user('paralegal', 'para@set.test'));
         $this->post('/api/reports/download', ['type' => 'financial-summary', 'file' => 'csv'], ['Accept' => 'application/json'])->assertForbidden();
+        $this->post('/api/reports/download', ['type' => 'hrms', 'file' => 'csv'], ['Accept' => 'application/json'])->assertForbidden();
     }
 
     public function test_reports_come_from_the_register_and_downloads_are_signed(): void

@@ -121,8 +121,7 @@ class ApplicationStatusFollowupTest extends TestCase
 
         $invoice = $this->postJson("/api/projects/{$project->id}/renewals/approve", ['years' => 1])->json();
 
-        $manager = $this->manager();
-        Sanctum::actingAs($manager);
+        Sanctum::actingAs(User::create(['name' => 'Accounts', 'email' => 'accounts@firm.test', 'password' => bcrypt('password'), 'role' => 'finance', 'status' => 'Active']));
         $this->postJson("/api/pending-payments/{$invoice['id']}/confirm")->assertOk();
 
         $this->assertNotNull(\App\Models\PatentInvoiceIn::find($invoice['id'])->payment_confirmed_at);

@@ -55,11 +55,11 @@ class FinancialAccessTest extends TestCase
         ], $overrides));
     }
 
-    public function test_associate_can_create_invoice_for_assigned_case(): void
+    public function test_associate_cannot_create_invoices_even_on_own_cm_case(): void
     {
         $associate = $this->user('associate');
         $client = $this->client();
-        $project = $this->project($client, ['patent_engineer_id' => $associate->id]);
+        $project = $this->project($client, ['assigned_manager_id' => $associate->id]);
 
         Sanctum::actingAs($associate);
 
@@ -73,13 +73,8 @@ class FinancialAccessTest extends TestCase
             'currency' => 'INR',
         ]);
 
-        $response->assertCreated();
-        $this->assertDatabaseHas('invoices', [
-            'id' => $response->json('id'),
-            'client_id' => $client->id,
-            'project_id' => $project->id,
-            'status' => 'Draft',
-        ]);
+        // Patent Analysts see their cases' finance but do not raise invoices (Accounts does).
+        $response->assertForbidden();
     }
 
     public function test_associate_cannot_create_invoice_for_unassigned_case(): void
@@ -105,7 +100,7 @@ class FinancialAccessTest extends TestCase
     {
         $associate = $this->user('associate');
         $client = $this->client();
-        $assignedProject = $this->project($client, ['patent_engineer_id' => $associate->id]);
+        $assignedProject = $this->project($client, ['secondary_manager_id' => $associate->id]);
         $otherProject = $this->project($client);
 
         $visibleInvoice = Invoice::create([

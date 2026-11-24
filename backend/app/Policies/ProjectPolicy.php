@@ -72,6 +72,10 @@ class ProjectPolicy
         if (! in_array($user->role, ['super_admin', 'partner', 'director', 'manager', 'associate', 'paralegal'], true)) {
             return false;
         }
+        // Paralegals see every case but work (prepare filings) only on the cases they are assigned to.
+        if ($user->role === 'paralegal') {
+            return $project->isAssignedTo($user->id);
+        }
 
         return $this->view($user, $project);
     }
