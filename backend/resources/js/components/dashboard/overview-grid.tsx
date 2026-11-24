@@ -79,20 +79,20 @@ export function OverviewGrid({ metrics, trends, projects, tasks, statusMix, show
                 const alarm = r.hot && n > 0
                 return (
                   <motion.button key={r.key} whileHover={n ? { y: -2 } : undefined} onClick={() => n && onDrill(r.key)} disabled={!n}
-                    className={`relative overflow-hidden rounded-xl border p-2.5 text-left transition-colors ${alarm ? "border-rose-500/30 bg-gradient-to-br from-rose-500/15 to-rose-500/5" : "border-border/60 bg-background/60"} ${n ? "cursor-pointer hover:border-gold/50" : "cursor-default opacity-80"}`}>
+                    className={`relative overflow-hidden rounded-xl border p-2.5 fit:p-2 text-left transition-colors ${alarm ? "border-rose-500/30 bg-gradient-to-br from-rose-500/15 to-rose-500/5" : "border-border/60 bg-background/60"} ${n ? "cursor-pointer hover:border-gold/50" : "cursor-default opacity-80"}`}>
                     {alarm && <span className="absolute right-2 top-2 h-2 w-2 animate-ping rounded-full bg-rose-500" />}
                     <r.icon className={`h-3.5 w-3.5 ${alarm ? "text-rose-500" : "text-muted-foreground"}`} />
-                    <AnimatedNumber value={n} className={`mt-1 block font-display text-xl font-semibold leading-none ${alarm ? "text-rose-600" : ""}`} />
+                    <AnimatedNumber value={n} className={`mt-1 block font-display text-xl fit:text-lg font-semibold leading-none ${alarm ? "text-rose-600" : ""}`} />
                     <span className="text-[10px] text-muted-foreground">{r.label}</span>
                   </motion.button>
                 )
               })}
             </div>
           </GlassCard>
-          <GlassCard title="Case mix" subtitle="Unique patent cases by status" className="min-h-[190px] fit:min-h-0 flex-1"
+          <GlassCard title="Case mix" className="min-h-[190px] fit:min-h-0 flex-1"
             actions={<Link href="/patent-portfolio" className="text-[11px] font-medium text-gold hover:underline">Portfolio</Link>}>
             <div className="flex h-full items-center px-3 pb-3">
-              <Ring3D data={statusMix.data} total={statusMix.total} label="cases" size={120} thickness={16} />
+              <Ring3D data={statusMix.data} total={statusMix.total} label="cases" size={104} thickness={14} />
             </div>
           </GlassCard>
         </div>

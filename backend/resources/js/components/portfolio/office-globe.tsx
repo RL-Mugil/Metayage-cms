@@ -124,7 +124,7 @@ function Globe({ props, rot, dragging, onHover }: {
  */
 export default function OfficeGlobe(props: GlobeProps) {
   const wrap = useRef<HTMLDivElement>(null)
-  const rot = useRef({ x: 0.3, y: Math.PI - 0.25 })   // start facing India
+  const rot = useRef({ x: 0.55, y: Math.PI + 0.35 })   // India slightly off-centre and tilted, so its column stands up
   const dragging = useRef(false)
   const last = useRef<{ x: number; y: number } | null>(null)
   const [zoom, setZoom] = useState(3.6)
@@ -170,7 +170,7 @@ export default function OfficeGlobe(props: GlobeProps) {
       <div className="absolute right-2 top-2 flex flex-col gap-1">
         {[{ icon: Plus, fn: () => setZoom((z) => Math.max(2.2, z - 0.35)), label: "Zoom in" },
           { icon: Minus, fn: () => setZoom((z) => Math.min(5, z + 0.35)), label: "Zoom out" },
-          { icon: RotateCcw, fn: () => { rot.current = { x: 0.3, y: Math.PI - 0.25 }; setZoom(3.6) }, label: "Reset view" }].map(({ icon: Icon, fn, label }) => (
+          { icon: RotateCcw, fn: () => { rot.current = { x: 0.55, y: Math.PI + 0.35 }; setZoom(3.6) }, label: "Reset view" }].map(({ icon: Icon, fn, label }) => (
           <button key={label} title={label} aria-label={label} onPointerDown={(e) => e.stopPropagation()} onClick={fn}
             className="glass flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground"><Icon className="h-3.5 w-3.5" /></button>
         ))}
