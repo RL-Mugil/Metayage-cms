@@ -72,7 +72,7 @@ export function TeamTab() {
                   return (
                     <button key={day} disabled={past || n === 0} onClick={() => openDay(day)} title={`${fmt(day)}: ${n} deadline${n === 1 ? "" : "s"}`}
                       className={`h-3 w-3 rounded-[2px] ${past ? "opacity-20" : ""} ${n ? "hover:ring-1 hover:ring-foreground" : ""}`}
-                      style={{ backgroundColor: n ? `hsl(${n / max > 0.66 ? 0 : 38} 85% ${62 - (n / max) * 22}%)` : "hsl(var(--muted))" }} />
+                      style={{ backgroundColor: n ? `hsl(${n / max > 0.66 ? 0 : 38} 85% ${62 - (n / max) * 22}%)` : "var(--muted)" }} />
                   )
                 })}
               </div>
@@ -82,7 +82,7 @@ export function TeamTab() {
       </GlassCard>
 
       <div className="grid min-h-0 gap-3 lg:grid-cols-3">
-        <GlassCard className={`min-h-[260px] ${data.leaderboard ? "lg:col-span-2" : "lg:col-span-3"}`} title="Workload by person" icon={<Users className="h-4 w-4 text-gold" />}
+        <GlassCard className={`min-h-[260px] fit:min-h-0 ${data.leaderboard ? "lg:col-span-2" : "lg:col-span-3"}`} title="Workload by person" icon={<Users className="h-4 w-4 text-gold" />}
           subtitle="Active cases as PCM, SCM and PR · click a person for their cases" scroll bodyClassName="space-y-1.5 px-3 pb-3">
             {data.workload.length === 0 ? <p className="py-4 text-center text-sm text-muted-foreground">No active cases assigned.</p> : data.workload.map((w) => (
               <button key={w.user_id} onClick={() => openPerson(w.user_id, w.name)} className="block w-full rounded-md p-1.5 text-left hover:bg-muted/40">
@@ -108,7 +108,7 @@ export function TeamTab() {
         </GlassCard>
 
         {data.leaderboard && (
-          <GlassCard className="min-h-[260px]" title="This month" icon={<Trophy className="h-4 w-4 text-gold" />} subtitle="Stages completed + deadlines met on time" scroll bodyClassName="space-y-1.5 px-3 pb-3">
+          <GlassCard className="min-h-[260px] fit:min-h-0" title="This month" icon={<Trophy className="h-4 w-4 text-gold" />} subtitle="Stages completed + deadlines met on time" scroll bodyClassName="space-y-1.5 px-3 pb-3">
               {data.leaderboard.length === 0 ? <p className="py-4 text-center text-sm text-muted-foreground">Nothing completed yet this month.</p> : data.leaderboard.map((l, i) => (
                 <div key={l.user_id} className="flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-xs odd:bg-muted/30">
                   <span className="flex items-center gap-2"><span className={`w-4 text-center font-semibold ${i === 0 ? "text-gold" : "text-muted-foreground"}`}>{i + 1}</span>{l.name}</span>

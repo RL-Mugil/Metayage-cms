@@ -52,10 +52,10 @@ export function FinanceTab() {
       </div>
 
       <div className="grid min-h-0 gap-3 lg:grid-cols-12">
-        <GlassCard className="min-h-[280px] lg:col-span-6" title={yoy ? "Billed: this year vs last" : "Billed vs collected"} icon={<TrendingUp className="h-4 w-4 text-gold" />}
+        <GlassCard className="min-h-[280px] fit:min-h-0 lg:col-span-6" title={yoy ? "Billed: this year vs last" : "Billed vs collected"} icon={<TrendingUp className="h-4 w-4 text-gold" />}
           subtitle={yoy ? "Each month against the same month a year earlier" : "12 months · billed by invoice date, collected by payment date"}
           actions={<SegmentTabs size="sm" value={yoy ? "yoy" : "bc"} onChange={(v) => setYoy(v === "yoy")} options={[{ value: "bc", label: "Billed vs collected" }, { value: "yoy", label: "Year over year" }]} />}>
-          <div className="h-full min-h-[220px] px-2 pb-2">
+          <div className="h-full min-h-[220px] fit:min-h-0 px-2 pb-2">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={data.monthly} margin={{ top: 14, right: 12, left: 0, bottom: 0 }} barGap={3}>
                 <Bar3DDefs />
@@ -71,13 +71,13 @@ export function FinanceTab() {
           </div>
         </GlassCard>
 
-        <GlassCard className="min-h-[280px] lg:col-span-3" title="Outstanding by age" subtitle="Click a slice for the list" scroll bodyClassName="px-3 pb-3">
+        <GlassCard className="min-h-[280px] fit:min-h-0 lg:col-span-3" title="Outstanding by age" subtitle="Click a slice for the list" scroll bodyClassName="px-3 pb-3">
           <Ring3D data={ageing} total={data.outstanding} format="lakh" label="outstanding" size={138} thickness={18}
             onSelect={(code) => go(code === "current" ? "/pending-payments" : "/pending-payments?overdue=1")} />
         </GlassCard>
 
-        <GlassCard className="min-h-[280px] lg:col-span-3" title="Expected collections" icon={<CalendarClock className="h-4 w-4 text-gold" />} subtitle="Next 3 months · invoices + renewal estimates">
-          <div className="h-full min-h-[200px] px-1 pb-2">
+        <GlassCard className="min-h-[280px] fit:min-h-0 lg:col-span-3" title="Expected collections" icon={<CalendarClock className="h-4 w-4 text-gold" />} subtitle="Next 3 months · invoices + renewal estimates">
+          <div className="h-full min-h-[200px] fit:min-h-0 px-1 pb-2">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={data.forecast} margin={{ top: 14, right: 10, left: 0, bottom: 0 }}>
                 <Bar3DDefs />
@@ -94,7 +94,7 @@ export function FinanceTab() {
       </div>
 
       <div className="grid min-h-0 gap-3 lg:grid-cols-12">
-        <GlassCard className="min-h-[240px] lg:col-span-6" scroll bodyClassName="px-2 pb-2"
+        <GlassCard className="min-h-[240px] fit:min-h-0 lg:col-span-6" scroll bodyClassName="px-2 pb-2"
           title={list === "recent" ? "Recent invoices" : list === "clients" ? "Clients owing the most" : `Work done, not invoiced · ${data.unbilled.count}`}
           actions={<>
             <SegmentTabs size="sm" value={list} onChange={setList} options={[
@@ -125,7 +125,7 @@ export function FinanceTab() {
           )))}
         </GlassCard>
 
-        <GlassCard className="min-h-[240px] lg:col-span-3" title="Quote to payment" icon={<Filter className="h-4 w-4 text-gold" />} scroll bodyClassName="space-y-2 px-3 pb-3">
+        <GlassCard className="min-h-[240px] fit:min-h-0 lg:col-span-3" title="Quote to payment" icon={<Filter className="h-4 w-4 text-gold" />} scroll bodyClassName="space-y-2 px-3 pb-3">
           {data.funnel.map((step, i) => {
             const top = data.funnel[0]?.count || 1
             const prev = i > 0 ? data.funnel[i - 1].count : 0
@@ -142,7 +142,7 @@ export function FinanceTab() {
           })}
         </GlassCard>
 
-        <GlassCard className="min-h-[240px] lg:col-span-3" title="Billed by" scroll bodyClassName="px-2 pb-3"
+        <GlassCard className="min-h-[240px] fit:min-h-0 lg:col-span-3" title="Billed by" scroll bodyClassName="px-2 pb-3"
           actions={<SegmentTabs size="sm" value={group} onChange={setGroup} options={[{ value: "services", label: "Service" }, { value: "offices", label: "Office" }]} />}>
           {breakdown.map((r) => <HBar3D key={r.code} label={r.code} value={r.billed} max={breakdown[0]?.billed || 1} right={lakh(r.billed)} color={group === "services" ? "#3b82f6" : "#10b981"} />)}
         </GlassCard>

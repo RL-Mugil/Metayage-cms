@@ -41,7 +41,7 @@ function LandDots() {
   return (
     <instancedMesh ref={ref} args={[undefined, undefined, points.length]}>
       <sphereGeometry args={[0.0085, 6, 6]} />
-      <meshStandardMaterial color="#1e3a5f" roughness={0.6} />
+      <meshStandardMaterial color="#1d4ed8" emissive="#1e3a8a" emissiveIntensity={0.25} roughness={0.5} />
     </instancedMesh>
   )
 }
@@ -104,7 +104,7 @@ function Globe({ props, rot, dragging, onHover }: {
     <group ref={group}>
       <mesh>
         <sphereGeometry args={[R, 64, 64]} />
-        <meshStandardMaterial color="#dbeafe" roughness={0.9} metalness={0} />
+        <meshStandardMaterial color="#eff6ff" emissive="#bfdbfe" emissiveIntensity={0.35} roughness={0.85} metalness={0} />
       </mesh>
       <mesh scale={1.08}>
         <sphereGeometry args={[R, 48, 48]} />
@@ -124,10 +124,10 @@ function Globe({ props, rot, dragging, onHover }: {
  */
 export default function OfficeGlobe(props: GlobeProps) {
   const wrap = useRef<HTMLDivElement>(null)
-  const rot = useRef({ x: 0.35, y: -1.2 })   // start facing India
+  const rot = useRef({ x: 0.3, y: Math.PI - 0.25 })   // start facing India
   const dragging = useRef(false)
   const last = useRef<{ x: number; y: number } | null>(null)
-  const [zoom, setZoom] = useState(2.9)
+  const [zoom, setZoom] = useState(3.6)
   const [tip, setTip] = useState<{ code: string; x: number; y: number } | null>(null)
 
   const hover = (code: string | null, e?: ThreeEvent<PointerEvent>) => {
@@ -151,7 +151,7 @@ export default function OfficeGlobe(props: GlobeProps) {
   return (
     <div ref={wrap} className="relative h-[380px] w-full touch-none select-none overflow-hidden rounded-xl bg-gradient-to-b from-sky-50 to-white dark:from-slate-900 dark:to-slate-950"
       onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerLeave={up}>
-      <Canvas camera={{ position: [0, 0, zoom], fov: 40 }} dpr={[1, 1.5]} gl={{ antialias: true, alpha: true }}
+      <Canvas camera={{ position: [0, 0, 3.6], fov: 40 }} dpr={[1, 1.5]} gl={{ antialias: true, alpha: true }}
         onCreated={({ camera }) => camera.lookAt(0, 0, 0)}>
         <CameraZoom z={zoom} />
         <ambientLight intensity={0.85} />
@@ -168,9 +168,9 @@ export default function OfficeGlobe(props: GlobeProps) {
         </div>
       )}
       <div className="absolute right-2 top-2 flex flex-col gap-1">
-        {[{ icon: Plus, fn: () => setZoom((z) => Math.max(1.9, z - 0.3)), label: "Zoom in" },
-          { icon: Minus, fn: () => setZoom((z) => Math.min(4.2, z + 0.3)), label: "Zoom out" },
-          { icon: RotateCcw, fn: () => { rot.current = { x: 0.35, y: -1.2 }; setZoom(2.9) }, label: "Reset view" }].map(({ icon: Icon, fn, label }) => (
+        {[{ icon: Plus, fn: () => setZoom((z) => Math.max(2.2, z - 0.35)), label: "Zoom in" },
+          { icon: Minus, fn: () => setZoom((z) => Math.min(5, z + 0.35)), label: "Zoom out" },
+          { icon: RotateCcw, fn: () => { rot.current = { x: 0.3, y: Math.PI - 0.25 }; setZoom(3.6) }, label: "Reset view" }].map(({ icon: Icon, fn, label }) => (
           <button key={label} title={label} aria-label={label} onPointerDown={(e) => e.stopPropagation()} onClick={fn}
             className="glass flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground"><Icon className="h-3.5 w-3.5" /></button>
         ))}

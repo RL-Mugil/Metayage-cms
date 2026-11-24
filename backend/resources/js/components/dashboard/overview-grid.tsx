@@ -89,16 +89,16 @@ export function OverviewGrid({ metrics, trends, projects, tasks, statusMix, show
               })}
             </div>
           </GlassCard>
-          <GlassCard title="Case mix" subtitle="Unique patent cases by status" className="min-h-[190px] flex-1"
+          <GlassCard title="Case mix" subtitle="Unique patent cases by status" className="min-h-[190px] fit:min-h-0 flex-1"
             actions={<Link href="/patent-portfolio" className="text-[11px] font-medium text-gold hover:underline">Portfolio</Link>}>
             <div className="flex h-full items-center px-3 pb-3">
-              <Ring3D data={statusMix.data} total={statusMix.total} label="cases" size={132} thickness={18} />
+              <Ring3D data={statusMix.data} total={statusMix.total} label="cases" size={120} thickness={16} />
             </div>
           </GlassCard>
         </div>
 
         {/* Centre: money or intake */}
-        <GlassCard className="min-h-[300px] lg:col-span-5"
+        <GlassCard className="min-h-[300px] fit:min-h-0 lg:col-span-5"
           title={moneyChart ? "Billed vs collected" : "New cases"} subtitle={moneyChart ? "Last 6 months · register" : "Cases opened, last 6 months"}
           actions={moneyChart ? (
             <div className="flex items-center gap-3 text-[11px]">
@@ -122,7 +122,7 @@ export function OverviewGrid({ metrics, trends, projects, tasks, statusMix, show
                 </div>
               </div>
             )}
-            <div className="min-h-[200px] flex-1">
+            <div className="min-h-[200px] fit:min-h-0 flex-1">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={chart} margin={{ top: 14, right: 12, left: 0, bottom: 0 }} barGap={4}>
                   <Bar3DDefs />
@@ -132,10 +132,10 @@ export function OverviewGrid({ metrics, trends, projects, tasks, statusMix, show
                     tickFormatter={(v) => (moneyChart ? formatValue(Number(v), "lakh") : String(v))} />
                   <Tooltip cursor={{ fill: "var(--muted)", opacity: 0.4 }} contentStyle={{ fontSize: 12, borderRadius: 10 }}
                     formatter={(v: number) => (moneyChart ? formatValue(Number(v), "inr") : v)} />
-                  {moneyChart ? <>
-                    <Bar dataKey="billed" name="Billed" fill="#3b82f6" shape={<Bar3DShape />} maxBarSize={30} animationDuration={900} />
-                    <Bar dataKey="collected" name="Collected" fill="#10b981" shape={<Bar3DShape />} maxBarSize={30} animationDuration={900} />
-                  </> : <Bar dataKey="opened" name="Opened" fill="#d4a017" shape={<Bar3DShape />} maxBarSize={36} animationDuration={900} />}
+                  {/* recharts ignores bars wrapped in a fragment — keep each one a direct child */}
+                  {moneyChart && <Bar dataKey="billed" name="Billed" fill="#3b82f6" shape={<Bar3DShape />} maxBarSize={30} animationDuration={900} />}
+                  {moneyChart && <Bar dataKey="collected" name="Collected" fill="#10b981" shape={<Bar3DShape />} maxBarSize={30} animationDuration={900} />}
+                  {!moneyChart && <Bar dataKey="opened" name="Opened" fill="#d4a017" shape={<Bar3DShape />} maxBarSize={36} animationDuration={900} />}
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -143,7 +143,7 @@ export function OverviewGrid({ metrics, trends, projects, tasks, statusMix, show
         </GlassCard>
 
         {/* Right: everything needing attention */}
-        <GlassCard className="min-h-[300px] lg:col-span-4" scroll bodyClassName="px-3 pb-3"
+        <GlassCard className="min-h-[300px] fit:min-h-0 lg:col-span-4" scroll bodyClassName="px-3 pb-3"
           title="Needs attention"
           actions={<SegmentTabs size="sm" value={focus} onChange={setFocus} options={[
             { value: "actions", label: "Actions", badge: actions.length },
