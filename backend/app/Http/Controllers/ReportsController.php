@@ -833,7 +833,7 @@ class ReportsController extends Controller
         $title = $export->report_name;
         $head = app(\App\Services\Letterhead::class)->get();
         $clientCode = $export->filters['client_code'] ?? null;
-        $name = str_replace(' ', '-', $title).'-'.$export->created_at->format('Y-m-d').($clientCode ? "-{$clientCode}" : '');
+        $name = trim(preg_replace('/[^A-Za-z0-9]+/', '-', $title), '-').'-'.$export->created_at->format('Y-m-d').($clientCode ? "-{$clientCode}" : '');
         $sealUri = $seal->dataUri((bool) $signature);
 
         if (! isset($data['summary'])) {
