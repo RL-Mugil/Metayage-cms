@@ -9,11 +9,15 @@ class ClientPolicy
 {
     public function viewAny(User $user): bool
     {
-        return true;
+        // Inventors are external logins tied to cases, not to a client list.
+        return ! $user->isInventor();
     }
 
     public function view(User $user, Client $client): bool
     {
+        if ($user->isInventor()) {
+            return false;
+        }
         if ($user->isClientRole()) {
             return $client->isVisibleToUser($user);
         }

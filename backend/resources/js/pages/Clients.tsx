@@ -1,5 +1,10 @@
 import { Head, usePage } from "@inertiajs/react";
-import { useEffect, useState, useMemo, useCallback } from "react";
+import { useEffect, useState, useMemo, useCallback, useRef } from "react";
+import { toast } from "sonner";
+import { FitPage } from "@/components/modern/fit-page";
+import { KpiStrip } from "@/components/modern/kpi-strip";
+import { TableCard } from "@/components/modern/table-card";
+import { useFitRows } from "@/components/modern/use-fit-rows";
 import {
   Plus, Search, LayoutGrid, List, Pencil, Trash2, X,
   Building2, User, AlertCircle, Globe, Loader2, Download, ChevronLeft, ChevronRight,
@@ -160,6 +165,8 @@ interface KpiDef {
   filterParams: Record<string, string>;
 }
 
+const KPI_COLORS: Record<string, string> = { total: "#d4a017", active: "#22c55e", b2b: "#3b82f6", b2c: "#10b981", export: "#a855f7" };
+
 const KPI_DEFS: KpiDef[] = [
   { label: "Total Clients", key: "total",  color: "text-gold",        filterParams: {}                     },
   { label: "Active",        key: "active", color: "text-green-500",   filterParams: { status: "Active" }   },
@@ -207,7 +214,7 @@ function KpiModal({ kpi, onClose, onSelectClient }: { kpi: KpiDef; onClose: () =
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-      <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-5xl max-h-[88vh] flex flex-col">
+      <div className="bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-5xl max-h-[88vh] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-border flex-shrink-0">
           <div>
@@ -411,7 +418,7 @@ function ImportModal({ onClose, onDone }: { onClose: () => void; onDone: () => v
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-      <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-lg flex flex-col">
+      <div className="bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-lg flex flex-col">
 
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-border">
@@ -581,6 +588,8 @@ export default function Clients() {
   const featExistingClient = (pageProps.systemSettings?.feature_existing_client) ?? true;
 
   const [paginatedResult, setPaginatedResult] = useState<any>({ data: [], total: 0, per_page: 25, current_page: 1, last_page: 1, has_more: false });
+  // Rows per page follow the table's height on fit-to-screen layouts (header row reserved).
+  const [clientsFit, clientsPer] = useFitRows(58, 25, 40);
   const [stats, setStats]       = useState<Record<string, number>>({ total: 0, active: 0, b2b: 0, b2c: 0, export: 0 });
   const [users, setUsers]       = useState<any[]>([]);
   const [loading, setLoading]   = useState(true);
@@ -648,16 +657,21 @@ export default function Clients() {
     }
   }
 
+  const fetchSeq = useRef(0);
   const fetchClients = (p: number = 1) => {
     const params = new URLSearchParams();
     params.set('page', String(p));
+    params.set('per_page', String(clientsPer));
     if (search) params.set('search', search);
     if (statusF !== 'All') params.set('status', statusF);
+    // Only the latest request may update the list (typing fires several in a row).
+    const seq = ++fetchSeq.current;
     api.getClients(params)
-      .then(setPaginatedResult)
-      .catch(() => setLoading(false))
-      .finally(() => setLoading(false));
+      .then((r) => { if (seq === fetchSeq.current) setPaginatedResult(r); })
+      .catch(() => {})
+      .finally(() => { if (seq === fetchSeq.current) setLoading(false); });
   };
+  const refreshStats = () => api.getClientStats().then(setStats).catch(() => {});
 
   useEffect(() => {
     api.getClientStats().then(setStats).catch(() => {});
@@ -674,8 +688,9 @@ export default function Clients() {
 
   useEffect(() => {
     setLoading(true);
-    fetchClients(1);
-  }, [search, statusF]);
+    const t = setTimeout(() => fetchClients(1), search ? 280 : 0);
+    return () => clearTimeout(t);
+  }, [search, statusF, clientsPer]);
 
   const isOrg    = form.client_type === "organization";
   const isIndian = isIndia(form.country);
@@ -773,6 +788,7 @@ export default function Clients() {
       }
       setShowForm(false);
       fetchClients(paginatedResult.current_page);
+      refreshStats();
     } catch (e: any) {
       setFErr(e.message ?? "Failed to save client.");
     } finally { setSaving(false); }
@@ -785,6 +801,7 @@ export default function Clients() {
       await api.deleteClient(delTarget.id);
       setDelTarget(null);
       fetchClients(paginatedResult.current_page);
+      refreshStats();
     } finally { setDeleting(false); }
   }
 
@@ -810,8 +827,8 @@ export default function Clients() {
   return (
     <AppLayout>
       <Head title="Clients" />
-      <PageHeader eyebrow="CRM" title="Clients"
-        description="Client portfolio, GST classification, and contact management."
+      <FitPage eyebrow="CRM" title="Clients"
+        summary={`${stats.total ?? 0} clients · ${stats.active ?? 0} active · ${stats.b2b ?? 0} GST-registered · ${stats.export ?? 0} export`}
         actions={
           <>
             <Button variant="outline" size="sm" onClick={() => setShowImport(true)}>
@@ -829,33 +846,16 @@ export default function Clients() {
               )}>
               <Download className="h-4 w-4 mr-2" />Export
             </Button>
-            <Button className="bg-gold hover:bg-gold/90 text-black" onClick={openCreate}>
+            <Button size="sm" className="bg-gold hover:bg-gold/90 text-black" onClick={openCreate}>
               <Plus className="h-4 w-4 mr-2" />New Client
             </Button>
           </>
-        }
-      />
-
-      <div className="px-8 py-6 space-y-4">
-        {/* Stats — click any card to drill down */}
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-          {KPI_DEFS.map((kpi) => (
-            <Card
-              key={kpi.key}
-              className="border-border cursor-pointer hover:border-gold/40 hover:shadow-md transition-all group"
-              onClick={() => setKpiModal(kpi)}
-            >
-              <CardContent className="p-3 text-center">
-                <div className={`text-2xl font-bold ${kpi.color}`}>{stats[kpi.key] ?? 0}</div>
-                <div className="text-xs text-muted-foreground mt-0.5">{kpi.label}</div>
-                <div className="text-[10px] text-muted-foreground/50 mt-1 group-hover:text-gold/60 transition-colors">Click to view →</div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+        }>
+        <div className="flex min-h-0 flex-1 flex-col gap-3">
+        <KpiStrip items={KPI_DEFS.map((kpi) => ({ key: kpi.key, label: kpi.label, value: Number(stats[kpi.key] ?? 0), color: KPI_COLORS[kpi.key] ?? "#d4a017", onClick: () => setKpiModal(kpi) }))} />
 
         {/* Toolbar */}
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
           <div className="relative flex-1 min-w-[200px]">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
             <Input className="pl-9 h-9" placeholder="Search name, code, PAN…" value={search} onChange={(e) => setSearch(e.target.value)} />
@@ -882,10 +882,18 @@ export default function Clients() {
         {/* List view */}
         {view === "list" && (
           <>
-            <Card className="border-border">
-              <CardContent className="p-0">
+            <TableCard ref={clientsFit} footer={paginatedResult.total > 0 && (
+              <div className="flex items-center justify-between px-4 py-2 text-xs text-muted-foreground">
+                <span>Showing {((paginatedResult.current_page - 1) * paginatedResult.per_page) + 1}–{Math.min(paginatedResult.current_page * paginatedResult.per_page, paginatedResult.total)} of {paginatedResult.total}</span>
+                <div className="flex items-center gap-1">
+                  <Button variant="outline" size="sm" className="h-7" disabled={paginatedResult.current_page === 1} onClick={() => fetchClients(paginatedResult.current_page - 1)}>Prev</Button>
+                  <span className="px-1">Page {paginatedResult.current_page} of {paginatedResult.last_page}</span>
+                  <Button variant="outline" size="sm" className="h-7" disabled={!paginatedResult.has_more} onClick={() => fetchClients(paginatedResult.current_page + 1)}>Next</Button>
+                </div>
+              </div>
+            )}>
                 <table className="w-full text-sm">
-                  <thead className="bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground">
+                  <thead className="table-sticky-head text-xs uppercase tracking-wider text-muted-foreground">
                     <tr>
                       <th className="px-4 py-3 text-left">Code</th>
                       <th className="px-4 py-3 text-left">Legal Name</th>
@@ -899,10 +907,10 @@ export default function Clients() {
                       <th className="px-4 py-3 text-left">Actions</th>
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody className="table-rows-3d">
                     {loading && (
                       <tr>
-                        <td colSpan={9} className="px-4 py-12 text-center">
+                        <td colSpan={10} className="px-4 py-12 text-center">
                           <Loader2 className="h-6 w-6 animate-spin text-gold mx-auto" />
                         </td>
                       </tr>
@@ -958,7 +966,12 @@ export default function Clients() {
                                 e.stopPropagation();
                                 const next = c.circle === "A" ? "B" : c.circle === "B" ? null : "A";
                                 setPaginatedResult((prev: any) => ({ ...prev, data: prev.data.map((x: any) => x.id === c.id ? { ...x, circle: next } : x) }));
-                                try { await api.updateClient(c.id, { circle: next } as any); } catch {}
+                                try { await api.updateClient(c.id, { circle: next } as any); }
+                                catch (err: any) {
+                                  // Put the old circle back so the screen matches what is saved.
+                                  setPaginatedResult((prev: any) => ({ ...prev, data: prev.data.map((x: any) => x.id === c.id ? { ...x, circle: c.circle } : x) }));
+                                  toast.error(err?.message ?? "Could not change the circle.");
+                                }
                               }}
                               className={`text-[11px] font-bold w-7 h-7 rounded-full border-2 flex items-center justify-center transition-colors ${
                                 c.circle === "A" ? "bg-blue-600 text-white border-blue-600 hover:bg-blue-700" :
@@ -989,28 +1002,17 @@ export default function Clients() {
                     {!loading && clients.length===0 && <tr><td colSpan={10} className="px-4 py-10 text-center text-sm text-muted-foreground">No clients found.</td></tr>}
                   </tbody>
                 </table>
-              </CardContent>
-            </Card>
-            {paginatedResult.total > 0 && (
-              <div className="mt-4 flex items-center justify-between text-xs text-muted-foreground">
-                <span>Showing {((paginatedResult.current_page - 1) * paginatedResult.per_page) + 1}–{Math.min(paginatedResult.current_page * paginatedResult.per_page, paginatedResult.total)} of {paginatedResult.total}</span>
-                <div className="flex items-center gap-1">
-                  <Button variant="outline" size="sm" disabled={paginatedResult.current_page === 1} onClick={() => fetchClients(paginatedResult.current_page - 1)}>Prev</Button>
-                  <span>Page {paginatedResult.current_page} of {paginatedResult.last_page}</span>
-                  <Button variant="outline" size="sm" disabled={!paginatedResult.has_more} onClick={() => fetchClients(paginatedResult.current_page + 1)}>Next</Button>
-                </div>
-              </div>
-            )}
+            </TableCard>
           </>
         )}
 
         {/* Grid view */}
         {view === "grid" && (
-          <div className="grid grid-cols-2 xl:grid-cols-3 gap-4">
+          <div className="thin-scrollbar grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 fit:min-h-0 fit:flex-1 fit:overflow-y-auto fit:content-start pr-1">
             {clients.map((c: any) => {
               const gm = GST_META[c.gst_type ?? ""] ?? null;
               return (
-                <Card key={c.id} className="border-border hover:border-gold/30 transition-colors">
+                <Card key={c.id} className="hover:-translate-y-0.5 hover:shadow-3d-lg hover:border-gold/40 transition-all">
                   <CardContent className="p-4">
                     <div className="flex items-start justify-between mb-2">
                       <div>
@@ -1043,12 +1045,13 @@ export default function Clients() {
             {clients.length===0 && <div className="col-span-3 py-12 text-center text-sm text-muted-foreground">No clients found.</div>}
           </div>
         )}
-      </div>
+        </div>
+      </FitPage>
 
       {/* ── Client Form Modal ──────────────────────────────────────────────────── */}
       {showForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-5xl max-h-[92vh] flex flex-col">
+          <div className="bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-5xl max-h-[92vh] flex flex-col">
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-border flex-shrink-0">
               <div>
@@ -1487,7 +1490,7 @@ export default function Clients() {
       {/* ── Delete Confirm ────────────────────────────────────────────────────── */}
       {delTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-sm p-6 m-4">
+          <div className="bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-sm p-6 m-4">
             <div className="flex items-center gap-3 mb-4">
               <div className="h-10 w-10 rounded-full bg-destructive/10 flex items-center justify-center flex-shrink-0">
                 <Trash2 className="h-5 w-5 text-destructive"/>

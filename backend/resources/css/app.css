@@ -168,6 +168,10 @@
       var(--background);
   }
   .shadow-3d { box-shadow: var(--shadow-3d); }
+  /* Tables inside TableCard: header stays visible while rows scroll; rows lift with a gold edge. */
+  .table-sticky-head { position: sticky; top: 0; z-index: 5; background: color-mix(in oklab, var(--muted) 85%, var(--background)); backdrop-filter: blur(8px); }
+  .table-rows-3d > tr { transition: background-color 0.15s, box-shadow 0.15s; }
+  .table-rows-3d > tr:hover { background: color-mix(in oklab, var(--gold) 6%, transparent); box-shadow: inset 3px 0 0 0 var(--gold); }
   .shadow-3d-lg { box-shadow: var(--shadow-3d-lg); }
   .no-scrollbar { scrollbar-width: none; }
   .no-scrollbar::-webkit-scrollbar { display: none; }

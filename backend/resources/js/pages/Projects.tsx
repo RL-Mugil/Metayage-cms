@@ -1,5 +1,7 @@
 import { Head, Link, router, usePage } from "@inertiajs/react";
 import { useEffect, useState, useMemo, useRef, useCallback } from "react";
+import { FitPage } from "@/components/modern/fit-page";
+import { KpiStrip } from "@/components/modern/kpi-strip";
 import { createPortal } from "react-dom";
 import {
   Plus, Search, Loader2, X, Download, Pencil, Trash2, AlertCircle,
@@ -844,6 +846,11 @@ interface KpiDef {
   filterParams: Record<string, string>;
 }
 
+const KPI_COLORS: Record<string, string> = {
+  total: "#d4a017", open: "#3b82f6", in_progress: "#6366f1", on_hold: "#eab308",
+  overdue: "#ef4444", granted: "#22c55e", completed: "#10b981", closed: "#94a3b8",
+};
+
 const KPI_DEFS: KpiDef[] = [
   { label: "Total Cases",  key: "total",       color: "text-gold",           filterParams: {} },
   { label: "Open",         key: "open",        color: "text-blue-500",       filterParams: { status: "Open" } },
@@ -908,7 +915,7 @@ function ProjectKpiModal({ kpi, tab, onClose, onOpenDetail }: { kpi: KpiDef; tab
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-      <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-4xl max-h-[88vh] flex flex-col">
+      <div className="bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-4xl max-h-[88vh] flex flex-col">
         <div className="flex items-center justify-between px-6 py-4 border-b border-border flex-shrink-0">
           <div>
             <h2 className="font-display text-lg font-semibold">{kpi.label}</h2>
@@ -1541,8 +1548,8 @@ export default function Projects() {
   return (
     <AppLayout>
       <Head title="Cases" />
-      <PageHeader eyebrow="Practice" title="Cases"
-        description={`${serverTotal} case${serverTotal === 1 ? "" : "s"}${activeTab || filterStatus !== "All" || debouncedSearch ? " matching current view" : " in portfolio"}`}
+      <FitPage eyebrow="Practice" title="Cases"
+        summary={`${serverTotal} case${serverTotal === 1 ? "" : "s"}${activeTab || filterStatus !== "All" || debouncedSearch ? " matching current view" : " in portfolio"}`}
         actions={
           <>
             <AnalystRoleFilter value={roleFilter} onChange={(v) => { setRoleFilter(v); }} />
@@ -1609,12 +1616,13 @@ export default function Projects() {
             )}
           </>
         }
-      />
+      >
+      <div className="flex min-h-0 flex-1 flex-col gap-3">
 
       {/* Bulk Import Modal */}
       {showImport && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-lg p-6 m-4 max-h-[90vh] overflow-y-auto">
+          <div className="bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-lg p-6 m-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-display text-lg font-semibold">Bulk Import Cases</h2>
               <button onClick={() => setShowImport(false)}><X className="h-5 w-5 text-muted-foreground" /></button>
@@ -1862,7 +1870,7 @@ export default function Projects() {
       {/* ── DocketTrak Import Modal ──────────────────────────────────────────── */}
       {showDocketImport && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-2xl p-6 m-4 max-h-[90vh] overflow-y-auto">
+          <div className="bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-2xl p-6 m-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-5">
               <div>
                 <h2 className="font-display text-lg font-semibold">Import from DocketTrak</h2>
@@ -2072,7 +2080,7 @@ export default function Projects() {
       {/* ── Case Form Modal ─────────────────────────────────────────────────── */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-5xl max-h-[92vh] flex flex-col">
+          <div className="bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-5xl max-h-[92vh] flex flex-col">
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-border flex-shrink-0">
               <div>
@@ -2544,7 +2552,7 @@ export default function Projects() {
           tracking), so it isn't inferred from "now" the way a plain stage pick is. */}
       {renewalPaidPrompt && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-sm p-6">
+          <div className="bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-sm p-6">
             <h3 className="font-semibold font-display mb-1">Renewal Fee Paid</h3>
             <p className="text-xs text-muted-foreground mb-4">
               Mark renewed through year <span className="font-mono text-gold">{renewalPaidPrompt.year}</span>.
@@ -2586,7 +2594,7 @@ export default function Projects() {
           "now". For Granted/Refused, continuing here chains into the order-upload prompt. */}
       {statusEventPrompt && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-sm p-6">
+          <div className="bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-sm p-6">
             <h3 className="font-semibold font-display mb-1">Case {statusEventPrompt.status}</h3>
             <p className="text-xs text-muted-foreground mb-4">
               When was this case {statusEventPrompt.status.toLowerCase()}?
@@ -2647,7 +2655,7 @@ export default function Projects() {
           instead of silently dropping the requirement — see RequiredDocumentService. */}
       {uploadPrompt && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-sm p-6">
+          <div className="bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-sm p-6">
             <h3 className="font-semibold font-display mb-1">Upload {uploadPrompt.contextLabel}</h3>
             <p className="text-xs text-muted-foreground mb-4">
               Attach the {uploadPrompt.contextLabel.toLowerCase()} document, or skip for now — you'll be reminded until it's uploaded.
@@ -2750,7 +2758,7 @@ export default function Projects() {
       {/* ── Delete Confirm ─────────────────────────────────────────────────── */}
       {delTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-sm p-6 m-4">
+          <div className="bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-sm p-6 m-4">
             <div className="flex items-center gap-3 mb-4">
               <div className="h-10 w-10 rounded-full bg-destructive/10 flex items-center justify-center flex-shrink-0">
                 <Trash2 className="h-5 w-5 text-destructive" />
@@ -2785,7 +2793,7 @@ export default function Projects() {
           ?? "").toUpperCase();
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-            <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-sm p-6 m-4">
+            <div className="bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-sm p-6 m-4">
               <div className="flex items-center gap-3 mb-4">
                 <div className="h-10 w-10 rounded-full bg-amber-500/10 flex items-center justify-center flex-shrink-0">
                   <ArrowUpCircle className="h-5 w-5 text-amber-500" />
@@ -2855,7 +2863,7 @@ export default function Projects() {
           : candidateProjects;
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-            <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-md p-6 m-4">
+            <div className="bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-md p-6 m-4">
               <div className="flex items-center gap-3 mb-4">
                 <div className="h-10 w-10 rounded-full bg-teal-500/10 flex items-center justify-center flex-shrink-0">
                   <Link2 className="h-5 w-5 text-teal-500" />
@@ -2923,7 +2931,7 @@ export default function Projects() {
       {/* ── Chain Detection Wizard ───────────────────────────────────────── */}
       {chainWizard !== null && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-2xl m-4 flex flex-col max-h-[90vh]">
+          <div className="bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-2xl m-4 flex flex-col max-h-[90vh]">
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-border flex-shrink-0">
               <div className="flex items-center gap-3">
@@ -3042,28 +3050,14 @@ export default function Projects() {
       )}
 
       {/* ── KPI Cards ─────────────────────────────────────────────────────── */}
-      <div className="px-8 pt-6 grid gap-4 grid-cols-2 md:grid-cols-4">
-        {KPI_DEFS.map((kpi) => (
-          <button
-            key={kpi.key}
-            onClick={() => setKpiModal(kpi)}
-            className="rounded-xl border border-border bg-card p-5 text-left transition-all hover:shadow-md hover:border-gold/40 cursor-pointer"
-          >
-            <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">{kpi.label}</div>
-            <div className={`mt-3 font-display text-3xl font-semibold tracking-tight ${kpi.color}`}>
-              {stats[kpi.key] ?? 0}
-            </div>
-            <div className="mt-1 text-xs text-muted-foreground">Click to view</div>
-          </button>
-        ))}
-      </div>
+      <KpiStrip items={KPI_DEFS.map((kpi) => ({ key: kpi.key, label: kpi.label, value: Number(stats[kpi.key] ?? 0), color: KPI_COLORS[kpi.key] ?? "#d4a017", onClick: () => setKpiModal(kpi) }))} />
 
       {kpiModal && <ProjectKpiModal kpi={kpiModal} tab={activeTab} onClose={() => setKpiModal(null)} onOpenDetail={openDetail} />}
 
       {/* ── Table ─────────────────────────────────────────────────────────── */}
-      <div className="px-8 py-6 space-y-4">
+      <div className="flex min-h-0 flex-1 flex-col gap-3">
         {/* Service-code tabs (admin-configurable — Settings → System → Project Tabs) */}
-        <div className="flex items-center gap-1.5 flex-wrap">
+        <div className="no-scrollbar flex shrink-0 items-center gap-1.5 overflow-x-auto">
           <button onClick={() => { setActiveTab(""); setPage(1); }}
             className={`px-3 h-8 text-xs rounded-md border transition-colors
               ${activeTab === "" ? "bg-gold text-black border-gold font-semibold" : "border-border text-muted-foreground hover:text-foreground"}`}>
@@ -3078,7 +3072,7 @@ export default function Projects() {
           ))}
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
           <div className="relative max-w-sm flex-1">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -3101,11 +3095,11 @@ export default function Projects() {
             <Loader2 className="h-8 w-8 animate-spin text-gold" />
           </div>
         ) : (
-          <Card className="border-border">
-            <CardContent className="p-0">
-              <div className="overflow-x-auto">
+          <Card className="flex min-h-[360px] flex-col overflow-hidden fit:min-h-0 fit:flex-1">
+            <CardContent className="flex min-h-0 flex-1 flex-col p-0">
+              <div className="thin-scrollbar min-h-0 flex-1 overflow-auto">
                 <table className="w-full text-sm min-w-[1100px]">
-                  <thead className="bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground">
+                  <thead className="table-sticky-head text-xs uppercase tracking-wider text-muted-foreground">
                     <tr>
                       {!isClientUser && (
                         <th className="px-4 py-3 w-8">
@@ -3289,7 +3283,7 @@ export default function Projects() {
                 </table>
                 {/* Pagination bar */}
                 {serverTotal > 0 && (
-                  <div className="flex items-center justify-between px-4 py-3 border-t border-border text-xs text-muted-foreground">
+                  <div className="sticky bottom-0 left-0 z-10 flex items-center justify-between border-t border-border bg-background/90 px-4 py-2 text-xs text-muted-foreground backdrop-blur">
                     <span>Showing {Math.min((page-1)*perPage+1, serverTotal)}–{Math.min(page*perPage, serverTotal)} of {serverTotal}</span>
                     <div className="flex items-center gap-3">
                       <span>Rows per page:</span>
@@ -3318,11 +3312,13 @@ export default function Projects() {
           </Card>
         )}
       </div>
+      </div>
+      </FitPage>
 
       {/* ── Raise Invoice / Quotation Modal ────────────────────────────────── */}
       {raiseModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-md flex flex-col">
+          <div className="bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-md flex flex-col">
             <div className="flex items-center justify-between px-6 py-4 border-b border-border">
               <div>
                 <h2 className="font-display text-base font-semibold">

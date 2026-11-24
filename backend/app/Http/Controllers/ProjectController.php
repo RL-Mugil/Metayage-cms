@@ -28,6 +28,9 @@ use App\Http\Controllers\ProjectTrackerController;
 
 class ProjectController extends Controller
 {
+    /** Finished cases: a past hard deadline on these is history, not an overdue item. */
+    private const FINISHED_STATUSES = ['Closed', 'Completed', 'Granted', 'Refused', 'Abandoned', 'Archived'];
+
     public function inertiaIndex(Request $request)
     {
         return Inertia::render('Projects');
@@ -57,6 +60,9 @@ class ProjectController extends Controller
             // else: no restriction — partner/director sees all projects
         } elseif ($user->seesOnlyOwnCases()) {
             $base->where($this->analystWhereClause($user, $request->input('role_filter')));
+        } elseif ($user->isInventor()) {
+            // Same scope as the list: only the cases the inventor is named on.
+            $base->whereHas('inventors', fn ($q) => $q->where('inventors.user_id', $user->id));
         }
 
         $tab = (string) $request->input('tab', '');
@@ -77,7 +83,7 @@ class ProjectController extends Controller
                 SUM(CASE WHEN status = 'Completed' THEN 1 ELSE 0 END) as completed,
                 SUM(CASE WHEN status = 'Closed' THEN 1 ELSE 0 END) as closed,
                 SUM(CASE WHEN patent_granted = true OR status = 'Granted' THEN 1 ELSE 0 END) as granted,
-                SUM(CASE WHEN hard_deadline IS NOT NULL AND hard_deadline < ? AND status NOT IN ('Closed', 'Completed') THEN 1 ELSE 0 END) as overdue
+                SUM(CASE WHEN hard_deadline IS NOT NULL AND hard_deadline < ? AND status NOT IN ('Closed', 'Completed', 'Granted', 'Refused', 'Abandoned', 'Archived') THEN 1 ELSE 0 END) as overdue
             ", [$today])->first();
             return [
                 'total'       => (int) ($row?->total ?? 0),
@@ -157,11 +163,14 @@ class ProjectController extends Controller
             $today = now()->toDateString();
             $query->whereNotNull('hard_deadline')
                 ->where('hard_deadline', '<', $today)
-                ->whereNotIn('status', ['Closed', 'Completed']);
+                ->whereNotIn('status', self::FINISHED_STATUSES);
         }
 
         if ($request->filled('patent_granted')) {
-            $query->where('patent_granted', (bool) $request->patent_granted);
+            // Same definition as the Granted KPI: flagged granted or in Granted status.
+            $request->boolean('patent_granted')
+                ? $query->where(fn ($q) => $q->where('patent_granted', true)->orWhere('status', 'Granted'))
+                : $query->where(fn ($q) => $q->where('patent_granted', false)->orWhereNull('patent_granted'))->where('status', '!=', 'Granted');
         }
 
         if ($request->filled('patent_engineer_id')) {

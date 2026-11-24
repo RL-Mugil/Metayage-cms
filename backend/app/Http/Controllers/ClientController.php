@@ -172,6 +172,7 @@ class ClientController extends Controller
 
     public function stats(Request $request)
     {
+        $this->authorize('viewAny', Client::class);
         $user = $request->user();
         $base = Client::query();
 
@@ -210,6 +211,7 @@ class ClientController extends Controller
 
     public function index(Request $request)
     {
+        $this->authorize('viewAny', Client::class);
         $user = $request->user();
         $query = Client::with('accountManager');
 
