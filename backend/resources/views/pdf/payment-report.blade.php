@@ -132,6 +132,7 @@
   @endforeach
 </table>
 @if (($cut['invoices'] ?? 0) > 0)<div class="more">{{ $cut['invoices'] }} more invoices — see the Excel export.</div>@endif
+@endif
 
 <h2>By client</h2>
 <table class="data">
