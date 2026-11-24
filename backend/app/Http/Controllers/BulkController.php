@@ -260,8 +260,7 @@ class BulkController extends Controller
     private function formRequest(string $class, Request $base, User $user, int $id, array $input, string $method): FormRequest
     {
         /** @var FormRequest $req */
-        $req = $class::create('/api/bulk/'.$id, $method, $input, [], [], $base->server->all());
-        $req->headers->set('Accept', 'application/json');
+        $req = $class::create('/api/bulk/'.$id, $method, [], [], [], $this->jsonServer($base), json_encode($input));
         $route = new Route($method, 'api/bulk/{id}', []);
         $route->bind($req);
         $route->setParameter('id', (string) $id);
@@ -275,11 +274,19 @@ class BulkController extends Controller
 
     private function plainRequest(Request $base, User $user, array $input): Request
     {
-        $req = Request::create('/api/bulk', 'POST', $input, [], [], $base->server->all());
-        $req->headers->set('Accept', 'application/json');
+        $req = Request::create('/api/bulk', 'POST', [], [], [], $this->jsonServer($base), json_encode($input));
         $req->setUserResolver(fn () => $user);
 
         return $req;
+    }
+
+    /**
+     * Server values for an inner request carrying its own JSON body (the outer request's
+     * JSON body must not be read in its place).
+     */
+    private function jsonServer(Request $base): array
+    {
+        return array_merge($base->server->all(), ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json']);
     }
 
     /** A controller answered with an error status: surface its message as this item's failure. */
