@@ -914,7 +914,7 @@ export const api = {
   },
 
   // ── Financial ──
-  async getFinancialStats(): Promise<{ total_billed: number; total_received: number; total_outstanding: number; overdue_count: number; draft_count: number; paid_count: number }> {
+  async getFinancialStats(): Promise<{ total_billed: number; total_received: number; total_outstanding: number; total_waived: number; overdue_count: number; draft_count: number; paid_count: number }> {
     return this.request('/financial/stats')
   },
   async getFinancialAnalytics(): Promise<FinancialAnalytics> { return this.request('/financial/analytics') },
