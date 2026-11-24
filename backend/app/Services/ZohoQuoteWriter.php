@@ -70,9 +70,11 @@ class ZohoQuoteWriter
                 if ($error instanceof ZohoBudgetExhausted) {
                     throw $error;
                 }
-                // Never log request bodies/tokens from HTTP exceptions.
+                // Never log request bodies/tokens from HTTP exceptions; Zoho's own error text is safe to show.
+                $why = $error instanceof ZohoApiException
+                    ? ' Zoho said: HTTP ' . $error->status . ($error->zohoCode ? ', code ' . $error->zohoCode : '') . ($error->zohoMessage ? ' - ' . $error->zohoMessage : '') . '.' : '';
                 abort($rejected ? 422 : 409, $rejected
-                    ? 'Zoho rejected the draft. Check the customer, OAuth estimates.CREATE permission and quote settings before trying again.'
+                    ? 'Zoho rejected the draft.' . $why . ' Check the customer, OAuth estimates.CREATE permission and quote settings before trying again.'
                     : 'The send outcome is uncertain. Repeat sending is blocked; the nightly sync will check for the quote.');
             }
         } finally {

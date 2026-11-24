@@ -86,7 +86,7 @@ class ZohoQuoteExportTest extends TestCase
         $this->postJson($this->url(), $input)->assertOk();
         Http::assertSentCount(1);
         Http::assertSent(fn ($r) => $r->method() === 'POST' && str_contains($r->url(), '/estimates?')
-            && str_contains($r->url(), 'send=false') && $r['customer_id'] === '456' && $r['line_items'][0]['rate'] === 1000);
+            && str_contains($r->url(), 'send=false') && $r['estimate_number'] === 'QUO-2026-00001' && $r['customer_id'] === '456' && $r['line_items'][0]['rate'] === 1000);
         $export = ZohoQuoteExport::firstOrFail();
         $this->assertStringNotContainsString('Professional services', $export->getRawOriginal('payload'));
         $this->assertDatabaseHas('audit_logs', ['action' => 'zoho_quote_created', 'subject_id' => $export->id]);

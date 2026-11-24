@@ -72,7 +72,8 @@ class ZohoQuoteDraft
         $this->require(abs(round(array_sum($amounts) + $tax, 2) - $total) <= 0.02, 'Quotation totals are inconsistent. Correct the quotation before sending.');
         $payload = [
             'customer_id' => $customerId, 'currency_id' => (string) $contact['currency_id'],
-            'reference_number' => $reference, 'date' => now('Asia/Kolkata')->toDateString(),
+            // The firm's own number (the docket number, then docket/1 ...): Zoho has automatic numbering switched off.
+            'estimate_number' => $code, 'reference_number' => $reference, 'date' => now('Asia/Kolkata')->toDateString(),
             'is_inclusive_tax' => false, 'line_items' => $lines,
             'notes' => "Portal quote {$code}. Accountant review required: verify taxes and totals before invoicing. Portal expected tax: {$quote->currency} {$tax}; total: {$quote->currency} {$total}. Keep reference {$reference} on the invoice.",
         ];

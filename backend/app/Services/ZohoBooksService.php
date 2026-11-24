@@ -190,7 +190,8 @@ class ZohoBooksService
             if ($response->status() === 401) {
                 Cache::forget('zoho_access_token:' . $this->scope());
             }
-            throw new \App\Exceptions\ZohoApiException($response->status());
+            $message = $response->json('message');
+            throw new \App\Exceptions\ZohoApiException($response->status(), $code ?: null, is_string($message) ? mb_substr($message, 0, 300) : null);
         }
 
         return $response;
@@ -199,7 +200,7 @@ class ZohoBooksService
     /** Exactly one Books POST; never send an email or create an invoice. */
     public function createDraftEstimate(array $payload): array
     {
-        $response = $this->request('/estimates', ['send' => 'false'], $payload);
+        $response = $this->request('/estimates', ['send' => 'false', 'ignore_auto_number_generation' => 'true'], $payload);
         $data = $response->json();
         if (! is_array($data) || (int) ($data['code'] ?? -1) !== 0
             || empty($data['estimate']['estimate_id']) || ($data['estimate']['status'] ?? null) !== 'draft') {
