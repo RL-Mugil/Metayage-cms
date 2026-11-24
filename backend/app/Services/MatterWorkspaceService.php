@@ -38,7 +38,8 @@ class MatterWorkspaceService
 
         $applicationId = $project->patent_application_id;
         $isClient = $user->isClientRole();
-        $canViewFinancials = ! $isClient && ! in_array($user->role, ['hr', 'associate'], true);
+        // Case money: not for client logins, external inventors, or roles without financial access (access matrix).
+        $canViewFinancials = ! $isClient && ! $user->isInventor() && ! in_array($user->role, ['hr', 'associate', 'paralegal'], true);
         $canViewAudit = ! $isClient && in_array($user->role, ['super_admin', 'partner', 'manager', 'galvanizer'], true);
 
         $tasks = Task::query()

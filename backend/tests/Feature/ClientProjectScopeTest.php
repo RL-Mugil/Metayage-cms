@@ -41,6 +41,20 @@ class ClientProjectScopeTest extends TestCase
         $this->getJson('/api/clients/stats')->assertForbidden();
         $this->getJson("/api/clients/{$b->id}")->assertForbidden();
         $this->assertSame(1, $this->getJson('/api/projects/stats')->assertOk()->json('total'));
+
+        // The case page hides money (Costs tab) from an inventor.
+        $this->assertFalse($this->getJson("/api/projects/{$own->id}/workspace")->assertOk()->json('data.capabilities.can_view_financials'));
+        $this->assertNull($this->getJson("/api/projects/{$own->id}/workspace")->json('data.financials'));
+    }
+
+    public function test_a_paralegal_does_not_see_case_money(): void
+    {
+        $c = $this->client('814M');
+        $p = $this->project($c, '814M001INPRV');
+        $user = User::create(['name' => 'Para', 'email' => 'para@scope.test', 'password' => bcrypt('password'), 'role' => 'paralegal', 'status' => 'Active']);
+        $p->update(['patent_engineer_id' => $user->id]);
+        Sanctum::actingAs($user);
+        $this->assertFalse($this->getJson("/api/projects/{$p->id}/workspace")->assertOk()->json('data.capabilities.can_view_financials'));
     }
 
     public function test_overdue_skips_finished_cases_and_granted_kpi_matches_its_list(): void

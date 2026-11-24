@@ -102,9 +102,10 @@ export function MatterWorkspace({ data, projectId, tab, onTabChange, onReload }:
   const renewalsTotal = renewals.length || 18 // years 3-20 if no schedule rows exist yet
 
   return (
-    <div className="min-h-full bg-background">
-      <header className="border-b border-border bg-background">
-        <div className="px-4 py-4 sm:px-6 lg:px-8">
+    <div className="surface-mesh min-h-full">
+      {/* Header + tabs stay pinned under the top bar while the tab content scrolls. */}
+      <header className="sticky top-14 z-20 border-b border-[var(--glass-border)] bg-background/80 shadow-3d backdrop-blur-xl">
+        <div className="px-4 pt-3 pb-2 sm:px-6 lg:px-8">
           <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
             <div className="flex min-w-0 gap-3">
               <Link href="/projects" title="Back to projects" className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border text-muted-foreground hover:bg-muted hover:text-foreground">
@@ -117,8 +118,8 @@ export function MatterWorkspace({ data, projectId, tab, onTabChange, onReload }:
                   {project.service_code && <span>{project.service_code}</span>}
                   {application?.application_number && <span className="font-mono">App. {application.application_number}</span>}
                 </div>
-                <h1 className="mt-1 break-words font-display text-xl font-semibold sm:text-2xl">{project.project_name}</h1>
-                <p className="mt-1 text-sm text-muted-foreground">
+                <h1 className="mt-0.5 line-clamp-1 break-words font-display text-lg font-semibold sm:text-xl" title={project.project_name ?? ""}>{project.project_name}</h1>
+                <p className="text-xs text-muted-foreground">
                   {project.client?.company_name || project.client?.legal_name || "No client"}
                 </p>
               </div>
@@ -132,10 +133,10 @@ export function MatterWorkspace({ data, projectId, tab, onTabChange, onReload }:
           </div>
         </div>
 
-        <div className="overflow-x-auto px-4 sm:px-6 lg:px-8">
-          <nav className="flex min-w-max gap-1" aria-label="Matter workspace sections">
+        <div className="no-scrollbar overflow-x-auto px-4 pb-2 sm:px-6 lg:px-8">
+          <nav className="flex min-w-max gap-1 rounded-full border border-border/70 bg-muted/40 p-0.5 w-fit" aria-label="Matter workspace sections">
             {visibleTabs.map(({ id, label, icon: Icon }) => (
-              <button key={id} onClick={() => { if (id === "discussion") setChatSeen(true); onTabChange(id) }} className={`flex h-11 items-center gap-2 border-b-2 px-3 text-xs font-medium transition-colors ${tab === id ? "border-gold text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
+              <button key={id} onClick={() => { if (id === "discussion") setChatSeen(true); onTabChange(id) }} className={`flex h-8 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-all ${tab === id ? "bg-background text-foreground shadow-3d ring-1 ring-gold/40" : "text-muted-foreground hover:text-foreground"}`}>
                 <Icon className="h-3.5 w-3.5" />{label}
                 {id === "deadlines" && summary.overdue > 0 && <span className="rounded bg-destructive px-1.5 py-0.5 text-[10px] text-destructive-foreground">{summary.overdue}</span>}
                 {id === "discussion" && chatUnread > 0 && <span className="rounded-full bg-gold px-1.5 py-0.5 text-[10px] font-semibold text-black">{chatUnread}</span>}
@@ -149,7 +150,7 @@ export function MatterWorkspace({ data, projectId, tab, onTabChange, onReload }:
         {tab === "overview" && (
           <div className="space-y-6">
             <CaseInsightsPanel projectId={Number(projectId)} onOpenDocuments={() => onTabChange("documents")} />
-            <section className="grid gap-px overflow-hidden rounded-md border border-border bg-border sm:grid-cols-2 xl:grid-cols-5">
+            <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
               {[
                 isRenewalProject
                   ? { label: "Renewal progress", value: `${renewalsPaid} of ${renewalsTotal} years paid`, icon: RefreshCw }
@@ -159,7 +160,7 @@ export function MatterWorkspace({ data, projectId, tab, onTabChange, onReload }:
                 { label: "Unreviewed", value: String(summary.unreviewed), icon: ShieldCheck, alert: summary.unreviewed > 0 },
                 { label: "Lifecycle progress", value: `${progress}%`, icon: CheckCircle2 },
               ].map(({ label, value, icon: Icon, alert }) => (
-                <div key={label} className="bg-background p-4">
+                <div key={label} className={`glass rounded-2xl p-4 transition-transform hover:-translate-y-0.5 ${alert ? "ring-1 ring-destructive/40" : ""}`}>
                   <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground"><span>{label}</span><Icon className="h-4 w-4" /></div>
                   <p className={`mt-3 text-lg font-semibold ${alert ? "text-destructive" : "text-foreground"}`}>{value}</p>
                 </div>
@@ -262,7 +263,7 @@ export function MatterWorkspace({ data, projectId, tab, onTabChange, onReload }:
 
         {tab === "costs" && data.financials && (
           <section className="space-y-6">
-            <div className="grid gap-px overflow-hidden rounded-md border border-border bg-border sm:grid-cols-3">{[["Total invoiced", data.financials.summary.total_invoiced], ["Received", data.financials.summary.total_received], ["Pending", data.financials.summary.total_pending]].map(([label, value]) => <div key={label} className="bg-background p-4"><p className="text-xs text-muted-foreground">{label}</p><p className="mt-2 text-xl font-semibold">{formatMoney(value)}</p></div>)}</div>
+            <div className="grid gap-3 sm:grid-cols-3">{[["Total invoiced", data.financials.summary.total_invoiced], ["Received", data.financials.summary.total_received], ["Pending", data.financials.summary.total_pending]].map(([label, value]) => <div key={label} className="glass rounded-2xl p-4"><p className="text-xs text-muted-foreground">{label}</p><p className="mt-2 text-xl font-semibold">{formatMoney(value)}</p></div>)}</div>
             <PatentInvoicesWorkspace project={project} canManage={data.capabilities.can_view_financials} />
             <ZohoBooksPanel title="Zoho Books — Live Case Billing" fetchSummary={() => api.getZohoProjectSummary(project.id)} />
           </section>
