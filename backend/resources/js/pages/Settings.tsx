@@ -12,6 +12,7 @@ import { isAllCountries, taggedCountries, type CodeItem } from "@/lib/service-co
 import { SiteAdminPanel } from "@/components/site-admin-panel";
 import { IpoSettingsPanel } from "@/components/ipo/ipo-settings-panel";
 import { FirmSwitches } from "@/components/settings/firm-switches";
+import { NotificationChannels } from "@/components/settings/notification-channels";
 import { PaymentDetailsCard } from "@/components/settings/payment-details-card";
 import type { ProjectTab, CodeRow, CodeRenameImpact, CodeMergeAvailable, CodeMergeImpact } from "@/types";
 
@@ -1489,6 +1490,7 @@ export default function Settings() {
               </CardContent>
             </Card>
           )}
+          {tab === "notifications" && <NotificationChannels />}
           {tab === "notifications" && isSuperAdmin && <FirmSwitches />}
 
           {/* ── Security ── */}

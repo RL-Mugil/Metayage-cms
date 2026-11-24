@@ -127,6 +127,14 @@ Route::middleware(['auth:sanctum', 'firm.context', 'throttle:120,1'])->group(fun
     Route::post('/client-hub/renewals/{scheduleId}/decision', [\App\Http\Controllers\ClientHubController::class, 'decide']);
     Route::post('/client-hub/comment', [\App\Http\Controllers\ClientHubController::class, 'comment']);
     Route::get('/client-hub/scorecard', [\App\Http\Controllers\ClientHubController::class, 'scorecard'])->middleware('throttle:20,1');
+    Route::get('/settings/notification-channels', [\App\Http\Controllers\NotificationChannelController::class, 'index']);
+    Route::put('/settings/notification-channels', [\App\Http\Controllers\NotificationChannelController::class, 'update']);
+    // Dashboard → Team, saved views.
+    Route::get('/dashboard/team', [\App\Http\Controllers\TeamInsightsController::class, 'index']);
+    Route::get('/dashboard/team/{userId}/cases', [\App\Http\Controllers\TeamInsightsController::class, 'cases']);
+    Route::get('/saved-views', [\App\Http\Controllers\SavedViewController::class, 'index']);
+    Route::post('/saved-views', [\App\Http\Controllers\SavedViewController::class, 'store']);
+    Route::delete('/saved-views/{id}', [\App\Http\Controllers\SavedViewController::class, 'destroy']);
     Route::get('/settings/payment-details', [\App\Http\Controllers\ClientHubController::class, 'getPaymentDetails']);
     Route::put('/settings/payment-details', [\App\Http\Controllers\ClientHubController::class, 'updatePaymentDetails']);
     Route::put('/settings/switches', [\App\Http\Controllers\FeatureSwitchController::class, 'update']);

@@ -19,6 +19,9 @@ import { ActionItem, ActionItemRow, RenewalApproveModal } from "@/components/act
 import { DonutChart, StatusBar, JurisdictionStackedBar, officeLabel } from "@/components/portfolio-charts";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { FinanceTab } from "@/components/dashboard/finance-tab";
+import { TeamTab } from "@/components/dashboard/team-tab";
+
+const TEAM_ROLES = ["super_admin", "partner", "director", "manager", "galvanizer", "associate", "paralegal"];
 import { useMiniPager, MiniPager } from "@/components/mini-pager";
 
 function formatCurrency(val: number) {
@@ -405,14 +408,15 @@ function StaffDashboard() {
         )}
 
         <Tabs defaultValue="overview" className="flex flex-1 flex-col overflow-hidden">
-          <TabsList className="mx-8 mt-4 w-fit shrink-0">
+          <TabsList className="mx-4 mt-4 w-fit max-w-[calc(100%-2rem)] shrink-0 overflow-x-auto sm:mx-8">
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="portfolio">IP Portfolio</TabsTrigger>
             <TabsTrigger value="financial">Financial</TabsTrigger>
+            {TEAM_ROLES.includes(user?.role) && <TabsTrigger value="team">Team</TabsTrigger>}
           </TabsList>
 
-          <TabsContent value="overview" className="mt-0 flex-1 overflow-y-auto px-8 py-6 space-y-6">
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-6">
+          <TabsContent value="overview" className="mt-0 flex-1 overflow-y-auto px-4 py-4 sm:px-8 sm:py-6 space-y-6">
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-6">
           <StatCard
             label="Active Cases"
             value={metrics.active_matters.toString()}
@@ -560,7 +564,7 @@ function StaffDashboard() {
         </div>
           </TabsContent>
 
-          <TabsContent value="portfolio" className="mt-0 flex-1 overflow-y-auto px-8 py-6 space-y-6">
+          <TabsContent value="portfolio" className="mt-0 flex-1 overflow-y-auto px-4 py-4 sm:px-8 sm:py-6 space-y-6">
             {portfolio && statusMix.total > 0 ? (
               <section>
                 <div className="mb-3 flex items-center justify-between">
@@ -631,9 +635,15 @@ function StaffDashboard() {
             )}
           </TabsContent>
 
-          <TabsContent value="financial" className="mt-0 flex-1 overflow-y-auto px-8 py-6 space-y-6">
+          <TabsContent value="financial" className="mt-0 flex-1 overflow-y-auto px-4 py-4 sm:px-8 sm:py-6 space-y-6">
             <FinanceTab />
           </TabsContent>
+
+          {TEAM_ROLES.includes(user?.role) && (
+            <TabsContent value="team" className="mt-0 flex-1 overflow-y-auto px-4 py-4 sm:px-8 sm:py-6 space-y-6">
+              <TeamTab />
+            </TabsContent>
+          )}
         </Tabs>
       </div>
     </AppLayout>

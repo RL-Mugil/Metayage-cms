@@ -211,6 +211,6 @@ class ClientHubController extends Controller
     {
         User::where(fn ($q) => $q->where('id', $client->account_manager_id)->orWhereIn('role', ['partner', 'super_admin']))
             ->where('status', 'Active')->pluck('id')->unique()
-            ->each(fn ($id) => Notification::create(['user_id' => $id, 'title' => $title, 'message' => mb_substr($message, 0, 1000), 'channel' => 'in_app', 'is_read' => false, 'action_url' => $url]));
+            ->each(fn ($id) => Notification::create(['user_id' => $id, 'title' => $title, 'message' => mb_substr($message, 0, 1000), 'channel' => 'in-app', 'is_read' => false, 'action_url' => $url]));
     }
 }

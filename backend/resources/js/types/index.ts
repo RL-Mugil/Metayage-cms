@@ -615,7 +615,7 @@ export interface ReportResponse {
 // ── Global search ─────────────────────────────────────────────────────────
 
 export interface SearchResult {
-  type: 'client' | 'project' | 'task'
+  type: 'client' | 'project' | 'task' | 'invoice'
   id: number
   title: string
   subtitle: string

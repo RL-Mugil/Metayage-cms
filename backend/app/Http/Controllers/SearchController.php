@@ -22,7 +22,8 @@ class SearchController extends Controller
         $results = [];
 
         // ── Clients (not visible to client/hr roles) ──
-        if (!in_array($role, ['client', 'client_admin', 'hr'])) {
+        $isPortal = $user->isClientRole() || $user->isInventor();
+        if (! $isPortal && $role !== 'hr') {
             $clientQuery = DB::table('clients')
                 ->whereNull('deleted_at')
                 ->where(function ($w) use ($like) {
@@ -71,10 +72,13 @@ class SearchController extends Controller
                 'clients.legal_name   as client_legal'
             );
 
-        if ($role === 'client' || $role === 'client_admin') {
-            // scope to client's own records via projects.client_id matching client's user record
-            $clientId = DB::table('clients')->where('account_manager_id', $user->id)->value('id');
-            $pq->where('projects.client_id', $clientId ?? 0);
+        if ($user->isClientRole()) {
+            // Every client portal role (client, client_admin, client_finance): their own client's cases only.
+            $pq->whereIn('projects.client_id', \App\Models\Client::query()->visibleToUser($user)->select('id'));
+        } elseif ($user->isInventor()) {
+            $pq->whereIn('projects.id', $user->projectsAsInventor()->pluck('projects.id'));
+        } elseif ($role === 'hr') {
+            $pq->whereRaw('1 = 0');
         } elseif (in_array($role, ['associate', 'paralegal'])) {
             $pq->whereIn('projects.id', \App\Models\Project::assignedTo($user->id)->select('id'));
         } elseif ($user->isGalvanizer()) {
@@ -99,7 +103,7 @@ class SearchController extends Controller
         }
 
         // ── Tasks (not for client / hr / finance) ──
-        if (!in_array($role, ['client', 'client_admin', 'hr', 'finance'])) {
+        if (! $isPortal && ! in_array($role, ['hr', 'finance'], true)) {
             $tq = DB::table('tasks')
                 ->where('tasks.title', 'ilike', $like)
                 ->leftJoin('projects', 'tasks.project_id', '=', 'projects.id')
@@ -125,6 +129,23 @@ class SearchController extends Controller
                     'title'    => $t->title,
                     'subtitle' => ($t->project_code ?? 'No project') . ' · ' . ucfirst(strtolower($t->priority ?? '')) . ' priority',
                     'url'      => '/tasks?open=' . $t->id,
+                ];
+            }
+        }
+
+        // ── Invoices (portal register, by UIN) ──
+        if (in_array($role, ['super_admin', 'partner', 'director', 'manager', 'finance', 'client', 'client_admin', 'client_finance'], true)) {
+            $invoices = app(\App\Services\FinanceFigures::class)->registerInvoices($user)
+                ->where('invoice_uin', 'ilike', $like)->with('client:id,legal_name,company_name')
+                ->orderByDesc('invoice_date')->limit(self::PER_TYPE)->get(['id', 'invoice_uin', 'client_id', 'client_name', 'balance_due', 'total_bcy', 'invoice_amount']);
+            foreach ($invoices as $i) {
+                $results[] = [
+                    'type'     => 'invoice',
+                    'id'       => $i->id,
+                    'title'    => $i->invoice_uin,
+                    'subtitle' => ($i->client?->legal_name ?: $i->client?->company_name ?: $i->client_name ?: '').' · '
+                        .((float) $i->balance_due > 0 ? '₹'.number_format((float) $i->balance_due).' due' : 'Paid'),
+                    'url'      => '/pending-payments?search='.rawurlencode((string) $i->invoice_uin),
                 ];
             }
         }

@@ -28,7 +28,7 @@ class DashboardInsightsController extends Controller
     public function deadlines(Request $request): JsonResponse
     {
         $bucket = (string) $request->query('bucket', 'overdue');
-        abort_unless(in_array($bucket, ['overdue', 'next_7_days', 'unreviewed', 'critical'], true), 422, 'Unknown bucket.');
+        abort_unless(in_array($bucket, ['overdue', 'next_7_days', 'unreviewed', 'critical', 'day'], true), 422, 'Unknown bucket.');
 
         $query = DocketDeadline::query()->where('status', 'Open')
             ->whereIn('project_id', $this->activeProjects($request->user())->select('id'))
@@ -38,6 +38,7 @@ class DashboardInsightsController extends Controller
             'next_7_days' => $query->whereBetween('due_date', [now()->startOfDay(), now()->addDays(7)->endOfDay()]),
             'unreviewed' => $query->where('review_status', 'Unreviewed'),
             'critical' => $query->where('risk_level', 'Critical'),
+            'day' => $query->whereDate('due_date', Carbon::parse((string) $request->query('date', now()->toDateString()))->toDateString()),
         };
         $today = now()->startOfDay();
 

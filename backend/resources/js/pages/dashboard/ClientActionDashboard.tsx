@@ -68,7 +68,7 @@ export function ClientActionDashboard() {
         />
       )}
 
-      <div className="px-8 py-6 space-y-6">
+      <div className="px-4 py-4 sm:px-8 sm:py-6 space-y-6">
         <div className="grid gap-4 md:grid-cols-3">
           <StatCard label="Renewals Due" value={renewals.length.toString()} icon={AlertTriangle} accent={renewals.length > 0 ? "gold" : "neutral"} />
           <StatCard label="Open Action Items" value={items.length.toString()} icon={Clock} accent="primary" />

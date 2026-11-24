@@ -13,6 +13,7 @@ import type { SearchResult } from "@/lib/api-client";
 import { toast } from "sonner";
 import { Toaster } from "@/components/ui/sonner";
 import echo from "@/lib/echo";
+import { CommandPalette } from "@/components/command-palette";
 
 interface Props {
   children: ReactNode;
@@ -22,21 +23,23 @@ const TYPE_ICON: Record<string, ReactNode> = {
   client:  <Users className="h-3.5 w-3.5" />,
   project: <Briefcase className="h-3.5 w-3.5" />,
   task:    <ListChecks className="h-3.5 w-3.5" />,
+  invoice: <Briefcase className="h-3.5 w-3.5" />,
 };
 const TYPE_LABEL: Record<string, string> = {
-  client: "Client", project: "Project", task: "Task",
+  client: "Client", project: "Project", task: "Task", invoice: "Invoice",
 };
 const TYPE_COLOR: Record<string, string> = {
   client:  "bg-blue-500/10 text-blue-400",
   project: "bg-purple-500/10 text-purple-400",
   task:    "bg-emerald-500/10 text-emerald-400",
+  invoice: "bg-amber-500/10 text-amber-500",
 };
 
 const SHORTCUTS = [
   {
     group: "Search",
     items: [
-      { keys: ["Ctrl", "K"],  label: "Focus global search" },
+      { keys: ["Ctrl", "K"],  label: "Open the command palette" },
       { keys: ["/"],           label: "Focus global search (when not in a text field)" },
       { keys: ["↑", "↓"],     label: "Navigate search results" },
       { keys: ["Enter"],       label: "Open selected result" },
@@ -83,6 +86,8 @@ export default function AppLayout({ children }: Props) {
 
   // ── Help modal ──
   const [helpOpen, setHelpOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const isPortalUser = ["client", "client_admin", "client_finance", "inventor"].includes(props.auth?.user?.role ?? "");
 
   // Bell polling (fallback for reconnect scenarios)
   useEffect(() => {
@@ -162,7 +167,7 @@ export default function AppLayout({ children }: Props) {
       const inField = tag === "INPUT" || tag === "TEXTAREA" || (e.target as HTMLElement).isContentEditable;
 
       // Ctrl+K — always works
-      if (e.ctrlKey && e.key === "k") { e.preventDefault(); searchRef.current?.focus(); return; }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); setPaletteOpen((v) => !v); return; }
 
       if (inField) return;
 
@@ -231,7 +236,7 @@ export default function AppLayout({ children }: Props) {
                 onChange={(e) => setQuery(e.target.value)}
                 onFocus={() => { if (results.length) setOpen(true); }}
                 onKeyDown={handleKeyDown}
-                placeholder="Search matters, clients, tasks… (/ or Ctrl+K)"
+                placeholder="Search matters, clients, invoices… (/ · Ctrl+K for commands)"
                 className="h-9 pl-9 pr-8 bg-secondary/60 border-transparent focus-visible:bg-background"
               />
               {query && (
@@ -323,6 +328,7 @@ export default function AppLayout({ children }: Props) {
       </div>
 
       {/* ── Help / keyboard shortcuts modal ── */}
+      <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} isClient={isPortalUser} />
       <Dialog open={helpOpen} onOpenChange={setHelpOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>

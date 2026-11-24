@@ -2,6 +2,7 @@ import { Head, Link, router, usePage } from "@inertiajs/react";
 import { useEffect, useState, useMemo } from "react";
 import { GlossaryText, HealthDot } from "@/components/glossary-text";
 import { OfficeMap } from "@/components/portfolio/office-map";
+import { SavedViewsBar } from "@/components/saved-views-bar";
 import { ClientHub } from "@/components/client/client-hub";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import type { PortfolioInsights } from "@/lib/api-client";
@@ -357,7 +358,29 @@ export default function PatentPortfolio() {
         }
       />
 
-      <div className="px-8 py-6 space-y-5">
+      <div className="px-4 py-4 sm:px-8 sm:py-6 space-y-5">
+        <SavedViewsBar page="patent_portfolio"
+          hasFilters={!!(activeOffice || activeStatus || activeStage || actionSearch || selectedClientId)}
+          current={{ client_id: selectedClientId, office: activeOffice, status: activeStatus, stage: activeStage, search: actionSearch, sort: sortCol, dir: sortDir }}
+          onApply={(f) => {
+            const client = (f.client_id as number | null) ?? null;
+            if (!isClientUser && client !== selectedClientId) { setSelectedClientId(client); load(client, roleFilter); }
+            setActiveOffice((f.office as string | null) ?? null);
+            setActiveStatus((f.status as string | null) ?? null);
+            setActiveStage((f.stage as string | null) ?? null);
+            setActionSearch((f.search as string) ?? "");
+            if (f.sort) setSortCol(f.sort as typeof sortCol);
+            if (f.dir) setSortDir(f.dir as typeof sortDir);
+            setPage(1);
+          }} />
+
+        {/* Phones: jump between sections */}
+        <nav className="sticky top-0 z-10 -mx-4 flex gap-1.5 overflow-x-auto bg-background/95 px-4 py-2 backdrop-blur sm:hidden">
+          {[["pf-actions", "Action Required"], ["pf-renewals", "Renewals"], ["pf-payments", "Payments"], ["pf-map", "Map"], ["pf-week", "This week"]].map(([id, label]) => (
+            <a key={id} href={`#${id}`} className="shrink-0 rounded-full border border-border px-3 py-1 text-xs">{label}</a>
+          ))}
+        </nav>
+
         {/* Client selector — internal users only; clients are locked to their own data */}
         {!isClientUser && (
         <div className="relative max-w-xs">
@@ -443,7 +466,7 @@ export default function PatentPortfolio() {
             </div>
 
             {/* Where the filings are */}
-            <Card className="border-border">
+            <Card id="pf-map" className="scroll-mt-14 border-border">
               <CardHeader className="pb-2"><CardTitle className="font-display text-sm">Portfolio map</CardTitle></CardHeader>
               <CardContent>
                 <OfficeMap active={data.active_by_office ?? {}} granted={data.granted_by_office ?? {}}
@@ -456,7 +479,7 @@ export default function PatentPortfolio() {
             {/* Row 2: Renewals + Payments — same height side by side */}
             <div className="grid gap-4 lg:grid-cols-2 items-stretch">
               {/* Upcoming Renewals */}
-              <Card className="border-border h-full flex flex-col">
+              <Card id="pf-renewals" className="scroll-mt-14 border-border h-full flex flex-col">
                 <SectionHead icon={<Calendar className="h-4 w-4 text-gold" />} title="Upcoming Renewals"
                   search={renewalSearch} onSearch={(v) => { setRenewalSearch(v); setRenewalPage(1); }} onViewAll={() => { setRenewalMonth(null); setViewAll("renewals"); }}
                   extra={
@@ -504,7 +527,7 @@ export default function PatentPortfolio() {
               </Card>
 
               {/* Pending Payments */}
-              <Card className="border-border h-full flex flex-col">
+              <Card id="pf-payments" className="scroll-mt-14 border-border h-full flex flex-col">
                 <SectionHead icon={<CreditCard className="h-4 w-4 text-gold" />} title="Pending Payments"
                   search={paymentSearch} onSearch={(v) => { setPaymentSearch(v); setPaymentPage(1); }}
                   onViewAll={() => goTo(`/pending-payments${selectedClientCode ? `?search=${encodeURIComponent(selectedClientCode)}` : ""}`)} />
@@ -568,7 +591,7 @@ export default function PatentPortfolio() {
               </Card>
 
               {/* Action Required — filterable, sortable, searchable; a row opens its action */}
-              <Card className="border-border h-full flex flex-col">
+              <Card id="pf-actions" className="scroll-mt-14 border-border h-full flex flex-col">
                 <SectionHead icon={<AlertCircle className="h-4 w-4 text-amber-500" />} title="Action Required"
                   badge={filtered.length !== actionRows.length ? `${filtered.length} of ${actionRows.length}` : undefined}
                   search={actionSearch} onSearch={(v) => { setActionSearch(v); setPage(1); }} onViewAll={() => setViewAll("actions")}
@@ -668,7 +691,7 @@ export default function PatentPortfolio() {
             </div>
 
             {insights && (insights.stuck.length > 0 || insights.changes.length > 0) && (
-              <div className="grid gap-4 lg:grid-cols-2 items-stretch">
+              <div id="pf-week" className="scroll-mt-14 grid gap-4 lg:grid-cols-2 items-stretch">
                 <Card className="border-border h-full flex flex-col">
                   <CardHeader className="pb-2">
                     <CardTitle className="font-display text-sm flex items-center gap-2">

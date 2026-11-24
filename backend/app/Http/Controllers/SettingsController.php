@@ -202,7 +202,8 @@ class SettingsController extends Controller
             'monthlyReport'   => 'boolean',
         ]);
 
-        $user->notification_prefs = $prefs;
+        // Keep the per-kind delivery choices (NotificationChannelController) when the toggles are saved.
+        $user->notification_prefs = $prefs + array_intersect_key($user->notification_prefs ?? [], ['channels' => true]);
         $user->save();
 
         return response()->json(['ok' => true]);

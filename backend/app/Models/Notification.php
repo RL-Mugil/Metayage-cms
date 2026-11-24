@@ -20,6 +20,13 @@ class Notification extends Model
         'is_read' => 'boolean',
     ];
 
+    protected static function booted(): void
+    {
+        // Each person's channel choice per kind (Settings → Notifications): file quietly and/or email a copy.
+        static::creating(fn (self $n) => \App\Services\NotificationChannels::apply($n, false));
+        static::created(fn (self $n) => \App\Services\NotificationChannels::apply($n, true));
+    }
+
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);

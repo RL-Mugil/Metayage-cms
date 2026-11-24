@@ -80,7 +80,7 @@ export function ClientFinanceDashboard() {
         />
       )}
 
-      <div className="px-8 py-6 space-y-6">
+      <div className="px-4 py-4 sm:px-8 sm:py-6 space-y-6">
         <Card className="border-gold/30">
           <CardHeader className="pb-2">
             <CardTitle className="font-display">Waiting on you</CardTitle>

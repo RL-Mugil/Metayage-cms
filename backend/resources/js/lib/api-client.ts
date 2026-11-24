@@ -295,6 +295,14 @@ export interface ClientHubData {
   can_decide: boolean
 }
 
+export interface TeamInsights {
+  workload: Array<{ user_id: number; name: string; pcm: number; scm: number; pr: number; total: number; overdue: number }>
+  heatmap: { start: string; days: Record<string, number>; overdue: number }
+  leaderboard: Array<{ user_id: number; name: string; stages: number; deadlines: number; score: number }> | null
+}
+export interface SavedViewRow { id: number; name: string; filters: Record<string, unknown> }
+export interface NotificationChannelPrefs { categories: Record<string, string>; channels: Record<string, 'in_app' | 'email' | 'both' | 'off'> }
+
 /** Six-month KPI trend lines (oldest first). */
 export interface DashboardTrends {
   months: string[]
@@ -353,8 +361,21 @@ export const api = {
     return this.request('/dashboard/finance')
   },
   /** Open docket deadlines in a dashboard risk bucket. */
-  async getDashboardDeadlines(bucket: 'overdue' | 'next_7_days' | 'unreviewed' | 'critical'): Promise<any[]> {
-    return this.request(`/dashboard/deadlines?bucket=${bucket}`)
+  async getDashboardDeadlines(bucket: 'overdue' | 'next_7_days' | 'unreviewed' | 'critical' | 'day', date?: string): Promise<any[]> {
+    return this.request(`/dashboard/deadlines?bucket=${bucket}${date ? `&date=${date}` : ''}`)
+  },
+  async getTeamInsights(): Promise<TeamInsights> { return this.request('/dashboard/team') },
+  async getTeamCases(userId: number): Promise<Array<{ id: number; docket_number: string | null; project_name: string | null; client: string | null; status: string; hard_deadline: string | null; as: string }>> {
+    return this.request(`/dashboard/team/${userId}/cases`)
+  },
+  async getSavedViews(page: string): Promise<SavedViewRow[]> { return this.request(`/saved-views?page=${page}`) },
+  async saveView(page: string, name: string, filters: Record<string, unknown>): Promise<SavedViewRow> {
+    return this.request('/saved-views', { method: 'POST', body: JSON.stringify({ page, name, filters }) })
+  },
+  async deleteSavedView(id: number): Promise<{ ok: boolean }> { return this.request(`/saved-views/${id}`, { method: 'DELETE' }) },
+  async getNotificationChannels(): Promise<NotificationChannelPrefs> { return this.request('/settings/notification-channels') },
+  async updateNotificationChannels(channels: Record<string, string>): Promise<NotificationChannelPrefs> {
+    return this.request('/settings/notification-channels', { method: 'PUT', body: JSON.stringify({ channels }) })
   },
   async getDashboardQuoted(): Promise<any[]> { return this.request('/dashboard/drill/quoted') },
   async getDashboardTrends(): Promise<DashboardTrends> { return this.request('/dashboard/trends') },
