@@ -145,10 +145,10 @@ export default function PendingPayments() {
               ] : []),
             ].map((c) => (
               <button key={c.label} type="button" onClick={(c as any).onClick} disabled={!(c as any).onClick}
-                className={`glass flex min-w-[130px] flex-1 items-center gap-2.5 rounded-xl px-3 py-1.5 text-left ${(c as any).onClick ? "cursor-pointer hover:-translate-y-0.5" : "cursor-default"} ${(c as any).active ? "ring-2 ring-violet-500/60" : ""} transition-transform`}>
+                className={`glass flex min-w-[104px] flex-1 items-center gap-2 rounded-xl px-2.5 py-1 text-left ${(c as any).onClick ? "cursor-pointer hover:-translate-y-0.5" : "cursor-default"} ${(c as any).active ? "ring-2 ring-violet-500/60" : ""} transition-transform`}>
                 <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: c.color, boxShadow: `0 0 8px ${c.color}` }} />
-                <span className="min-w-0"><span className="block truncate font-display text-base font-semibold leading-tight">{c.value}</span>
-                  <span className="block text-[10px] uppercase tracking-wider text-muted-foreground">{c.label}</span></span>
+                <span className="min-w-0"><span className="block truncate font-display text-sm font-semibold leading-tight xl:text-base">{c.value}</span>
+                  <span className="block truncate text-[9px] uppercase tracking-wider text-muted-foreground">{c.label}</span></span>
               </button>
             ))}
           </div>
@@ -198,18 +198,18 @@ export default function PendingPayments() {
               </div>
             </div>
           )}>
-            <table className="w-full min-w-[980px] text-xs">
+            <table className="w-full min-w-[860px] text-xs">
               <thead className="table-sticky-head text-[10px] uppercase tracking-wider text-muted-foreground">
                 <tr>
                   <th className="w-1 p-0" />
                   <th className="px-3 py-2 text-left">Invoice</th>
                   {isStaff && <th className="px-3 py-2 text-left">Client</th>}
                   <th className="px-3 py-2 text-left">Case</th>
-                  <th className="px-3 py-2 text-left">Invoiced</th>
+                  <th className="hidden px-3 py-2 text-left xl:table-cell">Invoiced</th>
                   <th className="px-3 py-2 text-left">Due</th>
                   <th className="px-3 py-2 text-right">Late</th>
                   <th className="px-3 py-2 text-right">Balance</th>
-                  <th className="px-3 py-2 text-left">Status / last follow-up</th>
+                  <th className="px-3 py-2 text-left">Status · follow-up</th>
                   <th className="px-3 py-2 text-right">Actions</th>
                 </tr>
               </thead>
@@ -229,21 +229,21 @@ export default function PendingPayments() {
                         {r.source === "zoho" && isStaff && <div className="text-[10px] text-muted-foreground">Zoho Books</div>}
                       </td>
                       {isStaff && (
-                        <td className="max-w-[200px] px-3 py-2" title={[r.client?.contact_name, r.client?.contact_email, r.client?.phone].filter(Boolean).join(" · ")}>
+                        <td className="max-w-[180px] px-3 py-2" title={[r.client?.contact_name, r.client?.contact_email, r.client?.phone].filter(Boolean).join(" · ")}>
                           <div className="truncate font-medium">{clientName(r)}</div>
                           <div className="truncate text-[10px] text-muted-foreground">{r.client?.client_code}{r.client?.contact_email ? ` · ${r.client.contact_email}` : ""}</div>
                         </td>
                       )}
-                      <td className="max-w-[180px] px-3 py-2">
+                      <td className="max-w-[140px] px-3 py-2">
                         <div className="truncate font-mono text-[11px]">{r.project?.docket_number ?? r.docket_number ?? "—"}</div>
                         <div className="truncate text-[10px] text-muted-foreground">{r.project?.project_name ?? r.invention_title ?? ""}</div>
                       </td>
-                      <td className="px-3 py-2 font-mono text-[11px] text-muted-foreground">{fmtDate(r.invoice_date)}</td>
-                      <td className="px-3 py-2 font-mono text-[11px]">{r.due_date ? fmtDate(r.due_date) : "—"}</td>
+                      <td className="hidden whitespace-nowrap px-3 py-2 font-mono text-[11px] text-muted-foreground xl:table-cell">{fmtDate(r.invoice_date)}</td>
+                      <td className="whitespace-nowrap px-3 py-2 font-mono text-[11px]">{r.due_date ? fmtDate(r.due_date) : "—"}</td>
                       <td className="px-3 py-2 text-right">
-                        {r.days_overdue ? <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold text-white" style={{ background: col }}>{r.days_overdue} d</span> : <span className="text-[10px] text-blue-600">not due</span>}
+                        {r.days_overdue ? <span className="whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-semibold text-white" style={{ background: col }}>{r.days_overdue} d</span> : <span className="text-[10px] text-blue-600">not due</span>}
                       </td>
-                      <td className="px-3 py-2 text-right">
+                      <td className="whitespace-nowrap px-3 py-2 text-right">
                         <div className="font-semibold">{money(balance, r.currency)}</div>
                         {balance < Number(r.invoice_amount) && <div className="text-[10px] text-muted-foreground">of {money(r.invoice_amount, r.currency)}</div>}
                       </td>
