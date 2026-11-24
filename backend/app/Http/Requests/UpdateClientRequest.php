@@ -9,6 +9,13 @@ use Illuminate\Validation\Rule;
 
 class UpdateClientRequest extends FormRequest
 {
+    use Concerns\ValidatesClientAddress;
+
+    protected function existingClient(): ?\App\Models\Client
+    {
+        return $this->route('id') ? \App\Models\Client::find($this->route('id')) : null;
+    }
+
     public function authorize(): bool
     {
         $client = $this->route('id') ? \App\Models\Client::find($this->route('id')) : null;
@@ -39,6 +46,7 @@ class UpdateClientRequest extends FormRequest
             'phone'                => 'nullable|string|max:20',
             'address'              => 'nullable|string',
             'state'                => 'nullable|string|max:100',
+            ...$this->addressRules(),
             'primary_jurisdiction' => 'nullable|string|max:10',
             'language_preference'  => 'nullable|string|max:50',
             'industry'             => 'nullable|string|max:100',

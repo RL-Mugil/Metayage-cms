@@ -1,3 +1,4 @@
+import { composeAddress, splitAddress } from "@/lib/postal-address";
 import { Head, usePage } from "@inertiajs/react";
 import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { toast } from "sonner";
@@ -133,6 +134,8 @@ interface CF {
   legal_name: string; entity_subtype: string; fee_entity_tier: string; pan_number: string; cin_number: string;
   trade_name: string; website: string; contact_name: string; contact_email: string;
   phone: string; address: string; state: string;
+  // Address in the IPO-form parts (carried to every case's Forms tab); `address` is rebuilt from them on save.
+  address_house: string; address_street: string; city: string; pincode: string;
   industry: string; payment_terms: string;
   account_manager_id: string; bank_name: string; bank_account: string; bank_ifsc: string;
   referred_by_code: string; accounts_person: string; remarks: string; status: string;
@@ -149,6 +152,7 @@ const BLANK: CF = {
   client_type:"organization", country:"India", has_gstin:false, gstin:"",
   legal_name:"", entity_subtype:"", fee_entity_tier:"", pan_number:"", cin_number:"", trade_name:"", website:"",
   contact_name:"", contact_email:"", phone:"", address:"", state:"",
+  address_house:"", address_street:"", city:"", pincode:"",
   industry:"", payment_terms:"Net 30",
   account_manager_id:"", bank_name:"", bank_account:"", bank_ifsc:"",
   referred_by_code:"", accounts_person:"", remarks:"", status:"Active",
@@ -360,13 +364,13 @@ function KpiModal({ kpi, onClose, onSelectClient }: { kpi: KpiDef; onClose: () =
 const IMPORT_HEADERS = [
   "legal_name","client_type","nationality","has_gstin","gstin","pan_number","cin_number",
   "entity_subtype","trade_name","website","contact_name","contact_email","phone",
-  "address","state","industry","payment_terms","bank_name","status","remarks",
+  "address_house","address_street","city","state","pincode","address","industry","payment_terms","bank_name","status","remarks",
 ];
 const IMPORT_EXAMPLE = [
   "Acme Corp Pvt Ltd","organization","India","true","27AAPFU0939F1ZV","AAPFU0939F",
   "U12345MH2020PTC123456","Private Limited (Pvt Ltd)","Acme","https://acme.com",
-  "John Doe","john@acme.com","+91 98765 43210","123 Main St Mumbai 400001",
-  "Maharashtra","Information Technology","Net 30","HDFC Bank","Active","Optional notes",
+  "John Doe","john@acme.com","+91 98765 43210","No. 123","Main Street, Andheri East","Mumbai",
+  "Maharashtra","400069","","Information Technology","Net 30","HDFC Bank","Active","Optional notes",
 ];
 
 function downloadImportTemplate() {
@@ -703,9 +707,28 @@ export default function Clients() {
   const countryKnown = !form.country || countries.length === 0 || countries.some((c) => c.name === form.country);
 
   const set = (f: keyof CF, v: any) => setForm((p) => ({ ...p, [f]: v }));
+  const [addrSplitNote, setAddrSplitNote] = useState(false);
 
 
-  function openCreate() { setForm(BLANK); setEditC(null); setFErr(""); setShowForm(true); }
+  function openCreate() { setForm(BLANK); setEditC(null); setFErr(""); setAddrSplitNote(false); setShowForm(true); }
+
+  /** The client's address parts; an older client with only the one-line address gets it split (flagged for checking). */
+  function partsFor(c: any) {
+    const has = c.address_house || c.address_street || c.city || c.pincode;
+    const country = c.country || c.nationality || "India";
+    const parts = has || !c.address
+      ? { address_house: c.address_house ?? "", address_street: c.address_street ?? "", city: c.city ?? "", state: c.state ?? "", pincode: c.pincode ?? "" }
+      : splitAddress(c.address, c.state ?? "", country);
+    setAddrSplitNote(!has && !!c.address);
+    return parts;
+  }
+
+  /** Use a GSTIN / CIN fetched address: split it into the parts. */
+  function applyFetchedAddress(text: string) {
+    const parts = splitAddress(text, form.state, form.country);
+    setForm((p) => ({ ...p, ...parts, state: parts.state || p.state }));
+    setAddrSplitNote(true);
+  }
 
   function openEdit(c: any) {
     setForm({
@@ -726,7 +749,7 @@ export default function Clients() {
       contact_email:    c.contact_email     ?? "",
       phone:            c.phone             ?? "",
       address:          c.address           ?? "",
-      state:            c.state             ?? "",
+      ...partsFor(c),
       industry:         c.industry          ?? "",
       payment_terms:    c.payment_terms     ?? "Net 30",
       account_manager_id: c.account_manager_id ? String(c.account_manager_id) : "",
@@ -751,6 +774,9 @@ export default function Clients() {
     }
     if (!form.country.trim() || !countryKnown) { setFErr("Choose the client's country from the list."); return; }
     if (isForeignCompany && isIndian) { setFErr("A foreign company's country cannot be India. Choose its country."); return; }
+    if (!form.city.trim()) { setFErr("Enter the client's city."); return; }
+    if (isIndian && !form.state.trim()) { setFErr("Choose the client's state."); return; }
+    if (isIndian && !/^\d{6}$/.test(form.pincode.replace(/\s+/g, ""))) { setFErr("Enter the 6-digit PIN code."); return; }
     const newPortalUsers = editC ? [] : form.portal_users;
     if (!editC && form.accounts_login) {
       const problem = portalUserProblem({ designation: "Accounts Person", name: form.accounts_person || "Accounts", email: form.accounts_email, password: form.accounts_password });
@@ -841,7 +867,7 @@ export default function Clients() {
                   Type: c.client_type ?? "", "GST Type": c.gst_type ?? "",
                   GSTIN: c.gstin ?? "", PAN: c.pan_number ?? "",
                   Phone: c.phone ?? "", Email: c.contact_email ?? "",
-                  State: c.state ?? "", "Onboarded": fmtDate(c.date_onboarded), Status: c.status ?? "",
+                  City: c.city ?? "", State: c.state ?? "", Pincode: c.pincode ?? "", "Onboarded": fmtDate(c.date_onboarded), Status: c.status ?? "",
                 }))
               )}>
               <Download className="h-4 w-4 mr-2" />Export
@@ -1165,7 +1191,7 @@ export default function Clients() {
                           <GovFieldRow label="Name" current={form.legal_name} fetched={editC.cin_verified_name}
                             onUse={() => set("legal_name", editC.cin_verified_name)} />
                           <GovFieldRow label="Address" current={form.address} fetched={editC.cin_verified_address}
-                            onUse={() => set("address", editC.cin_verified_address)} />
+                            onUse={() => applyFetchedAddress(editC.cin_verified_address)} />
                         </div>
                       )}
                     </div>
@@ -1248,7 +1274,7 @@ export default function Clients() {
                           <GovFieldRow label="Name" current={form.legal_name} fetched={editC.gstin_verified_name}
                             onUse={() => set("legal_name", editC.gstin_verified_name)} />
                           <GovFieldRow label="Address" current={form.address} fetched={editC.gstin_verified_address}
-                            onUse={() => set("address", editC.gstin_verified_address)} />
+                            onUse={() => applyFetchedAddress(editC.gstin_verified_address)} />
                         </div>
                       )}
                     </div>
@@ -1293,8 +1319,29 @@ export default function Clients() {
                     <FLbl>Email</FLbl>
                     <input type="email" value={form.contact_email} onChange={(e)=>set("contact_email",e.target.value)} className={fInp} placeholder="contact@company.com"/>
                   </div>
+                  <div className="col-span-4 mt-1 flex items-center justify-between">
+                    <span className="text-[11px] font-semibold text-foreground">Address</span>
+                    <span className="text-[10px] text-muted-foreground">Same parts as the IPO Forms tab — carried to every case of this client</span>
+                  </div>
+                  {addrSplitNote && (
+                    <div className="col-span-4 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[11px] text-amber-800">
+                      Split from the client's one-line address — please check each part before saving.
+                    </div>
+                  )}
                   <div className="col-span-2">
-                    <FLbl>{isIndian ? "State" : "State / Region"}{form.country ? ` (${form.country})` : ""}</FLbl>
+                    <FLbl>House no. / building</FLbl>
+                    <input value={form.address_house} onChange={(e)=>set("address_house",e.target.value)} className={fInp} placeholder="e.g. No. 207, EGPI Arcadia"/>
+                  </div>
+                  <div className="col-span-2">
+                    <FLbl>Street / area</FLbl>
+                    <input value={form.address_street} onChange={(e)=>set("address_street",e.target.value)} className={fInp} placeholder="e.g. Banaswadi Main Road, Jai Bharath Nagar"/>
+                  </div>
+                  <div>
+                    <FLbl req>City</FLbl>
+                    <input value={form.city} onChange={(e)=>set("city",e.target.value)} className={fInp} placeholder="e.g. Bengaluru"/>
+                  </div>
+                  <div className="col-span-2">
+                    <FLbl req={isIndian}>{isIndian ? "State" : "State / Region"}{form.country ? ` (${form.country})` : ""}</FLbl>
                     {countryStates.length > 0 ? (
                       <select value={form.state} onChange={(e)=>set("state",e.target.value)} className={fInp}>
                         <option value="">Select state…</option>
@@ -1305,9 +1352,13 @@ export default function Clients() {
                       <input value={form.state} onChange={(e)=>set("state",e.target.value)} className={fInp} placeholder={form.country ? "State or region" : "Choose the country first"}/>
                     )}
                   </div>
-                  <div className="col-span-4">
-                    <FLbl>Address</FLbl>
-                    <textarea value={form.address} onChange={(e)=>set("address",e.target.value)} rows={2} className={fTa} placeholder="Full address including city, PIN code…"/>
+                  <div>
+                    <FLbl req={isIndian}>{isIndian ? "Pin code" : "Postal code"}</FLbl>
+                    <input value={form.pincode} onChange={(e)=>set("pincode",isIndian ? e.target.value.replace(/[^\d]/g, "").slice(0, 6) : e.target.value)} inputMode={isIndian ? "numeric" : undefined} className={fInp} placeholder={isIndian ? "560033" : "Postal code"}/>
+                  </div>
+                  <div className="col-span-4 text-[10px] text-muted-foreground">
+                    <span className="font-medium text-foreground">Full address: </span>
+                    {composeAddress({ ...form, country: form.country }) || "—"}
                   </div>
                 </div>
               </section>

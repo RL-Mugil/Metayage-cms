@@ -263,6 +263,11 @@ class Form1DataBuilder
     private function clientApplicant(Client $client): array
     {
         $isPerson = $client->client_type === 'individual';
+        $country = $client->country ?: $client->nationality;
+        // A client with only the old one-line address: split it into the form's parts.
+        $parts = ($client->address_house || $client->address_street || $client->city || $client->pincode || ! $client->address)
+            ? ['address_house' => $client->address_house, 'address_street' => $client->address_street, 'city' => $client->city, 'state' => $client->state, 'pincode' => $client->pincode]
+            : array_map(fn ($v) => $v === '' ? null : $v, \App\Support\PostalAddress::split($client->address, $client->state, $country));
 
         return [
             'name'                 => $client->legal_name ?: $client->company_name,
@@ -270,14 +275,13 @@ class Form1DataBuilder
             'age'                  => null,
             'natural_person'       => $isPerson,
             'nationality'          => $client->nationality,
-            'country_of_residence' => $client->country ?: $client->nationality,
-            'address_house'        => $client->address_house,
-            // Older clients only carry the free-text address; print it as the street line.
-            'address_street'       => $client->address_street ?: $client->address,
-            'city'                 => $client->city,
-            'state'                => $client->state,
-            'country'              => $client->country ?: $client->nationality,
-            'pincode'              => $client->pincode,
+            'country_of_residence' => $country,
+            'address_house'        => $parts['address_house'],
+            'address_street'       => $parts['address_street'],
+            'city'                 => $parts['city'],
+            'state'                => $parts['state'] ?: $client->state,
+            'country'              => $country,
+            'pincode'              => $parts['pincode'],
             'email'                => $client->contact_email,
             'phone'                => $client->phone,
         ];

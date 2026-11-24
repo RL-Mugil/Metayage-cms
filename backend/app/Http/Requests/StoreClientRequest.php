@@ -9,6 +9,8 @@ use Illuminate\Validation\Rule;
 
 class StoreClientRequest extends FormRequest
 {
+    use Concerns\ValidatesClientAddress;
+
     public function authorize(): bool
     {
         return $this->user()->can('create', \App\Models\Client::class);
@@ -37,6 +39,7 @@ class StoreClientRequest extends FormRequest
             'phone'                => 'nullable|string|max:20',
             'address'              => 'nullable|string',
             'state'                => 'nullable|string|max:100',
+            ...$this->addressRules(),
             'primary_jurisdiction' => 'nullable|string|max:10',
             'language_preference'  => 'nullable|string|max:50',
             'industry'             => 'nullable|string|max:100',

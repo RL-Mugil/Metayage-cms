@@ -137,6 +137,30 @@ class ClientController extends Controller
             $v['cin_number'] = null;
         }
 
+        return $this->composeAddress($v, $client);
+    }
+
+    /**
+     * When the address parts are saved, the one-line `address` (GSTIN/CIN address check,
+     * older screens) is rebuilt from them, so the two never drift apart.
+     */
+    private function composeAddress(array $v, ?Client $client = null): array
+    {
+        if (! collect(['address_house', 'address_street', 'city', 'pincode'])->contains(fn ($k) => array_key_exists($k, $v))) {
+            return $v;
+        }
+        if (array_key_exists('pincode', $v)) {
+            $v['pincode'] = ($pin = preg_replace('/\s+/', '', (string) $v['pincode'])) !== '' ? strtoupper($pin) : null;
+        }
+        $parts = [];
+        foreach (\App\Support\PostalAddress::PARTS as $k) {
+            $parts[$k] = array_key_exists($k, $v) ? $v[$k] : $client?->{$k};
+        }
+        $line = \App\Support\PostalAddress::compose($parts);
+        if ($line !== '') {
+            $v['address'] = $line;
+        }
+
         return $v;
     }
 
@@ -521,8 +545,7 @@ class ClientController extends Controller
                         'contact_name'   => $row['contact_name'] ?? null,
                         'contact_email'  => $email,
                         'phone'          => $row['phone'] ?? null,
-                        'address'        => $row['address'] ?? null,
-                        'state'          => $row['state'] ?? null,
+                        ...$this->importAddress($row, $nationality),
                         'industry'       => $row['industry'] ?? null,
                         'payment_terms'  => $row['payment_terms'] ?? 'Net 30',
                         'account_manager_id' => $user->id,
@@ -804,6 +827,24 @@ class ClientController extends Controller
             'status'             => 'Active',
             '_use_existing_code' => true,
         ];
+    }
+
+    /** Address columns for an imported row: the parts when given, otherwise the old one-line address split. */
+    private function importAddress(array $row, ?string $country): array
+    {
+        $get = fn (string $k) => trim((string) ($row[$k] ?? ''));
+        $parts = ['address_house' => $get('address_house'), 'address_street' => $get('address_street'), 'city' => $get('city'),
+            'state' => $get('state'), 'country' => $country, 'pincode' => preg_replace('/\s+/', '', $get('pincode'))];
+        if ($parts['address_house'] === '' && $parts['address_street'] === '' && $parts['city'] === '' && $get('address') !== '') {
+            $split = \App\Support\PostalAddress::split($get('address'), $parts['state'] ?: null, $country);
+            unset($split['confidence']);
+            $parts = array_merge($parts, array_filter($split, fn ($val) => $val !== ''));
+        }
+        $composed = \App\Support\PostalAddress::compose($parts);
+        $parts = array_map(fn ($val) => $val === '' ? null : $val, $parts);
+        unset($parts['country']);
+
+        return [...$parts, 'address' => $get('address') !== '' ? $get('address') : ($composed !== '' ? $composed : null)];
     }
 
     // ── Contacts ──────────────────────────────────────────────────────────────

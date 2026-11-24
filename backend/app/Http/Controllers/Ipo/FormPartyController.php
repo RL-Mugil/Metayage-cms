@@ -41,7 +41,16 @@ class FormPartyController extends Controller
         ]);
 
         DB::transaction(function () use ($request, $project, $validated) {
-            $project->client->update($validated);
+            // Keep the client's one-line address in step with the parts (Client form shows the same).
+            $client = $project->client;
+            $parts = [];
+            foreach (\App\Support\PostalAddress::PARTS as $k) {
+                $parts[$k] = array_key_exists($k, $validated) ? $validated[$k] : $client->{$k};
+            }
+            if (($line = \App\Support\PostalAddress::compose($parts)) !== '') {
+                $validated['address'] = $line;
+            }
+            $client->update($validated);
             $this->audit($request, 'ipo_applicant_updated', 'Client', $project->client->id, [
                 'project_id' => $project->id, 'fields' => array_keys($validated),
             ]);
