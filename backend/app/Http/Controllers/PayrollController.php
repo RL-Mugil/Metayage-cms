@@ -20,6 +20,8 @@ use App\Models\User;
 use App\Services\PayrollService;
 use App\Services\InternalDocumentSignatureService;
 use App\Services\TdsLiabilityService;
+use App\Services\Payroll\PayslipBuilder;
+use App\Services\Payroll\PayslipSigner;
 use App\Support\Notifier;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
@@ -741,9 +743,8 @@ class PayrollController extends Controller
         }
 
         foreach ($run->payslips as $slip) {
-            $fingerprint = $pdfController->monthlyFingerprint($slip, app(InternalDocumentSignatureService::class));
-            if (! app(InternalDocumentSignatureService::class)->verify($slip->internalSignature, $fingerprint)) {
-                return response()->json(['message' => "Payslip {$slip->employee_code} is awaiting Accounts internal signature."], 422);
+            if (! app(PayslipSigner::class)->isSigned($slip)) {
+                return response()->json(['message' => "Payslip {$slip->employee_code} is not signed yet — use Sign & publish on this run first."], 422);
             }
         }
 
@@ -833,7 +834,7 @@ class PayrollController extends Controller
                 if ($priorHours->count() === 12) {
                     $annualShortage = max(0, (181 * 60 * 12) - (int) $priorHours->sum());
                     if ($annualShortage > 0) {
-                        $basis = collect($amounts['components'])->whereIn('code', ['BASIC', 'VARIABLE_PAY', 'HRA'])->sum('amount');
+                        $basis = collect($componentRows)->whereIn('code', ['BASIC', 'VARIABLE_PAY', 'HRA'])->sum('amount');
                         $annualAdjustment = round(($basis / (181 * 60)) * $annualShortage, 2);
                     }
                 }
@@ -873,6 +874,9 @@ class PayrollController extends Controller
             }
 
             $this->refreshTotals($run);
+            // The figures changed: the old signature no longer applies. The payslip is
+            // hidden from the employee until it is signed again (Sign & publish).
+            app(PayslipSigner::class)->revoke($slip);
 
             AuditLog::create([
                 'user_id' => $user->id, 'action' => 'update_payslip',
@@ -890,6 +894,146 @@ class PayrollController extends Controller
         return response()->json($slip);
     }
 
+    /* ── Publishing: sign payslips so employees can see them ───────────── */
+
+    /**
+     * Sign & publish a finalized or paid run: the payroll signatory's PIN signs every
+     * payslip in it that is not withheld and not already validly signed. Safe to repeat
+     * after a payslip is edited or added.
+     */
+    public function publishRun(Request $request, $id, PayslipSigner $signer)
+    {
+        $user = $request->user();
+        if (! in_array($user->role, self::MANAGE_ROLES, true)) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+        $validated = $request->validate(['pin' => 'required|digits:4']);
+        $run = PayrollRun::findOrFail($id);
+        if (! in_array($run->status, ['Finalized', 'Paid'], true)) {
+            return response()->json(['message' => 'Only an approved (finalized) or paid run can be published.'], 422);
+        }
+        $slips = Payslip::with('components', 'run:id,period', 'internalSignature')->where('payroll_run_id', $run->id)
+            ->where(fn ($q) => $q->whereNull('withheld')->orWhere('withheld', false))->get();
+        $signed = $signer->signMany($slips, $validated['pin']);
+
+        AuditLog::create([
+            'user_id' => $user->id, 'action' => 'publish_payroll_run',
+            'subject_type' => 'PayrollRun', 'subject_id' => $run->id,
+            'metadata' => ['signed' => $signed, 'payslips' => $slips->count(), 'signatory' => $signer->signatory()['name']],
+            'ip_address' => $request->ip(), 'user_agent' => $request->userAgent(),
+        ]);
+
+        return response()->json([
+            'message' => $signed ? "{$signed} payslip(s) signed and published to employees." : 'Every payslip in this run is already signed and published.',
+            'signed' => $signed, 'total' => $slips->count(),
+        ]);
+    }
+
+    /** Preview a manual payslip for one employee and month (nothing is saved). */
+    public function manualPayslipPreview(Request $request, $employeeId, PayslipBuilder $builder)
+    {
+        if ($deny = $this->denyUnlessManager($request)) {
+            return $deny;
+        }
+        [$employee, $period, $overrides] = $this->manualInputs($request, $employeeId);
+        $computed = $builder->compute($employee, $period, $period->daysInMonth, $builder->context($period, $employee->id), $overrides);
+        $existing = $this->existingSlipFor($employee->id, $period);
+
+        return response()->json([
+            'period' => $period->format('Y-m'),
+            'fields' => $computed['fields'],
+            'components' => $computed['components'],
+            'loan_deduction' => round($computed['loans']->sum('amount'), 2),
+            'existing' => $existing ? ['payslip_id' => $existing->id, 'run_id' => $existing->payroll_run_id, 'run_type' => $existing->run?->run_type, 'run_status' => $existing->run?->status] : null,
+        ]);
+    }
+
+    /**
+     * Manual payslip from the Payroll Portal employee page, for a month with no payroll
+     * run (or one this employee is not in). Saved as real payroll in that month's Manual
+     * run (counts in totals, TDS and Form 16), signed with the signatory's PIN and
+     * published to the employee's portal straight away. The month's regular run, when
+     * generated later, skips this employee.
+     */
+    public function manualPayslip(Request $request, $employeeId, PayslipBuilder $builder, PayslipSigner $signer)
+    {
+        if ($deny = $this->denyUnlessManager($request)) {
+            return $deny;
+        }
+        $request->validate(['pin' => 'required|digits:4']);
+        [$employee, $period, $overrides] = $this->manualInputs($request, $employeeId);
+        if ($existing = $this->existingSlipFor($employee->id, $period)) {
+            return response()->json([
+                'message' => "{$employee->full_name} already has a payslip for {$period->format('F Y')} in the {$existing->run?->run_type} run — edit that payslip instead.",
+                'existing' => ['payslip_id' => $existing->id, 'run_id' => $existing->payroll_run_id],
+            ], 422);
+        }
+        $signatory = $signer->assertPin((string) $request->input('pin'));
+        $user = $request->user();
+
+        $slip = DB::transaction(function () use ($builder, $signer, $signatory, $employee, $period, $overrides, $user, $request) {
+            $run = PayrollRun::where('run_type', 'Manual')->whereDate('period', $period->toDateString())->lockForUpdate()->first()
+                ?? PayrollRun::create([
+                    'period' => $period->toDateString(), 'run_type' => 'Manual', 'status' => 'Finalized',
+                    'processed_by_id' => $user->id, 'approved_by_id' => $user->id, 'approved_at' => now(), 'finalized_at' => now(),
+                ]);
+            $computed = $builder->compute($employee, $period, $period->daysInMonth, $builder->context($period, $employee->id), $overrides);
+            $slip = $builder->persist($run, $period, $computed);
+            $builder->refreshRunTotals($run);
+            app(TdsLiabilityService::class)->generateForRun($run->fresh());
+            $slip->load('components', 'run:id,period');
+            $signature = $signer->stamp(PayslipSigner::DOCUMENT_TYPE, (int) $slip->id, $signer->fingerprint($slip), $signatory);
+
+            AuditLog::create([
+                'user_id' => $user->id, 'action' => 'manual_payslip',
+                'subject_type' => 'Payslip', 'subject_id' => $slip->id,
+                'metadata' => ['employee' => $employee->employee_code, 'period' => $period->format('Y-m'), 'net_pay' => $slip->net_pay,
+                    'run_id' => $run->id, 'verification_code' => $signature->verification_code, 'overrides' => $overrides],
+                'ip_address' => $request->ip(), 'user_agent' => $request->userAgent(),
+            ]);
+
+            return $slip;
+        });
+
+        if ($employee->user_id) {
+            Notifier::push($employee->user_id, 'payslip', 'Payslip published',
+                'Your payslip for '.$period->format('F Y').' is ready to download.', '/hrms/payroll');
+        }
+
+        return response()->json(['message' => 'Payslip generated, signed and published to the employee.', 'payslip' => $slip->fresh('components', 'run')], 201);
+    }
+
+    private function denyUnlessManager(Request $request): ?\Illuminate\Http\JsonResponse
+    {
+        return in_array($request->user()->role, self::MANAGE_ROLES, true) ? null : response()->json(['message' => 'Forbidden'], 403);
+    }
+
+    /** @return array{0: Employee, 1: Carbon, 2: array<string, float|null>} */
+    private function manualInputs(Request $request, $employeeId): array
+    {
+        $validated = $request->validate([
+            'period' => 'required|date_format:Y-m',
+            'lop_days' => 'nullable|numeric|min:0|max:31',
+            'tds' => 'nullable|numeric|min:0',
+            'health_insurance' => 'nullable|numeric|min:0',
+            'other_deductions' => 'nullable|numeric|min:0',
+        ]);
+        $employee = Employee::with('designation:id,title')->findOrFail($employeeId);
+        abort_if((float) $employee->base_pay_monthly <= 0, 422, "{$employee->full_name} has no base pay set — add it in HRMS → Employees first.");
+        $period = Carbon::createFromFormat('Y-m', $validated['period'])->startOfMonth();
+
+        return [$employee, $period, collect($validated)->only(['lop_days', 'tds', 'health_insurance', 'other_deductions'])
+            ->map(fn ($v) => $v === null ? null : (float) $v)->all()];
+    }
+
+    /** The employee's payslip for that month in a Regular or Manual run, if any. */
+    private function existingSlipFor(int $employeeId, Carbon $period): ?Payslip
+    {
+        return Payslip::with('run:id,run_type,status')->where('employee_id', $employeeId)
+            ->whereHas('run', fn ($q) => $q->whereIn('run_type', ['Regular', 'Manual'])->whereDate('period', $period->toDateString())->where('status', '!=', 'Failed'))
+            ->first();
+    }
+
     /* ── Employee self-service ─────────────────────────────────────────── */
 
     public function mySlips(Request $request)
@@ -902,13 +1046,27 @@ class PayrollController extends Controller
         $employee = Employee::where('user_id', $user->id)->first();
         if (! $employee) return response()->json(['data' => [], 'total' => 0, 'per_page' => 25, 'current_page' => 1, 'last_page' => 1, 'has_more' => false]);
 
-        // Drafts are HR work-in-progress; employees only see finalized/paid slips.
-        $query = Payslip::with('run:id,period,status', 'components')
+        // Employees only see payslips that are finalized/paid AND signed by the payroll
+        // signatory (Sign & publish, or a manual payslip). Drafts are HR work-in-progress.
+        $query = Payslip::with('run:id,period,status,run_type', 'components', 'internalSignature')
             ->where('employee_id', $employee->id)
             ->whereHas('run', fn ($q) => $q->whereIn('status', ['Finalized', 'Paid']))
+            ->whereHas('internalSignature')
             ->orderByDesc('id');
+        $page = PaginationHelper::paginate($query, $request);
+        $signer = app(PayslipSigner::class);
+        $page['data'] = collect($page['data'])->map(function ($slip) use ($signer) {
+            $row = $slip;
+            $valid = $signer->isSigned($row);
+            $out = $row->toArray();
+            $out['signed'] = $valid;
+            $out['verification_code'] = $valid ? $row->internalSignature?->verification_code : null;
+            unset($out['internal_signature']);
 
-        return response()->json(PaginationHelper::paginate($query, $request));
+            return $out;
+        })->values()->all();
+
+        return response()->json($page);
     }
 
     /** HR view of one employee's payslips — the Payroll Portal employee detail page. */

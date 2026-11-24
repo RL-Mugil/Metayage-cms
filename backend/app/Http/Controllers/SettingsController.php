@@ -707,6 +707,7 @@ class SettingsController extends Controller
             'pay_day' => 'nullable|integer|min:1|max:31',
             'signatory_name' => 'nullable|string|max:255',
             'signatory_designation' => 'nullable|string|max:255',
+            'signatory_user_id' => 'nullable|integer|exists:users,id',
         ]);
 
         $now = now();
@@ -741,6 +742,10 @@ class SettingsController extends Controller
         }
         if (array_key_exists('signatory_designation', $validated)) {
             $rows[] = ['key' => 'payroll_signatory_designation', 'value' => (string) $validated['signatory_designation']];
+        }
+        if (array_key_exists('signatory_user_id', $validated)) {
+            // Whose 4-digit signature PIN signs payslips when a run or manual payslip is published.
+            $rows[] = ['key' => 'payroll_signatory_user_id', 'value' => (string) ($validated['signatory_user_id'] ?? '')];
         }
 
         foreach ($rows as $row) {

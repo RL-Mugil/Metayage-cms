@@ -7,6 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api-client";
+import { SignatoryPinDialog } from "@/components/payroll/signatory-pin-dialog";
 
 const fmt = (n: number | string) => `₹${Number(n).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
 
@@ -50,6 +51,8 @@ export default function PayrollPortalPayRuns() {
   const [breakdownSlip, setBreakdownSlip] = useState<any | null>(null);
   const [bankAdvicePreview, setBankAdvicePreview] = useState<any | null>(null);
   const [bankAdviceBusy, setBankAdviceBusy] = useState(false);
+  // Sign & publish: the whole run, or one payslip — both need the signatory's PIN.
+  const [signTarget, setSignTarget] = useState<{ kind: "run" } | { kind: "slip"; slip: any } | null>(null);
 
   function loadRuns(selectId?: number) {
     api.getPayrollRuns()
@@ -136,6 +139,7 @@ export default function PayrollPortalPayRuns() {
   const isPendingApproval = selectedRun?.status === "PendingApproval";
   const isRejected = selectedRun?.status === "Rejected";
   const isFinalized = selectedRun?.status === "Finalized";
+  const isPublishable = selectedRun?.status === "Finalized" || selectedRun?.status === "Paid";
   const canEditSelectedRun = canManage && selectedRun && selectedRun.status !== "Processing";
 
   const payableUnpaidSlips = useMemo(
@@ -207,6 +211,20 @@ export default function PayrollPortalPayRuns() {
   return (
     <PayrollPortalLayout>
       <Head title="Payroll Portal — Pay Runs" />
+      {signTarget && selectedRun && (
+        <SignatoryPinDialog
+          title={signTarget.kind === "run" ? "Sign & publish payslips" : `Sign payslip — ${signTarget.slip.employee_name}`}
+          description={signTarget.kind === "run"
+            ? "Signs every payslip in this run that is not withheld and publishes it to the employee's portal. Payslips already signed are left as they are."
+            : "Signs this payslip and publishes it to the employee's portal."}
+          onClose={() => setSignTarget(null)}
+          onConfirm={async (pin) => {
+            const res = signTarget.kind === "run" ? await api.publishPayrollRun(selectedRun.id, pin) : await api.signInternalPayslip(signTarget.slip.id, pin);
+            loadRuns(selectedRun.id);
+            return res.message;
+          }}
+        />
+      )}
       <PageHeader eyebrow="Payroll Portal" title="Pay Runs" description="Create, submit, approve, and pay monthly payroll runs"
         actions={
           canManage ? (
@@ -299,6 +317,9 @@ export default function PayrollPortalPayRuns() {
                       )}
                       {(isFinalized || selectedRun.status === "Paid") && (
                         <>
+                          {canManage && isPublishable && (
+                            <Button size="sm" className="h-7 text-xs bg-gold text-black hover:bg-gold/90" onClick={() => setSignTarget({ kind: "run" })}><BadgeCheck className="h-3 w-3 mr-1" />Sign &amp; publish payslips</Button>
+                          )}
                           <Button size="sm" variant="outline" className="h-7 text-xs" disabled={bankAdviceBusy} onClick={openBankAdvicePreview}><Download className="h-3 w-3 mr-1" />Bank Advice PDF</Button>
                           <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => api.downloadPdf(api.tdsWorksheetsUrl(selectedRun.id), `payslips-${selectedRun.id}.zip`).catch((e) => flash(e.message))}><FileDown className="h-3 w-3 mr-1" />Payslips ZIP</Button>
                         </>
@@ -386,7 +407,7 @@ export default function PayrollPortalPayRuns() {
                                 {canEditSelectedRun && (
                                   <td className="px-3 py-2.5">
                                     <Button size="sm" variant="outline" className="h-6 text-[10px] mr-1" disabled={busy} onClick={() => { setEditSlip(s); setEditReimbursements(String(s.reimbursements || 0)); setEditHours(s.hours_logged_minutes == null ? "" : hoursFmt(s.hours_logged_minutes)); setEditTds(String((Number(s.tds || 0) / Math.max(1, Number(s.gross_salary || 0)) * 100).toFixed(2))); }}><Pencil className="h-3 w-3 mr-1" />Edit</Button>
-                                    {isFinalized && <Button size="sm" variant="outline" className="h-6 text-[10px] mr-1 text-green-700 border-green-300" disabled={busy} onClick={() => run(() => api.signInternalPayslip(s.id), "Payslip signed by Accounts.")}><BadgeCheck className="h-3 w-3 mr-1" />Sign</Button>}
+                                    {isPublishable && <Button size="sm" variant="outline" className="h-6 text-[10px] mr-1 text-green-700 border-green-300" disabled={busy} onClick={() => setSignTarget({ kind: "slip", slip: s })}><BadgeCheck className="h-3 w-3 mr-1" />Sign</Button>}
                                     {s.employee_id && <button onClick={() => api.downloadSalaryCertificate(s.employee_id).catch((e) => flash(e.message))} className="inline-flex h-6 items-center rounded border border-border px-2 text-[10px]">Certificate</button>}
                                     {isDraft && (s.withheld ? (
                                       <Button size="sm" variant="outline" className="h-6 text-[10px]" disabled={busy} onClick={() => submitRevertWithhold(s)}>

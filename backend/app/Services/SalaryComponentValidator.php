@@ -32,7 +32,11 @@ class SalaryComponentValidator
             $errors['calc_type'] = ['A CTC Addon component can\'t be the "remainder" — remainder only applies to earning components balancing against payable gross.'];
         }
 
-        if ($category === SalaryComponent::CATEGORY_CTC_ADDON && strtoupper((string) $code) === 'BASIC') {
+        if ($category === SalaryComponent::CATEGORY_DEDUCTION && ! in_array($calcType, ['flat', 'percentage'], true)) {
+            $errors['calc_type'] = ['A deduction is either a flat ₹ amount or a percentage of an earning component.'];
+        }
+
+        if ($category !== SalaryComponent::CATEGORY_EARNING && strtoupper((string) $code) === 'BASIC') {
             $errors['category'] = ['The "BASIC" component must stay an Earning — Provident Fund is computed from it.'];
         }
 
@@ -128,7 +132,7 @@ class SalaryComponentValidator
         }
 
         if ($percentageOf === SalaryComponent::GROSS) {
-            if ($category === SalaryComponent::CATEGORY_EARNING) {
+            if ($category !== SalaryComponent::CATEGORY_CTC_ADDON) {
                 $errors['percentage_of'] = ['Gross is now a derived total (the sum of the earning components), not an input — an earning component can\'t be a percentage of it. Reference BASIC or another earning component by code instead.'];
             }
 
@@ -143,7 +147,7 @@ class SalaryComponentValidator
         } elseif ((int) $reference->sequence >= $sequence) {
             $errors['percentage_of'] = ['A percentage component may only reference an earlier component (smaller sequence), to prevent circular references.'];
         } elseif ($reference->category !== SalaryComponent::CATEGORY_EARNING) {
-            $errors['percentage_of'] = ["\"{$percentageOf}\" is a CTC Addon — a percentage can only reference an Earning component or Gross."];
+            $errors['percentage_of'] = ["\"{$percentageOf}\" is not an Earning component — a percentage can only reference an Earning component (CTC Add-ons may also use Gross)."];
         }
     }
 

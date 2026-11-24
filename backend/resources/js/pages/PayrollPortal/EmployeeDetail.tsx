@@ -2,7 +2,7 @@ import { Head, usePage, Link } from "@inertiajs/react";
 import { useEffect, useMemo, useState } from "react";
 import {
   Loader2, ArrowLeft, Edit2, X, Check, Plus, Download, ChevronDown, ChevronRight,
-  User as UserIcon, FileText, Landmark, Wallet, FileBarChart2,
+  User as UserIcon, FileText, Landmark, Wallet, FileBarChart2, FileSignature,
 } from "lucide-react";
 import PayrollPortalLayout from "@/layouts/PayrollPortalLayout";
 import { PageHeader } from "@/components/page-header";
@@ -10,6 +10,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api-client";
+import { ManualPayslipDialog } from "@/components/payroll/manual-payslip-dialog";
 import { statusColor } from "@/lib/utils";
 
 const DEPTS = ["Legal", "Operations", "HR", "Finance", "Engineering", "Business Development", "Administration"];
@@ -757,6 +758,10 @@ function PayslipsTab({ employee }: { employee: any }) {
   const [slips, setSlips] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [form16, setForm16] = useState<any | null>(null);
+  const [manualOpen, setManualOpen] = useState(false);
+  const [reload, setReload] = useState(0);
+  const { props: pageProps } = usePage<{ auth?: { user?: { role?: string } } }>();
+  const canGenerate = ["super_admin", "partner", "finance"].includes(pageProps.auth?.user?.role ?? "");
 
   useEffect(() => {
     setLoading(true);
@@ -767,11 +772,12 @@ function PayslipsTab({ employee }: { employee: any }) {
       setSlips(slipRows);
       setForm16(docs.find((d: any) => d.employee_id === employee.id) || null);
     }).finally(() => setLoading(false));
-  }, [employee.id, fiscalYear]);
+  }, [employee.id, fiscalYear, reload]);
 
   return (
     <div className="max-w-4xl space-y-4">
-      <div className="flex items-center gap-3">
+      {manualOpen && <ManualPayslipDialog employee={employee} onClose={() => setManualOpen(false)} onDone={() => setReload((n) => n + 1)} />}
+      <div className="flex flex-wrap items-center gap-3">
         <label className="text-xs text-muted-foreground">Financial Year</label>
         <select value={fiscalYear} onChange={(e) => setFiscalYear(Number(e.target.value))}
           className="h-8 rounded-md border border-border bg-background px-2 text-sm focus:outline-none focus:ring-1 focus:ring-gold">
@@ -780,8 +786,13 @@ function PayslipsTab({ employee }: { employee: any }) {
           ))}
         </select>
         <a href={api.yearlyPayslipPdfUrl(employee.id, fiscalYear)} target="_blank" rel="noreferrer">
-          <Button size="sm" variant="outline"><Download className="h-3.5 w-3.5 mr-1.5" />Yearly Payslip PDF</Button>
+          <Button size="sm" variant="outline"><Download className="h-3.5 w-3.5 mr-1.5" />Consolidated statement (FY)</Button>
         </a>
+        {canGenerate && (
+          <Button size="sm" className="ml-auto bg-gold text-black hover:bg-gold/90" onClick={() => setManualOpen(true)}>
+            <FileSignature className="h-3.5 w-3.5 mr-1.5" />Generate payslip
+          </Button>
+        )}
       </div>
 
       <div className="grid grid-cols-3 gap-6">

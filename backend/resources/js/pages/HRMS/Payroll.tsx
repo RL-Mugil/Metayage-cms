@@ -493,8 +493,8 @@ export default function HRMSPayroll() {
 
             <div className="flex items-center gap-2 mb-3 flex-wrap text-xs">
               <span className="text-muted-foreground flex items-center">
-                Download payslip for:
-                <FieldHelp text="How payslips should be grouped in the combined PDF — quarter, half-year, full year, or a custom range." />
+                Consolidated statement:
+                <FieldHelp text="One signed PDF covering a quarter, half-year, full year or a custom range of your signed monthly payslips." />
               </span>
               <select value={summaryPeriodType} onChange={(e) => setSummaryPeriodType(e.target.value as any)}
                 className="h-7 rounded-md border border-border bg-background px-2 focus:outline-none focus:ring-1 focus:ring-gold">
@@ -528,7 +528,7 @@ export default function HRMSPayroll() {
               )}
               <button onClick={() => { const r = summaryRange(); api.downloadPdf(api.payslipSummaryUrl(mySlips[0].employee_id, r.from, r.to), `payslip-summary-${r.from}-to-${r.to}.pdf`).catch((e) => setError(e.message)); }}>
                 <Button size="sm" variant="outline" className="h-7 text-xs">
-                  <Download className="h-3 w-3 mr-1" />Download PDF
+                  <Download className="h-3 w-3 mr-1" />Download statement
                 </Button>
               </button>
             </div>
@@ -553,7 +553,11 @@ export default function HRMSPayroll() {
                         <td className="px-3 py-2.5 text-right text-red-500">-{fmt(s.total_deductions)}</td>
                         <td className="px-3 py-2.5 text-right font-semibold text-green-600">{fmt(s.net_pay)}</td>
                         <td className="px-3 py-2.5">
-                          <Badge variant="outline" className={`text-[10px] ${statusBadge(s.run?.status || "")}`}>{s.run?.status}</Badge>
+                          {(s as { signed?: boolean }).signed !== false ? (
+                            <Badge variant="outline" className="text-[10px] border-amber-300 bg-amber-50 text-amber-800" title={`Verification code ${(s as { verification_code?: string }).verification_code ?? ""}`}>✓ Signed</Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-[10px]">Being re-signed</Badge>
+                          )}
                         </td>
                         <td className="px-3 py-2.5 text-center">
                           <button className="inline-flex p-1 rounded hover:bg-muted" title="Download payslip PDF"
@@ -571,7 +575,7 @@ export default function HRMSPayroll() {
         ) : !loading ? (
           <div className="flex flex-col items-center justify-center py-16 gap-3 text-muted-foreground">
             <FileText className="h-10 w-10 opacity-20" />
-            <p className="text-sm">No payslips yet. They appear here once HR finalizes a payroll run.</p>
+            <p className="text-sm">No payslips yet. They appear here once payroll signs and publishes them.</p>
           </div>
         ) : null)}
 

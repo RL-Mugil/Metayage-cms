@@ -99,6 +99,7 @@ class ReportsController extends Controller
     {
         $exports = ReportExport::with('generatedBy:id,name')
             ->where('generated_by_id', $request->user()->id)
+            ->where('report_type', '!=', 'payslip-statement')
             ->latest()
             ->limit(25)
             ->get()

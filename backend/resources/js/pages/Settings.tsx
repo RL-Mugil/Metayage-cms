@@ -87,6 +87,12 @@ function computeComponentPreview(components: any[], basePay: number, hra: number
     rows.push({ name: c.name, amount });
   }
 
+  // Firm-defined deductions: flat, or a percentage of an earning — shown as negatives.
+  for (const c of active.filter((c) => c.category === "deduction")) {
+    const amount = Math.round((c.calc_type === "flat" ? Number(c.value || 0) : (amounts[c.percentage_of] ?? 0) * (Number(c.value || 0) / 100)) * 100) / 100;
+    rows.push({ name: `${c.name} (deduction)`, amount: -amount });
+  }
+
   return rows;
 }
 
@@ -824,6 +830,11 @@ export default function Settings() {
   const [companyTan, setCompanyTan] = useState(String(sysSettings.payroll_company_tan ?? ""));
   const [signatoryName, setSignatoryName] = useState(String(sysSettings.payroll_signatory_name ?? ""));
   const [signatoryDesignation, setSignatoryDesignation] = useState(String(sysSettings.payroll_signatory_designation ?? ""));
+  const [signatoryUserId, setSignatoryUserId] = useState(sysSettings.payroll_signatory_user_id ? String(sysSettings.payroll_signatory_user_id) : "");
+  const [signatoryUsers, setSignatoryUsers] = useState<{ id: number; name: string; role?: string }[]>([]);
+  useEffect(() => {
+    api.getStaffPickerUsers().then((rows) => setSignatoryUsers(rows.map((u) => ({ id: u.id, name: u.name, role: u.role })))).catch(() => {});
+  }, []);
   const [savingLetterhead, setSavingLetterhead] = useState(false);
 
   const [payDay, setPayDay] = useState(String(sysSettings.payroll_pay_day ?? 1));
@@ -2005,6 +2016,7 @@ export default function Settings() {
                                   <select value={componentField(row, "category") || "earning"} onChange={(e) => setComponentField(row, "category", e.target.value)} className="h-7 rounded border border-border bg-background px-1">
                                     <option value="earning">Earning</option>
                                     <option value="ctc_addon">CTC Addon</option>
+                                    <option value="deduction">Deduction</option>
                                   </select>
                                 </td>
                                 <td className="p-1">
@@ -2012,7 +2024,7 @@ export default function Settings() {
                                     <option value="employee_field">Employee Field</option>
                                     <option value="flat">Flat ₹</option>
                                     <option value="percentage">Percentage</option>
-                                    {componentField(row, "category") !== "ctc_addon" && <option value="remainder">Remainder</option>}
+                                    {(componentField(row, "category") || "earning") === "earning" && <option value="remainder">Remainder</option>}
                                   </select>
                                 </td>
                                 <td className="p-1">
@@ -2065,15 +2077,16 @@ export default function Settings() {
                     <div className="grid grid-cols-6 gap-2">
                       <input value={newComponent.name} onChange={(e) => setNewComponent((p) => ({ ...p, name: e.target.value }))} placeholder="Name" className="h-8 rounded border border-border bg-background px-2 text-xs" />
                       <input value={newComponent.code} onChange={(e) => setNewComponent((p) => ({ ...p, code: e.target.value.toUpperCase() }))} placeholder="CODE" className="h-8 rounded border border-border bg-background px-2 text-xs font-mono" />
-                      <select value={newComponent.category} onChange={(e) => setNewComponent((p) => ({ ...p, category: e.target.value, calc_type: e.target.value === "ctc_addon" && p.calc_type === "remainder" ? "flat" : p.calc_type }))} className="h-8 rounded border border-border bg-background px-2 text-xs">
+                      <select value={newComponent.category} onChange={(e) => setNewComponent((p) => ({ ...p, category: e.target.value, calc_type: e.target.value !== "earning" && (p.calc_type === "remainder" || (e.target.value === "deduction" && p.calc_type === "employee_field")) ? "flat" : p.calc_type }))} className="h-8 rounded border border-border bg-background px-2 text-xs">
                         <option value="earning">Earning</option>
                         <option value="ctc_addon">CTC Addon</option>
+                        <option value="deduction">Deduction</option>
                       </select>
                       <select value={newComponent.calc_type} onChange={(e) => setNewComponent((p) => ({ ...p, calc_type: e.target.value }))} className="h-8 rounded border border-border bg-background px-2 text-xs">
                         <option value="employee_field">Employee Field</option>
                         <option value="flat">Flat ₹</option>
                         <option value="percentage">Percentage</option>
-                        {newComponent.category !== "ctc_addon" && <option value="remainder">Remainder</option>}
+                        {newComponent.category === "earning" && <option value="remainder">Remainder</option>}
                       </select>
                       <input value={newComponent.value} onChange={(e) => setNewComponent((p) => ({ ...p, value: e.target.value }))} placeholder="Value" disabled={newComponent.calc_type === "remainder" || newComponent.calc_type === "employee_field"}
                         className="h-8 rounded border border-border bg-background px-2 text-xs disabled:opacity-40" />
@@ -2274,8 +2287,8 @@ export default function Settings() {
                         className="w-full h-8 rounded border border-border bg-background px-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-gold" />
                     </div>
                     <div>
-                      <div className="text-[10px] text-muted-foreground mb-0.5">Form 16 Signatory Name</div>
-                      <p className="text-[10px] text-muted-foreground mb-0.5">Printed in the Verification block of Form 16 Part B.</p>
+                      <div className="text-[10px] text-muted-foreground mb-0.5">Signatory Name (payslips &amp; Form 16)</div>
+                      <p className="text-[10px] text-muted-foreground mb-0.5">Printed beside the signature seal on every payslip, and in Form 16 Part B.</p>
                       <input value={signatoryName} onChange={(e) => setSignatoryName(e.target.value)} placeholder="e.g. Rajesh Kumar"
                         className="w-full h-8 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
                     </div>
@@ -2284,6 +2297,15 @@ export default function Settings() {
                       <p className="text-[10px] text-muted-foreground mb-0.5">e.g. Director, HR Head</p>
                       <input value={signatoryDesignation} onChange={(e) => setSignatoryDesignation(e.target.value)} placeholder="e.g. Director"
                         className="w-full h-8 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
+                    </div>
+                    <div>
+                      <div className="text-[10px] text-muted-foreground mb-0.5">Signatory Login (signature PIN)</div>
+                      <p className="text-[10px] text-muted-foreground mb-0.5">Payslips are signed with this login's 4-digit signature PIN when a run or a manual payslip is published.</p>
+                      <select value={signatoryUserId} onChange={(e) => setSignatoryUserId(e.target.value)}
+                        className="w-full h-8 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold">
+                        <option value="">— Not set —</option>
+                        {signatoryUsers.map((u) => <option key={u.id} value={u.id}>{u.name}{u.role ? ` (${u.role.replace("_", " ")})` : ""}</option>)}
+                      </select>
                     </div>
                   </div>
                   <Button
@@ -2300,6 +2322,7 @@ export default function Settings() {
                           company_tan: companyTan,
                           signatory_name: signatoryName,
                           signatory_designation: signatoryDesignation,
+                          signatory_user_id: signatoryUserId ? Number(signatoryUserId) : null,
                         });
                         flashSaved();
                       }

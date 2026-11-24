@@ -13,6 +13,10 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use App\Services\InternalDocumentSignatureService;
+use App\Services\Payroll\PayslipSigner;
+use App\Services\Reports\SignatureSeal;
+use App\Models\InternalDocumentSignature;
+use App\Models\ReportExport;
 
 /**
  * Downloadable payslip PDFs — monthly (one payslip) and yearly (a fiscal-year,
@@ -29,10 +33,18 @@ class PayslipPdfController extends Controller
             ->whereIn('key', ['payroll_company_name', 'payroll_company_address', 'payroll_company_logo_url'])
             ->pluck('value', 'key');
 
+        $head = app(\App\Services\Letterhead::class)->get();
+
         return [
-            'company_name' => $rows['payroll_company_name'] ?? '',
-            'company_address' => $rows['payroll_company_address'] ?? '',
+            'company_name' => ($rows['payroll_company_name'] ?? '') ?: $head['company_name'],
+            'company_address' => ($rows['payroll_company_address'] ?? '') ?: $head['address'],
             'company_logo_url' => $rows['payroll_company_logo_url'] ?? '',
+            // Company letterhead: logo on top, footer (name, address, phone, web) at the bottom.
+            'logo_data_uri' => $head['logo_data_uri'],
+            'footer_name' => $head['company_name'],
+            'footer_address' => $head['address'],
+            'footer_phone' => $head['phone'],
+            'footer_web' => $head['web'],
         ];
     }
 
@@ -49,9 +61,8 @@ class PayslipPdfController extends Controller
 
     public function monthly(Request $request, $payslipId)
     {
-        $slip = Payslip::with(['components', 'employee.designation', 'run:id,period,status', 'internalSignature.signedBy'])->findOrFail($payslipId);
-        $fingerprint = $this->monthlyFingerprint($slip, app(InternalDocumentSignatureService::class));
-        $verified = app(InternalDocumentSignatureService::class)->verify($slip->internalSignature, $fingerprint);
+        $slip = Payslip::with(['components', 'employee.designation', 'run:id,period,status,run_type', 'internalSignature.signedBy'])->findOrFail($payslipId);
+        $verified = app(PayslipSigner::class)->isSigned($slip);
 
         if (! $this->canViewAny($request)) {
             $own = $this->resolveOwnEmployee($request);
@@ -62,39 +73,36 @@ class PayslipPdfController extends Controller
                 return response()->json(['message' => 'This payslip is not finalized yet.'], 403);
             }
         }
-        if (! $verified) {
-            return response()->json(['message' => 'This payslip is awaiting Accounts internal signature.'], 422);
+        if (! $verified && ! $this->canViewAny($request)) {
+            return response()->json(['message' => 'This payslip is not signed and published yet.'], 422);
         }
 
         return $this->renderMonthlyPdf($slip)->download("payslip-{$slip->employee_code}-{$slip->run->period->format('Y-m')}.pdf");
     }
 
-    public function signMonthly(Request $request, $payslipId, InternalDocumentSignatureService $signatures)
+    /** Sign one payslip with the payroll signatory's PIN (Payroll Portal → pay run → payslip). */
+    public function signMonthly(Request $request, $payslipId, PayslipSigner $signer)
     {
         $user = $request->user();
-        if ($user->role !== 'finance') {
-            return response()->json(['message' => 'Only an Accounts user can sign employee payslips.'], 403);
+        if (! $this->canViewAny($request)) {
+            return response()->json(['message' => 'Forbidden'], 403);
         }
-
-        $slip = Payslip::with('run:id,period,status')->findOrFail($payslipId);
+        $validated = $request->validate(['pin' => 'required|digits:4']);
+        $slip = Payslip::with('components', 'run:id,period,status', 'internalSignature')->findOrFail($payslipId);
         if (! in_array($slip->run->status, ['Finalized', 'Paid'], true)) {
             return response()->json(['message' => 'Only finalized or paid payslips can be signed.'], 422);
         }
-
-        $fingerprint = $this->monthlyFingerprint($slip, $signatures);
-        $signature = $signatures->sign('payslip_monthly', (int) $slip->id, $fingerprint, $user);
+        $signer->signMany(collect([$slip]), $validated['pin']);
+        $signature = $signer->signatureFor($slip);
 
         AuditLog::create([
-            'user_id' => $user->id,
-            'action' => 'sign_internal_payslip',
-            'subject_type' => 'Payslip',
-            'subject_id' => $slip->id,
-            'metadata' => ['verification_code' => $signature->verification_code, 'fingerprint' => $fingerprint],
-            'ip_address' => $request->ip(),
-            'user_agent' => $request->userAgent(),
+            'user_id' => $user->id, 'action' => 'sign_internal_payslip',
+            'subject_type' => 'Payslip', 'subject_id' => $slip->id,
+            'metadata' => ['verification_code' => $signature?->verification_code, 'signatory' => $signature?->signer_name],
+            'ip_address' => $request->ip(), 'user_agent' => $request->userAgent(),
         ]);
 
-        return response()->json(['message' => 'Payslip internally signed.', 'signature' => $signature->load('signedBy:id,name,email,role')]);
+        return response()->json(['message' => 'Payslip signed and published.', 'signature' => $signature?->load('signedBy:id,name')]);
     }
 
     /** Employer-issued salary certificate using the latest finalized/paid salary structure. */
@@ -125,17 +133,10 @@ class PayslipPdfController extends Controller
         return $this->renderMonthlyPdf($slip)->output();
     }
 
-    public function monthlyFingerprint(Payslip $slip, InternalDocumentSignatureService $signatures): string
+    /** Kept for callers of the old API; the fingerprint now lives in PayslipSigner. */
+    public function monthlyFingerprint(Payslip $slip, ?InternalDocumentSignatureService $signatures = null): string
     {
-        return $signatures->fingerprint('payslip_monthly', (int) $slip->id, [
-            'updated_at' => optional($slip->updated_at)->toIso8601String(),
-            'run_status' => $slip->run?->status,
-            'employee_code' => $slip->employee_code,
-            'gross_salary' => (string) $slip->gross_salary,
-            'total_deductions' => (string) $slip->total_deductions,
-            'net_pay' => (string) $slip->net_pay,
-            'reimbursements' => (string) $slip->reimbursements,
-        ]);
+        return app(PayslipSigner::class)->fingerprint($slip);
     }
 
     private function renderMonthlyPdf(Payslip $slip)
@@ -199,24 +200,23 @@ class PayslipPdfController extends Controller
 
         $runs = PayrollRun::whereBetween('period', [$start->toDateString(), $end->toDateString()])
             ->with(['payslips' => fn ($q) => $q->where('employee_id', $employee->id)->with(['components', 'internalSignature.signedBy'])])
-            ->get()
-            ->keyBy(fn ($run) => Carbon::parse($run->period)->format('Y-m'));
+            ->get();
 
-        $signatureService = app(InternalDocumentSignatureService::class);
-        $signedSlips = $runs->flatMap(fn ($run) => $run->payslips)->filter(function ($slip) use ($signatureService) {
-            return $signatureService->verify($slip->internalSignature, $this->monthlyFingerprint($slip, $signatureService));
-        });
-        $allSlips = $runs->flatMap(fn ($run) => $run->payslips);
-        if ($allSlips->isNotEmpty() && $signedSlips->count() !== $allSlips->count()) {
-            return response()->json(['message' => 'Every included monthly payslip must be signed by Accounts before this PDF can be downloaded.'], 422);
+        // Only signed, published months go into the statement (a run's month may hold a
+        // Regular and a Manual run — the signed payslip of either is the month's payslip).
+        $signer = app(PayslipSigner::class);
+        $signedSlips = $runs->flatMap(fn ($run) => $run->payslips->each(fn ($p) => $p->setRelation('run', $run)))
+            ->filter(fn ($slip) => in_array($slip->run->status, ['Finalized', 'Paid'], true) && $signer->isSigned($slip))
+            ->keyBy(fn ($slip) => Carbon::parse($slip->run->period)->format('Y-m'));
+        if ($signedSlips->isEmpty()) {
+            return response()->json(['message' => 'There are no signed payslips in this period yet.'], 422);
         }
 
         // One column per month in range, even for months with no processed run
         // yet — the sample format shows those as "NA", not an omitted column.
         $months = [];
         for ($cursor = $start->copy(); $cursor->lte($end); $cursor->addMonthNoOverflow()) {
-            $run = $runs->get($cursor->format('Y-m'));
-            $slip = $run?->payslips->first();
+            $slip = $signedSlips->get($cursor->format('Y-m'));
             $hoursMinutes = (int) Attendance::where('employee_id', $employee->id)
                 ->whereYear('attendance_date', $cursor->year)
                 ->whereMonth('attendance_date', $cursor->month)
@@ -235,18 +235,21 @@ class PayslipPdfController extends Controller
             'months' => $months,
             'earningRows' => $this->buildComponentRows($months, 'earning'),
             'ctcAddonRows' => $this->buildComponentRows($months, 'ctc_addon'),
-            'deductionRows' => $this->buildDeductionRows($months),
+            'deductionRows' => [...$this->buildComponentRows($months, 'deduction'), ...$this->buildDeductionRows($months)],
             'totalCtcRow' => $this->buildScalarRow($months, fn ($slip) => (float) $slip->gross_salary - (float) $slip->lop_deduction
                 + $slip->components->where('category', 'ctc_addon')->sum('amount')),
             'totalDeductionsRow' => $this->buildScalarRow($months, fn ($slip) => (float) $slip->total_deductions),
-            'netPayRow' => $this->buildScalarRow($months, fn ($slip) => (float) $slip->net_pay - (float) $slip->reimbursements),
+            // net_pay excludes reimbursements (paid on top) — same as the monthly payslip.
+            'netPayRow' => $this->buildScalarRow($months, fn ($slip) => (float) $slip->net_pay),
             'reimbursementsRow' => $this->buildScalarRow($months, fn ($slip) => (float) $slip->reimbursements),
-            'creditedRow' => $this->buildScalarRow($months, fn ($slip) => (float) $slip->net_pay),
+            'creditedRow' => $this->buildScalarRow($months, fn ($slip) => (float) $slip->net_pay + (float) $slip->reimbursements),
             'letterhead' => $this->letterhead(),
             'generatedAt' => now(),
-            'internalSignature' => $signedSlips->first()?->internalSignature,
             'verifiedSlipCount' => $signedSlips->count(),
         ];
+        $statement = $this->signStatement($request, $employee, $start, $end, $periodLabel, $signedSlips);
+        $data['seal'] = app(SignatureSeal::class)->dataUri(true);
+        $data['sig'] = $this->sealLines($statement);
 
         $pdf = Pdf::loadView('payslips.yearly', $data)->setPaper('a4', 'landscape');
 
@@ -352,6 +355,7 @@ class PayslipPdfController extends Controller
         $ctcAddonTotal = (float) $ctcAddons->sum('amount');
         $payableGross = (float) $slip->gross_salary - (float) $slip->lop_deduction;
         $signature = $slip->internalSignature?->loadMissing('signedBy');
+        $signed = app(PayslipSigner::class)->isSigned($slip);
 
         return [
             'slip' => $slip,
@@ -361,11 +365,126 @@ class PayslipPdfController extends Controller
             'ctcAddons' => $ctcAddons,
             'percentageLabel' => $percentageLabel,
             'totalCtc' => round($payableGross + $ctcAddonTotal, 2),
-            'netPayBeforeReimbursement' => round((float) $slip->net_pay - (float) $slip->reimbursements, 2),
+            'netPayBeforeReimbursement' => round((float) $slip->net_pay, 2),
             'creditedToBank' => round((float) $slip->net_pay + (float) $slip->reimbursements, 2),
             'internalSignature' => $signature,
+            'deductionComponents' => $slip->components->where('category', 'deduction')->sortBy('sequence')->values(),
+            'seal' => app(SignatureSeal::class)->dataUri($signed),
+            'sig' => $signed ? $this->sealLines($signature) : null,
             'letterhead' => $this->letterhead(),
             'generatedAt' => now(),
         ];
+    }
+
+    /** The three short lines beside the seal, from the signature itself (who signed then, as then titled). */
+    private function sealLines(?InternalDocumentSignature $signature): ?array
+    {
+        if (! $signature) {
+            return null;
+        }
+
+        return [
+            'name' => $signature->signer_name ?: ($signature->signedBy?->name ?? ''),
+            'designation' => (string) $signature->signer_designation,
+            'at' => $signature->signed_at?->timezone('Asia/Kolkata')->format('d M Y, h:i A').' IST',
+            'code' => $signature->verification_code,
+            'url' => app(PayslipSigner::class)->verifyUrl($signature->verification_code),
+        ];
+    }
+
+    /**
+     * A consolidated statement is a compilation of payslips the signatory already signed
+     * with their PIN; it is stamped by the same signatory with its own verification code,
+     * which checks that every included payslip is still signed and unchanged.
+     */
+    private function signStatement(Request $request, Employee $employee, Carbon $start, Carbon $end, string $label, $signedSlips): InternalDocumentSignature
+    {
+        $latest = $signedSlips->sortByDesc(fn ($s) => $s->internalSignature->signed_at)->first()->internalSignature;
+        $snapshot = [
+            'employee_id' => $employee->id, 'employee_code' => $employee->employee_code, 'employee_name' => $employee->full_name,
+            'from' => $start->format('Y-m'), 'to' => $end->format('Y-m'), 'label' => $label,
+            'slips' => $signedSlips->map(fn ($s) => ['id' => $s->id, 'code' => $s->internalSignature->verification_code,
+                'net_pay' => (float) $s->net_pay, 'period' => Carbon::parse($s->run->period)->format('Y-m')])->values()->all(),
+        ];
+        $export = ReportExport::create([
+            'generated_by_id' => $request->user()->id, 'report_type' => 'payslip-statement',
+            'report_name' => "Payslip statement — {$employee->full_name} ({$label})", 'format' => 'PDF',
+            'filters' => ['employee_id' => $employee->id, 'from' => $start->format('Y-m'), 'to' => $end->format('Y-m')],
+            'row_count' => $signedSlips->count(), 'snapshot' => $snapshot,
+        ]);
+        $signer = app(PayslipSigner::class);
+        $signature = $signer->stamp(PayslipSigner::STATEMENT_TYPE, (int) $export->id, $this->statementFingerprint($export->id, $snapshot), [
+            'user' => $latest->signedBy, 'name' => $latest->signer_name ?: $latest->signedBy?->name, 'designation' => (string) $latest->signer_designation,
+        ]);
+        AuditLog::create([
+            'user_id' => $request->user()->id, 'action' => 'payslip_statement',
+            'subject_type' => 'Employee', 'subject_id' => $employee->id,
+            'metadata' => ['from' => $snapshot['from'], 'to' => $snapshot['to'], 'payslips' => count($snapshot['slips']), 'verification_code' => $signature->verification_code],
+            'ip_address' => $request->ip(), 'user_agent' => $request->userAgent(),
+        ]);
+
+        return $signature;
+    }
+
+    private function statementFingerprint(int $exportId, array $snapshot): string
+    {
+        return app(InternalDocumentSignatureService::class)->fingerprint(PayslipSigner::STATEMENT_TYPE, $exportId, $snapshot);
+    }
+
+    /**
+     * Public check of a payslip or payslip statement by its verification code (the link
+     * printed beside the seal). Shows only what is needed to compare with the document.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function verification(string $code): ?array
+    {
+        $signer = app(PayslipSigner::class);
+        $signature = $signer->find($code);
+        if (! $signature) {
+            return null;
+        }
+        $base = [
+            'code' => $signature->verification_code,
+            'signed_by' => $signature->signer_name ?: $signature->signedBy?->name,
+            'designation' => $signature->signer_designation,
+            'signed_at' => $signature->signed_at?->timezone('Asia/Kolkata')->format('d M Y, h:i A').' IST',
+        ];
+        if ($signature->document_type === PayslipSigner::DOCUMENT_TYPE) {
+            $slip = Payslip::with('components', 'run:id,period')->find($signature->document_id);
+            if (! $slip) {
+                return [...$base, 'kind' => 'Payslip', 'valid' => false];
+            }
+
+            return [...$base, 'kind' => 'Payslip', 'valid' => $signer->verify($signature, $signer->fingerprint($slip)),
+                'employee' => $slip->employee_name.' ('.$slip->employee_code.')', 'period' => Carbon::parse($slip->run->period)->format('F Y'),
+                'net_pay' => (float) $slip->net_pay];
+        }
+        $export = ReportExport::find($signature->document_id);
+        $snapshot = (array) ($export?->snapshot ?? []);
+        $valid = $export && $signer->verify($signature, $this->statementFingerprint($export->id, $snapshot));
+        foreach ($snapshot['slips'] ?? [] as $row) {
+            $slip = Payslip::with('components', 'run:id,period')->find($row['id']);
+            $valid = $valid && $slip && $signer->isSigned($slip) && $signer->signatureFor($slip)?->verification_code === $row['code'];
+        }
+
+        return [...$base, 'kind' => 'Payslip statement', 'valid' => $valid,
+            'employee' => ($snapshot['employee_name'] ?? '').' ('.($snapshot['employee_code'] ?? '').')', 'period' => $snapshot['label'] ?? '',
+            'net_pay' => round(array_sum(array_column($snapshot['slips'] ?? [], 'net_pay')), 2)];
+    }
+
+    public function verify(string $code)
+    {
+        $result = $this->verification($code);
+        abort_unless($result, 404, 'No payslip has this verification code.');
+
+        return response()->json($result);
+    }
+
+    /** Public page: /verify/payslip/{code}. */
+    public function verifyPage(string $code)
+    {
+        return response()->view('payslips.verify', ['result' => $this->verification($code), 'code' => strtoupper($code),
+            'letterhead' => app(\App\Services\Letterhead::class)->get()]);
     }
 }

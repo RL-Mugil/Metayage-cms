@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class InternalDocumentSignature extends Model
 {
     protected $fillable = [
-        'document_type', 'document_id', 'signed_by_id', 'signer_role',
+        'document_type', 'document_id', 'signed_by_id', 'signer_role', 'signer_name', 'signer_designation',
         'document_fingerprint', 'signature', 'verified', 'verification_code', 'signed_at',
     ];
 

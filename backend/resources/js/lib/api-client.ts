@@ -312,6 +312,22 @@ export interface DashboardTrends {
   quoted: number[]
 }
 
+export interface ManualPayslipInput {
+  period: string
+  lop_days?: number | null
+  tds?: number | null
+  health_insurance?: number | null
+  other_deductions?: number | null
+}
+
+export interface ManualPayslipPreview {
+  period: string
+  fields: Record<string, number | string | null>
+  components: { code: string; name: string; category: string; amount: number }[]
+  loan_deduction: number
+  existing: { payslip_id: number; run_id: number; run_type: string; run_status: string } | null
+}
+
 export const api = {
   async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     const method = (options.method || 'GET').toUpperCase()
@@ -1647,8 +1663,19 @@ export const api = {
   async updatePayslip(id: number | string, data: { lop_days?: number; tds?: number; health_insurance?: number; other_deductions?: number; reimbursements?: number; hours_logged?: string }): Promise<Payslip> {
     return this.request(`/payroll/payslips/${id}`, { method: 'PUT', body: JSON.stringify(data) })
   },
-  async signInternalPayslip(id: number | string): Promise<unknown> {
-    return this.request(`/payroll/payslips/${id}/internal-sign`, { method: 'POST' })
+  /** Sign one payslip with the payroll signatory's PIN (publishes it to the employee). */
+  async signInternalPayslip(id: number | string, pin: string): Promise<{ message: string }> {
+    return this.request(`/payroll/payslips/${id}/internal-sign`, { method: 'POST', body: JSON.stringify({ pin }) })
+  },
+  /** Sign & publish every payslip of a finalized or paid run with the signatory's PIN. */
+  async publishPayrollRun(runId: number | string, pin: string): Promise<{ message: string; signed: number; total: number }> {
+    return this.request(`/payroll/runs/${runId}/publish`, { method: 'POST', body: JSON.stringify({ pin }) })
+  },
+  async previewManualPayslip(employeeId: number | string, data: ManualPayslipInput): Promise<ManualPayslipPreview> {
+    return this.request(`/payroll/employees/${employeeId}/manual-payslip/preview`, { method: 'POST', body: JSON.stringify(data) })
+  },
+  async createManualPayslip(employeeId: number | string, data: ManualPayslipInput & { pin: string }): Promise<{ message: string; payslip: Payslip }> {
+    return this.request(`/payroll/employees/${employeeId}/manual-payslip`, { method: 'POST', body: JSON.stringify(data) })
   },
   async withholdPayslip(id: number | string, reason: string): Promise<Payslip> {
     return this.request(`/payroll/payslips/${id}/withhold`, { method: 'POST', body: JSON.stringify({ reason }) })
@@ -1949,6 +1976,7 @@ export const api = {
     return this.request(`/tax-slab-configs/${id}`, { method: 'PUT', body: JSON.stringify(data) })
   },
   async updatePayrollSettings(data: {
+    signatory_user_id?: number | null
     pt_nil_threshold: number
     pt_monthly_amount: number
     pt_february_amount: number

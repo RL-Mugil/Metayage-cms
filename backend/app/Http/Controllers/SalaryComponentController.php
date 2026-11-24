@@ -41,7 +41,7 @@ class SalaryComponentController extends Controller
             'name' => 'required|string|max:120',
             'code' => 'required|string|max:40|regex:/^[A-Z0-9_]+$/|unique:salary_components,code' . ($ignoreId ? ",{$ignoreId}" : ''),
             'calc_type' => 'required|in:flat,percentage,remainder,employee_field',
-            'category' => 'nullable|in:earning,ctc_addon',
+            'category' => 'nullable|in:earning,ctc_addon,deduction',
             'value' => 'nullable|numeric|min:0',
             'percentage_of' => 'nullable|string|max:40',
             'sequence' => 'required|integer|min:1',

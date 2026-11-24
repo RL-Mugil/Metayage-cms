@@ -85,6 +85,7 @@ class HandleInertiaRequests extends Middleware
                 'payroll_pay_day'             => isset($rows['payroll_pay_day']) ? (int) $rows['payroll_pay_day'] : 1,
                 'payroll_signatory_name'         => $rows['payroll_signatory_name'] ?? '',
                 'payroll_signatory_designation'  => $rows['payroll_signatory_designation'] ?? '',
+                'payroll_signatory_user_id'      => isset($rows['payroll_signatory_user_id']) && $rows['payroll_signatory_user_id'] !== '' ? (int) $rows['payroll_signatory_user_id'] : null,
             ];
         });
     }

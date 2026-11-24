@@ -22,6 +22,10 @@
 </head>
 <body>
 
+  @if (!empty($letterhead['logo_data_uri']))
+    <div style="text-align:center;margin-bottom:8px"><img src="{{ $letterhead['logo_data_uri'] }}" alt="" style="height:40px"></div>
+  @endif
+
   <table class="info-table">
     <tr>
       <td colspan="2" style="width:45%">
@@ -91,6 +95,9 @@
     @if ((float) $slip->health_insurance > 0)
       <tr><td>Health Insurance</td><td class="amount">{{ number_format((float) $slip->health_insurance, 2) }}</td></tr>
     @endif
+    @foreach ($deductionComponents as $c)
+      <tr><td>{{ $c->name }}@if($percentageLabel($c))<br><span class="sub-label">({{ $percentageLabel($c) }})</span>@endif</td><td class="amount">{{ number_format((float) $c->amount, 2) }}</td></tr>
+    @endforeach
     @if ((float) $slip->other_deductions > 0)
       <tr><td>Other Deductions</td><td class="amount">{{ number_format((float) $slip->other_deductions, 2) }}</td></tr>
     @endif
@@ -107,16 +114,12 @@
     <p>EMPLOYEE'S SIGNATURE: ____________________________</p>
     <p><strong>{{ strtoupper($employee->full_name) }}</strong> — {{ $employee->designation->title ?? '' }}</p>
     <p>For any enquiries: accounts@myipstrategy.com</p>
-    @if ($internalSignature && $internalSignature->signedBy)
-      <div style="position:relative;margin-top:18px;margin-left:auto;width:275px;height:62px;border:1px dotted #777;padding:5px 56px 4px 7px;color:#222;background:#fff;text-align:left;font-family:DejaVu Sans,sans-serif">
-        <div style="font-size:15px;line-height:17px">Signature valid</div>
-        <div style="font-size:12px;line-height:16px;white-space:nowrap">Digitally signed by <strong>{{ $internalSignature->signedBy->name }}</strong></div>
-        <div style="font-size:10px;line-height:13px">Date: {{ $internalSignature->signed_at?->timezone('Asia/Kolkata')->format('d/m/Y h:i A') }} IST</div>
-        <div style="position:absolute;right:5px;top:1px;font-size:57px;line-height:58px;color:#159447;font-family:DejaVu Sans,sans-serif;transform:rotate(-8deg)">&#10003;</div>
-      </div>
-    @else
-      <p>Internal Accounts signature pending. This document is not verified for employee release.</p>
-    @endif
+    @include('payslips._seal')
+  </div>
+  <div style="margin-top:14px;border-top:1px solid #d1d5db;padding-top:5px;text-align:center;font-size:8px;color:#374151;font-family:DejaVu Sans,sans-serif">
+    <div style="color:#15803d;font-weight:bold;font-size:9.5px">{{ $letterhead['footer_name'] ?? '' }}</div>
+    <div>{{ $letterhead['footer_address'] ?? '' }}</div>
+    <div>{{ $letterhead['footer_phone'] ?? '' }} | Web: {{ $letterhead['footer_web'] ?? '' }}</div>
   </div>
 
 </body>

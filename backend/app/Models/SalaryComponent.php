@@ -17,6 +17,12 @@ class SalaryComponent extends Model
      *  (employer-side cost, e.g. NPS or Gratuity Provision). */
     public const CATEGORY_CTC_ADDON = 'ctc_addon';
 
+    /** 'deduction' is a firm-defined deduction (e.g. canteen, welfare fund): a flat ₹
+     *  amount or a percentage of an earning component, subtracted from Net Pay and
+     *  listed on the payslip under Deductions. Statutory items (PF/ESI/PT/TDS/Cess)
+     *  stay computed by PayrollService. */
+    public const CATEGORY_DEDUCTION = 'deduction';
+
     /**
      * For calc_type = 'employee_field', `percentage_of` is repurposed to hold
      * one of these Employee column names instead of a component code — the

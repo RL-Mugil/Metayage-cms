@@ -26,6 +26,10 @@ Route::middleware('guest')->group(function () {
 
 Route::post('/logout', [AuthController::class, 'logout'])->middleware('auth')->name('logout');
 
+// Public payslip verification page (the link printed beside the signature seal).
+Route::get('/verify/payslip/{code}', [\App\Http\Controllers\PayslipPdfController::class, 'verifyPage'])
+    ->where('code', '[A-Za-z0-9]{8,32}')->middleware('throttle:30,1')->name('payslip.verify');
+
 // Protected app pages
 Route::middleware(['auth', 'firm.context'])->group(function () {
     Route::get('/', [DashboardController::class, 'index'])->name('dashboard');

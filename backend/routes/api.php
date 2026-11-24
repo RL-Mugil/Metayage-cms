@@ -99,6 +99,9 @@ Route::prefix('mobile')->middleware('throttle:20,1')->group(function () {
 Route::post('/logout', [AuthController::class, 'logout'])
     ->middleware(['auth:sanctum', 'throttle:120,1']);
 
+// Public: anyone holding a payslip can check its verification code (printed beside the seal).
+Route::get('/payslips/verify/{code}', [\App\Http\Controllers\PayslipPdfController::class, 'verify'])->middleware('throttle:30,1');
+
 Route::middleware(['auth:sanctum', 'firm.context', 'throttle:120,1'])->group(function () {
     Route::get('/me', [AuthController::class, 'me']);
     Route::get('/users', [AuthController::class, 'users']);
@@ -555,6 +558,9 @@ Route::middleware(['auth:sanctum', 'firm.context', 'throttle:120,1'])->group(fun
     Route::get('/payroll/my-slips', [\App\Http\Controllers\PayrollController::class, 'mySlips']);
     Route::get('/payroll/payslips/{id}/pdf', [\App\Http\Controllers\PayslipPdfController::class, 'monthly']);
     Route::post('/payroll/payslips/{id}/internal-sign', [\App\Http\Controllers\PayslipPdfController::class, 'signMonthly']);
+    Route::post('/payroll/runs/{id}/publish', [\App\Http\Controllers\PayrollController::class, 'publishRun'])->middleware('throttle:20,1');
+    Route::post('/payroll/employees/{id}/manual-payslip/preview', [\App\Http\Controllers\PayrollController::class, 'manualPayslipPreview']);
+    Route::post('/payroll/employees/{id}/manual-payslip', [\App\Http\Controllers\PayrollController::class, 'manualPayslip'])->middleware('throttle:20,1');
     Route::get('/payroll/employees/{employeeId}/yearly-pdf', [\App\Http\Controllers\PayslipPdfController::class, 'yearly']);
     Route::get('/payroll/employees/{employeeId}/salary-certificate', [\App\Http\Controllers\PayslipPdfController::class, 'salaryCertificate']);
     Route::get('/payroll/employees/{employeeId}/payslip-summary', [\App\Http\Controllers\PayslipPdfController::class, 'summary']);

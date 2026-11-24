@@ -135,6 +135,11 @@ class PayrollService
         [$ctcAddonRows, $ctcAddonAmountsByCode] = $this->computeComponents($ctcAddonComponents, $employee, $lopFactor, $amountsByCode);
         $ctcAddonTotal = round(array_sum(array_column($ctcAddonRows, 'amount')), 2);
 
+        // Firm-defined deductions: a flat amount is never prorated by LOP (lopFactor 1.0);
+        // a percentage reads the already LOP-prorated earning amounts.
+        [$deductionRows] = $this->computeComponents($components->where('category', SalaryComponent::CATEGORY_DEDUCTION), $employee, 1.0, $amountsByCode);
+        $customDeductions = round(array_sum(array_column($deductionRows, 'amount')), 2);
+
         // PF is statutory and keyed to "Basic" specifically — the admin-facing
         // validator (SalaryComponentValidator) guarantees exactly one active
         // earning row with code BASIC exists at all times, so this is always
@@ -155,7 +160,7 @@ class PayrollService
         $healthInsurance = round(max(0.0, $healthInsurance), 2);
         $otherDeductions = round(max(0.0, $otherDeductions), 2);
 
-        $totalDeductions = round($pf + $esi + $pt + $tds + $educationalCess + $healthInsurance + $otherDeductions, 2);
+        $totalDeductions = round($pf + $esi + $pt + $tds + $educationalCess + $healthInsurance + $otherDeductions + $customDeductions, 2);
         $netPay = round($payableGross - $totalDeductions, 2);
 
         return [
@@ -186,7 +191,7 @@ class PayrollService
             // Earning rows first (in sequence order), then ctc_addon rows (in
             // sequence order) — PayslipPdfController splits back out by `category`
             // for the two sections of the PDF, this ordering is just for storage.
-            'components' => [...$computed, ...$ctcAddonRows],
+            'components' => [...$computed, ...$ctcAddonRows, ...$deductionRows],
         ];
     }
 
