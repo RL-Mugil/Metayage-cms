@@ -58,6 +58,16 @@ class DashboardFinanceTest extends TestCase
         $this->assertSame('501M003INCPT', $finance['recent'][0]['number']);
         $this->assertSame($this->client->id, $finance['top_clients'][0]['client_id']);
         $this->assertCount(12, $finance['monthly']);
+        $this->assertCount(3, $finance['forecast']);
+        $this->assertEquals(10000, array_sum(array_column($finance['forecast'], 'invoices')));   // both unpaid balances fall in the window
+        $this->assertSame('Invoices paid', $finance['funnel'][3]['stage']);
+        $this->assertSame(1, $finance['funnel'][3]['count']);
+        $this->assertEquals(20000, collect($finance['breakdown']['services'])->sum('billed'));
+        $this->assertArrayHasKey('count', $finance['unbilled']);
+
+        $trends = $this->getJson('/api/dashboard/trends')->assertOk()->json();
+        $this->assertCount(6, $trends['months']);
+        $this->assertEquals(10000, end($trends['collected']));
 
         $collected = $this->getJson('/api/dashboard/drill/collected')->assertOk()->json();
         $this->assertCount(1, $collected);

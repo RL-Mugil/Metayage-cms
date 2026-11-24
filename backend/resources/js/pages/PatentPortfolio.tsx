@@ -39,6 +39,44 @@ const pageOf = <T,>(rows: T[], page: number, size = PAGE_SIZE): T[] => rows.slic
 
 /** Rows per page that fill each card: renewal rows are shorter than payment rows, stage bars shorter still. */
 const RENEWAL_PAGE = 6;
+
+const monthLabel = (key: string) => new Date(`${key}-01T00:00:00`).toLocaleDateString("en-IN", { month: "short", year: "numeric" });
+const compactInr = (v: number) => (v >= 100000 ? `₹${(v / 100000).toFixed(1)}L` : `₹${Math.round(v / 1000)}k`);
+
+/** Overdue + the next 12 months as tiles: fees due and their estimated cost. Click a tile to list it. */
+function RenewalCalendar({ rows, onPick }: { rows: any[]; onPick: (month: string) => void }) {
+  const start = new Date(); start.setDate(1);
+  const months = Array.from({ length: 12 }, (_, i) => {
+    const d = new Date(start.getFullYear(), start.getMonth() + i, 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  });
+  const tally = (list: any[]) => ({
+    count: list.length,
+    amount: list.reduce((sum, r) => sum + (r.estimate?.currency === "INR" ? Number(r.estimate.amount) : 0), 0),
+  });
+  const overdue = tally(rows.filter((r) => r.days < 0));
+  const tiles = months.map((key) => ({ key, ...tally(rows.filter((r) => r.days >= 0 && String(r.due_date ?? "").startsWith(key))) }));
+  const max = Math.max(1, ...tiles.map((t) => t.count));
+  return (
+    <div className="grid flex-1 grid-cols-3 gap-1.5 p-3 sm:grid-cols-4">
+      <button onClick={() => overdue.count && onPick("overdue")} disabled={!overdue.count}
+        className={`rounded-md border p-2 text-left ${overdue.count ? "border-red-500/40 bg-red-500/10 hover:bg-red-500/20" : "border-border opacity-50"}`}>
+        <p className="text-[10px] font-semibold text-red-500">Overdue</p>
+        <p className="text-lg font-semibold leading-tight">{overdue.count}</p>
+        {overdue.amount > 0 && <p className="text-[9px] text-muted-foreground">≈ {compactInr(overdue.amount)}</p>}
+      </button>
+      {tiles.map((t) => (
+        <button key={t.key} onClick={() => t.count && onPick(t.key)} disabled={!t.count}
+          className="rounded-md border border-border p-2 text-left transition-colors hover:border-gold/50 disabled:cursor-default"
+          style={{ backgroundColor: t.count ? `hsl(45 93% 47% / ${0.06 + (t.count / max) * 0.3})` : undefined }}>
+          <p className="text-[10px] text-muted-foreground">{monthLabel(t.key)}</p>
+          <p className="text-lg font-semibold leading-tight">{t.count}</p>
+          {t.amount > 0 && <p className="text-[9px] text-muted-foreground">≈ {compactInr(t.amount)}</p>}
+        </button>
+      ))}
+    </div>
+  );
+}
 const STAGE_PAGE = 8;
 
 const fmtShort = (value?: string | null) =>
@@ -125,6 +163,9 @@ export default function PatentPortfolio() {
   const [paymentPage, setPaymentPage] = useState(1);
   const [stagePage, setStagePage]     = useState(1);
   const [renewalSearch, setRenewalSearch] = useState("");
+  const [renewalView, setRenewalView] = useState<"list" | "calendar">("list");
+  /** "YYYY-MM", "overdue", or null (all) — the View all dialog's month filter from the calendar. */
+  const [renewalMonth, setRenewalMonth] = useState<string | null>(null);
   const [paymentSearch, setPaymentSearch] = useState("");
   const [stageSearch, setStageSearch]     = useState("");
   const [viewAll, setViewAll] = useState<"renewals" | "stages" | "actions" | null>(null);
@@ -390,8 +431,18 @@ export default function PatentPortfolio() {
               {/* Upcoming Renewals */}
               <Card className="border-border h-full flex flex-col">
                 <SectionHead icon={<Calendar className="h-4 w-4 text-gold" />} title="Upcoming Renewals"
-                  search={renewalSearch} onSearch={(v) => { setRenewalSearch(v); setRenewalPage(1); }} onViewAll={() => setViewAll("renewals")} />
+                  search={renewalSearch} onSearch={(v) => { setRenewalSearch(v); setRenewalPage(1); }} onViewAll={() => { setRenewalMonth(null); setViewAll("renewals"); }}
+                  extra={
+                    <div className="flex rounded-md border border-border p-0.5 text-[10px]">
+                      {(["list", "calendar"] as const).map((v) => (
+                        <button key={v} onClick={() => setRenewalView(v)} className={`rounded px-1.5 py-0.5 capitalize ${renewalView === v ? "bg-muted font-medium" : "text-muted-foreground"}`}>{v}</button>
+                      ))}
+                    </div>
+                  } />
                 <CardContent className="p-0 flex-1 flex flex-col">
+                  {renewalView === "calendar" ? (
+                    <RenewalCalendar rows={renewalRows} onPick={(month) => { setRenewalMonth(month); setViewAll("renewals"); }} />
+                  ) : (<>
                   <div className="flex-1">
                     {renewalRows.length === 0 ? (
                       <p className="text-xs text-muted-foreground px-4 py-6">{renewalSearch ? "No matching renewals." : "No upcoming renewals."}</p>
@@ -421,6 +472,7 @@ export default function PatentPortfolio() {
                     ))}
                   </div>
                   <SectionPager page={renewalPage} total={renewalRows.length} onPage={setRenewalPage} size={RENEWAL_PAGE} />
+                  </>)}
                 </CardContent>
               </Card>
 
@@ -537,7 +589,7 @@ export default function PatentPortfolio() {
                         </thead>
                         <tbody>
                           {paged.map((row: any, i: number) => (
-                            <tr key={i} onClick={() => goToAction(row)} className="border-t border-border hover:bg-muted/20 transition-colors group cursor-pointer">
+                            <tr key={i} onClick={() => goToAction(row)} title={row.plain_status ?? undefined} className="border-t border-border hover:bg-muted/20 transition-colors group cursor-pointer">
                               <td className="px-3 py-2.5 truncate">
                                 <button onClick={(e) => { e.stopPropagation(); if (row.id) setDetailId(row.id); }} title="Quick look at the case"
                                   className="font-mono font-medium text-foreground hover:text-gold hover:underline transition-colors truncate max-w-full">
@@ -588,7 +640,9 @@ export default function PatentPortfolio() {
             </div>
 
             {viewAll === "renewals" && (
-              <SectionDialog title="Upcoming Renewals" rows={data.upcoming_renewals as any[]} onClose={() => setViewAll(null)}
+              <SectionDialog title={renewalMonth ? `Renewals · ${renewalMonth === "overdue" ? "Overdue" : monthLabel(renewalMonth)}` : "Upcoming Renewals"}
+                rows={(data.upcoming_renewals as any[]).filter((r: any) => !renewalMonth || (renewalMonth === "overdue" ? r.days < 0 : r.days >= 0 && String(r.due_date ?? "").startsWith(renewalMonth)))}
+                onClose={() => { setViewAll(null); setRenewalMonth(null); }}
                 initialSort={{ key: "hard_deadline", dir: "asc" }} empty="No upcoming renewals."
                 onRowClick={(r: any) => goTo(`/projects/${r.id}?tab=deadlines`)}
                 columns={[

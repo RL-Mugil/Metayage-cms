@@ -10,9 +10,24 @@ interface Props {
   accent?: "primary" | "gold" | "info" | "success" | "neutral";
   onClick?: () => void;
   subtitle?: string;
+  /** Recent values, oldest first, drawn as a small trend line (e.g. the last 6 months). */
+  spark?: number[];
 }
 
-export function StatCard({ label, value, delta, trend = "flat", icon: Icon, accent = "primary", onClick, subtitle }: Props) {
+/** A tiny trend line; hidden when there is nothing to draw. */
+function Sparkline({ values }: { values: number[] }) {
+  if (values.length < 2 || values.every((v) => v === 0)) return null;
+  const max = Math.max(...values), min = Math.min(...values);
+  const span = max - min || 1;
+  const points = values.map((v, i) => `${(i / (values.length - 1)) * 100},${28 - ((v - min) / span) * 24}`).join(" ");
+  return (
+    <svg viewBox="0 0 100 30" preserveAspectRatio="none" className="mt-2 h-6 w-full text-gold" aria-hidden="true">
+      <polyline points={points} fill="none" stroke="currentColor" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+    </svg>
+  );
+}
+
+export function StatCard({ label, value, delta, trend = "flat", icon: Icon, accent = "primary", onClick, subtitle, spark }: Props) {
   const accents: Record<string, string> = {
     primary: "bg-primary/5 text-primary",
     gold: "bg-gold/10 text-gold",
@@ -48,6 +63,7 @@ export function StatCard({ label, value, delta, trend = "flat", icon: Icon, acce
       {subtitle && (
         <div className="mt-1 text-[10px] text-muted-foreground">{subtitle}</div>
       )}
+      {spark && <Sparkline values={spark} />}
     </div>
   );
 }

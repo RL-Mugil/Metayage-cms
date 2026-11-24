@@ -250,9 +250,22 @@ export interface DashboardFinance {
   outstanding: number
   rate: number
   ageing: Array<{ key: string; label: string; amount: number; count: number }>
-  monthly: Array<{ month: string; key: string; billed: number; collected: number }>
+  monthly: Array<{ month: string; key: string; billed: number; collected: number; prev_billed: number }>
   recent: Array<{ id: number; source: string; number: string | null; client: string | null; client_id: number | null; date: string | null; due_date: string | null; amount: number; outstanding: number; state: string; overdue: boolean }>
   top_clients: Array<{ client_id: number; name: string; client_code: string | null; outstanding: number; invoices: number }>
+  forecast: Array<{ month: string; key: string; invoices: number; renewals: number }>
+  breakdown: { services: Array<{ code: string; billed: number }>; offices: Array<{ code: string; billed: number }> }
+  funnel: Array<{ stage: string; count: number; amount: number }>
+  unbilled: { count: number; items: Array<{ id: number; docket_number: string; project_name: string | null; service_code: string | null; status: string; client: string | null }> }
+}
+
+/** Six-month KPI trend lines (oldest first). */
+export interface DashboardTrends {
+  months: string[]
+  opened: number[]
+  collected: number[]
+  billed: number[]
+  quoted: number[]
 }
 
 export const api = {
@@ -308,6 +321,12 @@ export const api = {
     return this.request(`/dashboard/deadlines?bucket=${bucket}`)
   },
   async getDashboardQuoted(): Promise<any[]> { return this.request('/dashboard/drill/quoted') },
+  async getDashboardTrends(): Promise<DashboardTrends> { return this.request('/dashboard/trends') },
+  /** Firm-wide switches (weekly digest, leaderboard); only a super admin can change them. */
+  async getSwitches(): Promise<Record<string, boolean>> { return this.request('/settings/switches') },
+  async updateSwitches(data: Record<string, boolean>): Promise<Record<string, boolean>> {
+    return this.request('/settings/switches', { method: 'PUT', body: JSON.stringify(data) })
+  },
   async getDashboardCollected(month?: string): Promise<any[]> {
     return this.request(`/dashboard/drill/collected${month ? `?month=${month}` : ''}`)
   },

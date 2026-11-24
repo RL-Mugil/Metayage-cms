@@ -214,12 +214,17 @@ class FinanceFigures
         $months = [];
         for ($i = 11; $i >= 0; $i--) {
             $date = now()->startOfMonth()->subMonths($i);
-            $months[$date->format('Y-m')] = ['month' => $date->format('M y'), 'key' => $date->format('Y-m'), 'billed' => 0.0, 'collected' => 0.0];
+            $months[$date->format('Y-m')] = ['month' => $date->format('M y'), 'key' => $date->format('Y-m'), 'billed' => 0.0, 'collected' => 0.0, 'prev_billed' => 0.0];
         }
         foreach ($this->rows($user, $clientId) as $row) {
             $key = $row['date']?->format('Y-m');
             if ($key && isset($months[$key])) {
                 $months[$key]['billed'] += $row['billed'];
+            }
+            // The same month a year earlier, for the year-over-year comparison.
+            $nextYear = $row['date']?->copy()->addYear()->format('Y-m');
+            if ($nextYear && isset($months[$nextYear])) {
+                $months[$nextYear]['prev_billed'] += $row['billed'];
             }
         }
         foreach ($this->collectedByMonth($user, $clientId) as $key => $amount) {
@@ -228,7 +233,7 @@ class FinanceFigures
             }
         }
 
-        return array_values(array_map(fn ($m) => ['billed' => round($m['billed'], 2), 'collected' => round($m['collected'], 2)] + $m, $months));
+        return array_values(array_map(fn ($m) => ['billed' => round($m['billed'], 2), 'collected' => round($m['collected'], 2), 'prev_billed' => round($m['prev_billed'], 2)] + $m, $months));
     }
 
     /** The latest invoices (register and older), newest first. */
@@ -289,5 +294,113 @@ class FinanceFigures
         }
 
         return $query;
+    }
+    /**
+     * Expected collections for the next 3 months: unpaid invoice balances by due date (overdue
+     * and undated count in the current month) plus upcoming renewal fee estimates.
+     *
+     * @return array<int, array{month: string, key: string, invoices: float, renewals: float}>
+     */
+    public function forecast(User $user): array
+    {
+        $months = [];
+        for ($i = 0; $i < 3; $i++) {
+            $date = now()->startOfMonth()->addMonths($i);
+            $months[$date->format('Y-m')] = ['month' => $date->format('M y'), 'key' => $date->format('Y-m'), 'invoices' => 0.0, 'renewals' => 0.0];
+        }
+        $current = array_key_first($months);
+        foreach ($this->rows($user) as $row) {
+            if ($row['outstanding'] <= 0) {
+                continue;
+            }
+            $key = $row['due_date'] && $row['due_date']->gt(now()) ? $row['due_date']->format('Y-m') : $current;
+            if (isset($months[$key])) {
+                $months[$key]['invoices'] += $row['outstanding'];
+            }
+        }
+        $apps = \App\Models\Project::query()->whereNotNull('patent_application_id')
+            ->when($user->isClientRole(), fn ($q) => $q->whereIn('client_id', Client::query()->visibleToUser($user)->select('id')))
+            ->when($user->isGalvanizer(), fn ($q) => $user->applyProjectScope($q))
+            ->select('patent_application_id');
+        foreach (RenewalOutlook::nextDue($apps, 2000) as $renewal) {
+            $key = $renewal['days'] < 0 ? $current : substr((string) $renewal['due_date'], 0, 7);
+            if (isset($months[$key]) && $renewal['estimate'] && $renewal['estimate']['currency'] === 'INR') {
+                $months[$key]['renewals'] += $renewal['estimate']['amount'];
+            }
+        }
+
+        return array_values(array_map(fn ($m) => ['invoices' => round($m['invoices'], 2), 'renewals' => round($m['renewals'], 2)] + $m, $months));
+    }
+
+    /**
+     * Billed (INR) by service code and by patent office, biggest first.
+     *
+     * @return array{services: array<int, array{code: string, billed: float}>, offices: array<int, array{code: string, billed: float}>}
+     */
+    public function byServiceAndOffice(User $user): array
+    {
+        $rows = $this->registerInvoices($user)->get(['service_code', 'patent_office_code', 'total_bcy', 'invoice_amount']);
+        $sum = fn (string $field) => $rows->groupBy(fn ($r) => strtoupper((string) ($r->{$field} ?: '—')))
+            ->map(fn ($g, $code) => ['code' => (string) $code, 'billed' => round((float) $g->sum(fn ($r) => (float) ($r->total_bcy ?? $r->invoice_amount)), 2)])
+            ->sortByDesc('billed')->values();
+
+        return ['services' => $sum('service_code')->take(10)->all(), 'offices' => $sum('patent_office_code')->take(8)->all()];
+    }
+
+    /**
+     * Quote → invoice → paid funnel: quotes sent, accepted, invoiced, and invoices fully paid.
+     *
+     * @return array<int, array{stage: string, count: int, amount: float}>
+     */
+    public function funnel(User $user): array
+    {
+        $quotes = PatentInvoiceIn::query()->where('type', 'quote')->whereNotIn('status', ['Draft'])
+            ->when($user->isClientRole(), fn ($q) => $q->whereIn('client_id', Client::query()->visibleToUser($user)->select('id')))
+            ->when($user->isGalvanizer(), fn ($q) => $q->whereHas('project', fn ($p) => $user->applyProjectScope($p)))
+            ->get(['status', 'zoho_status', 'total_bcy', 'invoice_amount']);
+        $amount = fn ($set) => round((float) $set->sum(fn ($q) => (float) ($q->total_bcy ?? $q->invoice_amount)), 2);
+        $accepted = $quotes->filter(fn ($q) => $q->status === 'Accepted');
+        $invoiced = $quotes->filter(fn ($q) => strtolower((string) $q->zoho_status) === 'invoiced');
+        $paid = $this->rows($user)->filter(fn ($r) => $r['outstanding'] <= 0);
+
+        return [
+            ['stage' => 'Quotes sent', 'count' => $quotes->count(), 'amount' => $amount($quotes)],
+            ['stage' => 'Accepted', 'count' => $accepted->count(), 'amount' => $amount($accepted)],
+            ['stage' => 'Invoiced', 'count' => $invoiced->count(), 'amount' => $amount($invoiced)],
+            ['stage' => 'Invoices paid', 'count' => $paid->count(), 'amount' => round((float) $paid->sum('billed'), 2)],
+        ];
+    }
+
+    /**
+     * Billing opportunities: cases whose filing step is done (or that are granted) but that have
+     * no invoice in the register for the case or its docket.
+     *
+     * @return array{count: int, items: array<int, array<string, mixed>>}
+     */
+    public function unbilled(User $user, int $limit = 15): array
+    {
+        if ($user->isClientRole()) {
+            return ['count' => 0, 'items' => []];
+        }
+        $query = \App\Models\Project::query()->whereNotNull('docket_number')
+            ->where(fn ($q) => $q->where('status', 'Granted')
+                ->orWhereHas('stages', fn ($st) => $st->where('status', 'Completed')
+                    ->where(fn ($n) => $n->where('stage_name', 'ilike', '%filed%')->orWhere('stage_name', 'ilike', '%filing receipt%'))))
+            ->whereNotExists(fn ($q) => $q->selectRaw('1')->from('patent_invoices_in')
+                ->where('patent_invoices_in.type', 'invoice')->where('patent_invoices_in.status', '!=', 'Cancelled')
+                ->where(fn ($w) => $w->whereColumn('patent_invoices_in.project_id', 'projects.id')
+                    ->orWhereRaw("UPPER(patent_invoices_in.invoice_uin) LIKE UPPER(projects.docket_number) || '%'")));
+        if ($user->isGalvanizer()) {
+            $user->applyProjectScope($query);
+        }
+
+        return [
+            'count' => (clone $query)->count(),
+            'items' => $query->with('client:id,legal_name,company_name')->orderByDesc('updated_at')->limit($limit)
+                ->get(['id', 'docket_number', 'project_name', 'service_code', 'status', 'client_id'])
+                ->map(fn ($p) => ['id' => $p->id, 'docket_number' => $p->docket_number, 'project_name' => $p->project_name,
+                    'service_code' => $p->service_code, 'status' => $p->status,
+                    'client' => $p->client?->legal_name ?: $p->client?->company_name])->all(),
+        ];
     }
 }

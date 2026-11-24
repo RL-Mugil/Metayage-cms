@@ -22,6 +22,9 @@ export interface ActionItem {
   is_renewal: boolean;
   owner?: "client" | "internal" | null;
   finance_relevant?: boolean;
+  /** One plain sentence for clients: where the case is and who acts next. */
+  plain_status?: string | null;
+  action_target?: { tab: string; label: string; url: string } | null;
 }
 
 export function urgencyBadgeVariant(urgency?: string | null): "destructive" | "outline" | "secondary" {
@@ -187,6 +190,7 @@ export function ActionItemRow({ item, onRenewClick, showOwnerBadge }: {
         </div>
         {item.project_name && <div className="mt-0.5 text-sm font-medium truncate">{item.project_name}</div>}
         <div className="mt-1 text-xs text-muted-foreground">{item.pending_action}</div>
+        {item.plain_status && <div className="mt-0.5 text-[11px] italic text-foreground/70">{item.plain_status}</div>}
       </div>
       <div className="flex flex-shrink-0 items-center gap-3">
         {item.hard_deadline && (

@@ -120,6 +120,9 @@ Route::middleware(['auth:sanctum', 'firm.context', 'throttle:120,1'])->group(fun
     Route::get('/dashboard/drill/quoted', [\App\Http\Controllers\DashboardInsightsController::class, 'quoted']);
     Route::get('/dashboard/drill/collected', [\App\Http\Controllers\DashboardInsightsController::class, 'collected']);
     Route::get('/dashboard/finance', [\App\Http\Controllers\DashboardInsightsController::class, 'finance']);
+    Route::get('/dashboard/trends', [\App\Http\Controllers\DashboardInsightsController::class, 'trends']);
+    Route::get('/settings/switches', [\App\Http\Controllers\FeatureSwitchController::class, 'index']);
+    Route::put('/settings/switches', [\App\Http\Controllers\FeatureSwitchController::class, 'update']);
 
     // CRM / Clients
     Route::get('/clients/stats', [ClientController::class, 'stats']);

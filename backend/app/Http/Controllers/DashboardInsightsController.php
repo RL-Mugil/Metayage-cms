@@ -104,6 +104,31 @@ class DashboardInsightsController extends Controller
             'monthly' => $this->figures->monthly($user),
             'recent' => $this->figures->recent($user, 8),
             'top_clients' => $user->isClientRole() ? [] : $this->figures->topClients($user, 5),
+            'forecast' => $this->figures->forecast($user),
+            'breakdown' => $this->figures->byServiceAndOffice($user),
+            'funnel' => $this->figures->funnel($user),
+            'unbilled' => $this->figures->unbilled($user),
+        ]);
+    }
+
+    /** Six-month trend lines for the KPI cards (oldest first). */
+    public function trends(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        $months = collect(range(5, 0))->map(fn ($i) => now()->startOfMonth()->subMonths($i));
+        $finance = in_array($user->role, self::FINANCE_ROLES, true);
+        $monthly = $finance ? collect($this->figures->monthly($user))->keyBy('key') : collect();
+        $quotes = $finance ? $this->figures->quotedNotInvoiced($user)->whereNotNull('invoice_date')
+            ->where('invoice_date', '>=', $months->first()->toDateString())->get(['invoice_date', 'total_bcy', 'invoice_amount']) : collect();
+        $cases = $this->activeProjects($user)->where('created_at', '>=', $months->first())->get(['created_at']);
+
+        return response()->json([
+            'months' => $months->map->format('M')->values(),
+            'opened' => $months->map(fn ($m) => $cases->filter(fn ($c) => $c->created_at?->format('Y-m') === $m->format('Y-m'))->count())->values(),
+            'collected' => $months->map(fn ($m) => (float) ($monthly[$m->format('Y-m')]['collected'] ?? 0))->values(),
+            'billed' => $months->map(fn ($m) => (float) ($monthly[$m->format('Y-m')]['billed'] ?? 0))->values(),
+            'quoted' => $months->map(fn ($m) => round((float) $quotes->filter(fn ($q) => $q->invoice_date?->format('Y-m') === $m->format('Y-m'))
+                ->sum(fn ($q) => (float) ($q->total_bcy ?? $q->invoice_amount)), 2))->values(),
         ]);
     }
 

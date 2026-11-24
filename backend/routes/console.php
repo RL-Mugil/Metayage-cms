@@ -43,6 +43,9 @@ Schedule::call(fn () => \Illuminate\Support\Facades\Cache::put('ops:scheduler:be
 Schedule::command('ops:incidents-sweep')->everyTenMinutes()->withoutOverlapping()->onOneServer();
 Schedule::command('ops:daily-report')->dailyAt('06:00')->timezone('Asia/Kolkata')->withoutOverlapping()->onOneServer();
 
+// Monday digest for partners and managers; does nothing until a super admin turns it on.
+Schedule::command('digest:weekly')->weeklyOn(1, '09:00')->timezone('Asia/Kolkata')->withoutOverlapping()->onOneServer();
+
 // Remove article images that no article references any more (stray uploads older than an hour).
 
 Schedule::command('cpi:prune-images')->dailyAt('04:30')->timezone('Asia/Kolkata')->onOneServer();

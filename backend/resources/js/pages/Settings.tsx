@@ -11,6 +11,7 @@ import { api } from "@/lib/api-client";
 import { isAllCountries, taggedCountries, type CodeItem } from "@/lib/service-codes";
 import { SiteAdminPanel } from "@/components/site-admin-panel";
 import { IpoSettingsPanel } from "@/components/ipo/ipo-settings-panel";
+import { FirmSwitches } from "@/components/settings/firm-switches";
 import type { ProjectTab, CodeRow, CodeRenameImpact, CodeMergeAvailable, CodeMergeImpact } from "@/types";
 
 function loadPrefs<T>(key: string, fallback: T): T {
@@ -1487,6 +1488,7 @@ export default function Settings() {
               </CardContent>
             </Card>
           )}
+          {tab === "notifications" && isSuperAdmin && <FirmSwitches />}
 
           {/* ── Security ── */}
           {tab === "security" && (

@@ -14,6 +14,32 @@ use Illuminate\Support\Collection;
  */
 class RenewalOutlook
 {
+    /** @var array<string, \Illuminate\Support\Collection> fee cards per jurisdiction, per request */
+    private static array $cards = [];
+
+    /**
+     * Estimated fee (government + professional, standard tier) for one renewal year, from the
+     * fee rate cards: India REN/RNF bands, US MFE at 3.5 / 7.5 / 11.5 years. Null when no card.
+     *
+     * @return array{amount: float, currency: string}|null
+     */
+    public static function estimate(string $jurisdiction, int $year, bool $usMaintenance = false): ?array
+    {
+        $jurisdiction = strtoupper($jurisdiction);
+        $codes = $usMaintenance ? ['MFE'] : ['REN', 'RNF'];
+        $key = $jurisdiction.'|'.implode(',', $codes);
+        self::$cards[$key] ??= \App\Models\FeeRateCard::where('jurisdiction', $jurisdiction)->whereIn('service_code', $codes)
+            ->where('is_active', true)->where(fn ($q) => $q->where('entity_tier', 'standard')->orWhereNull('entity_tier'))->get();
+        $band = $usMaintenance ? $year - 0.5 : $year;
+        $card = self::$cards[$key]->first(fn ($r) => $band >= (float) $r->year_from && $band <= (float) $r->year_to);
+        if (! $card || ($card->govt_fee_amount === null && $card->professional_fee_amount === null)) {
+            return null;
+        }
+
+        return ['amount' => round((float) $card->govt_fee_amount + (float) $card->professional_fee_amount, 2),
+            'currency' => $card->govt_fee_currency ?: $card->professional_fee_currency ?: 'INR'];
+    }
+
     /**
      * @param  Builder|\Illuminate\Database\Query\Builder  $applicationIds  a query selecting patent_application_id (the scope)
      * @return Collection<int, array<string, mixed>>
@@ -52,6 +78,7 @@ class RenewalOutlook
                 'due_date' => $row->due_date?->toDateString(),
                 'hard_deadline' => $row->due_date?->toDateString(),   // older clients of this payload
                 'days' => $days,                                       // negative = overdue
+                'estimate' => self::estimate((string) ($project?->patent_office_code ?? $row->application?->jurisdiction ?? 'IN'), (int) $row->renewal_year, $row->isUsMaintenance()),
                 'window_opens_on' => $row->window_opens_on?->toDateString(),
                 'grace_ends_on' => $row->grace_ends_on?->toDateString(),
             ];

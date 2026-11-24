@@ -163,7 +163,33 @@ class ActionItemService
             'owner' => $this->ownerFor($stageName, $svcCode, $isRenewal),
             'finance_relevant' => $isRenewal,
             'action_target' => $this->actionTarget($p, $stageName, $svcCode, $pendingAction, $isRenewal),
+            'plain_status' => $this->plainStatus($p, $stageName, $pendingAction, $isRenewal, $this->ownerFor($stageName, $svcCode, $isRenewal)),
         ];
+    }
+
+    /** One plain sentence a client understands: where the case is and who acts next. */
+    public function plainStatus(Project $p, string $stageName, string $pendingAction, bool $isRenewal, ?string $owner): string
+    {
+        $due = $p->hard_deadline ? ' (due '.\Carbon\Carbon::parse($p->hard_deadline)->format('j M Y').')' : '';
+        $action = lcfirst(trim($pendingAction));
+        if ($isRenewal) {
+            return "The renewal fee is due{$due}. Approve it to keep the patent in force.";
+        }
+        if ($owner === 'client') {
+            return "Waiting for you: {$action}{$due}.";
+        }
+        if (str_contains($action, 'fer') || str_contains($action, 'examination') || str_contains($action, 'office action')) {
+            return "The patent office has raised objections. We are preparing the response{$due}.";
+        }
+        if (str_contains($action, 'hearing')) {
+            return "A hearing with the patent office is on. We are handling it{$due}.";
+        }
+        if (str_contains($action, 'granted')) {
+            return 'Your patent has been granted.';
+        }
+        $stage = $stageName !== '' ? lcfirst($stageName) : $action;
+
+        return "We are working on it — current step: {$stage}{$due}.";
     }
 
     /**

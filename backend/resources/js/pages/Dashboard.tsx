@@ -7,7 +7,7 @@ import { StatCard } from "@/components/stat-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { api, downloadCSV } from "@/lib/api-client";
+import { api, downloadCSV , type DashboardTrends } from "@/lib/api-client";
 import { statusColor } from "@/lib/utils";
 import { usePage } from "@inertiajs/react";
 import { AnalystRoleFilter, useAnalystRoleFilter } from "@/components/analyst-role-filter";
@@ -168,6 +168,8 @@ function StaffDashboard() {
   const [loading, setLoading]   = useState(true);
   const [drillKey, setDrillKey] = useState<DrillKey | null>(null);
   const [renewalItem, setRenewalItem] = useState<ActionItem | null>(null);
+  const [trends, setTrends] = useState<DashboardTrends | null>(null);
+  useEffect(() => { api.getDashboardTrends().then(setTrends).catch(() => setTrends(null)); }, []);
 
   const feeRates = props.systemSettings?.renewal_fee_rates ?? { government_fee: 0, professional_fee: 0, currency: "INR" };
 
@@ -419,14 +421,15 @@ function StaffDashboard() {
             icon={Briefcase}
             accent="primary"
             onClick={() => setDrillKey("active_cases")}
+            spark={trends?.opened}
             subtitle={metrics.distinct_matters != null && metrics.distinct_matters !== metrics.active_matters
               ? `${metrics.distinct_matters} distinct matters`
               : undefined}
           />
           <StatCard label="Inactive Cases" value={(metrics.inactive_matters ?? 0).toString()} icon={Archive} accent="neutral" onClick={() => setDrillKey("inactive_cases")} />
           <StatCard label="Active Clients" value={metrics.clients.toString()} delta={metrics.clients_delta ?? undefined} trend={metrics.clients_delta_trend ?? "up"} icon={Users} accent="gold" onClick={() => setDrillKey("active_clients")} />
-          <StatCard label="Quoted, not invoiced" value={formatCurrency(metrics.quoted_open ?? 0)} icon={Clock} accent="info" subtitle={`${metrics.quoted_count ?? 0} open quotes`} onClick={() => setDrillKey("quoted")} />
-          <StatCard label="Collected this month" value={formatCurrency(metrics.collected_mtd ?? 0)} delta={metrics.revenue_delta ?? undefined} trend={metrics.revenue_delta_trend ?? "up"} icon={Wallet} accent="success" onClick={() => setDrillKey("collected")} />
+          <StatCard label="Quoted, not invoiced" value={formatCurrency(metrics.quoted_open ?? 0)} icon={Clock} accent="info" subtitle={`${metrics.quoted_count ?? 0} open quotes`} spark={trends?.quoted} onClick={() => setDrillKey("quoted")} />
+          <StatCard label="Collected this month" value={formatCurrency(metrics.collected_mtd ?? 0)} delta={metrics.revenue_delta ?? undefined} trend={metrics.revenue_delta_trend ?? "up"} icon={Wallet} accent="success" spark={trends?.collected} onClick={() => setDrillKey("collected")} />
           <StatCard label="Outstanding" value={formatCurrency(metrics.zoho_outstanding ?? 0)} icon={Landmark} accent="info" subtitle={`${metrics.overdue_invoices ?? 0} invoices overdue`} onClick={() => router.visit("/pending-payments")} />
         </div>
 

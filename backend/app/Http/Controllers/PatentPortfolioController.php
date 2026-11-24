@@ -152,7 +152,7 @@ class PatentPortfolioController extends Controller
 
         // Upcoming renewals: the next unpaid renewal / annuity / US maintenance fee of each
         // granted application in scope (renewal_schedules), overdue first, then soonest.
-        $renewals = \App\Services\RenewalOutlook::nextDue((clone $base)->whereNotNull('patent_application_id')->select('patent_application_id'), 200);
+        $renewals = \App\Services\RenewalOutlook::nextDue((clone $base)->whereNotNull('patent_application_id')->select('patent_application_id'), 1500);   // the renewal calendar needs every next fee
 
         // Pending invoices for the client(s) — oldest due date first (most overdue/urgent),
         // undated invoices last, so a badly overdue invoice can't be silently pushed out of
