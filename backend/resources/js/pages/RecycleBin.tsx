@@ -177,7 +177,7 @@ export default function RecycleBin() {
         </div>
       )}
 
-      <div className="px-8 py-6 space-y-4">
+      <div className="px-4 py-4 sm:px-8 sm:py-5 space-y-4">
         {/* Tabs */}
         <div className="flex gap-1 border-b border-border">
           {TAB_META.map(({ key, label, icon: Icon }) => (
@@ -228,7 +228,7 @@ export default function RecycleBin() {
                   <th className="px-4 py-3 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="table-rows-3d">
                 {displayed.map((item) => (
                   <tr key={item.id} className={`border-t border-border hover:bg-muted/20 ${selected.has(item.id) ? "bg-gold/5" : ""}`}>
                     <td className="px-4 py-3">

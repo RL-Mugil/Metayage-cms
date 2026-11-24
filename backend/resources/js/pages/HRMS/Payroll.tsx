@@ -406,7 +406,7 @@ export default function HRMSPayroll() {
 
       {showReimburse && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-2xl p-6 m-4">
+          <div className="bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-2xl p-6 m-4">
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-display text-lg font-semibold">Submit Reimbursement</h2>
               <button onClick={() => setShowReimburse(false)}><X className="h-5 w-5 text-muted-foreground" /></button>
@@ -469,7 +469,7 @@ export default function HRMSPayroll() {
         </div>
       )}
 
-      <div className="px-8 py-6 space-y-6">
+      <div className="px-4 py-4 sm:px-8 sm:py-5 space-y-5">
         {error && <div className="rounded-md border border-red-500/40 bg-red-500/10 px-4 py-2 text-sm text-red-400">{error}</div>}
         {notice && <div className="rounded-md border border-green-500/40 bg-green-500/10 px-4 py-2 text-sm text-green-400">{notice}</div>}
         {props.flash?.success && <div className="rounded-md border border-green-500/40 bg-green-500/10 px-4 py-2 text-sm text-green-500">{props.flash.success}</div>}
@@ -545,7 +545,7 @@ export default function HRMSPayroll() {
                       <th className="px-3 py-2.5 text-center">Slip</th>
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody className="table-rows-3d">
                     {mySlips.map((s) => (
                       <tr key={s.id} className="border-t border-border hover:bg-muted/20">
                         <td className="px-3 py-2.5 font-medium">{s.run ? periodLabel(s.run.period) : "—"}</td>
@@ -600,7 +600,7 @@ export default function HRMSPayroll() {
                       <th className="px-3 py-2.5 text-center">Receipt</th>
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody className="table-rows-3d">
                     {myReimbursements.map((c) => (
                       <tr key={c.id} className="border-t border-border hover:bg-muted/20">
                         <td className="px-3 py-2.5 font-medium">{c.reimbursement_type?.name || c.category}</td>
@@ -926,7 +926,7 @@ export default function HRMSPayroll() {
                       <th className="px-3 py-2.5 text-left">Status</th>
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody className="table-rows-3d">
                     {myLoans.map((l) => (
                       <tr key={l.id} className="border-t border-border hover:bg-muted/20">
                         <td className="px-3 py-2.5 text-right">{fmt(l.principal_amount)}</td>
@@ -981,7 +981,7 @@ export default function HRMSPayroll() {
 
         {showLoanRequest && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-            <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-xl p-6 m-4">
+            <div className="bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-xl p-6 m-4">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="font-display text-lg font-semibold">Apply for Loan</h2>
                 <button onClick={() => setShowLoanRequest(false)}><X className="h-5 w-5 text-muted-foreground" /></button>

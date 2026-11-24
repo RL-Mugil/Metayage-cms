@@ -192,7 +192,7 @@ export default function PayrollPortalEmployees() {
 
       {showModal && editEmp && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm overflow-y-auto py-8">
-          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-5xl p-6 m-4">
+          <div className="bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-5xl p-6 m-4">
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-display text-lg font-semibold">Edit Employee</h2>
               <button onClick={() => setShowModal(false)}><X className="h-5 w-5 text-muted-foreground" /></button>
@@ -329,7 +329,7 @@ export default function PayrollPortalEmployees() {
         </div>
       )}
 
-      <div className="px-8 py-6 space-y-4">
+      <div className="px-4 py-4 sm:px-8 sm:py-5 space-y-4">
         <div className="relative max-w-sm">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search employees…"
@@ -351,7 +351,7 @@ export default function PayrollPortalEmployees() {
                     {canEdit && <th className="px-3 py-2.5 text-center">Edit</th>}
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="table-rows-3d">
                   {filtered.map((e) => (
                     <tr key={e.id} className="border-t border-border hover:bg-muted/20">
                       <td className="px-3 py-2.5">

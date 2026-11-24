@@ -322,7 +322,7 @@ export default function AppLayout({ children }: Props) {
             </div>
           </header>
 
-          <main className="flex-1 min-w-0">{children}</main>
+          <main className="surface-mesh flex-1 min-w-0">{children}</main>
           <Toaster position="bottom-right" richColors />
         </div>
       </div>

@@ -128,7 +128,7 @@ export default function PayrollPortalTaxesChallans() {
         actions={<Button className="bg-gold hover:bg-gold/90 text-black" onClick={() => setShowRecord(true)}><Plus className="h-4 w-4 mr-2" />Record Challan</Button>}
       />
 
-      <div className="px-8 py-6 space-y-4">
+      <div className="px-4 py-4 sm:px-8 sm:py-5 space-y-4">
         {error && <div className="rounded-md border border-red-500/40 bg-red-500/10 px-4 py-2 text-sm text-red-400">{error}</div>}
 
         <Card className="border-border">
@@ -153,7 +153,7 @@ export default function PayrollPortalTaxesChallans() {
                     <th className="px-3 py-2.5 text-center">Actions</th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="table-rows-3d">
                   {challans.map((c) => {
                     const allocated = (c.allocations || []).reduce((s: number, a: any) => s + Number(a.amount), 0);
                     return (
@@ -199,7 +199,7 @@ export default function PayrollPortalTaxesChallans() {
 
       {showRecord && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm overflow-y-auto py-8">
-          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-4xl p-6 m-4">
+          <div className="bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-4xl p-6 m-4">
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-display text-lg font-semibold">Record Challan</h2>
               <button onClick={() => setShowRecord(false)}><X className="h-5 w-5 text-muted-foreground" /></button>
@@ -250,7 +250,7 @@ export default function PayrollPortalTaxesChallans() {
 
       {associateTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm overflow-y-auto py-8">
-          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-2xl p-6 m-4">
+          <div className="bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-2xl p-6 m-4">
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-display text-lg font-semibold">Associate Challan — {associateTarget.bsr_code} / {associateTarget.serial_number}</h2>
               <button onClick={() => setAssociateTarget(null)}><X className="h-5 w-5 text-muted-foreground" /></button>

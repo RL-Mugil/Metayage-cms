@@ -83,7 +83,7 @@ function ClientTeamView() {
         title="My Team"
         description="Internal staff assigned to your active matters"
       />
-      <div className="px-8 py-6">
+      <div className="px-4 py-4 sm:px-8 sm:py-5">
         {loading ? (
           <div className="flex items-center justify-center py-24">
             <Loader2 className="h-8 w-8 animate-spin text-gold" />
@@ -99,7 +99,7 @@ function ClientTeamView() {
               const isOpen = expanded === member.id;
               return (
                 <Card key={member.id} className="border-border hover:border-gold/40 transition-colors">
-                  <CardContent className="p-5">
+                  <CardContent className="p-3.5">
                     <div className="flex items-start gap-3">
                       {member.avatar_url ? (
                         <img src={member.avatar_url} alt={member.name}
@@ -343,7 +343,7 @@ export default function Team() {
 
       {showAddModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm overflow-y-auto py-8">
-          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-2xl m-4">
+          <div className="bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-2xl m-4">
             <div className="flex items-center justify-between px-6 py-4 border-b border-border">
               <h2 className="font-display text-lg font-semibold">Add Employee</h2>
               <button onClick={() => setShowAddModal(false)}><X className="h-5 w-5 text-muted-foreground" /></button>
@@ -404,7 +404,7 @@ export default function Team() {
 
       {showInviteModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-sm p-6 m-4">
+          <div className="bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-sm p-6 m-4">
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-display text-lg font-semibold">Invite Team Member</h2>
               <button onClick={() => setShowInviteModal(false)}><X className="h-5 w-5 text-muted-foreground" /></button>
@@ -428,7 +428,7 @@ export default function Team() {
       {/* Assigned Projects Modal */}
       {assignedModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col">
+          <div className="bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-2xl max-h-[80vh] flex flex-col">
             <div className="flex items-center justify-between p-5 border-b border-border">
               <div>
                 <h2 className="font-display text-base font-semibold">
@@ -461,7 +461,7 @@ export default function Team() {
                       <th className="pb-2 text-left">Hard Deadline</th>
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody className="table-rows-3d">
                     {assignedModal.projects.map((p) => (
                       <tr key={p.id} className="border-b border-border/50 hover:bg-muted/20">
                         <td className="py-2.5 font-mono text-xs">{p.project_code}</td>
@@ -489,7 +489,7 @@ export default function Team() {
       {/* Client Manager Modal */}
       {clientMgrModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col">
+          <div className="bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-2xl max-h-[80vh] flex flex-col">
             <div className="flex items-center justify-between p-5 border-b border-border">
               <div>
                 <h2 className="font-display text-base font-semibold">
@@ -521,7 +521,7 @@ export default function Team() {
                       <th className="pb-2 text-left">GST Type</th>
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody className="table-rows-3d">
                     {clientMgrModal.clients.map((c) => (
                       <tr key={c.id} className="border-b border-border/50 hover:bg-muted/20">
                         <td className="py-2.5 font-mono text-xs text-gold">{c.client_code}</td>
@@ -546,7 +546,7 @@ export default function Team() {
         </div>
       )}
 
-      <div className="px-8 py-6 space-y-6">
+      <div className="px-4 py-4 sm:px-8 sm:py-5 space-y-5">
         {notice && (
           <div className={`rounded-md border px-4 py-3 text-sm ${notice.kind === "ok" ? "border-green-200 bg-green-50 text-green-700" : "border-red-200 bg-red-50 text-red-700"}`}>
             {notice.text}
@@ -729,7 +729,7 @@ export default function Team() {
                     <th className="px-4 py-3 text-left">Actions</th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="table-rows-3d">
                   {filtered.map((emp) => {
                     const name = emp.user?.name ?? "Unknown";
                     const email = emp.user?.email ?? "";

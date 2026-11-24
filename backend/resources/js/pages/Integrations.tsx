@@ -359,7 +359,7 @@ export default function Integrations() {
         <div className="grid grid-cols-3 gap-4">
           {list.map((intg) => (
             <Card key={intg.id} className={`border-border transition-all ${configOpen === intg.id ? "ring-2 ring-gold" : ""}`}>
-              <CardContent className="p-5">
+              <CardContent className="p-3.5">
                 <div className="flex items-start gap-4">
                   <IntegrationLogo slug={intg.id} initials={intg.initials} color={intg.color} />
                   <div className="flex-1 min-w-0">
@@ -582,7 +582,7 @@ export default function Integrations() {
 
         {/* ── Google Tasks personal sync ─────────────────────────────────────── */}
         <Card className="border-blue-500/20 bg-blue-500/5">
-          <CardContent className="p-5">
+          <CardContent className="p-3.5">
             <div className="flex items-center gap-4">
               {/* Google Tasks logo */}
               <div className="h-12 w-12 rounded-xl bg-white border border-border flex items-center justify-center flex-shrink-0 shadow-sm">
@@ -654,7 +654,7 @@ export default function Integrations() {
                     <th className="px-4 py-3 text-right">Logs</th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="table-rows-3d">
                   {list.filter((i) => i.connected).map((intg) => (
                     <tr key={intg.id} className="border-t border-border hover:bg-muted/30">
                       <td className="px-4 py-3">

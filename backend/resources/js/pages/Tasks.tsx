@@ -175,7 +175,7 @@ export default function Tasks() {
       {/* ── Create / Edit Modal ────────────────────────────────────────────── */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-3xl max-h-[92vh] flex flex-col">
+          <div className="bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-3xl max-h-[92vh] flex flex-col">
             <div className="flex items-center justify-between px-6 py-4 border-b border-border flex-shrink-0">
               <h2 className="font-display text-lg font-semibold">
                 {editTask ? "Edit Task" : "New Task"}
@@ -266,7 +266,7 @@ export default function Tasks() {
       {/* ── Delete Confirm ─────────────────────────────────────────────────── */}
       {delTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-sm p-6 m-4">
+          <div className="bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-sm p-6 m-4">
             <div className="flex items-center gap-3 mb-4">
               <div className="h-10 w-10 rounded-full bg-destructive/10 flex items-center justify-center flex-shrink-0">
                 <Trash2 className="h-5 w-5 text-destructive" />
@@ -289,7 +289,7 @@ export default function Tasks() {
       )}
 
       {/* ── Table ─────────────────────────────────────────────────────────── */}
-      <div className="px-8 py-6 space-y-4">
+      <div className="px-4 py-4 sm:px-8 sm:py-5 space-y-4">
         <div className="flex flex-wrap items-center gap-3">
           <div className="relative max-w-sm flex-1">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -324,7 +324,7 @@ export default function Tasks() {
                     {!isClientUser && <th className="px-4 py-3 text-left">Actions</th>}
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="table-rows-3d">
                   {filtered.map((t) => (
                     <tr key={t.id} className="border-t border-border hover:bg-muted/30">
                       <td className="px-4 py-3">

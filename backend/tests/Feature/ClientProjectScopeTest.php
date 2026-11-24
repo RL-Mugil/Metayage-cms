@@ -47,6 +47,26 @@ class ClientProjectScopeTest extends TestCase
         $this->assertNull($this->getJson("/api/projects/{$own->id}/workspace")->json('data.financials'));
     }
 
+    public function test_task_list_is_scoped_for_paralegals_and_inventors(): void
+    {
+        $c = $this->client('815M');
+        $mine = $this->project($c, '815M001INPRV');
+        $other = $this->project($c, '815M002INPRV');
+        $para = User::create(['name' => 'Para', 'email' => 'para2@scope.test', 'password' => bcrypt('password'), 'role' => 'paralegal', 'status' => 'Active']);
+        $inv = User::create(['name' => 'Inv', 'email' => 'inv2@scope.test', 'password' => bcrypt('password'), 'role' => 'inventor', 'status' => 'Active']);
+        $mine->syncInventors([Inventor::create(['full_name' => 'Inv', 'user_id' => $inv->id])->id]);
+        \App\Models\Task::create(['project_id' => $mine->id, 'title' => 'Draft claims', 'assignee_id' => $para->id, 'status' => 'Todo', 'priority' => 'Medium']);
+        \App\Models\Task::create(['project_id' => $other->id, 'title' => 'Other work', 'status' => 'Todo', 'priority' => 'Medium']);
+
+        $titles = function (User $u) {
+            Sanctum::actingAs($u);
+            $body = $this->getJson('/api/tasks?per_page=50')->assertOk()->json();
+            return collect($body['data'] ?? $body)->pluck('title')->all();
+        };
+        $this->assertSame(['Draft claims'], $titles($para));
+        $this->assertSame(['Draft claims'], $titles($inv));
+    }
+
     public function test_a_paralegal_does_not_see_case_money(): void
     {
         $c = $this->client('814M');

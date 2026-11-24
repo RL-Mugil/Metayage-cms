@@ -35,7 +35,7 @@ function RecruitmentKpiModal({ kpiKey, jobsList, pipeline, onClose }: { kpiKey: 
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-      <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-2xl max-h-[88vh] flex flex-col">
+      <div className="bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-2xl max-h-[88vh] flex flex-col">
         <div className="flex items-center justify-between px-6 py-4 border-b border-border flex-shrink-0">
           <div>
             <h2 className="font-display text-lg font-semibold">{titles[kpiKey]}</h2>
@@ -61,7 +61,7 @@ function RecruitmentKpiModal({ kpiKey, jobsList, pipeline, onClose }: { kpiKey: 
                 )}
               </tr>
             </thead>
-            <tbody>
+            <tbody className="table-rows-3d">
               {filtered.length === 0 && <tr><td colSpan={5} className="px-4 py-10 text-center text-muted-foreground">No records found.</td></tr>}
               {filtered.map((r: any, i: number) => (
                 <tr key={r.id ?? i} className="border-t border-border hover:bg-muted/30">
@@ -164,7 +164,7 @@ export default function HRMSRecruitment() {
           </div>
         }
       />
-      <div className="px-8 py-6 space-y-6">
+      <div className="px-4 py-4 sm:px-8 sm:py-5 space-y-5">
         {kpiModal && <RecruitmentKpiModal kpiKey={kpiModal} jobsList={jobsList} pipeline={pipeline} onClose={() => setKpiModal(null)} />}
         {/* Stats */}
         <div className="grid grid-cols-3 gap-4">
@@ -230,7 +230,7 @@ export default function HRMSRecruitment() {
 
         {showAddCandidate && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-            <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-2xl p-6 m-4">
+            <div className="bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-2xl p-6 m-4">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="font-display text-lg font-semibold">Add Candidate</h2>
                 <button onClick={() => setShowAddCandidate(false)}><X className="h-5 w-5 text-muted-foreground" /></button>
@@ -294,7 +294,7 @@ export default function HRMSRecruitment() {
 
         {viewApplicants && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-            <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-lg p-6 m-4">
+            <div className="bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-lg p-6 m-4">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="font-display text-lg font-semibold">Applicants — {viewApplicants.title}</h2>
                 <button onClick={() => setViewApplicants(null)}><X className="h-5 w-5 text-muted-foreground" /></button>
@@ -333,7 +333,7 @@ export default function HRMSRecruitment() {
                   <th className="px-4 py-3 text-left">Actions</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="table-rows-3d">
                 {jobsList.map((job) => (
                   <tr key={job.id} className="border-t border-border hover:bg-muted/30">
                     <td className="px-4 py-3"><div className="font-medium">{job.title}</div></td>

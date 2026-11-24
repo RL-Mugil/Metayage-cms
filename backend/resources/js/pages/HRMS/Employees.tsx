@@ -365,7 +365,7 @@ export default function HRMSEmployees() {
 
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 backdrop-blur-sm overflow-y-auto py-6 px-4">
-          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-5xl flex flex-col">
+          <div className="bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-5xl flex flex-col">
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-border sticky top-0 bg-background z-10 rounded-t-xl">
               <h2 className="font-display text-base font-semibold">{editEmp ? "Edit Employee" : "Add Employee"}</h2>
@@ -645,7 +645,7 @@ export default function HRMSEmployees() {
         </div>
       )}
 
-      <div className="px-8 py-6 space-y-4">
+      <div className="px-4 py-4 sm:px-8 sm:py-5 space-y-4">
         <div className="flex items-center gap-3">
           <div className="relative max-w-sm flex-1">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -676,7 +676,7 @@ export default function HRMSEmployees() {
                     {canCRUD && <th className="px-4 py-3 text-left">Actions</th>}
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="table-rows-3d">
                   {filtered.map((e) => (
                     <tr key={e.id} className="border-t border-border hover:bg-muted/30">
                       <td className="px-4 py-3">

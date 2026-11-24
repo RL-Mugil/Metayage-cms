@@ -57,7 +57,7 @@ export function InventorDashboard() {
         description={`${items.length} case${items.length === 1 ? "" : "s"} you're listed as inventor on`}
       />
 
-      <div className="px-8 py-6">
+      <div className="px-4 py-4 sm:px-8 sm:py-5">
         <Card className="border-border">
           <CardHeader>
             <CardTitle className="font-display">Cases</CardTitle>

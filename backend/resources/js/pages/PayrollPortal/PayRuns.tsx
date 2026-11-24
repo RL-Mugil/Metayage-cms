@@ -217,7 +217,7 @@ export default function PayrollPortalPayRuns() {
         }
       />
 
-      <div className="px-8 py-6 space-y-4">
+      <div className="px-4 py-4 sm:px-8 sm:py-5 space-y-4">
         {notice && <div className="rounded-md border border-green-500/40 bg-green-500/10 px-4 py-2 text-sm text-green-400">{notice}</div>}
 
         {loading ? (
@@ -355,7 +355,7 @@ export default function PayrollPortalPayRuns() {
                               {isDraft && <th className="px-3 py-2.5 text-left">Withhold</th>}
                             </tr>
                           </thead>
-                          <tbody>
+                          <tbody className="table-rows-3d">
                             {slips.map((s) => (
                               <tr key={s.id} className="border-t border-border hover:bg-muted/20">
                                 {isFinalized && (
@@ -420,7 +420,7 @@ export default function PayrollPortalPayRuns() {
 
       {showCreate && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-xl p-6 m-4">
+          <div className="bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-xl p-6 m-4">
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-display text-lg font-semibold">Create Pay Run</h2>
               <button onClick={() => setShowCreate(false)}><X className="h-5 w-5 text-muted-foreground" /></button>
@@ -457,7 +457,7 @@ export default function PayrollPortalPayRuns() {
       )}
       {editSlip && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-md p-6 m-4 space-y-4">
+          <div className="bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-md p-6 m-4 space-y-4">
             <div className="flex items-center justify-between"><h2 className="font-display text-lg font-semibold">Edit draft payslip</h2><button onClick={() => setEditSlip(null)}><X className="h-5 w-5 text-muted-foreground" /></button></div>
             <p className="text-xs text-muted-foreground">{editSlip.employee_name}. Enter hours as <code>[hh]:[mm]</code>. Monthly shortages are carried into the annual April reconciliation; overtime is not paid.</p>
             <label className="block text-xs">Reimbursement (₹)<input type="number" min="0" step="0.01" value={editReimbursements} onChange={e => setEditReimbursements(e.target.value)} className="mt-1 w-full h-8 rounded border border-border bg-background px-2 text-xs" /></label>
@@ -468,13 +468,13 @@ export default function PayrollPortalPayRuns() {
         </div>
       )}
       {breakdownSlip && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"><div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-md p-6 m-4"><div className="flex items-center justify-between mb-4"><h2 className="font-display text-lg font-semibold">Deduction breakdown</h2><button onClick={() => setBreakdownSlip(null)}><X className="h-5 w-5 text-muted-foreground" /></button></div><div className="space-y-2 text-sm"><div className="flex justify-between"><span>Professional Tax</span><b>{fmt(breakdownSlip.professional_tax || 0)}</b></div><div className="flex justify-between"><span>TDS</span><b>{fmt(breakdownSlip.tds || 0)}</b></div><div className="flex justify-between"><span>Health insurance</span><b>{fmt(breakdownSlip.health_insurance || 0)}</b></div><div className="flex justify-between"><span>Other deductions</span><b>{fmt(breakdownSlip.other_deductions || 0)}</b></div><hr/><div className="flex justify-between font-semibold"><span>Total deductions</span><b>{fmt(breakdownSlip.total_deductions || 0)}</b></div></div></div></div>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"><div className="bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-md p-6 m-4"><div className="flex items-center justify-between mb-4"><h2 className="font-display text-lg font-semibold">Deduction breakdown</h2><button onClick={() => setBreakdownSlip(null)}><X className="h-5 w-5 text-muted-foreground" /></button></div><div className="space-y-2 text-sm"><div className="flex justify-between"><span>Professional Tax</span><b>{fmt(breakdownSlip.professional_tax || 0)}</b></div><div className="flex justify-between"><span>TDS</span><b>{fmt(breakdownSlip.tds || 0)}</b></div><div className="flex justify-between"><span>Health insurance</span><b>{fmt(breakdownSlip.health_insurance || 0)}</b></div><div className="flex justify-between"><span>Other deductions</span><b>{fmt(breakdownSlip.other_deductions || 0)}</b></div><hr/><div className="flex justify-between font-semibold"><span>Total deductions</span><b>{fmt(breakdownSlip.total_deductions || 0)}</b></div></div></div></div>
       )}
       {bankAdvicePreview && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-6xl p-6 m-4 max-h-[90vh] overflow-auto">
+          <div className="bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-6xl p-6 m-4 max-h-[90vh] overflow-auto">
             <div className="flex items-center justify-between mb-4"><div><h2 className="font-display text-lg font-semibold">Bank Advice Preview — {bankAdvicePreview.period}</h2><p className="text-xs text-muted-foreground mt-1">Review the complete document, then confirm it once with your internal signature PIN.</p></div><button onClick={() => setBankAdvicePreview(null)}><X className="h-5 w-5 text-muted-foreground" /></button></div>
-            <div className="overflow-x-auto border border-border rounded-md"><table className="w-full text-xs"><thead className="bg-muted/40"><tr><th className="p-2 text-left">Employee</th><th className="p-2 text-left">Bank</th><th className="p-2 text-left">Account</th><th className="p-2 text-right">Hrs</th><th className="p-2 text-right">Net Pay</th><th className="p-2 text-right">Reimbursement</th><th className="p-2 text-right">Total</th></tr></thead><tbody>{(bankAdvicePreview.rows || []).map((row: any) => <tr key={row.payslip_id} className="border-t border-border"><td className="p-2"><div className="font-medium">{row.employee_name}</div><div className="text-[10px] text-muted-foreground">{row.employee_code}</div></td><td className="p-2">{row.bank_name || "—"}</td><td className="p-2 font-mono">{row.account_number || "—"}</td><td className="p-2 text-right">{row.hours_logged_minutes == null ? "—" : `${Math.floor(row.hours_logged_minutes / 60)}:${String(row.hours_logged_minutes % 60).padStart(2, "0")}`}</td><td className="p-2 text-right">{fmt(row.net_pay)}</td><td className="p-2 text-right">{fmt(row.reimbursement)}</td><td className="p-2 text-right font-semibold">{fmt(row.total)}</td></tr>)}</tbody></table></div>
+            <div className="overflow-x-auto border border-border rounded-md"><table className="w-full text-xs"><thead className="bg-muted/40"><tr><th className="p-2 text-left">Employee</th><th className="p-2 text-left">Bank</th><th className="p-2 text-left">Account</th><th className="p-2 text-right">Hrs</th><th className="p-2 text-right">Net Pay</th><th className="p-2 text-right">Reimbursement</th><th className="p-2 text-right">Total</th></tr></thead><tbody className="table-rows-3d">{(bankAdvicePreview.rows || []).map((row: any) => <tr key={row.payslip_id} className="border-t border-border"><td className="p-2"><div className="font-medium">{row.employee_name}</div><div className="text-[10px] text-muted-foreground">{row.employee_code}</div></td><td className="p-2">{row.bank_name || "—"}</td><td className="p-2 font-mono">{row.account_number || "—"}</td><td className="p-2 text-right">{row.hours_logged_minutes == null ? "—" : `${Math.floor(row.hours_logged_minutes / 60)}:${String(row.hours_logged_minutes % 60).padStart(2, "0")}`}</td><td className="p-2 text-right">{fmt(row.net_pay)}</td><td className="p-2 text-right">{fmt(row.reimbursement)}</td><td className="p-2 text-right font-semibold">{fmt(row.total)}</td></tr>)}</tbody></table></div>
             <div className="mt-5 rounded-lg border border-border bg-muted/20 p-4"><label className="flex items-center gap-2 text-sm font-medium"><input type="checkbox" checked={Boolean(bankAdvicePreview.verified)} onChange={(e) => setBankAdvicePreview((current: any) => ({ ...current, verified: e.target.checked }))} /> I have verified all employees, bank details, net pay, reimbursements, and the total document.</label><div className="mt-3 flex items-center gap-3"><label className="text-sm text-muted-foreground" htmlFor="bank-advice-document-pin">Document PIN</label><input id="bank-advice-document-pin" type="password" inputMode="numeric" maxLength={4} value={bankAdvicePreview.pin} onChange={(e) => setBankAdvicePreview((current: any) => ({ ...current, pin: e.target.value.replace(/\D/g, "").slice(0, 4) }))} className="w-24 h-8 rounded border border-border bg-background px-2 text-center tracking-widest" placeholder="0000" /><span className="text-xs text-muted-foreground">4 digits</span></div></div>
             <div className="flex justify-end gap-2 mt-5"><Button variant="outline" onClick={() => setBankAdvicePreview(null)}>Cancel</Button><Button className="bg-gold hover:bg-gold/90 text-black" disabled={bankAdviceBusy} onClick={confirmBankAdvice}>{bankAdviceBusy ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <BadgeCheck className="h-4 w-4 mr-2" />}Verify &amp; Sign &amp; Download</Button></div>
           </div>

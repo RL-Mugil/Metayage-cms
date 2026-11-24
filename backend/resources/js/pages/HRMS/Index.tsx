@@ -41,7 +41,7 @@ function HrmsKpiModal({ kpi, onClose }: { kpi: HrmsKpiDef; onClose: () => void }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-      <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-3xl max-h-[88vh] flex flex-col">
+      <div className="bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-3xl max-h-[88vh] flex flex-col">
         <div className="flex items-center justify-between px-6 py-4 border-b border-border flex-shrink-0">
           <div>
             <h2 className="font-display text-lg font-semibold">{kpi.label}</h2>
@@ -70,7 +70,7 @@ function HrmsKpiModal({ kpi, onClose }: { kpi: HrmsKpiDef; onClose: () => void }
                   <th className="px-4 py-3 text-left">Status</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="table-rows-3d">
                 {result.data.map((e) => (
                   <tr key={e.id} className="border-t border-border hover:bg-muted/30">
                     <td className="px-4 py-2.5">
@@ -194,10 +194,10 @@ export default function HRMSIndex() {
       <PageHeader eyebrow="HRMS" title="HR Overview" description="See who's in, out, or on leave — refreshed on every page load." />
       {kpiModal && <HrmsKpiModal kpi={kpiModal} onClose={() => setKpiModal(null)} />}
 
-      <div className="px-8 py-6 space-y-6">
+      <div className="px-4 py-4 sm:px-8 sm:py-5 space-y-5">
 
         {/* Availability quick-stats — visible to everyone */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <button onClick={() => setFilterStatus("all")}
             className={`rounded-xl border bg-card p-4 text-left transition-all hover:shadow-md hover:border-gold/40 ${filterStatus === "all" ? "border-gold/60" : "border-border"}`}>
             <div className="flex items-center gap-2 mb-2"><Users className="h-5 w-5 text-gold" /><span className="text-xs text-muted-foreground">Total Staff</span></div>
@@ -266,7 +266,7 @@ export default function HRMSIndex() {
                     {isHrAdmin && <th className="px-4 py-3 text-left"></th>}
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="table-rows-3d">
                   {visible.map((e) => {
                     const onLeave = e.employment_status === "On Leave";
                     const clockedIn = e.today_status === "clocked_in";

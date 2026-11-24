@@ -105,7 +105,7 @@ export default function HRMSOffboarding() {
         description="Exit checklist, knowledge transfer, and clearance management"
         actions={<Button className="bg-gold hover:bg-gold/90 text-black" onClick={() => setShowInitiate(true)}><Plus className="h-4 w-4 mr-2" />Initiate Offboarding</Button>}
       />
-      <div className="px-8 py-6 space-y-6">
+      <div className="px-4 py-4 sm:px-8 sm:py-5 space-y-5">
         {/* Initiate form */}
         {showInitiate && (
           <Card className="border-gold/30 bg-gold/5">
@@ -245,7 +245,7 @@ export default function HRMSOffboarding() {
                       <th className="px-4 py-3 text-left">Completed On</th>
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody className="table-rows-3d">
                     {completedCases.map((c) => (
                       <tr key={c.id} className="border-t border-border hover:bg-muted/30">
                         <td className="px-4 py-3 font-medium">{c.employee}</td>

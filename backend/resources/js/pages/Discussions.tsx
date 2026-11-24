@@ -242,7 +242,7 @@ export default function Discussions() {
         ) : undefined}
       />
 
-      <div className="px-8 py-6">
+      <div className="px-4 py-4 sm:px-8 sm:py-5">
         {error && <div className="mb-3 rounded-md border border-red-500/40 bg-red-500/10 px-4 py-2 text-sm text-red-400">{error}</div>}
         <div className="flex h-[calc(100vh-220px)] gap-0 rounded-lg border border-border overflow-hidden bg-card">
 

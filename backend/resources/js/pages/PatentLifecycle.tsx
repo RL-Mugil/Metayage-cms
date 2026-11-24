@@ -142,7 +142,7 @@ export default function PatentLifecycle() {
       </div>
 
       {/* Tab content */}
-      <div className="px-8 py-6">
+      <div className="px-4 py-4 sm:px-8 sm:py-5">
         {/* Indian Lifecycle tab */}
         {activeTab === "india" && (
           loading ? (
@@ -224,7 +224,7 @@ export default function PatentLifecycle() {
                       <th className="px-5 py-3 text-left">Hard Deadline</th>
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody className="table-rows-3d">
                     {projects.map((p: any) => (
                       <tr key={p.id} className="border-t border-border hover:bg-muted/20 transition-colors group">
                         <td className="px-5 py-3">

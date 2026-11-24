@@ -208,7 +208,7 @@ export default function Reminders() {
         }
       />
 
-      <div className="px-8 py-6 space-y-6">
+      <div className="px-4 py-4 sm:px-8 sm:py-5 space-y-5">
         {showProfile && profile && (
           <Card className="border-gold/40">
             <CardHeader><CardTitle className="text-base">Daily Docket Reminder</CardTitle></CardHeader>

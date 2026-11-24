@@ -34,11 +34,14 @@ class TaskController extends Controller
             } else {
                 $query->whereRaw('1=0');
             }
-        } elseif ($user->role === 'associate') {
-            // Patent Analysts see their assigned tasks
+        } elseif (in_array($user->role, ['associate', 'paralegal'], true)) {
+            // Patent Analysts and paralegals see their assigned tasks (access matrix: Assigned).
             $query->where('assignee_id', $user->id);
         } elseif ($user->isGalvanizer()) {
             $query->whereHas('project', fn ($q) => $user->applyProjectScope($q));
+        } elseif ($user->isInventor()) {
+            // External inventor logins: only tasks on the cases they are named on.
+            $query->whereHas('project.inventors', fn ($q) => $q->where('inventors.user_id', $user->id));
         }
 
         if ($request->filled('status')) {

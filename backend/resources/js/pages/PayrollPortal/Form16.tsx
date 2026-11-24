@@ -122,9 +122,9 @@ export default function PayrollPortalForm16() {
         }
       />
 
-      <div className="px-8 py-6 space-y-6">
+      <div className="px-4 py-4 sm:px-8 sm:py-5 space-y-5">
         <Card className="border-border">
-          <CardContent className="p-5">
+          <CardContent className="p-3.5">
             <h3 className="text-sm font-semibold mb-2">Upload TRACES Part A ZIP</h3>
             <p className="text-xs text-muted-foreground mb-4 max-w-2xl">
               Download the Form 16 Part A ZIP from the TRACES utility app (tdscpc.gov.in), containing one PDF per
@@ -177,7 +177,7 @@ export default function PayrollPortalForm16() {
                     <th className="px-3 py-2.5 text-center">Action</th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="table-rows-3d">
                   {docs.map((d) => (
                     <tr key={d.id} className="border-t border-border hover:bg-muted/20">
                       <td className="px-3 py-2.5">

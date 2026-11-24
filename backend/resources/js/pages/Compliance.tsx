@@ -72,7 +72,7 @@ function ComplianceKpiModal({ kpi, onClose }: { kpi: ComplianceKpiDef; onClose: 
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-      <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-3xl max-h-[88vh] flex flex-col">
+      <div className="bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-3xl max-h-[88vh] flex flex-col">
         <div className="flex items-center justify-between px-6 py-4 border-b border-border flex-shrink-0">
           <div>
             <h2 className={`font-display text-lg font-semibold ${kpi.color}`}>{kpi.label}</h2>
@@ -102,7 +102,7 @@ function ComplianceKpiModal({ kpi, onClose }: { kpi: ComplianceKpiDef; onClose: 
                   <th className="px-4 py-3 text-left">Assignee</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="table-rows-3d">
                 {result.data.map((item) => (
                   <tr key={item.id} className="border-t border-border hover:bg-muted/30">
                     <td className="px-4 py-2.5 font-medium max-w-[200px] truncate">{item.matter}</td>
@@ -300,7 +300,7 @@ export default function Compliance() {
         actions={<div className="flex gap-2"><Button size="sm" onClick={() => setShowCreate(true)}><Plus className="h-4 w-4 mr-2" />Add obligation</Button><Button variant="outline" size="sm" disabled={exporting} onClick={exportReport}>
           {exporting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}Export Report</Button></div>}
       />
-      <div className="px-8 py-6 space-y-6">
+      <div className="px-4 py-4 sm:px-8 sm:py-5 space-y-5">
         {kpiModal && <ComplianceKpiModal kpi={kpiModal} onClose={() => setKpiModal(null)} />}
         {showCreate && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <form className="w-full max-w-3xl rounded-xl border border-border bg-background p-6 shadow-2xl space-y-4" onSubmit={(e) => { e.preventDefault(); createItem(); }}>
@@ -423,7 +423,7 @@ export default function Compliance() {
                   <th className="px-4 py-3 text-left">Actions</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="table-rows-3d">
                 {filtered.map((item) => {
                   const { color, icon: Icon } = statusConfig[item.status];
                   return (

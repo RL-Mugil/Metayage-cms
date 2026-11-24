@@ -304,7 +304,7 @@ export default function Feedback() {
       {/* Rate modal (client_admin) */}
       {rateTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-md p-6 m-4">
+          <div className="bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-md p-6 m-4">
             <div className="flex items-center justify-between mb-1">
               <h2 className="font-display text-lg font-semibold">Rate Case Experience</h2>
               <button onClick={() => setRateTarget(null)}><X className="h-5 w-5 text-muted-foreground" /></button>
@@ -334,7 +334,7 @@ export default function Feedback() {
         </div>
       )}
 
-      <div className="px-8 py-6 space-y-6">
+      <div className="px-4 py-4 sm:px-8 sm:py-5 space-y-5">
         {error && (
           <div className="rounded-md border border-red-500/40 bg-red-500/10 px-4 py-2 text-sm text-red-400">{error}</div>
         )}
@@ -393,7 +393,7 @@ export default function Feedback() {
                     <th className="px-4 py-2.5 text-left">{isClientUser ? "Action" : "Status"}</th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="table-rows-3d">
                   {pendingRequests.map((r) => (
                     <tr key={r.id} className="border-t border-border hover:bg-muted/20">
                       <td className="px-4 py-3">
@@ -444,7 +444,7 @@ export default function Feedback() {
                     <th className="px-4 py-2.5 text-left">Rated On</th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="table-rows-3d">
                   {completedRequests.map((r) => (
                     <tr key={r.id} className="border-t border-border hover:bg-muted/20">
                       <td className="px-4 py-3 font-mono font-medium">{r.docket_number ?? "—"}</td>
@@ -529,7 +529,7 @@ export default function Feedback() {
                             <th className="px-4 py-2 text-left">Rated On</th>
                           </tr>
                         </thead>
-                        <tbody>
+                        <tbody className="table-rows-3d">
                           {m.cases.map((r) => (
                             <tr key={r.id} className="border-t border-border hover:bg-muted/20">
                               <td className="px-4 py-2.5 font-mono font-medium">{r.docket_number ?? "—"}</td>

@@ -111,7 +111,7 @@ export default function Notifications() {
         }
       />
 
-      <div className="px-8 py-6 space-y-4">
+      <div className="px-4 py-4 sm:px-8 sm:py-5 space-y-4">
         {/* Filter tabs */}
         <div className="flex items-center gap-2">
           {(["all", "unread", "deadline", "system"] as NFilter[]).map((f) => (

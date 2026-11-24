@@ -102,7 +102,7 @@ export default function PayrollPortalLoans() {
 
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-3xl p-6 m-4">
+          <div className="bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-3xl p-6 m-4">
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-display text-lg font-semibold">Give Loan</h2>
               <button onClick={() => setShowModal(false)}><X className="h-5 w-5 text-muted-foreground" /></button>
@@ -156,7 +156,7 @@ export default function PayrollPortalLoans() {
 
       {approvingId !== null && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-sm p-6 m-4">
+          <div className="bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-sm p-6 m-4">
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-display text-lg font-semibold">Approve Loan Request</h2>
               <button onClick={() => setApprovingId(null)}><X className="h-5 w-5 text-muted-foreground" /></button>
@@ -174,7 +174,7 @@ export default function PayrollPortalLoans() {
         </div>
       )}
 
-      <div className="px-8 py-6">
+      <div className="px-4 py-4 sm:px-8 sm:py-5">
         {loading ? (
           <div className="flex items-center justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-gold" /></div>
         ) : loans.length === 0 ? (
@@ -196,7 +196,7 @@ export default function PayrollPortalLoans() {
                     <th className="px-3 py-2.5 text-center">Action</th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="table-rows-3d">
                   {loans.map((loan) => (
                     <>
                       <tr key={loan.id} className="border-t border-border hover:bg-muted/20">

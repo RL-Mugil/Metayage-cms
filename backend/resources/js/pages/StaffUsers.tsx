@@ -180,7 +180,7 @@ export default function StaffUsers() {
       {/* Create / Edit modal */}
       {modal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-xl m-4">
+          <div className="bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-xl m-4">
             <div className="flex items-center justify-between px-6 py-4 border-b border-border">
               <h2 className="font-display text-lg font-semibold">{modal.mode === "create" ? "Add Staff User" : "Edit Staff User"}</h2>
               <button onClick={() => setModal(null)}><X className="h-5 w-5 text-muted-foreground" /></button>
@@ -243,7 +243,7 @@ export default function StaffUsers() {
       {/* Reset password modal */}
       {pwTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-sm p-6 m-4">
+          <div className="bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-sm p-6 m-4">
             <div className="flex items-center justify-between mb-2">
               <h2 className="font-display text-lg font-semibold">Reset Password</h2>
               <button onClick={() => { setPwTarget(null); setNewPw(""); setPwError(""); }}><X className="h-5 w-5 text-muted-foreground" /></button>
@@ -267,7 +267,7 @@ export default function StaffUsers() {
       {/* Delete confirm */}
       {delTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-sm p-6 m-4">
+          <div className="bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-sm p-6 m-4">
             <h2 className="font-display text-lg font-semibold mb-2">Delete User?</h2>
             <p className="text-sm text-muted-foreground mb-4">
               <strong>{delTarget.name}</strong> ({delTarget.email}) will be permanently deleted and logged out everywhere. If they only need to be blocked, use Suspend instead.
@@ -282,7 +282,7 @@ export default function StaffUsers() {
         </div>
       )}
 
-      <div className="px-8 py-6 space-y-4">
+      <div className="px-4 py-4 sm:px-8 sm:py-5 space-y-4">
         {toast && (
           <div className="flex items-center gap-2 rounded-lg border border-green-500/30 bg-green-500/10 px-4 py-3 text-sm text-green-600">
             <CheckCircle className="h-4 w-4" /> {toast}
@@ -321,7 +321,7 @@ export default function StaffUsers() {
                     <th className="px-4 py-3 text-right">Actions</th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="table-rows-3d">
                   {filtered.map((u) => (
                     <tr key={u.id} className="border-t border-border hover:bg-muted/20">
                       <td className="px-4 py-3 font-medium">

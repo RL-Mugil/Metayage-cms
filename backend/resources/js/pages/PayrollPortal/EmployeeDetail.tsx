@@ -148,7 +148,7 @@ export default function PayrollPortalEmployeeDetail() {
         </div>
       </div>
 
-      <div className="px-8 py-6">
+      <div className="px-4 py-4 sm:px-8 sm:py-5">
         {props.flash?.success && <div className="mb-4 rounded-md border border-green-500/40 bg-green-500/10 px-4 py-2 text-sm text-green-500">{props.flash.success}</div>}
         {props.flash?.error && <div className="mb-4 rounded-md border border-red-500/40 bg-red-500/10 px-4 py-2 text-sm text-red-400">{props.flash.error}</div>}
         {tab === "overview" && <OverviewTab employee={employee} canEdit={canEdit} onSaved={loadEmployee} />}
@@ -584,7 +584,7 @@ function SalaryTab({ employee }: { employee: any }) {
             <thead className="bg-muted/40 text-[11px] uppercase tracking-wider text-muted-foreground">
               <tr><th className="px-4 py-2.5 text-left">Salary Component</th><th className="px-4 py-2.5 text-right">Monthly</th><th className="px-4 py-2.5 text-right">Annual</th></tr>
             </thead>
-            <tbody>
+            <tbody className="table-rows-3d">
               <tr><td colSpan={3} className="px-4 py-2 text-xs font-semibold text-muted-foreground bg-muted/20">Earnings</td></tr>
               {breakdown.earningRows.map((r) => (
                 <tr key={r.name} className="border-t border-border">
@@ -798,7 +798,7 @@ function PayslipsTab({ employee }: { employee: any }) {
                     <thead className="bg-muted/40 text-[11px] uppercase tracking-wider text-muted-foreground">
                       <tr><th className="px-3 py-2.5 text-left">Month</th><th className="px-3 py-2.5 text-right">Net Pay</th><th className="px-3 py-2.5 text-left">Status</th><th className="px-3 py-2.5 text-center">PDF</th></tr>
                     </thead>
-                    <tbody>
+                    <tbody className="table-rows-3d">
                       {slips.map((s) => (
                         <tr key={s.id} className="border-t border-border hover:bg-muted/20">
                           <td className="px-3 py-2.5 font-medium">{s.run ? periodLabel(s.run.period) : "—"}</td>
@@ -897,7 +897,7 @@ function LoansTab({ employee, canEdit }: { employee: any; canEdit: boolean }) {
 
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-md p-6 m-4">
+          <div className="bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-md p-6 m-4">
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-display text-lg font-semibold">Create Loan for {employee.user?.name || employee.full_name}</h2>
               <button onClick={() => setShowModal(false)}><X className="h-5 w-5 text-muted-foreground" /></button>
@@ -933,7 +933,7 @@ function LoansTab({ employee, canEdit }: { employee: any; canEdit: boolean }) {
               <thead className="bg-muted/40 text-[11px] uppercase tracking-wider text-muted-foreground">
                 <tr><th className="px-3 py-2.5 text-left">Loan</th><th className="px-3 py-2.5 text-right">Principal</th><th className="px-3 py-2.5 text-right">Installment</th><th className="px-3 py-2.5 text-right">Remaining</th><th className="px-3 py-2.5 text-left">Status</th>{canEdit && <th className="px-3 py-2.5 text-center">Action</th>}</tr>
               </thead>
-              <tbody>
+              <tbody className="table-rows-3d">
                 {loans.map((loan) => (
                   <>
                     <tr key={loan.id} className="border-t border-border hover:bg-muted/20">

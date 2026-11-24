@@ -61,7 +61,7 @@ function PortalKpiModal({ kpiKey, clients, onClose }: { kpiKey: PortalKpiKey; cl
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-      <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-xl max-h-[88vh] flex flex-col">
+      <div className="bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-xl max-h-[88vh] flex flex-col">
         <div className="flex items-center justify-between px-6 py-4 border-b border-border flex-shrink-0">
           <div>
             <h2 className="font-display text-lg font-semibold">{titles[kpiKey]}</h2>
@@ -85,7 +85,7 @@ function PortalKpiModal({ kpiKey, clients, onClose }: { kpiKey: PortalKpiKey; cl
                 <th className="px-4 py-3 text-left">Status</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="table-rows-3d">
               {filtered.length === 0 && <tr><td colSpan={3} className="px-4 py-10 text-center text-muted-foreground">No clients found.</td></tr>}
               {filtered.map((c: any) => (
                 <tr key={c.id} className="border-t border-border hover:bg-muted/30">
@@ -337,7 +337,7 @@ export default function Portal() {
       {/* ── New Portal Modal ─────────────────────────────────────────────── */}
       {showNewPortal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-xl m-4">
+          <div className="bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-xl m-4">
             <div className="flex items-center justify-between px-6 py-4 border-b border-border">
               <h2 className="font-display text-lg font-semibold">Create Client Portal</h2>
               <button onClick={() => setShowNewPortal(false)}><X className="h-5 w-5 text-muted-foreground" /></button>
@@ -465,7 +465,7 @@ export default function Portal() {
       {/* ── Invite All Modal ─────────────────────────────────────────────── */}
       {showInviteAll && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-md p-6 m-4">
+          <div className="bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-md p-6 m-4">
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-display text-lg font-semibold">Invite All Inactive Clients</h2>
               <button onClick={() => setShowInviteAll(false)}><X className="h-5 w-5 text-muted-foreground" /></button>
@@ -497,7 +497,7 @@ export default function Portal() {
       {/* ── Primary Admin Reset PW Modal ─────────────────────────────────── */}
       {resetTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-sm p-6 m-4">
+          <div className="bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-sm p-6 m-4">
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-display text-lg font-semibold">Reset Portal Password</h2>
               <button onClick={() => { setResetTarget(null); setResetPw(""); setResetDone(false); setResetError(""); }}>
@@ -537,7 +537,7 @@ export default function Portal() {
       {/* ── Company Profile Panel ─────────────────────────────────────────── */}
       {profileClient && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-2xl max-h-[88vh] flex flex-col">
+          <div className="bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-2xl max-h-[88vh] flex flex-col">
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-border flex-shrink-0">
               <div>
@@ -563,7 +563,7 @@ export default function Portal() {
         </div>
       )}
 
-      <div className="px-8 py-6 space-y-6">
+      <div className="px-4 py-4 sm:px-8 sm:py-5 space-y-5">
         {kpiModal && <PortalKpiModal kpiKey={kpiModal} clients={clients} onClose={() => setKpiModal(null)} />}
 
         {/* Stats */}
@@ -692,7 +692,7 @@ export default function Portal() {
                   <th className="px-4 py-3 text-left">Actions</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="table-rows-3d">
                 {pagedClients.map((client) => {
                   const isActive = !!client.portal_enabled;
                   const isSelected = selected.has(client.id);
@@ -811,7 +811,7 @@ export default function Portal() {
                     <th className="px-4 py-3 text-left">When</th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="table-rows-3d">
                   {activity.map((a: any, i: number) => (
                     <tr key={i} className="border-t border-border hover:bg-muted/30">
                       <td className="px-4 py-2.5 font-medium">{a.user_name ?? "—"}</td>

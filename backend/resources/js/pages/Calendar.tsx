@@ -303,7 +303,7 @@ export default function Calendar() {
         }
       />
 
-      <div className="px-8 py-6 space-y-4">
+      <div className="px-4 py-4 sm:px-8 sm:py-5 space-y-4">
         {/* Global stats row */}
         <div className="grid grid-cols-4 gap-3">
           <div className="flex items-center gap-3 rounded-lg border border-border bg-background px-4 py-3">

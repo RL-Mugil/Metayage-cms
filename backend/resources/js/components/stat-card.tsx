@@ -41,7 +41,7 @@ export function StatCard({ label, value, delta, trend = "flat", icon: Icon, acce
       role={onClick ? "button" : undefined}
       tabIndex={onClick ? 0 : undefined}
       onKeyDown={onClick ? (e) => { if (e.key === "Enter" || e.key === " ") onClick(); } : undefined}
-      className={cn("group rounded-xl border border-border bg-card p-5 transition-shadow hover:shadow-sm", onClick && "cursor-pointer hover:shadow-md hover:border-gold/40")}
+      className={cn("glass group rounded-2xl p-4 transition-all", onClick && "cursor-pointer hover:-translate-y-0.5 hover:shadow-3d-lg hover:border-gold/40")}
     >
       <div className="flex items-start justify-between">
         <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">{label}</div>
@@ -51,7 +51,7 @@ export function StatCard({ label, value, delta, trend = "flat", icon: Icon, acce
           </div>
         )}
       </div>
-      <div className="mt-3 font-display text-3xl font-semibold tracking-tight text-foreground">{value}</div>
+      <div className="mt-2 font-display text-2xl font-semibold tracking-tight text-foreground">{value}</div>
       {delta && (
         <div className={cn("mt-1 text-xs font-medium",
           trend === "up" && "text-success",

@@ -33,7 +33,7 @@ function PerformanceKpiModal({ kpiKey, reviews, onClose }: { kpiKey: PerfKpiKey;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-      <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-2xl max-h-[88vh] flex flex-col">
+      <div className="bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-2xl max-h-[88vh] flex flex-col">
         <div className="flex items-center justify-between px-6 py-4 border-b border-border flex-shrink-0">
           <div>
             <h2 className="font-display text-lg font-semibold">{titles[kpiKey]}</h2>
@@ -59,7 +59,7 @@ function PerformanceKpiModal({ kpiKey, reviews, onClose }: { kpiKey: PerfKpiKey;
                 <th className="px-4 py-3 text-left">Status</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="table-rows-3d">
               {filtered.length === 0 && <tr><td colSpan={5} className="px-4 py-10 text-center text-muted-foreground">No reviews found.</td></tr>}
               {filtered.map((r: any) => (
                 <tr key={r.id} className="border-t border-border hover:bg-muted/30">
@@ -172,7 +172,7 @@ export default function HRMSPerformance() {
         description="Q2 2026 review cycle — closes June 30, 2026"
         actions={<Button className="bg-gold hover:bg-gold/90 text-black"><Plus className="h-4 w-4 mr-2" />Start Review</Button>}
       />
-      <div className="px-8 py-6 space-y-6">
+      <div className="px-4 py-4 sm:px-8 sm:py-5 space-y-5">
         {kpiModal && <PerformanceKpiModal kpiKey={kpiModal} reviews={reviews} onClose={() => setKpiModal(null)} />}
         {/* Cycle banner */}
         <Card className="border-gold/30 bg-gold/5">
@@ -234,7 +234,7 @@ export default function HRMSPerformance() {
                     <th className="px-4 py-3 text-left">Action</th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="table-rows-3d">
                   {reviews.map((r) => (
                     <Fragment key={r.id}>
                       <tr className="border-t border-border hover:bg-muted/30">
@@ -403,7 +403,7 @@ export default function HRMSPerformance() {
                     <th className="px-4 py-3 text-left">Status</th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="table-rows-3d">
                   {feedback360.map((f) => (
                     <tr key={f.id} className="border-t border-border hover:bg-muted/30">
                       <td className="px-4 py-3">{f.from}</td>

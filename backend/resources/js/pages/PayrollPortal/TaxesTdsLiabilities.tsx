@@ -64,7 +64,7 @@ export default function PayrollPortalTaxesTdsLiabilities() {
       <PageHeader eyebrow="Payroll Portal · Taxes & Forms" title="TDS Liabilities"
         description="Auto-generated per employee once a pay run is approved — tracks TDS deducted vs. paid via associated challans" />
 
-      <div className="px-8 py-6 space-y-4">
+      <div className="px-4 py-4 sm:px-8 sm:py-5 space-y-4">
         {error && <div className="rounded-md border border-red-500/40 bg-red-500/10 px-4 py-2 text-sm text-red-400">{error}</div>}
 
         <div className="flex items-center gap-2 flex-wrap">
@@ -112,7 +112,7 @@ export default function PayrollPortalTaxesTdsLiabilities() {
                     <th className="px-3 py-2.5 text-left">Status</th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="table-rows-3d">
                   {filtered.map((l) => {
                     const outstanding = Number(l.tds_deducted) - Number(l.tds_paid);
                     const overdue = l.status !== "Paid" && new Date(l.due_date) < new Date();

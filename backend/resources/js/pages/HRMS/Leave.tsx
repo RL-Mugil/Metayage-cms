@@ -124,7 +124,7 @@ export default function HRMSLeave() {
           </Button>
         }
       />
-      <div className="px-8 py-6 space-y-6">
+      <div className="px-4 py-4 sm:px-8 sm:py-5 space-y-5">
 
         {error && (
           <div className="rounded-md border border-red-500/40 bg-red-500/10 px-4 py-2 text-sm text-red-400">
@@ -133,7 +133,7 @@ export default function HRMSLeave() {
         )}
 
         {/* Leave Balance Cards */}
-        <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
           {BALANCE_CONFIG.map((cfg) => {
             const total = Number(entitlements[cfg.column] ?? cfg.total);
             const remaining = balances ? Math.max(0, Number(balances[cfg.column] ?? 0)) : 0;
@@ -141,7 +141,7 @@ export default function HRMSLeave() {
             const pct = total > 0 ? Math.round((remaining / total) * 100) : 0;
             return (
               <Card key={cfg.type} className="border-border">
-                <CardContent className="p-5">
+                <CardContent className="p-3.5">
                   <div className="flex items-center justify-between mb-3">
                     <span className="text-sm font-medium">{cfg.type} Leave</span>
                     <CalendarDays className="h-4 w-4 text-muted-foreground" />
@@ -329,7 +329,7 @@ export default function HRMSLeave() {
                     <th className="px-4 py-3 text-left">Actions</th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="table-rows-3d">
                   {filtered.length === 0 ? (
                     <tr>
                       <td colSpan={8} className="px-4 py-14 text-center text-muted-foreground">

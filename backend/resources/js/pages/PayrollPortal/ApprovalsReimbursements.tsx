@@ -40,7 +40,7 @@ export default function PayrollPortalApprovalsReimbursements() {
       <Head title="Payroll Portal — Reimbursements" />
       <PageHeader eyebrow="Payroll Portal · Approvals" title="Reimbursements" description="Pending employee reimbursement claims" />
 
-      <div className="px-8 py-6 space-y-4">
+      <div className="px-4 py-4 sm:px-8 sm:py-5 space-y-4">
         {error && <div className="rounded-md border border-red-500/40 bg-red-500/10 px-4 py-2 text-sm text-red-400">{error}</div>}
 
         {loading ? (
@@ -62,7 +62,7 @@ export default function PayrollPortalApprovalsReimbursements() {
                       <th className="px-3 py-2.5 text-center">Action</th>
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody className="table-rows-3d">
                     {claims.map((c) => (
                       <tr key={c.id} className="border-t border-border hover:bg-muted/20">
                         <td className="px-3 py-2.5">

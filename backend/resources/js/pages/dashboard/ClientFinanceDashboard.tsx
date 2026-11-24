@@ -118,7 +118,7 @@ export function ClientFinanceDashboard() {
                     <th className="px-4 py-2 text-right"></th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="table-rows-3d">
                   {pendingInvoices.map((inv: any) => (
                     <tr key={inv.id} className="border-t border-border hover:bg-muted/30">
                       <td className="px-4 py-3 font-mono text-xs">{inv.invoice_code}</td>

@@ -133,7 +133,7 @@ export default function Bulk() {
       <Head title="Bulk Operations" />
       <PageHeader eyebrow="Operations" title="Bulk Operations" description="Select and act on multiple records at once"
         actions={<Button variant="outline" size="sm" onClick={reset}>Reset</Button>} />
-      <div className="px-8 py-6 space-y-6">
+      <div className="px-4 py-4 sm:px-8 sm:py-5 space-y-5">
         {/* Stepper */}
         <div className="flex items-center">
           {steps.map((s, i) => (
@@ -202,7 +202,7 @@ export default function Bulk() {
                             {headers[entity].map((h) => <th key={h} className="px-4 py-3 text-left">{h}</th>)}
                           </tr>
                         </thead>
-                        <tbody>
+                        <tbody className="table-rows-3d">
                           {rows.map((row) => (
                             <tr key={row.id} onClick={() => toggleRow(row.id)}
                               className={`border-t border-border cursor-pointer ${selected.has(row.id) ? "bg-gold/5" : "hover:bg-muted/30"}`}>

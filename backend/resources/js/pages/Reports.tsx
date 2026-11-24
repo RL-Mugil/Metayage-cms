@@ -145,7 +145,7 @@ function exportPDF(reportName: string, rows: Record<string, unknown>[]) {
 <div class="meta">Generated: ${new Date().toLocaleString("en-IN")} | ${rows.length} records</div>
 <table>
 <thead><tr>${headers.map((header) => `<th>${escapeHtml(header)}</th>`).join("")}</tr></thead>
-<tbody>${rows.map((row) => `<tr>${headers.map((header) => `<td>${escapeHtml(row[header])}</td>`).join("")}</tr>`).join("")}</tbody>
+<tbody className="table-rows-3d">${rows.map((row) => `<tr>${headers.map((header) => `<td>${escapeHtml(row[header])}</td>`).join("")}</tr>`).join("")}</tbody>
 </table>
 </body></html>`;
   const win = window.open("", "_blank");
@@ -164,7 +164,7 @@ function exportExcel(reportName: string, rows: Record<string, unknown>[]) {
   const escapeXml = (value: unknown) => String(value ?? "")
     .replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
   const table = `<table><thead><tr>${headers.map((h) => `<th>${escapeXml(h)}</th>`).join("")}</tr></thead>`
-    + `<tbody>${rows.map((row) => `<tr>${headers.map((h) => `<td>${escapeXml(row[h])}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+    + `<tbody className="table-rows-3d">${rows.map((row) => `<tr>${headers.map((h) => `<td>${escapeXml(row[h])}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
   const blob = new Blob([`<html><head><meta charset="utf-8"></head><body>${table}</body></html>`], {
     type: "application/vnd.ms-excel;charset=utf-8",
   });
@@ -348,7 +348,7 @@ export default function Reports() {
                   className={`border-border transition-colors cursor-pointer ${isActive ? "border-gold/50 bg-gold/5" : "hover:border-border/80 hover:bg-muted/20"}`}
                   onClick={() => openGenerator(template)}
                 >
-                  <CardContent className="p-5">
+                  <CardContent className="p-3.5">
                     <div className="flex items-start gap-3">
                       <div className="h-9 w-9 rounded-lg bg-muted flex items-center justify-center flex-shrink-0">
                         <Icon className={`h-5 w-5 ${template.color}`} />
@@ -536,7 +536,7 @@ export default function Reports() {
                     <thead className="bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground">
                       <tr>{Object.keys(editableRows[0]).map((header) => <th key={header} className="px-4 py-3 text-left">{header.replaceAll("_", " ")}</th>)}</tr>
                     </thead>
-                    <tbody>
+                    <tbody className="table-rows-3d">
                       {editableRows.map((row, index) => (
                         <tr key={index} className="border-t border-border hover:bg-muted/30">
                           {Object.keys(editableRows[0]).map((header) => (
@@ -585,7 +585,7 @@ export default function Reports() {
                       <th className="px-4 py-3 text-right">Action</th>
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody className="table-rows-3d">
                     {history.map((item) => (
                       <tr key={item.id} className="border-t border-border hover:bg-muted/30">
                         <td className="px-4 py-3 font-medium">{item.name}</td>

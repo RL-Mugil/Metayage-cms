@@ -208,7 +208,7 @@ function MyAttendanceTab() {
                   <th className="px-4 py-3 text-left">Status</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="table-rows-3d">
                 {logs.map((log) => {
                   const sessions = log.sessions ?? [];
                   if (sessions.length === 0) {
@@ -424,7 +424,7 @@ function StaffTab() {
                   <th className="px-4 py-3 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="table-rows-3d">
                 {filtered.map(r => (
                   <tr key={r.id} className="border-t border-border hover:bg-muted/30">
                     <td className="px-4 py-2.5">
@@ -772,7 +772,7 @@ function ReportTab() {
                     <th className="px-4 py-3 text-right print:hidden"></th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="table-rows-3d">
                   {data.employees.map(emp => (
                     <>
                       <tr key={emp.employee_id} className="border-t border-border hover:bg-muted/30 cursor-pointer" onClick={() => setExpanded(expanded === emp.employee_id ? null : emp.employee_id)}>
@@ -811,7 +811,7 @@ function ReportTab() {
                                     <th className="px-4 py-2 text-left">Flags</th>
                                   </tr>
                                 </thead>
-                                <tbody>
+                                <tbody className="table-rows-3d">
                                   {emp.daily_rows.map(d => (
                                     <tr key={d.date} className={`border-t border-border/30 ${d.weekend ? "opacity-40" : ""}`}>
                                       <td className="px-4 py-1.5 font-mono">{fmtDate(d.date)}</td>

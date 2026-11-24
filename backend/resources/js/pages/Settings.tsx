@@ -324,7 +324,7 @@ function CodeTable({
                 {canManage && <th className="px-3 py-2 text-right">Actions</th>}
               </tr>
             </thead>
-            <tbody>
+            <tbody className="table-rows-3d">
               {groups.every((group) => group.rows.length === 0) && (
                 <tr><td colSpan={columns} className="px-3 py-4 text-center text-muted-foreground italic">
                   {q ? `No codes match "${search}".` : "No codes yet."}
@@ -458,7 +458,7 @@ function CodeRenameDialog({ type, oldCode, oldLabel, onClose, onRenamed, onMerge
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-      <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-md p-6">
+      <div className="bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-md p-6">
         <h3 className="font-semibold font-display mb-1">Rename Code</h3>
         <p className="text-xs text-muted-foreground mb-4">
           <span className="font-mono text-gold">{oldCode}</span> — {oldLabel.replace(/^[A-Z0-9\-]+\s[–-]\s/, "")}
@@ -1891,7 +1891,7 @@ export default function Settings() {
                             <th className="p-2">Active</th><th className="p-2"></th>
                           </tr>
                         </thead>
-                        <tbody>
+                        <tbody className="table-rows-3d">
                           {feeRows.map((row) => {
                             const dirty = !!feeEdits[row.id];
                             return (
@@ -1989,7 +1989,7 @@ export default function Settings() {
                             <th className="p-2">Active</th><th className="p-2"></th>
                           </tr>
                         </thead>
-                        <tbody>
+                        <tbody className="table-rows-3d">
                           {components.map((row, idx) => {
                             const dirty = !!componentEdits[row.id];
                             const calcType = componentField(row, "calc_type");
@@ -2134,7 +2134,7 @@ export default function Settings() {
                             <th className="p-2">Monthly Cap (₹)</th><th className="p-2">Active</th><th className="p-2"></th>
                           </tr>
                         </thead>
-                        <tbody>
+                        <tbody className="table-rows-3d">
                           {reimbTypes.map((row) => {
                             const dirty = !!reimbTypeEdits[row.id];
                             return (
@@ -2418,7 +2418,7 @@ export default function Settings() {
                           <th className="text-left py-1.5">Effective Payroll Month</th>
                         </tr>
                       </thead>
-                      <tbody>
+                      <tbody className="table-rows-3d">
                         {poiWindows.map((w: any) => (
                           <tr key={w.id} className="border-t border-border">
                             <td className="py-1.5">FY {w.financial_year}-{String(w.financial_year + 1).slice(-2)}</td>

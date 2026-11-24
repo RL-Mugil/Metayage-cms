@@ -792,7 +792,7 @@ export default function ProjectTracker() {
               </tr>
             </thead>
 
-            <tbody>
+            <tbody className="table-rows-3d">
               {rows.map((row, idx) => {
                 const comp = getComputed(row);
                 const bg = rowBg(row, idx);

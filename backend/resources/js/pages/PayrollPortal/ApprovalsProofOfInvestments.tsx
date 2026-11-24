@@ -145,7 +145,7 @@ export default function PayrollPortalApprovalsProofOfInvestments() {
         }
       />
 
-      <div className="px-8 py-6 space-y-4">
+      <div className="px-4 py-4 sm:px-8 sm:py-5 space-y-4">
         {error && <div className="rounded-md border border-red-500/40 bg-red-500/10 px-4 py-2 text-sm text-red-400">{error}</div>}
         {notice && <div className="rounded-md border border-green-500/40 bg-green-500/10 px-4 py-2 text-sm text-green-400">{notice}</div>}
 
@@ -186,7 +186,7 @@ export default function PayrollPortalApprovalsProofOfInvestments() {
                         <th className="text-center py-1.5">Docs</th>
                       </tr>
                     </thead>
-                    <tbody>
+                    <tbody className="table-rows-3d">
                       {SECTIONS.map((s) => {
                         const declared = Number(row.declaration?.[s.declaredField] ?? 0);
                         const approvedDraft = Number(drafts[row.id]?.[s.key] ?? 0);

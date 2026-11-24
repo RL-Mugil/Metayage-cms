@@ -126,7 +126,7 @@ export default function PayrollPortalContractors() {
 
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm overflow-y-auto py-8">
-          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-4xl p-6 m-4">
+          <div className="bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-4xl p-6 m-4">
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-display text-lg font-semibold">{editing ? "Edit Contractor" : "Add Contractor"}</h2>
               <button onClick={() => setShowModal(false)}><X className="h-5 w-5 text-muted-foreground" /></button>
@@ -176,7 +176,7 @@ export default function PayrollPortalContractors() {
 
       {payModalFor !== null && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-md p-6 m-4">
+          <div className="bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-md p-6 m-4">
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-display text-lg font-semibold">Record Payment</h2>
               <button onClick={() => setPayModalFor(null)}><X className="h-5 w-5 text-muted-foreground" /></button>
@@ -208,7 +208,7 @@ export default function PayrollPortalContractors() {
         </div>
       )}
 
-      <div className="px-8 py-6">
+      <div className="px-4 py-4 sm:px-8 sm:py-5">
         {loading ? (
           <div className="flex items-center justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-gold" /></div>
         ) : contractors.length === 0 ? (
@@ -228,7 +228,7 @@ export default function PayrollPortalContractors() {
                     <th className="px-3 py-2.5 text-center">Actions</th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="table-rows-3d">
                   {contractors.map((c) => (
                     <>
                       <tr key={c.id} className="border-t border-border hover:bg-muted/20">
@@ -259,7 +259,7 @@ export default function PayrollPortalContractors() {
                                 <thead className="text-muted-foreground">
                                   <tr><th className="text-left py-1">Invoice</th><th className="text-left py-1">Date</th><th className="text-right py-1">Amount</th><th className="text-right py-1">TDS</th><th className="text-right py-1">Net Paid</th><th className="text-left py-1">Status</th></tr>
                                 </thead>
-                                <tbody>
+                                <tbody className="table-rows-3d">
                                   {c.payments.map((p: any) => (
                                     <tr key={p.id} className="border-t border-border/50">
                                       <td className="py-1">{p.invoice_number}</td>

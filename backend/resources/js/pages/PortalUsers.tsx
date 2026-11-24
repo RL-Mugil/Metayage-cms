@@ -88,7 +88,7 @@ export default function PortalUsers() {
       {/* Add user modal */}
       {showAdd && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-xl m-4">
+          <div className="bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-xl m-4">
             <div className="flex items-center justify-between px-6 py-4 border-b border-border">
               <h2 className="font-display text-lg font-semibold">Add Portal User</h2>
               <button onClick={() => setShowAdd(false)}><X className="h-5 w-5 text-muted-foreground" /></button>
@@ -165,7 +165,7 @@ export default function PortalUsers() {
       {/* Remove confirm modal */}
       {confirmRemove && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-sm p-6 m-4">
+          <div className="bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-sm p-6 m-4">
             <h2 className="font-display text-lg font-semibold mb-2">Remove User?</h2>
             <p className="text-sm text-muted-foreground mb-4">
               <strong>{confirmRemove.name}</strong> ({confirmRemove.email}) will lose access to the portal immediately.
@@ -180,7 +180,7 @@ export default function PortalUsers() {
         </div>
       )}
 
-      <div className="px-8 py-6 space-y-6">
+      <div className="px-4 py-4 sm:px-8 sm:py-5 space-y-5">
         {error && (
           <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">{error}</div>
         )}
@@ -209,7 +209,7 @@ export default function PortalUsers() {
                     <th className="px-4 py-3 text-left">Actions</th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="table-rows-3d">
                   {users.map((u) => (
                     <tr key={u.id} className="border-t border-border hover:bg-muted/20">
                       <td className="px-4 py-3 font-medium">{u.name}</td>

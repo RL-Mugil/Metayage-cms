@@ -174,7 +174,7 @@ export default function AI() {
                                 ))}
                               </tr>
                             </thead>
-                            <tbody>
+                            <tbody className="table-rows-3d">
                               {msg.results.slice(0, 10).map((row, ri) => (
                                 <tr key={ri} className="border-t border-border hover:bg-muted/30">
                                   {Object.values(row).map((val: any, ci) => (

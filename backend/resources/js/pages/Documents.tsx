@@ -218,7 +218,7 @@ export default function Documents() {
 
       {showUploadModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-2xl p-6">
+          <div className="bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-2xl p-6">
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-display text-lg font-semibold">Upload File</h2>
               <button onClick={() => setShowUploadModal(false)}><X className="h-5 w-5 text-muted-foreground" /></button>
@@ -394,7 +394,7 @@ export default function Documents() {
                       <th className="px-4 py-3 text-right">Actions</th>
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody className="table-rows-3d">
                     {filtered.map((file) => (
                       <tr key={file.path} className="border-t border-border hover:bg-muted/30">
                         <td className="px-4 py-3">
