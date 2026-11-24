@@ -1,5 +1,8 @@
 import { Head, usePage } from "@inertiajs/react";
 import { useEffect, useState, useCallback, useRef } from "react";
+import { FitPage } from "@/components/modern/fit-page";
+import { KpiStrip } from "@/components/modern/kpi-strip";
+import { SegmentTabs } from "@/components/modern/segment-tabs";
 import { createPortal } from "react-dom";
 import { Loader2, Plus, X, Trash2, Download, DollarSign, Clock, CheckCircle, AlertCircle, Search, ChevronLeft, ChevronRight, CheckSquare, Square, FileText, Pencil, IndianRupee, Upload } from "lucide-react";
 import { ZohoExportImport } from "@/components/finance/zoho-export-import";
@@ -159,11 +162,13 @@ interface KpiDef {
   icon: React.ComponentType<{ className?: string }>;
 }
 
+const FIN_COLORS: Record<string, string> = { total_billed: "#d4a017", total_received: "#22c55e", total_outstanding: "#3b82f6", overdue_count: "#ef4444" };
+
 const KPI_DEFS: KpiDef[] = [
-  { label: "Total Billed",   key: "total_billed",      color: "text-gold",         isCurrency: true,  filterParams: {},                    icon: DollarSign   },
-  { label: "Received",       key: "total_received",    color: "text-green-500",    isCurrency: true,  filterParams: { status: "Paid" },    icon: CheckCircle  },
-  { label: "Outstanding",    key: "total_outstanding", color: "text-blue-500",     isCurrency: true,  filterParams: { outstanding: "1" },  icon: Clock        },
-  { label: "Overdue",        key: "overdue_count",     color: "text-destructive",  isCurrency: false, filterParams: { status: "Overdue" }, icon: AlertCircle  },
+  { label: "Total Billed",   key: "total_billed",      color: "text-gold",         isCurrency: true,  filterParams: { kind: "billed" },      icon: DollarSign   },
+  { label: "Received",       key: "total_received",    color: "text-green-500",    isCurrency: true,  filterParams: { kind: "received" },    icon: CheckCircle  },
+  { label: "Outstanding",    key: "total_outstanding", color: "text-blue-500",     isCurrency: true,  filterParams: { kind: "outstanding" }, icon: Clock        },
+  { label: "Overdue",        key: "overdue_count",     color: "text-destructive",  isCurrency: false, filterParams: { kind: "overdue" },     icon: AlertCircle  },
 ];
 
 function FinancialKpiModal({ kpi, onClose }: { kpi: KpiDef; onClose: () => void }) {
@@ -178,7 +183,7 @@ function FinancialKpiModal({ kpi, onClose }: { kpi: KpiDef; onClose: () => void 
     try {
       const params = new URLSearchParams({ per_page: String(PER_PAGE), page: String(pg), ...kpi.filterParams });
       if (q) params.set("search", q);
-      const res: any = await api.getInvoicesPaged(params);
+      const res: any = await api.getFinancialKpiList(params);
       setResult({ data: Array.isArray(res) ? res : (res?.data ?? []), total: res?.total ?? 0 });
     } finally { setLoading(false); }
   }, [kpi]);
@@ -191,7 +196,7 @@ function FinancialKpiModal({ kpi, onClose }: { kpi: KpiDef; onClose: () => void 
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-      <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-3xl max-h-[88vh] flex flex-col">
+      <div className="bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-3xl max-h-[88vh] flex flex-col">
         <div className="flex items-center justify-between px-6 py-4 border-b border-border flex-shrink-0">
           <div>
             <h2 className="font-display text-lg font-semibold">{kpi.label}</h2>
@@ -268,7 +273,7 @@ export default function Financial() {
   const canLinkZohoProject = ["super_admin", "manager", "galvanizer"].includes(role);
 
   // Tab
-  const [activeTab, setActiveTab] = useState("india");
+  const [activeTab, setActiveTab] = useState<string>("india");
 
   // Invoices state
   const [invoices, setInvoices] = useState<any[]>([]);
@@ -966,24 +971,21 @@ export default function Financial() {
   return (
     <AppLayout>
       <Head title="Financial Suite" />
-      <PageHeader
-        eyebrow="Finance"
-        title="Financial Suite"
-        description="Invoices, payments, quotations, and revenue analytics"
+      <FitPage fit={false} eyebrow="Finance" title="Financial Suite"
+        summary={`${fmt(stats.total_billed ?? 0)} billed · ${fmt(stats.total_received ?? 0)} received · ${fmt(stats.total_outstanding ?? 0)} outstanding · ${stats.overdue_count ?? 0} overdue`}
         actions={
           <>
             {!isClientUser && (
               <>
-                <Button variant="outline" onClick={() => openCreateIndia({ type: "quote" })}><Plus className="h-4 w-4 mr-2" />New IN Quote</Button>
-                <Button onClick={() => openCreateIndia({ type: "invoice" })}><Plus className="h-4 w-4 mr-2" />New IN Invoice</Button>
+                <Button variant="outline" size="sm" onClick={() => openCreateIndia({ type: "quote" })}><Plus className="h-4 w-4 mr-2" />New IN Quote</Button>
+                <Button size="sm" onClick={() => openCreateIndia({ type: "invoice" })}><Plus className="h-4 w-4 mr-2" />New IN Invoice</Button>
               </>
             )}
           </>
-        }
-      />
+        }>
 
       {isClientUser && (
-        <div className="px-8 pt-6">
+        <div className="pb-3">
           <ZohoBooksPanel title="Your Billing — Live from Zoho Books" fetchSummary={() => api.getZohoMySummary()} />
         </div>
       )}
@@ -991,7 +993,7 @@ export default function Financial() {
       {/* New Invoice Modal */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm overflow-y-auto py-8">
-          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-2xl p-6 m-4">
+          <div className="bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-2xl p-6 m-4">
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-display text-lg font-semibold">New Invoice</h2>
               <button onClick={() => setShowModal(false)}><X className="h-5 w-5 text-muted-foreground" /></button>
@@ -1076,7 +1078,7 @@ export default function Financial() {
       {/* New Quotation Modal */}
       {showQuotModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm overflow-y-auto py-8">
-          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-2xl p-6 m-4">
+          <div className="bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-2xl p-6 m-4">
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-display text-lg font-semibold">New Quotation</h2>
               <button onClick={() => setShowQuotModal(false)}><X className="h-5 w-5 text-muted-foreground" /></button>
@@ -1169,7 +1171,7 @@ export default function Financial() {
       {/* Record Payment Modal */}
       {showPayment && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-md p-6 m-4">
+          <div className="bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-md p-6 m-4">
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-display text-lg font-semibold">Record Payment</h2>
               <button onClick={() => setShowPayment(null)}><X className="h-5 w-5 text-muted-foreground" /></button>
@@ -1204,7 +1206,7 @@ export default function Financial() {
       {/* Batch Pay Method Modal */}
       {showBatchPayModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-sm p-6 m-4">
+          <div className="bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-sm p-6 m-4">
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-display text-lg font-semibold">Batch Mark Paid</h2>
               <button onClick={() => setShowBatchPayModal(false)}><X className="h-5 w-5 text-muted-foreground" /></button>
@@ -1228,39 +1230,17 @@ export default function Financial() {
 
       {kpiModal && <FinancialKpiModal kpi={kpiModal} onClose={() => setKpiModal(null)} />}
 
-      <div className="px-8 py-6 space-y-6">
-        {/* KPI Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {KPI_DEFS.map((kpi) => {
-            const raw = stats[kpi.key as keyof typeof stats] ?? 0;
-            const display = kpi.isCurrency ? fmt(raw as number) : `${raw}`;
-            const suffix  = !kpi.isCurrency ? " invoices" : "";
-            const Icon    = kpi.icon;
-            return (
-              <button key={kpi.key} onClick={() => setKpiModal(kpi)}
-                className="rounded-xl border border-border bg-card p-5 text-left transition-all hover:shadow-md hover:border-gold/40 cursor-pointer">
-                <div className="flex items-center gap-2 mb-2">
-                  <Icon className={`h-4 w-4 ${kpi.color}`} />
-                  <span className="text-xs text-muted-foreground">{kpi.label}</span>
-                </div>
-                <div className={`text-xl font-bold ${kpi.color}`}>{display}{suffix}</div>
-                <div className="mt-1 text-xs text-muted-foreground">Click to view</div>
-              </button>
-            );
-          })}
-        </div>
+      <div className="space-y-4">
+        <KpiStrip items={KPI_DEFS.map((kpi) => ({
+          key: kpi.key, label: kpi.label, value: Number(stats[kpi.key as keyof typeof stats] ?? 0),
+          format: kpi.isCurrency ? "lakh" as const : "number" as const, color: FIN_COLORS[kpi.key] ?? "#d4a017", onClick: () => setKpiModal(kpi),
+        }))} />
 
         {/* Tab bar */}
-        <div className="flex items-center gap-1 border-b border-border">
-          <button onClick={() => setActiveTab("india")}
-            className={`px-4 py-2 text-sm font-medium border-b-2 flex items-center gap-1.5 ${activeTab === "india" ? "border-gold text-gold" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
-            <IndianRupee className="h-3.5 w-3.5" />Indian Patents
-          </button>
-          <button onClick={() => setActiveTab("zoho")}
-            className={`px-4 py-2 text-sm font-medium border-b-2 flex items-center gap-1.5 ${activeTab === "zoho" ? "border-gold text-gold" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
-            <DollarSign className="h-3.5 w-3.5" />Zoho Books
-          </button>
-        </div>
+        <SegmentTabs value={activeTab as "india" | "zoho"} onChange={(v) => setActiveTab(v)} options={[
+          { value: "india", label: <span className="flex items-center gap-1.5"><IndianRupee className="h-3.5 w-3.5" />Indian Patents</span> },
+          { value: "zoho", label: <span className="flex items-center gap-1.5"><DollarSign className="h-3.5 w-3.5" />Zoho Books</span> },
+        ]} />
 
         {/* Invoices Tab — removed; use Indian Patents tab */}
         {false && (
@@ -1475,11 +1455,11 @@ export default function Financial() {
             {indiaLoading ? (
               <div className="flex items-center justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-gold" /></div>
             ) : (
-              <Card className="border-border">
+              <Card className="overflow-hidden">
                 <CardContent className="p-0">
-                  <div className="overflow-x-auto">
+                  <div className="thin-scrollbar max-h-[calc(100dvh-15rem)] min-h-[320px] overflow-auto">
                     <table className="text-xs whitespace-nowrap">
-                      <thead className="bg-muted/40 text-[10px] uppercase tracking-wider text-muted-foreground">
+                      <thead className="table-sticky-head text-[10px] uppercase tracking-wider text-muted-foreground">
                         <tr>
                           {!isClientUser && (
                             <th className="px-2 py-2.5 sticky left-0 bg-muted/40 z-20 w-6">
@@ -1766,11 +1746,11 @@ export default function Financial() {
             {zohoAllLoading ? (
               <div className="flex items-center justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-gold" /></div>
             ) : (
-              <Card className="border-border">
+              <Card className="overflow-hidden">
                 <CardContent className="p-0">
-                  <div className="overflow-x-auto">
+                  <div className="thin-scrollbar max-h-[calc(100dvh-15rem)] min-h-[320px] overflow-auto">
                     <table className="w-full text-xs">
-                      <thead className="bg-muted/40 text-[10px] uppercase tracking-wider text-muted-foreground">
+                      <thead className="table-sticky-head text-[10px] uppercase tracking-wider text-muted-foreground">
                         <tr>
                           <th className="px-3 py-2.5 text-left">Type</th>
                           <th className="px-3 py-2.5 text-left">UIN / Number</th>
@@ -1861,6 +1841,8 @@ export default function Financial() {
         <ZohoExportImport onClose={() => setZohoImportOpen(false)} onImported={() => loadIndia({ page: 1 })} />
       )}
 
+      </FitPage>
+
       {/* ── Indian Patent Invoice / Quote Modal ─────────────────────────────── */}
       {showIndiaModal && (() => {
         const gst = computeIndiaGst(indiaForm);
@@ -1871,7 +1853,7 @@ export default function Financial() {
         );
         return (
           <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 backdrop-blur-sm overflow-y-auto py-6 px-4">
-            <div className="bg-background border border-border rounded-xl shadow-2xl w-full max-w-5xl flex flex-col">
+            <div className="bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-5xl flex flex-col">
               {/* Header */}
               <div className="flex items-center justify-between px-6 py-4 border-b border-border sticky top-0 bg-background z-10 rounded-t-xl">
                 <div>

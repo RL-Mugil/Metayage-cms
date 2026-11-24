@@ -888,6 +888,10 @@ export const api = {
     const res = await this.request<PaginatedResponse<Invoice> | Invoice[]>(`/financial/invoices${query}`)
     return Array.isArray(res) ? res : ((res as PaginatedResponse<Invoice>).data ?? [])
   },
+  /** Invoices behind a Financial Suite KPI card (portal register): params kind=billed|received|outstanding|overdue. */
+  async getFinancialKpiList(params: URLSearchParams): Promise<{ data: any[]; total: number }> {
+    return this.request(`/financial/kpi-list?${params.toString()}`)
+  },
   async getInvoicesPaged(params?: URLSearchParams): Promise<PaginatedResponse<Invoice>> {
     const query = params ? '?' + params.toString() : ''
     return this.request(`/financial/invoices${query}`)

@@ -1,6 +1,8 @@
 import { Head, usePage } from "@inertiajs/react";
 import { useEffect, useRef, useState } from "react";
 import { Loader2, Upload, CheckCircle2, FileText, MessageSquare, Download, Search } from "lucide-react";
+import { FitPage } from "@/components/modern/fit-page";
+import { AnimatedNumber } from "@/components/modern/animated-number";
 import AppLayout from "@/layouts/AppLayout";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent } from "@/components/ui/card";
@@ -155,28 +157,32 @@ export default function PendingPayments() {
   return (
     <AppLayout>
       <Head title="Pending Payments" />
-      <PageHeader
-        eyebrow="Billing"
-        title="Pending Payments"
-        description={isClient
+      <FitPage eyebrow="Billing" title="Pending Payments"
+        summary={isClient
           ? "Invoices awaiting payment. Pay by bank transfer, then upload the payment proof here."
-          : "Every unpaid invoice: renewals raised in the portal and invoices from Zoho Books."}
-      />
-
-      <div className="px-8 py-6 space-y-4">
+          : "Every unpaid invoice: renewals raised in the portal and invoices from Zoho Books."}>
+      <div className="flex min-h-0 flex-1 flex-col gap-3">
         {error && (
-          <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">{error}</div>
+          <div className="shrink-0 rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">{error}</div>
         )}
 
-        <div className="grid gap-4 md:grid-cols-3">
-          <Card className="border-border"><CardContent className="p-5"><p className="text-xs uppercase tracking-wider text-muted-foreground">Total pending</p><p className="mt-1 font-display text-2xl font-semibold text-amber-600">{totalLabel}</p><p className="mt-1 text-xs text-muted-foreground">Balance still to be received</p></CardContent></Card>
-          <Card className="border-border"><CardContent className="p-5"><p className="text-xs uppercase tracking-wider text-muted-foreground">Unpaid invoices</p><p className="mt-1 font-display text-2xl font-semibold">{meta.total.toLocaleString("en-IN")}</p><p className="mt-1 text-xs text-muted-foreground">{query || overdueOnly ? "Matching the filter" : "All pending"}</p></CardContent></Card>
-          <button type="button" onClick={() => { setOverdueOnly((v) => !v); setPage(1); }} className="text-left">
-            <Card className={`border-border transition-colors ${overdueOnly ? "ring-1 ring-red-500" : "hover:bg-muted/30"}`}><CardContent className="p-5"><p className="text-xs uppercase tracking-wider text-muted-foreground">Overdue</p><p className="mt-1 font-display text-2xl font-semibold text-red-600">{overdueCount.toLocaleString("en-IN")}</p><p className="mt-1 text-xs text-muted-foreground">{overdueOnly ? "Showing overdue only · click to show all" : "Past the due date · click to show only these"}</p></CardContent></Card>
+        <div className="flex shrink-0 flex-wrap items-stretch gap-2">
+          <div className="glass flex min-w-[180px] flex-1 items-center gap-2.5 rounded-xl px-3 py-2">
+            <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-amber-500 shadow-[0_0_8px_#f59e0b]" />
+            <span className="min-w-0"><span className="block truncate font-display text-lg font-semibold leading-tight text-amber-600">{totalLabel}</span><span className="block text-[10px] uppercase tracking-wider text-muted-foreground">Total pending</span></span>
+          </div>
+          <div className="glass flex min-w-[140px] flex-1 items-center gap-2.5 rounded-xl px-3 py-2">
+            <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-blue-500 shadow-[0_0_8px_#3b82f6]" />
+            <span><AnimatedNumber value={meta.total} className="block font-display text-lg font-semibold leading-tight" /><span className="block text-[10px] uppercase tracking-wider text-muted-foreground">{query || overdueOnly ? "Matching invoices" : "Unpaid invoices"}</span></span>
+          </div>
+          <button type="button" onClick={() => { setOverdueOnly((v) => !v); setPage(1); }} title={overdueOnly ? "Show all" : "Show only overdue"}
+            className={`glass flex min-w-[140px] flex-1 items-center gap-2.5 rounded-xl px-3 py-2 text-left transition-transform hover:-translate-y-0.5 ${overdueOnly ? "ring-2 ring-red-500/60" : ""}`}>
+            <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-red-500 shadow-[0_0_8px_#ef4444]" />
+            <span><AnimatedNumber value={overdueCount} className="block font-display text-lg font-semibold leading-tight text-red-600" /><span className="block text-[10px] uppercase tracking-wider text-muted-foreground">{overdueOnly ? "Overdue · click for all" : "Overdue · click to filter"}</span></span>
           </button>
         </div>
 
-        <div className="relative max-w-md">
+        <div className="relative max-w-md shrink-0">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search UIN, client, case or title…"
             className="h-9 w-full rounded-md border border-border bg-background pl-8 pr-3 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
@@ -191,13 +197,13 @@ export default function PendingPayments() {
             </CardContent>
           </Card>
         ) : (
-          <div className="space-y-3">
+          <div className="thin-scrollbar space-y-3 pr-1 fit:min-h-0 fit:flex-1 fit:overflow-y-auto">
             {rows.map((row) => {
               const clientName = row.client?.company_name ?? row.client?.legal_name ?? row.client_name;
               const fromZoho = row.source === "zoho";
               const balance = Number(row.balance ?? row.invoice_amount);
               return (
-                <Card key={row.id} className="border-border">
+                <Card key={row.id} className="transition-all hover:-translate-y-0.5 hover:shadow-3d-lg">
                   <CardContent className="py-4 space-y-3">
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div className="min-w-0">
@@ -310,7 +316,7 @@ export default function PendingPayments() {
         )}
 
         {meta.total > 0 && (
-          <div className="flex items-center justify-between text-sm text-muted-foreground">
+          <div className="glass flex shrink-0 items-center justify-between rounded-xl px-4 py-2 text-sm text-muted-foreground">
             <span>Showing {from}–{to} of {meta.total.toLocaleString("en-IN")}</span>
             <div className="flex gap-2">
               <Button size="sm" variant="outline" disabled={page <= 1 || loading} onClick={() => setPage((p) => p - 1)}>Previous</Button>
@@ -319,6 +325,7 @@ export default function PendingPayments() {
           </div>
         )}
       </div>
+      </FitPage>
     </AppLayout>
   );
 }

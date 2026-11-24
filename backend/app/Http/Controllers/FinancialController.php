@@ -116,6 +116,46 @@ class FinancialController extends Controller
         return response()->json($stats);
     }
 
+    /**
+     * The invoices behind a Financial Suite KPI card, from the same register (and legacy
+     * invoices) the card's number is summed from: billed = all, received = any amount paid,
+     * outstanding = balance left, overdue = balance left past the due date.
+     */
+    public function kpiList(Request $request, \App\Services\FinanceFigures $figures)
+    {
+        $this->authorize('viewAny', \App\Models\Invoice::class);
+        $kind = (string) $request->query('kind', 'billed');
+        abort_unless(in_array($kind, ['billed', 'received', 'outstanding', 'overdue'], true), 422, 'Unknown list.');
+        $today = now()->startOfDay();
+        $rows = $figures->rows($request->user())->filter(fn ($r) => match ($kind) {
+            'received' => $r['billed'] - $r['outstanding'] > 0.009,
+            'outstanding' => $r['outstanding'] > 0.009,
+            'overdue' => $r['outstanding'] > 0.009 && $r['due_date'] && $r['due_date']->lt($today),
+            default => true,
+        });
+        $names = \App\Models\Client::whereIn('id', $rows->pluck('client_id')->filter()->unique())->get(['id', 'legal_name', 'company_name'])
+            ->mapWithKeys(fn ($c) => [$c->id => $c->legal_name ?: $c->company_name]);
+        $q = strtolower(trim((string) $request->query('search', '')));
+        if ($q !== '') {
+            $rows = $rows->filter(fn ($r) => str_contains(strtolower((string) $r['number']), $q) || str_contains(strtolower((string) ($names[$r['client_id']] ?? '')), $q));
+        }
+        $rows = $rows->sortByDesc(fn ($r) => $r['date']?->timestamp ?? 0)->values();
+        $per = max(1, min((int) $request->query('per_page', 15), 100));
+        $page = max(1, (int) $request->query('page', 1));
+
+        return response()->json([
+            'total' => $rows->count(),
+            'per_page' => $per,
+            'current_page' => $page,
+            'data' => $rows->slice(($page - 1) * $per, $per)->map(fn ($r) => [
+                'id' => $r['id'], 'invoice_code' => $r['number'], 'client' => ['company_name' => $names[$r['client_id']] ?? null],
+                'issue_date' => $r['date']?->toDateString(), 'due_date' => $r['due_date']?->toDateString(),
+                'total_amount' => round($r['billed'], 2), 'balance_due' => round($r['outstanding'], 2),
+                'status' => ucfirst($r['status']), 'currency' => 'INR',
+            ])->values(),
+        ]);
+    }
+
     public function analytics(Request $request, \App\Services\FinancialAnalyticsService $analytics)
     {
         $this->authorize('viewAny', \App\Models\Invoice::class);

@@ -273,6 +273,7 @@ Route::middleware(['auth:sanctum', 'firm.context', 'throttle:120,1'])->group(fun
 
     // Financial Suite
     Route::get('/financial/stats', [FinancialController::class, 'stats']);
+    Route::get('/financial/kpi-list', [FinancialController::class, 'kpiList']);
     // Zoho Books export files (Invoice / Quote / Customer Payment CSV) into the portal register.
     Route::post('/finance/zoho-export/preview', [\App\Http\Controllers\ZohoExportController::class, 'preview'])->middleware('throttle:10,1');
     Route::post('/finance/zoho-export/import', [\App\Http\Controllers\ZohoExportController::class, 'import'])->middleware('throttle:10,1');
