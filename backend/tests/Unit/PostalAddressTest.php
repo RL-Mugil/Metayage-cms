@@ -44,6 +44,56 @@ class PostalAddressTest extends TestCase
         $this->assertSame('', PostalAddress::split('', null, 'India')['address_street']);
     }
 
+    public function test_state_comes_from_the_pin_and_trailing_state_codes(): void
+    {
+        $p = PostalAddress::split('#09, East end D Main, Jayanagar 9th Block, Bengaluru,  , , 560069', null, 'India');
+        $this->assertSame(['#09', 'East end D Main, Jayanagar 9th Block', 'Bengaluru', 'Karnataka', '560069', 'clean'],
+            [$p['address_house'], $p['address_street'], $p['city'], $p['state'], $p['pincode'], $p['confidence']]);
+
+        $p = PostalAddress::split('Vindhya C5, 3rd Floor, Gachibowli, Hyderabad Hyderabad TG 500032, IN', null, 'India');
+        $this->assertSame(['Hyderabad', 'Telangana', '500032'], [$p['city'], $p['state'], $p['pincode']]);
+
+        // No comma before the city.
+        $p = PostalAddress::split('51 MGR Road Besant nagar Chennai TN 600090', null, 'India');
+        $this->assertSame(['Chennai', 'Tamil Nadu'], [$p['city'], $p['state']]);
+
+        $this->assertSame('Delhi', PostalAddress::indianStateFromPin('110001'));
+        $this->assertSame('Goa', PostalAddress::indianStateFromPin('403001'));
+        $this->assertSame('Jharkhand', PostalAddress::indianStateFromPin('834001'));
+        $this->assertSame('', PostalAddress::indianStateFromPin('56008'));
+    }
+
+    public function test_curly_quotes_survive(): void
+    {
+        $p = PostalAddress::split('MNG House, “A” Wing, Karve Nagar, Pune – 411052', null, 'India');
+        $this->assertStringContainsString('“A” Wing', $p['address_street']);
+        $this->assertTrue(mb_check_encoding($p['address_street'], 'UTF-8'));
+        $this->assertSame(['Pune', 'Maharashtra', '411052'], [$p['city'], $p['state'], $p['pincode']]);
+    }
+
+    public function test_us_singapore_and_unknown_country(): void
+    {
+        $p = PostalAddress::split('8, The Green, Ste A, Dover, County Kent, Delaware, 19901, USA', null, 'US');
+        $this->assertSame(['Dover', 'Delaware', '19901', 'clean'], [$p['city'], $p['state'], $p['pincode'], $p['confidence']]);
+
+        $p = PostalAddress::split('2121 Crigan Bluff Drive, Cary, NC 27513, USA', null, 'US');
+        $this->assertSame(['Cary', 'North Carolina', '27513'], [$p['city'], $p['state'], $p['pincode']]);
+
+        // No city found: never "clean".
+        $p = PostalAddress::split('4021 262nd PL SE Sammamish, WA, USA 98029', null, 'US');
+        $this->assertSame(['', 'Washington', '98029', 'partial'], [$p['city'], $p['state'], $p['pincode'], $p['confidence']]);
+
+        $p = PostalAddress::split('105 CECIL STREET #13-01 THE OCTAGON SINGAPORE -069534', null, 'SG');
+        $this->assertSame(['Singapore', '069534', 'clean'], [$p['city'], $p['pincode'], $p['confidence']]);
+
+        // Stored country "EP": the country is read from the address.
+        $p = PostalAddress::split('3675 Market Street, Suite 200, Philadelphia, PA, USA - 19104', null, 'EP');
+        $this->assertSame(['Philadelphia', 'Pennsylvania', '19104'], [$p['city'], $p['state'], $p['pincode']]);
+
+        $p = PostalAddress::split('Briton House, Briton Street, Southampton, SO14 3EB', null, 'GB');
+        $this->assertSame(['Southampton', 'SO14 3EB'], [$p['city'], $p['pincode']]);
+    }
+
     public function test_compose(): void
     {
         $this->assertSame('No. 12, MG Road, Bengaluru, Karnataka, India - 560001', PostalAddress::compose([
