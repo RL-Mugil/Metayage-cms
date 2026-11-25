@@ -409,6 +409,7 @@ Route::middleware(['auth:sanctum', 'firm.context', 'throttle:120,1'])->group(fun
     Route::put('/settings/renewal-fee-rates', [\App\Http\Controllers\SettingsController::class, 'updateRenewalFeeRates']);
     Route::put('/settings/payroll', [\App\Http\Controllers\SettingsController::class, 'updatePayrollSettings']);
     Route::put('/settings/finance-access', [\App\Http\Controllers\SettingsController::class, 'updateFinanceAccess']);
+    Route::put('/settings/open-access', [\App\Http\Controllers\SettingsController::class, 'updateOpenAccess']);
     Route::get('/settings/ipo', [\App\Http\Controllers\Ipo\IpoSettingsController::class, 'show']);
     Route::put('/settings/ipo/service', [\App\Http\Controllers\Ipo\IpoSettingsController::class, 'updateService']);
     Route::put('/settings/escalation-cadence', [\App\Http\Controllers\SettingsController::class, 'updateEscalationCadence']);

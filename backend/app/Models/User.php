@@ -120,9 +120,10 @@ class User extends Authenticatable
      */
     public const CASE_SCOPED_ROLES = ['associate', 'manager'];
 
+    /** Patent Analysts / Engineers and Patent Attorneys, unless System Admin has opened all cases (Settings > System > Open access). */
     public function seesOnlyOwnCases(): bool
     {
-        return in_array($this->role, self::CASE_SCOPED_ROLES, true);
+        return in_array($this->role, self::CASE_SCOPED_ROLES, true) && ! \App\Support\DataAccess::seesAllCases($this);
     }
 
     public function isGalvanizer(): bool

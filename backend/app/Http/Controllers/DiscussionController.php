@@ -40,7 +40,7 @@ class DiscussionController extends Controller
             $client = $this->clientFor($request);
             if (! $client) return response()->json(['message' => 'Forbidden'], 403);
             $query->where('client_id', $client->id);
-        } elseif ($user->role === 'associate') {
+        } elseif ($user->seesOnlyOwnCases()) {
             // General threads (no project) are visible to all staff.
             // Case threads only on cases they created or are assigned to.
             $query->where(function ($q) use ($user) {

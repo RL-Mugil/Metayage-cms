@@ -295,6 +295,9 @@ export interface DashboardTrends {
   quoted: number[]
 }
 
+/** Settings → System → Open access switches (App\Support\DataAccess). */
+export interface OpenAccess { clients: boolean; cases: boolean; portal: boolean; updated_by?: string | null; updated_at?: string | null }
+
 export interface BulkResult {
   ok: number
   failed: number
@@ -1980,6 +1983,10 @@ export const api = {
     return this.request(`/tax-slab-configs/${id}`, { method: 'PUT', body: JSON.stringify(data) })
   },
   /** Settings → Finance → Financial access (System Admin): logins that see all finance. */
+  /** Settings → System → Open access (System Admin). */
+  async updateOpenAccess(data: { clients: boolean; cases: boolean; portal: boolean }): Promise<OpenAccess> {
+    return this.request('/settings/open-access', { method: 'PUT', body: JSON.stringify(data) })
+  },
   async updateFinanceAccess(userIds: number[]): Promise<{ user_ids: number[] }> {
     return this.request('/settings/finance-access', { method: 'PUT', body: JSON.stringify({ user_ids: userIds }) })
   },

@@ -42,7 +42,7 @@ class PortalController extends Controller
     private function visibleClients(Request $request)
     {
         $query = Client::query();
-        DataAccess::scopeManagedClients($query, $request->user());
+        DataAccess::scopePortalClients($query, $request->user());
 
         return $query;
     }
@@ -372,7 +372,7 @@ class PortalController extends Controller
                 $q->where('audit_logs.subject_type', 'Client')
                   ->orWhereIn('audit_logs.action', ['portal_invite_sent', 'portal_enabled', 'portal_disabled', 'portal_password_reset']);
             })
-            ->when(! DataAccess::seesAllCases($request->user()), fn ($q) => $q
+            ->when(! DataAccess::seesAllPortal($request->user()), fn ($q) => $q
                 ->where('audit_logs.subject_type', 'Client')
                 ->whereIn('audit_logs.subject_id', $this->visibleClients($request)->select('id')))
             ->orderByDesc('audit_logs.created_at')

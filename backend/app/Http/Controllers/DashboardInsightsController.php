@@ -146,7 +146,7 @@ class DashboardInsightsController extends Controller
             $query->whereHas('client', fn ($q) => $q->where('portal_enabled', true)->visibleToUser($user));
         } elseif ($user->isGalvanizer()) {
             $user->applyProjectScope($query);
-        } elseif ($user->role === 'associate') {
+        } elseif ($user->seesOnlyOwnCases()) {
             $query->assignedTo($user->id);
         } elseif ($user->isInventor()) {
             $query->whereIn('id', $user->projectsAsInventor()->pluck('projects.id'));

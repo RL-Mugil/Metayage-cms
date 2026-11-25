@@ -714,6 +714,44 @@ class SettingsController extends Controller
         return response()->json(['user_ids' => $ids]);
     }
 
+    /**
+     * Settings > System > Open access (System Admin): while a switch is on, Patent Analysts /
+     * Engineers and Patent Attorneys see and edit every client / case / client portal, e.g. so
+     * they can claim their clients. Finance is never opened here (see Financial access).
+     */
+    public function updateOpenAccess(Request $request)
+    {
+        $user = $request->user();
+        abort_unless($user->role === 'super_admin', 403, 'Only a System Admin can change Open access.');
+        $validated = $request->validate([
+            'clients' => 'required|boolean',
+            'cases' => 'required|boolean',
+            'portal' => 'required|boolean',
+        ]);
+        $before = \App\Support\DataAccess::openAccess();
+        $after = [
+            'clients' => (bool) $validated['clients'],
+            'cases' => (bool) $validated['cases'],
+            'portal' => (bool) $validated['portal'],
+            'updated_by' => $user->name,
+            'updated_at' => now()->toIso8601String(),
+        ];
+        DB::transaction(function () use ($user, $request, $before, $after) {
+            DB::table('system_settings')->updateOrInsert(['key' => \App\Support\DataAccess::OPEN_ACCESS_KEY], ['value' => json_encode($after), 'updated_at' => now()]);
+            AuditLog::create([
+                'user_id' => $user->id, 'action' => 'update_open_access',
+                'metadata' => ['before' => array_intersect_key($before, array_flip(['clients', 'cases', 'portal'])),
+                    'after' => array_intersect_key($after, array_flip(['clients', 'cases', 'portal']))],
+                'ip_address' => $request->ip(), 'user_agent' => $request->userAgent(),
+            ]);
+        });
+        Cache::forget('system_settings_shared');
+        \App\Support\DataAccess::forgetSettings();
+        Cache::increment('dashboard_v');
+
+        return response()->json($after);
+    }
+
     public function updatePayrollSettings(Request $request)
     {
         $user = $request->user();

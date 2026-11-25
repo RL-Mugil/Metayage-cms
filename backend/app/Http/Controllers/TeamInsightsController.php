@@ -119,7 +119,7 @@ class TeamInsightsController extends Controller
         $query = Project::query();
         if ($user->isGalvanizer()) {
             $user->applyProjectScope($query);
-        } elseif (in_array($user->role, ['associate', 'paralegal'], true)) {
+        } elseif ($user->seesOnlyOwnCases()) {
             $query->assignedTo($user->id);
         }
 

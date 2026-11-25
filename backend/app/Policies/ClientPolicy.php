@@ -4,6 +4,7 @@ namespace App\Policies;
 
 use App\Models\Client;
 use App\Models\User;
+use App\Support\DataAccess;
 
 class ClientPolicy
 {
@@ -24,6 +25,11 @@ class ClientPolicy
         if ($user->isGalvanizer()) {
             return $user->canAccessCircle($client->circle);
         }
+        // Patent Analysts / Attorneys: their own clients (Client Manager, or PCM / SCM on a case),
+        // or every client while System Admin has Open access > Clients on.
+        if (in_array($user->role, User::CASE_SCOPED_ROLES, true) && ! DataAccess::seesAllClients($user)) {
+            return DataAccess::ownsClient($user, $client);
+        }
         return true;
     }
 
@@ -37,7 +43,16 @@ class ClientPolicy
         if ($user->isGalvanizer()) {
             return $user->canAccessCircle($client->circle);
         }
-        return in_array($user->role, ['super_admin', 'partner', 'manager']);
+        if (in_array($user->role, ['super_admin', 'partner'], true)) {
+            return true;
+        }
+        // While Open access > Clients is on, Patent Analysts and Attorneys edit any client,
+        // e.g. to claim it by setting themselves as Client Manager.
+        if (DataAccess::clientsOpenedBySwitch($user)) {
+            return true;
+        }
+        // Patent Attorneys edit their own clients.
+        return $user->role === 'manager' && DataAccess::ownsClient($user, $client);
     }
 
     public function delete(User $user, Client $client): bool

@@ -36,7 +36,7 @@ class ProjectPolicy
             return $project->isAssignedTo($user->id);
         }
 
-        return in_array($user->role, \App\Support\DataAccess::ALL_CASE_ROLES, true);
+        return \App\Support\DataAccess::seesAllCases($user);
     }
 
     /** Any firm staff member may open a case; client-portal users and inventors may not. */
@@ -53,7 +53,8 @@ class ProjectPolicy
         // Case workers (Patent Analysts, paralegals) edit and move the stages of cases
         // they created or are assigned to (PR, PCM, SCM, attorney, or a task).
         if (in_array($user->role, ['associate', 'paralegal'], true)) return $project->isAssignedTo($user->id);
-        return false;
+        // Open access (Settings > System): while Cases is on, Patent Analysts / Attorneys edit any case (e.g. to set themselves PCM).
+        return \App\Support\DataAccess::casesOpenedBySwitch($user);
     }
 
     /** Status-only changes (e.g. Granted with its grant date) — anyone who may update the case. */

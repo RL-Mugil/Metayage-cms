@@ -171,7 +171,7 @@ class BulkController extends Controller
     private function runTask(Request $base, User $user, string $action, int $id, array $p): string
     {
         $task = Task::with('project')->findOrFail($id);
-        if (! DataAccess::seesAllCases($user) && ! $user->isGalvanizer() && (int) $task->assignee_id !== (int) $user->id) {
+        if (! DataAccess::hasFullCaseRole($user) && ! $user->isGalvanizer() && (int) $task->assignee_id !== (int) $user->id) {
             abort_unless($task->project && $this->managesCase($user, $task->project), 403, 'Not one of your cases.');
         }
         $data = match ($action) {
@@ -187,7 +187,7 @@ class BulkController extends Controller
     private function runClient(Request $base, User $user, string $action, int $id, array $p): string
     {
         $client = Client::findOrFail($id);
-        if (! DataAccess::seesAllCases($user) && ! $user->isGalvanizer() && (int) $client->account_manager_id !== (int) $user->id) {
+        if (! DataAccess::hasFullCaseRole($user) && ! $user->isGalvanizer() && (int) $client->account_manager_id !== (int) $user->id) {
             abort_unless($client->projects()->where(fn ($q) => DataAccess::scopeManagedCases($q, $user))->exists(), 403, 'Not one of your clients.');
         }
         if ($action === 'status') {
@@ -240,7 +240,7 @@ class BulkController extends Controller
     /** Scoped staff act only on their CM / SCM cases; galvanizers on their circle. */
     private function assertCaseInScope(User $user, Project $project): void
     {
-        if (DataAccess::seesAllCases($user)) {
+        if (DataAccess::hasFullCaseRole($user)) {
             return;
         }
         if ($user->isGalvanizer()) {

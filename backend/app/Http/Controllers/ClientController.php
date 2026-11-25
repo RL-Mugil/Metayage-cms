@@ -204,9 +204,12 @@ class ClientController extends Controller
             $base->visibleToUser($user);
         } elseif ($user->isGalvanizer()) {
             $user->applyClientScope($base);
+        } else {
+            \App\Support\DataAccess::scopeManagedClients($base, $user);
         }
 
-        $cacheKey = "client_stats_{$user->id}_{$user->role}_" . implode('-', $user->galvanizerCircleCodes()) . "_v" . Cache::get('dashboard_v', 0);
+        $cacheKey = "client_stats_{$user->id}_{$user->role}_" . implode('-', $user->galvanizerCircleCodes())
+            . '_' . (\App\Support\DataAccess::seesAllClients($user) ? 'all' : 'own') . "_v" . Cache::get('dashboard_v', 0);
         $stats = Cache::remember($cacheKey, 300, function () use ($base) {
             $row = (clone $base)->selectRaw("
                 COUNT(*) as total,
@@ -243,8 +246,11 @@ class ClientController extends Controller
             $query->visibleToUser($user);
         } elseif ($user->isGalvanizer()) {
             $user->applyClientScope($query);
-        } elseif ($request->boolean('mine')) {
-            // e.g. the Client Portal picker: only the user's PCM / SCM clients.
+        } elseif ($request->boolean('mine') && ! \App\Support\DataAccess::seesAllPortal($user)) {
+            // The Client Portal picker follows the Client Portal switch.
+            \App\Support\DataAccess::scopeOwnClients($query, $user);
+        } else {
+            // Patent Analysts / Attorneys: own clients unless Open access > Clients is on.
             \App\Support\DataAccess::scopeManagedClients($query, $user);
         }
 
@@ -378,6 +384,10 @@ class ClientController extends Controller
             return response()->json(['message' => 'You cannot move a client outside your assigned circle.'], 403);
         }
 
+        $claimed = array_key_exists('account_manager_id', $v)
+            && (int) $v['account_manager_id'] === (int) $user->id
+            && (int) $client->account_manager_id !== (int) $user->id;
+
         $v = $this->applyCountryRules($v, $client);
         $nationality = $v['nationality'];
         $hasGstin = array_key_exists('has_gstin', $v) ? (bool) $v['has_gstin'] : (bool) $client->has_gstin;
@@ -403,7 +413,7 @@ class ClientController extends Controller
             'action' => 'update',
             'subject_type' => 'Client',
             'subject_id' => $client->id,
-            'metadata' => array_keys($v),
+            'metadata' => $claimed ? [...array_keys($v), 'claimed' => true] : array_keys($v),
             'ip_address' => $request->ip(),
             'user_agent' => $request->userAgent(),
         ]);
@@ -865,9 +875,11 @@ class ClientController extends Controller
         if ($user->isClientRole() && ! $client->isVisibleToUser($user)) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
+        $this->authorize('view', $client);
 
         $projectsQuery = \App\Models\Project::with(['stages' => fn($q) => $q->orderBy('sequence_order')])
             ->where('client_id', $client->id)
+            ->when($user->seesOnlyOwnCases(), fn ($q) => $q->assignedTo($user->id))
             ->orderBy('created_at', 'desc');
 
         $projects = $projectsQuery->get()->map(function ($p) {

@@ -14,7 +14,7 @@ class DocketWorklistService
         $query = DocketDeadline::with(['project.client:id,client_code,company_name,legal_name', 'ipRecord:id,record_code,record_type,title,responsible_user_id,backup_user_id'])
             ->where('status', 'Open')->where('supersession_status', 'Current');
 
-        if (in_array($user->role, ['associate', 'paralegal'], true)) {
+        if ($user->seesOnlyOwnCases()) {
             $query->where(function ($scope) use ($user): void {
                 $scope->whereHas('project', fn ($project) => $project->assignedTo($user->id))
                     ->orWhereHas('ipRecord', fn ($record) => $record->where('responsible_user_id', $user->id)->orWhere('backup_user_id', $user->id));
