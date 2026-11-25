@@ -231,6 +231,178 @@ class ZohoMirrorSync
         }
     }
 
+    /** Payments / credit notes missing from Zoho's list beyond this many are not treated as deletions. */
+    public const PAYMENT_RECONCILE_MAX_REMOVALS = 40;
+
+    /**
+     * Customer payments and credit notes, checked against Zoho's own lists (a few list calls):
+     * - one Zoho has but the portal never downloaded (e.g. an advance applied to no invoice) is read and saved;
+     * - one whose amount, unused amount, date or status changed in Zoho is read again;
+     * - a payment settling more of an invoice than Zoho says was paid (a stale copy, e.g. re-entered in Zoho)
+     *   is read again;
+     * - one missing from Zoho's list is removed only when its detail read confirms Zoho deleted it.
+     * Detail reads are capped per run ($detailLimit); the rest follow on the next run. Every change flows to
+     * the register and the client ledger through the snapshot hooks.
+     *
+     * @return array{ok: bool, status: string, message: string, added: int, refreshed: int, removed: int}
+     */
+    public function reconcilePayments(int $detailLimit = 80): array
+    {
+        $none = ['added' => 0, 'refreshed' => 0, 'removed' => 0];
+        if (! $this->zoho->isConfigured()) {
+            return ['ok' => false, 'status' => 'unconfigured', 'message' => 'Zoho Books is not configured.'] + $none;
+        }
+        $scope = $this->zoho->scope();
+        $lock = Cache::lock('zoho_sync:' . $scope, 900);
+        if (! $lock->get()) {
+            return ['ok' => true, 'status' => 'busy', 'message' => 'A Zoho sync is running; payment check skipped.'] + $none;
+        }
+        $this->zoho->background = true;
+        $this->startedAt = microtime(true);
+        $passStart = now();
+        $counts = $none;
+        $reads = 0;
+        try {
+            foreach (['customerpayments', 'creditnotes'] as $resource) {
+                $idField = ZohoBooksService::RESOURCES[$resource][0];
+                $listed = [];
+                $page = 1;
+                do {
+                    $this->checkDuration();
+                    $data = $this->zoho->page($resource, $page);
+                    $more = (bool) $data['page_context']['has_more_page'];
+                    if ($more && $data[$resource] === []) {
+                        throw new RuntimeException('Zoho returned an empty page with more pages indicated; nothing was changed.');
+                    }
+                    foreach ($data[$resource] as $record) {
+                        $id = (string) ($record[$idField] ?? '');
+                        if ($id === '') {
+                            throw new RuntimeException('Zoho returned a record without an ID; nothing was changed.');
+                        }
+                        $listed[$id] = $record;
+                    }
+                    $page++;
+                } while ($more);
+
+                $live = ZohoSnapshot::where('scope', $scope)->where('resource', $resource)->get()->keyBy(fn ($s) => (string) $s->remote_id);
+
+                // New in Zoho, or changed since it was saved.
+                $toRead = [];
+                foreach ($listed as $id => $record) {
+                    $snapshot = $live[$id] ?? null;
+                    if (! $snapshot) {
+                        $toRead[$id] = 'added';
+                    } elseif ($this->paymentChanged($resource, $record, json_decode((string) ($snapshot->detail ?: $snapshot->summary), true) ?: [])) {
+                        $toRead[$id] = 'refreshed';
+                    }
+                }
+                if ($resource === 'customerpayments') {
+                    foreach ($this->overAppliedPayments() as $id) {
+                        if (isset($listed[$id])) {
+                            $toRead[$id] ??= 'refreshed';
+                        }
+                    }
+                }
+                foreach ($toRead as $id => $kind) {
+                    if ($reads >= $detailLimit) {
+                        break;
+                    }
+                    $this->checkDuration();
+                    $reads++;
+                    $record = $this->readDetail($resource, (string) $id, true, 'payment_check_detail_not_found');
+                    if ($record === null) {
+                        $counts['removed']++;
+                        continue;
+                    }
+                    DB::transaction(function () use ($resource, $record): void {
+                        $snapshot = $this->remember($resource, $record);
+                        if ($snapshot) {
+                            $this->saveDetail($snapshot, $record);
+                        }
+                    });
+                    $counts[$kind]++;
+                }
+
+                // Missing from Zoho's list: removed only when the detail read confirms the deletion.
+                $missing = $live->filter(fn ($s, $id) => ! isset($listed[$id]) && $s->created_at < $passStart)->keys()->all();
+                if (count($missing) > self::PAYMENT_RECONCILE_MAX_REMOVALS) {
+                    $message = count($missing) . " {$resource} are missing from Zoho's list; that is too many to be deletions, so none were removed.";
+                    Log::warning($message);
+                    app(OpsAlertService::class)->alert('Zoho payment check stopped', $message, 'zoho-payments-' . $resource, 360);
+                    continue;
+                }
+                foreach ($missing as $id) {
+                    if ($reads >= $detailLimit) {
+                        break;
+                    }
+                    $this->checkDuration();
+                    $reads++;
+                    $snapshot = $live[$id];
+                    $clients = app(\App\Services\RegisterPaymentsImporter::class)->clientsFor($snapshot,
+                        \App\Models\RegisterPayment::whereIn('zoho_payment_id', [(string) $id, "tds:{$id}", "cn:{$id}"])->pluck('patent_invoice_in_id')->all());
+                    if ($this->readDetail($resource, (string) $id, true, 'payment_check_missing_from_list') === null) {
+                        $counts['removed']++;
+                        // The deleted snapshot no longer names its customer: rebuild the ledgers it touched.
+                        DB::afterCommit(fn () => array_map(fn ($c) => app(\App\Services\ClientLedgerSync::class)->sync((int) $c), $clients));
+                    }
+                }
+            }
+            $message = "Zoho payment check: {$counts['added']} added, {$counts['refreshed']} refreshed, {$counts['removed']} removed"
+                . ($reads >= $detailLimit ? " (detail limit {$detailLimit} reached; the rest follow next run)" : '') . '.';
+
+            return ($counts['added'] + $counts['refreshed'] + $counts['removed'] > 0 ? $this->result('ok', $message) : ['ok' => true, 'status' => 'ok', 'message' => $message]) + $counts;
+        } catch (ZohoBudgetExhausted $e) {
+            return ['ok' => true, 'status' => 'paused', 'message' => $e->getMessage()] + $counts;
+        } catch (Throwable $e) {
+            report($e);
+
+            return ['ok' => false, 'status' => 'fail', 'message' => $e->getMessage()] + $counts;
+        } finally {
+            $this->zoho->background = false;
+            $lock->release();
+        }
+    }
+
+    /** Does Zoho's list row differ from the saved copy in a way that changes the ledger? */
+    private function paymentChanged(string $resource, array $listed, array $saved): bool
+    {
+        $fields = $resource === 'customerpayments' ? ['amount', 'unused_amount', 'date'] : ['total', 'balance', 'date', 'status'];
+        foreach ($fields as $field) {
+            if (! array_key_exists($field, $listed)) {
+                continue;
+            }
+            $a = $listed[$field];
+            $b = $saved[$field] ?? null;
+            if (is_numeric($a) || is_numeric($b)) {
+                if (abs((float) $a - (float) $b) > 0.009) {
+                    return true;
+                }
+            } elseif ((string) $a !== (string) $b) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Zoho payments recorded against an invoice for more than Zoho says the invoice has been paid:
+     * at least one of them is a stale copy.
+     *
+     * @return list<string>
+     */
+    private function overAppliedPayments(): array
+    {
+        $over = \App\Models\PatentInvoiceIn::query()->where('type', 'invoice')->whereNotNull('balance_due')
+            ->whereRaw('(SELECT COALESCE(SUM(rp.amount), 0) FROM register_payments rp WHERE rp.patent_invoice_in_id = patent_invoices_in.id AND rp.estimated = false)'
+                . ' > invoice_amount - balance_due - COALESCE(waived_amount, 0) + 0.5')
+            ->pluck('id');
+
+        return \App\Models\RegisterPayment::whereIn('patent_invoice_in_id', $over)->where('estimated', false)
+            ->pluck('zoho_payment_id')->map(fn ($id) => preg_replace('/^(tds|cn):/', '', (string) $id))
+            ->reject(fn ($id) => str_starts_with($id, 'portal:') || str_starts_with($id, 'balance:'))->unique()->values()->all();
+    }
+
     /** Calls of the nightly pool the spare pass must leave unused (hourly reconcile, add-ons, manual follow-up). */
     private const SPARE_CHECK_HEADROOM = 250;
 

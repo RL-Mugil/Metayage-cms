@@ -157,9 +157,12 @@ class ZohoBooksService
         $code = (int) ($response->json('code') ?? 0);
         // A generic 404 (or a PDF 404) is not proof that a financial record was deleted.
         if ($draft === null && ! isset($query['accept']) && in_array($response->status(), [400, 404], true)
-            && $code === 1002 && preg_match('~^/(invoices|estimates)/[^/]+$~', $path, $match)) {
-            $entity = $match[1] === 'invoices' ? 'Invoice' : 'Estimate';
-            $missingMessages = [$entity . ' does not exist', 'Resource does not exist'];
+            && $code === 1002 && preg_match('~^/(invoices|estimates|customerpayments|creditnotes)/[^/]+$~', $path, $match)) {
+            $entity = match ($match[1]) { 'invoices' => 'Invoice', 'estimates' => 'Estimate', 'customerpayments' => 'Payment', default => 'Credit Note' };
+            $missingMessages = [$entity . ' does not exist', 'The ' . strtolower($entity) . ' does not exist', 'Resource does not exist'];
+            if ($match[1] === 'creditnotes') {
+                $missingMessages[] = 'CreditNote does not exist';
+            }
             if ($match[1] === 'estimates') {
                 $missingMessages[] = 'Quote does not exist';
             }

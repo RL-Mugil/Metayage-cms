@@ -17,7 +17,7 @@ class ZohoRecordLifecycle
 
     public function delete(string $scope, string $resource, string $id, string $source): void
     {
-        if (! in_array($resource, ['invoices', 'estimates'], true)) {
+        if (! in_array($resource, ['invoices', 'estimates', 'customerpayments', 'creditnotes'], true)) {
             throw new \InvalidArgumentException('Unsupported deletion resource.');
         }
         DB::transaction(function () use ($scope, $resource, $id, $source) {
@@ -26,8 +26,8 @@ class ZohoRecordLifecycle
             }
             DB::table('zoho_record_states')->where(['scope' => $scope, 'resource' => $resource, 'remote_id' => $id])
                 ->update(['deleted_at' => now(), 'deletion_source' => $source]);
-            $record = ZohoInvoice::withoutGlobalScopes()->where('scope', $scope)
-                ->where('zoho_type', $resource === 'invoices' ? 'invoice' : 'quote')->where('zoho_id', $id)->lockForUpdate()->first();
+            $record = in_array($resource, ['invoices', 'estimates'], true) ? ZohoInvoice::withoutGlobalScopes()->where('scope', $scope)
+                ->where('zoho_type', $resource === 'invoices' ? 'invoice' : 'quote')->where('zoho_id', $id)->lockForUpdate()->first() : null;
             if ($record) {
                 $record->delete();
                 self::invalidate($record);
@@ -40,7 +40,7 @@ class ZohoRecordLifecycle
             if ($resource === 'estimates') {
                 ZohoQuoteExport::where('scope', $scope)->where('estimate_id', $id)->update(['state' => 'deleted']);
             }
-            AuditLog::create(['user_id' => auth()->id(), 'action' => 'zoho_remote_deleted', 'subject_type' => 'ZohoInvoice', 'subject_id' => $record?->id,
+            AuditLog::create(['user_id' => auth()->id(), 'action' => 'zoho_remote_deleted', 'subject_type' => $record ? 'ZohoInvoice' : 'ZohoSnapshot', 'subject_id' => $record?->id ?? $snapshot?->id,
                 'metadata' => ['scope' => $scope, 'resource' => $resource, 'remote_id' => $id, 'source' => $source],
                 'ip_address' => request()->ip(), 'user_agent' => request()->userAgent()]);
         });
