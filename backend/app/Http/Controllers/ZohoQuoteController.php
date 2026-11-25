@@ -17,9 +17,11 @@ class ZohoQuoteController extends Controller
 {
     public function preview(Request $request, string $kind, int $id, ZohoBooksService $zoho, ZohoQuoteDraft $drafts, ZohoMirrorSync $mirror): ZohoSyncResource
     {
-        // Accounts sends; anyone with finance access may preview to ask Accounts for approval.
+        // Accounts sends; staff who work on their own clients' quotes may preview to ask Accounts for approval.
         $canSend = $request->user()->can('create', ZohoQuoteExport::class);
-        abort_unless($canSend || \App\Support\DataAccess::canOpenFinance($request->user()), 403);
+        if (! $canSend) {
+            $this->authorizeRequester($request->user(), $drafts->source($kind, $id));
+        }
         $input = $request->validate(['search' => 'nullable|string|max:100', 'customer_id' => ['nullable', 'string', 'regex:/^[0-9]{1,80}$/'], 'lookup' => 'nullable|boolean']);
         if (! $canSend) {
             $input['lookup'] = false;   // a Zoho customer lookup spends API calls: Accounts only
@@ -77,9 +79,11 @@ class ZohoQuoteController extends Controller
     public function requestApproval(Request $request, string $kind, int $id, ZohoBooksService $zoho, ZohoQuoteDraft $drafts): \Illuminate\Http\JsonResponse
     {
         $user = $request->user();
-        abort_unless(\App\Support\DataAccess::canOpenFinance($user), 403, 'You do not have access to finance.');
-        $input = $request->validate(['customer_id' => ['required', 'string', 'regex:/^[0-9]{1,80}$/'], 'version' => 'required|string|size:64', 'note' => 'nullable|string|max:500']);
         $quote = $drafts->source($kind, $id);
+        if (! $user->can('create', ZohoQuoteExport::class)) {
+            $this->authorizeRequester($user, $quote);
+        }
+        $input = $request->validate(['customer_id' => ['required', 'string', 'regex:/^[0-9]{1,80}$/'], 'version' => 'required|string|size:64', 'note' => 'nullable|string|max:500']);
         $draft = $drafts->build($quote, $zoho->scope(), $input['customer_id']);
         abort_unless(hash_equals($draft['version'], $input['version']), 409, 'The quotation changed. Review the refreshed draft first.');
         $approval = \Illuminate\Support\Facades\DB::transaction(function () use ($kind, $id, $input, $user) {
@@ -96,6 +100,21 @@ class ZohoQuoteController extends Controller
             "{$user->name} asks to send ".($quote->invoice_uin ?? $quote->quote_code ?? "quote #{$id}").' to Zoho.', '/financial?tab=controls');
 
         return response()->json($approval, 201);
+    }
+
+    /** Someone preparing quotes (not Accounts) may act only on quotes of clients in their own finance scope. */
+    private function authorizeRequester(\App\Models\User $user, $quote): void
+    {
+        $roleOk = in_array($user->role, ['manager', 'associate', 'galvanizer', 'director'], true) || \App\Support\DataAccess::onFinanceList($user);
+        abort_unless($roleOk && \App\Support\DataAccess::canOpenFinance($user), 403);
+        if ($quote instanceof \App\Models\PatentInvoiceIn) {
+            $scoped = \App\Models\PatentInvoiceIn::query()->whereKey($quote->id);
+            \App\Support\DataAccess::scopeFinance($scoped, $user);
+            $inScope = $scoped->exists();
+        } else {
+            $inScope = $quote->client && $user->can('view', $quote->client);
+        }
+        abort_unless($inScope, 403);
     }
 
     public function deleteInZoho(Request $request, string $kind, int $id, ZohoQuoteWriter $writer): ZohoSyncResource
