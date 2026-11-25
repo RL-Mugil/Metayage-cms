@@ -55,7 +55,7 @@ class McpToolsTest extends TestCase
         return User::create(['name' => ucfirst($role).' '.$email, 'email' => $email, 'password' => bcrypt('x'), 'role' => $role, 'status' => 'Active']);
     }
 
-    private function call(User $user, string $tool, array $args = []): array
+    private function tool(User $user, string $tool, array $args = []): array
     {
         return app(ToolRegistry::class)->call($user, $tool, $args, 'mcp');
     }
@@ -78,7 +78,7 @@ class McpToolsTest extends TestCase
 
     public function test_generate_report_files_links_and_scope(): void
     {
-        $res = $this->call($this->analyst, 'generate_report', ['type' => 'matter-status', 'format' => 'csv']);
+        $res = $this->tool($this->analyst, 'generate_report', ['type' => 'matter-status', 'format' => 'csv']);
         $this->assertArrayNotHasKey('error', $res, json_encode($res));
         $this->assertSame('UNSIGNED DRAFT', $res['status']);
         $export = ReportExport::findOrFail($res['export_id']);
@@ -93,7 +93,7 @@ class McpToolsTest extends TestCase
         $this->assertDatabaseHas('audit_logs', ['action' => 'claude_file_download', 'user_id' => $this->analyst->id]);
 
         foreach (['pdf' => '%PDF', 'xlsx' => 'PK'] as $format => $magic) {
-            $r = $this->call($this->admin, 'generate_report', ['type' => 'matter-status', 'format' => $format]);
+            $r = $this->tool($this->admin, 'generate_report', ['type' => 'matter-status', 'format' => $format]);
             $this->assertStringStartsWith($magic, (string) $this->download($r['download_url'])->assertOk()->getContent());
         }
 
@@ -106,20 +106,20 @@ class McpToolsTest extends TestCase
     public function test_finance_reports_need_finance_access(): void
     {
         $paralegal = $this->user('paralegal', 'pl@tools.test');
-        $this->assertArrayHasKey('error', $this->call($paralegal, 'generate_report', ['type' => 'payment-collection', 'format' => 'pdf']));
+        $this->assertArrayHasKey('error', $this->tool($paralegal, 'generate_report', ['type' => 'payment-collection', 'format' => 'pdf']));
         $this->assertArrayNotHasKey('pending_payments', app(ToolRegistry::class)->for($paralegal));
-        $types = array_column($this->call($paralegal, 'list_reports')['reports'], 'type');
+        $types = array_column($this->tool($paralegal, 'list_reports')['reports'], 'type');
         $this->assertNotContains('payment-collection', $types);
         $this->assertContains('matter-status', $types);
     }
 
     public function test_sign_report_with_the_signatory_pin_only(): void
     {
-        $res = $this->call($this->analyst, 'generate_report', ['type' => 'matter-status', 'format' => 'pdf']);
-        $bad = $this->call($this->analyst, 'sign_report', ['export_id' => $res['export_id'], 'pin' => '1111']);
+        $res = $this->tool($this->analyst, 'generate_report', ['type' => 'matter-status', 'format' => 'pdf']);
+        $bad = $this->tool($this->analyst, 'sign_report', ['export_id' => $res['export_id'], 'pin' => '1111']);
         $this->assertStringContainsString('not right', $bad['error']);
 
-        $ok = $this->call($this->analyst, 'sign_report', ['export_id' => $res['export_id'], 'pin' => '2580']);
+        $ok = $this->tool($this->analyst, 'sign_report', ['export_id' => $res['export_id'], 'pin' => '2580']);
         $this->assertTrue($ok['signed'], json_encode($ok));
         $this->assertSame('Mugilvannan L', $ok['signed_by']);
         $this->assertSame('AI Integration Engineer', $ok['designation']);
@@ -133,15 +133,15 @@ class McpToolsTest extends TestCase
         $this->assertFalse(AuditLog::where('metadata', 'like', '%1111%')->exists());
 
         // 5 wrong PINs lock signing.
-        $other = $this->call($this->analyst, 'generate_report', ['type' => 'matter-status', 'format' => 'csv']);
+        $other = $this->tool($this->analyst, 'generate_report', ['type' => 'matter-status', 'format' => 'csv']);
         for ($i = 0; $i < 5; $i++) {
-            $this->call($this->analyst, 'sign_report', ['export_id' => $other['export_id'], 'pin' => '0000']);
+            $this->tool($this->analyst, 'sign_report', ['export_id' => $other['export_id'], 'pin' => '0000']);
         }
-        $this->assertStringContainsString('locked', $this->call($this->analyst, 'sign_report', ['export_id' => $other['export_id'], 'pin' => '2580'])['error']);
+        $this->assertStringContainsString('locked', $this->tool($this->analyst, 'sign_report', ['export_id' => $other['export_id'], 'pin' => '2580'])['error']);
 
         // Someone else's export is not visible.
         $stranger = $this->user('associate', 'st@tools.test');
-        $this->assertArrayHasKey('error', $this->call($stranger, 'sign_report', ['export_id' => $other['export_id'], 'pin' => '2580']));
+        $this->assertArrayHasKey('error', $this->tool($stranger, 'sign_report', ['export_id' => $other['export_id'], 'pin' => '2580']));
     }
 
     public function test_finance_tools_are_scoped(): void
@@ -149,48 +149,48 @@ class McpToolsTest extends TestCase
         $this->invoice('971M001INPRV', 1000, now()->subDays(10)->toDateString());
         $this->invoice('971M002INPRV', 5000, now()->subDays(40)->toDateString());
 
-        $mine = $this->call($this->analyst, 'pending_payments');
+        $mine = $this->tool($this->analyst, 'pending_payments');
         $this->assertSame(1, $mine['pending_count']);
         $this->assertSame('971M001INPRV-INV', $mine['invoices'][0]['invoice']);
         $this->assertSame(10, $mine['invoices'][0]['days_overdue']);
 
-        $all = $this->call($this->admin, 'pending_payments', ['overdue_only' => true]);
+        $all = $this->tool($this->admin, 'pending_payments', ['overdue_only' => true]);
         $this->assertSame(2, $all['pending_count']);
         $this->assertSame('971M002INPRV-INV', $all['invoices'][0]['invoice']);      // most overdue first
         $this->assertSame(6000.0, (float) $all['totals_by_currency']['INR']);
 
-        $statement = $this->call($this->analyst, 'client_statement', ['client_code' => '971M']);
+        $statement = $this->tool($this->analyst, 'client_statement', ['client_code' => '971M']);
         $this->assertCount(1, $statement['invoices']);
         foreach (['collections', 'unbilled_and_quoted', 'revenue_forecast', 'revenue_breakdown', 'period_comparison'] as $tool) {
-            $this->assertArrayNotHasKey('error', $this->call($this->admin, $tool), $tool);
+            $this->assertArrayNotHasKey('error', $this->tool($this->admin, $tool), $tool);
         }
     }
 
     public function test_case_team_and_hr_tools(): void
     {
         $case = Project::where('docket_number', '971M001INPRV')->first();
-        $this->assertArrayNotHasKey('error', $this->call($this->analyst, 'case_timeline', ['case_id' => $case->id]));
+        $this->assertArrayNotHasKey('error', $this->tool($this->analyst, 'case_timeline', ['case_id' => $case->id]));
         $other = Project::where('docket_number', '971M002INPRV')->first();
-        $this->assertArrayHasKey('error', $this->call($this->analyst, 'case_timeline', ['case_id' => $other->id]));
-        $this->assertArrayHasKey('error', $this->call($this->analyst, 'case_discussions', ['case_id' => $other->id]));
+        $this->assertArrayHasKey('error', $this->tool($this->analyst, 'case_timeline', ['case_id' => $other->id]));
+        $this->assertArrayHasKey('error', $this->tool($this->analyst, 'case_discussions', ['case_id' => $other->id]));
 
-        $this->assertSame(1, $this->call($this->analyst, 'portfolio_summary')['totals']['total']);
-        $this->assertSame(2, $this->call($this->admin, 'portfolio_summary')['totals']['total']);
-        $this->assertSame(1, $this->call($this->analyst, 'dashboard_kpis')['open_cases']);
-        $this->assertCount(1, $this->call($this->analyst, 'my_day', ['days' => 7])['deadlines_next_7_days_on_my_cases']);
+        $this->assertSame(1, $this->tool($this->analyst, 'portfolio_summary')['totals']['total']);
+        $this->assertSame(2, $this->tool($this->admin, 'portfolio_summary')['totals']['total']);
+        $this->assertSame(1, $this->tool($this->analyst, 'dashboard_kpis')['open_cases']);
+        $this->assertCount(1, $this->tool($this->analyst, 'my_day', ['days' => 7])['deadlines_next_7_days_on_my_cases']);
 
-        $staff = $this->call($this->analyst, 'staff_directory', ['query' => 'Mugil'])['staff'];
+        $staff = $this->tool($this->analyst, 'staff_directory', ['query' => 'Mugil'])['staff'];
         $this->assertSame('Mugilvannan L', $staff[0]['name']);
         $this->assertArrayNotHasKey('phone', $staff[0]);
         $this->assertArrayNotHasKey('salary', $staff[0]);
-        $this->assertArrayHasKey('documents', $this->call($this->analyst, 'search_documents'));
-        $this->assertArrayHasKey('rows', $this->call($this->analyst, 'search_tracker'));
+        $this->assertArrayHasKey('documents', $this->tool($this->analyst, 'search_documents'));
+        $this->assertArrayHasKey('rows', $this->tool($this->analyst, 'search_tracker'));
 
         // My HR: own record only (the analyst has none; the admin is the signatory employee).
-        $this->assertArrayHasKey('error', $this->call($this->analyst, 'my_hr'));
-        $this->assertSame('Mugilvannan L', $this->call($this->admin, 'my_hr')['employee']);
+        $this->assertArrayHasKey('error', $this->tool($this->analyst, 'my_hr'));
+        $this->assertSame('Mugilvannan L', $this->tool($this->admin, 'my_hr')['employee']);
 
-        $cal = $this->call($this->analyst, 'deadline_calendar', ['days' => 30]);
+        $cal = $this->tool($this->analyst, 'deadline_calendar', ['days' => 30]);
         $ics = (string) $this->download($cal['download_url'])->assertOk()->getContent();
         $this->assertStringContainsString('BEGIN:VCALENDAR', $ics);
         $this->assertStringContainsString('971M001INPRV', $ics);
