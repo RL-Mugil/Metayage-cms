@@ -221,6 +221,7 @@ class ZohoExportImportTest extends TestCase
 
     public function test_a_full_export_removes_records_zoho_no_longer_has_only_when_plausible(): void
     {
+        $this->withoutMiddleware(\Illuminate\Routing\Middleware\ThrottleRequests::class);   // many uploads in one test
         $scope = app(\App\Services\ZohoBooksService::class)->scope();
         $rows = [];
         foreach (range(1, 10) as $n) {
