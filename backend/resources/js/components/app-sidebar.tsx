@@ -6,7 +6,7 @@ import {
   LayoutDashboard, Users, Briefcase, GitBranch, ListChecks,
   BellRing, UserCircle2, FolderLock, MessagesSquare, CheckCircle2,
   Bell, BarChart3, FileBarChart2, Wallet, Sparkles, Building2, Star, Layers,
-  CalendarDays, Plug, Settings, IdCard, Scale, LogOut, TableProperties, ShieldCheck, Award, LayoutGrid, Trash2, CreditCard,
+  CalendarDays, Plug, Settings, IdCard, Scale, LogOut, TableProperties, ShieldCheck, Award, LayoutGrid, Trash2, CreditCard, Banknote,
 } from "lucide-react";
 import {
   Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel,
@@ -146,6 +146,7 @@ const groups = [
     items: [
       { to: "/financial", title: "Financial Suite", icon: Wallet, finance: true },
       { to: "/pending-payments", title: "Pending Payments", icon: CreditCard, finance: true },
+      { to: "/payments-received", title: "Payments Received", icon: Banknote, finance: true },
       { to: "/analytics", title: "Financial Analytics", icon: BarChart3, finance: true },
       { to: "/reports", title: "Reports", icon: FileBarChart2 },
     ],

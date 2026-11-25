@@ -54,14 +54,24 @@ class ClientStatement
      */
     public function openQuotes(User $user, int $clientId): array
     {
-        return app(FinanceFigures::class)->quotedNotInvoiced($user, $clientId)
-            ->orderByRaw('invoice_date ASC NULLS LAST')->get()
-            ->map(fn (PatentInvoiceIn $q) => [
+        $quotes = app(FinanceFigures::class)->quotedNotInvoiced($user, $clientId)->orderByRaw('invoice_date ASC NULLS LAST')->get();
+        $links = \App\Models\AdvanceQuoteLink::whereIn('patent_invoice_in_id', $quotes->pluck('id'))->get()->groupBy('patent_invoice_in_id');
+
+        return $quotes->map(function (PatentInvoiceIn $q) use ($links) {
+            $amount = round((float) ($q->total_bcy ?? $q->invoice_amount), 2);
+            $mine = $links[$q->id] ?? collect();
+            $advance = round((float) $mine->sum('amount'), 2);
+
+            return [
                 'id' => $q->id, 'date' => $q->invoice_date ? $q->invoice_date->toDateString() : $q->created_at?->toDateString(),
                 'number' => $q->invoice_uin ?: $q->zoho_number ?: "Q-{$q->id}", 'status' => $q->status,
-                'amount' => round((float) ($q->total_bcy ?? $q->invoice_amount), 2), 'currency' => $q->currency ?: 'INR',
-                'title' => $q->invention_title,
-            ])->values()->all();
+                'amount' => $amount, 'currency' => $q->currency ?: 'INR', 'title' => $q->invention_title,
+                // Advance received and earmarked for this quote (INR), and what is still to pay.
+                'advance_linked' => $advance,
+                'advance_payments' => $mine->pluck('payment_number')->filter()->unique()->values()->all(),
+                'net_due' => round(max(0, $amount - $advance), 2),
+            ];
+        })->values()->all();
     }
 
     /** @return array{bytes: string, name: string, mime: string} */
@@ -157,12 +167,12 @@ class ClientStatement
         if ($internal) {
             $sheet->setCellValue("A{$r}", 'Proforma quotes sent, not invoiced (not in the balance)')->getStyle("A{$r}")->getFont()->setBold(true);
             $r++;
-            $sheet->fromArray(['Date', 'Quote', 'Status', 'Amount', 'Title'], null, "A{$r}");
-            $sheet->getStyle("A{$r}:E{$r}")->getFont()->setBold(true);
+            $sheet->fromArray(['Date', 'Quote', 'Status', 'Amount', 'Advance earmarked', 'Net due', 'Title'], null, "A{$r}");
+            $sheet->getStyle("A{$r}:G{$r}")->getFont()->setBold(true);
             $r++;
-            foreach ($quotes ?: [['date' => '', 'number' => 'None', 'status' => '', 'amount' => null, 'title' => '']] as $q) {
-                $sheet->fromArray([$q['date'], $q['number'], $q['status'], $q['amount'], $q['title']], null, "A{$r}", true);
-                $sheet->getStyle("D{$r}")->getNumberFormat()->setFormatCode('#,##0.00');
+            foreach ($quotes ?: [['date' => '', 'number' => 'None', 'status' => '', 'amount' => null, 'advance_linked' => null, 'net_due' => null, 'title' => '']] as $q) {
+                $sheet->fromArray([$q['date'], $q['number'], $q['status'], $q['amount'], $q['advance_linked'] ?: null, $q['net_due'], $q['title']], null, "A{$r}", true);
+                $sheet->getStyle("D{$r}:F{$r}")->getNumberFormat()->setFormatCode('#,##0.00');
                 $r++;
             }
             $r++;

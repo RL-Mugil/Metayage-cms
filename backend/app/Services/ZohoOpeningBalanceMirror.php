@@ -10,6 +10,16 @@ use Illuminate\Support\Facades\DB;
 
 class ZohoOpeningBalanceMirror
 {
+    public const DEFAULT_OPENING_DATE = '2026-03-31';
+
+    /** The day the books moved to Zoho: opening balances are dated on it. */
+    public static function openingDate(): string
+    {
+        $value = DB::table('system_settings')->where('key', 'zoho_opening_balance_date')->value('value');
+
+        return $value ? Carbon::parse($value)->toDateString() : self::DEFAULT_OPENING_DATE;
+    }
+
     /** Mirror customer opening balances returned with a hydrated Zoho contact. */
     public function save(string $scope, array $contact): void
     {
@@ -41,7 +51,9 @@ class ZohoOpeningBalanceMirror
             }
             $location = (string) ($row['location_id'] ?? 'default');
             $dateValue = $row['date'] ?? $row['opening_balance_date'] ?? null;
-            $date = $dateValue ? Carbon::parse($dateValue)->toDateString() : now()->toDateString();
+            // Zoho sends no date: an opening balance is what was owed when the books moved to Zoho,
+            // so it is dated on that day (system setting, 31-03-2026), never the day it was synced.
+            $date = $dateValue ? Carbon::parse($dateValue)->toDateString() : self::openingDate();
             $amount = (float) ($row['opening_balance_amount'] ?? $row['amount'] ?? $row['bcy_amount'] ?? 0);
             $balance = $residualBalance === null ? $amount : min($amount, $residualBalance);
             if ($residualBalance !== null) {

@@ -550,6 +550,11 @@ class RenewalActionController extends Controller
         $balanceSql = 'COALESCE(balance_due, invoice_amount)';
         $totals = (clone $query)->reorder()->select('currency')->selectRaw("COALESCE(SUM({$balanceSql}), 0) AS amount")->groupBy('currency')
             ->pluck('amount', 'currency')->map(fn ($amount) => round((float) $amount, 2));
+        // Advances earmarked for quotes (money already received): the due list shows the net.
+        $advanceOnQuotes = round((float) \App\Models\AdvanceQuoteLink::whereIn('patent_invoice_in_id', (clone $query)->reorder()->where('type', 'quote')->select('id'))->sum('amount'), 2);
+        if ($advanceOnQuotes > 0) {
+            $totals['INR'] = round(max(0, (float) ($totals['INR'] ?? 0) - $advanceOnQuotes), 2);
+        }
         $overdue = (clone $query)->whereNotNull('due_date')->where('due_date', '<', now()->toDateString())->count();
         $staff = ! $user->isClientRole();
         $scoped = fn () => PatentInvoiceIn::query()->when($staff, fn ($q) => \App\Support\DataAccess::scopeFinance($q, $user));
@@ -557,8 +562,18 @@ class RenewalActionController extends Controller
         // Most overdue first, then the newest.
         $page = $query->orderByRaw('due_date ASC NULLS LAST')->orderByDesc('invoice_date')->orderByDesc('id')
             ->paginate(min((int) $request->get('per_page', 25), 100));
-        $page->getCollection()->transform(function (PatentInvoiceIn $row) use ($today) {
+        $links = \App\Models\AdvanceQuoteLink::whereIn('patent_invoice_in_id', $page->getCollection()->where('type', 'quote')->pluck('id'))
+            ->get()->groupBy('patent_invoice_in_id');
+        $page->getCollection()->transform(function (PatentInvoiceIn $row) use ($today, $links) {
             $row->setAttribute('balance', (float) ($row->balance_due ?? $row->invoice_amount));
+            if ($row->type === 'quote' && isset($links[$row->id])) {
+                // Part of an advance already received is earmarked for this quote (INR).
+                $advance = round((float) $links[$row->id]->sum('amount'), 2);
+                $rate = (float) ($row->exchange_rate ?? 1) ?: 1.0;
+                $row->setAttribute('advance_linked', $advance);
+                $row->setAttribute('advance_payments', $links[$row->id]->pluck('payment_number')->filter()->unique()->values());
+                $row->setAttribute('net_due', round(max(0, (float) $row->getAttribute('balance') - $advance / $rate), 2));
+            }
             $row->setAttribute('days_overdue', $row->due_date && $row->due_date->lt($today) ? (int) $row->due_date->diffInDays($today) : 0);
             if ($row->isFromZoho()) {
                 // Internal fees never go to the client side.
@@ -571,6 +586,7 @@ class RenewalActionController extends Controller
         return response()->json(array_merge($page->toArray(), [
             'pending_totals' => $totals,
             'pending_count' => $page->total(),
+            'advance_on_quotes' => $advanceOnQuotes,
             'overdue_count' => $overdue,
             // Staff only: waivers to decide, settlements not yet in Zoho, waived this year, clients for the filter.
             'waivers_pending' => $staff ? $scoped()->where('settlement', 'waiver_requested')->count() : 0,

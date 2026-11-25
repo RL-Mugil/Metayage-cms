@@ -41,6 +41,10 @@ interface Row {
   project?: { id: number; docket_number: string; project_name: string } | null;
   client?: { id: number; company_name?: string; legal_name?: string; client_code?: string; contact_name?: string; contact_email?: string; phone?: string } | null;
   proof_document?: { id: number; file_name: string; storage_path: string } | null;
+  /** Quotes: part of an advance already received, earmarked for this quote (INR), and what is left to pay. */
+  advance_linked?: number;
+  advance_payments?: string[];
+  net_due?: number;
 }
 
 const AGES = [
@@ -246,6 +250,11 @@ export default function PendingPayments() {
                       <td className="whitespace-nowrap px-3 py-2 text-right">
                         <div className="font-semibold">{money(balance, r.currency)}</div>
                         {balance < Number(r.invoice_amount) && <div className="text-[10px] text-muted-foreground">of {money(r.invoice_amount, r.currency)}</div>}
+                        {r.advance_linked ? (
+                          <div className="text-[10px] text-green-600" title={`Advance received${r.advance_payments?.length ? ` (${r.advance_payments.join(", ")})` : ""}, earmarked for this quote`}>
+                            − advance {money(r.advance_linked, "INR")} · net {money(r.net_due ?? 0, r.currency)}
+                          </div>
+                        ) : null}
                       </td>
                       <td className="max-w-[240px] px-3 py-2">
                         <div className="flex flex-wrap gap-1">

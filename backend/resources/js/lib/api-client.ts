@@ -725,6 +725,18 @@ export const api = {
     return this.request(`/projects/${projectId}/docket/application`, { method: 'PATCH', body: JSON.stringify(data) })
   },
   // ── Renewal approve → invoice → proof → confirm loop (PatentInvoiceIn-backed) ──
+  async getPaymentsReceived(params?: URLSearchParams): Promise<any> {
+    return this.request(`/payments-received${params ? `?${params.toString()}` : ''}`)
+  },
+  async getAdvanceQuotes(clientId: number): Promise<{ id: number; number: string; date: string | null; status: string; amount: number; advance_linked: number; net_due: number; title: string | null }[]> {
+    return this.request(`/payments-received/quotes?client_id=${clientId}`)
+  },
+  async linkAdvanceToQuote(paymentId: string, data: { quote_id: number; amount: number; note?: string }): Promise<unknown> {
+    return this.request(`/payments-received/${encodeURIComponent(paymentId)}/links`, { method: 'POST', body: JSON.stringify(data) })
+  },
+  async unlinkAdvance(linkId: number): Promise<unknown> {
+    return this.request(`/advance-links/${linkId}`, { method: 'DELETE' })
+  },
   async getPendingPayments(params?: URLSearchParams): Promise<any> {
     const q = params ? `?${params.toString()}` : ''
     return this.request(`/pending-payments${q}`)

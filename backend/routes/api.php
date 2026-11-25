@@ -224,6 +224,11 @@ Route::middleware(['auth:sanctum', 'firm.context', 'throttle:120,1'])->group(fun
     Route::post('/pending-payments/{id}/waiver', [\App\Http\Controllers\SettlementController::class, 'requestWaiver']);
     Route::post('/pending-payments/{id}/waiver/decision', [\App\Http\Controllers\SettlementController::class, 'decideWaiver']);
     Route::post('/pending-payments/{id}/zoho-retry', [\App\Http\Controllers\SettlementController::class, 'retryZoho']);
+    // Payments received (one row per payment) and advances earmarked for proforma quotes.
+    Route::get('/payments-received', [\App\Http\Controllers\PaymentsReceivedController::class, 'index'])->middleware('throttle:60,1');
+    Route::get('/payments-received/quotes', [\App\Http\Controllers\PaymentsReceivedController::class, 'quotes']);
+    Route::post('/payments-received/{paymentId}/links', [\App\Http\Controllers\PaymentsReceivedController::class, 'link']);
+    Route::delete('/advance-links/{id}', [\App\Http\Controllers\PaymentsReceivedController::class, 'unlink']);
 
     // Inventor role (Phase 3) — staff manage a case's inventors here.
     Route::get('/inventors', [\App\Http\Controllers\InventorController::class, 'index']);

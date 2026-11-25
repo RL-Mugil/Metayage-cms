@@ -10,6 +10,7 @@ const PAGES: { label: string; url: string; icon: React.ComponentType<{ className
   { label: "Dashboard", url: "/", icon: LayoutDashboard, staff: true, client: true },
   { label: "Patent Portfolio", url: "/patent-portfolio", icon: Briefcase, staff: true, client: true },
   { label: "Pending Payments", url: "/pending-payments", icon: Wallet, staff: true, client: true },
+  { label: "Payments Received", url: "/payments-received", icon: Wallet, staff: true },
   { label: "Cases", url: "/projects", icon: FileText, staff: true },
   { label: "Clients", url: "/clients", icon: Users, staff: true },
   { label: "Financial Suite", url: "/financial", icon: Receipt, staff: true },

@@ -27,7 +27,7 @@ interface LedgerLine {
   document_reference: string | null; debit: number | string; credit: number | string; tds: number | string;
   balance: number | string | null; notes?: string | null; quote?: boolean;
 }
-interface OpenQuote { id: number; date: string | null; number: string; status: string; amount: number; title: string | null }
+interface OpenQuote { id: number; date: string | null; number: string; status: string; amount: number; title: string | null; advance_linked?: number; advance_payments?: string[]; net_due?: number }
 interface LedgerSummary { billed: number; received: number; tds: number; credit_notes: number; waived: number; advance: number; balance: number }
 
 const TYPE_BADGE: Record<string, string> = {
@@ -337,7 +337,8 @@ export function ClientDetailPanel({ clientId, onClose }: Props) {
                   // Proforma quotes are listed in date order but never change the balance.
                   for (const q of quotes) {
                     lines.push({ id: `q-${q.id}`, transaction_date: q.date, document_type: "Quote", document_reference: q.number,
-                      debit: q.amount, credit: 0, tds: 0, balance: null, notes: q.title, quote: true });
+                      debit: q.amount, credit: 0, tds: 0, balance: null, quote: true,
+                      notes: q.advance_linked ? `Advance ${inr(q.advance_linked)} earmarked (${(q.advance_payments ?? []).join(", ")}) · net due ${inr(q.net_due ?? 0)}` : q.title });
                   }
                   lines.sort((a, b) => String(a.transaction_date ?? "").slice(0, 10).localeCompare(String(b.transaction_date ?? "").slice(0, 10)));
                 }
@@ -420,7 +421,7 @@ export function ClientDetailPanel({ clientId, onClose }: Props) {
                                 {Number(l.tds) > 0 ? inr(Number(l.tds)) : "—"}
                               </td>
                               <td className={`py-2.5 text-right font-mono font-semibold ${l.balance !== null && Number(l.balance) < -0.009 ? "text-green-600" : ""}`}>
-                                {l.quote ? <span className="text-[10px] font-normal text-muted-foreground">not in balance</span> : balanceText(Number(l.balance))}
+                                {l.quote ? <span className="text-[10px] font-normal text-muted-foreground">{l.notes?.startsWith("Advance") ? <span className="text-green-600">{l.notes}</span> : "not in balance"}</span> : balanceText(Number(l.balance))}
                               </td>
                             </tr>
                           ))}

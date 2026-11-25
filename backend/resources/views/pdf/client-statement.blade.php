@@ -87,11 +87,11 @@
 @if ($internal)
   <h2>Proforma quotes sent, not invoiced (not in the balance)</h2>
   <table class="data">
-    <tr><th>Date</th><th>Quote</th><th>Status</th><th class="r">Amount</th><th>Title</th></tr>
+    <tr><th>Date</th><th>Quote</th><th>Status</th><th class="r">Amount</th><th class="r">Advance earmarked</th><th class="r">Net due</th><th>Title</th></tr>
     @forelse ($quotes as $q)
-      <tr><td>{{ $q['date'] }}</td><td>{{ $q['number'] }}</td><td>{{ $q['status'] }}</td><td class="r">{{ number_format($q['amount'], 2) }}</td><td>{{ $q['title'] }}</td></tr>
+      <tr><td>{{ $q['date'] }}</td><td>{{ $q['number'] }}</td><td>{{ $q['status'] }}</td><td class="r">{{ number_format($q['amount'], 2) }}</td><td class="r adv">{{ $q['advance_linked'] > 0 ? number_format($q['advance_linked'], 2).' ('.implode(', ', $q['advance_payments']).')' : '—' }}</td><td class="r">{{ number_format($q['net_due'], 2) }}</td><td>{{ $q['title'] }}</td></tr>
     @empty
-      <tr><td colspan="5" class="muted">No open quotes.</td></tr>
+      <tr><td colspan="7" class="muted">No open quotes.</td></tr>
     @endforelse
   </table>
 @endif
