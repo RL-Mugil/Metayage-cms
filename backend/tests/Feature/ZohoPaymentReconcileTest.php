@@ -54,8 +54,12 @@ class ZohoPaymentReconcileTest extends TestCase
         $this->assertSame(2, RegisterPayment::where('kind', 'cash')->count());   // the invoice looks paid twice
 
         $advance = $this->payment('103', 'P600', 5000, 5000, []);
-        Http::fake(function ($request) use ($advance) {
+        $kept = $this->payment('102', 'P487', 100000, 0, $applied);
+        Http::fake(function ($request) use ($advance, $kept) {
             $url = $request->url();
+            if (str_contains($url, '/customerpayments/102?')) {   // re-read: it settles an invoice Zoho shows paid once
+                return Http::response(['payment' => $kept]);
+            }
             if (str_contains($url, '/customerpayments/101?')) {
                 return Http::response(['code' => 1002, 'message' => 'Resource does not exist.'], 404);
             }
@@ -79,6 +83,7 @@ class ZohoPaymentReconcileTest extends TestCase
 
         $this->assertTrue($result['ok'], $result['message']);
         $this->assertSame(1, $result['added']);
+        $this->assertSame(1, $result['refreshed']);
         $this->assertSame(1, $result['removed']);
         $this->assertSoftDeleted('zoho_snapshots', ['resource' => 'customerpayments', 'remote_id' => '101']);
         $this->assertSame(['P487'], RegisterPayment::where('kind', 'cash')->pluck('payment_number')->all());
