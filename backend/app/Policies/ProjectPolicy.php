@@ -52,7 +52,7 @@ class ProjectPolicy
         if ($user->role === 'manager' && $project->assigned_manager_id === $user->id) return true;
         // Case workers (Patent Analysts, paralegals) edit and move the stages of cases
         // they created or are assigned to (PR, PCM, SCM, attorney, or a task).
-        if (in_array($user->role, ['associate', 'paralegal'], true)) return $project->isAssignedTo($user->id);
+        if (in_array($user->role, ['associate', 'paralegal'], true) && $project->isAssignedTo($user->id)) return true;
         // Open access (Settings > System): while Cases is on, Patent Analysts / Attorneys edit any case (e.g. to set themselves PCM).
         return \App\Support\DataAccess::casesOpenedBySwitch($user);
     }
