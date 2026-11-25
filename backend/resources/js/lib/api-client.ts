@@ -210,7 +210,7 @@ export interface NewPortalUser {
 /** One uploaded Zoho export file: what is new / changed / identical in the portal. */
 export interface ZohoExportReport {
   file: string
-  kind: 'invoices' | 'quotes' | 'payments'
+  kind: 'invoices' | 'quotes' | 'payments' | 'creditnotes' | 'contacts'
   documents: number
   new: number
   changed: number
@@ -218,9 +218,18 @@ export interface ZohoExportReport {
   changes: Array<{ number: string; what: string[] }>
   cross_check: Array<{ number: string; zoho_office_fee: number; portal_office_fee: number; zoho_service_fee: number; portal_service_fee: number }>
   totals: { total: number; balance: number }
+  /** Records the portal has that this export does not (removed only for a full export, when plausible). */
+  missing?: number
+  missing_sample?: string[]
+  removable?: boolean
+  removed?: number
+  /** Contacts: customers with no portal client linked (shown only). */
+  unlinked?: number
 }
+export type ZohoExportLastImport = Partial<Record<ZohoExportReport['kind'], { at: string; by: string; file: string; documents: number }>>
 export interface ZohoExportResult {
   reports: ZohoExportReport[]
+  last_import?: ZohoExportLastImport
   reconciliation: {
     invoices?: { export: { count: number; billed: number; outstanding: number; collected: number }; portal: { count: number; billed: number; outstanding: number; collected: number } }
     quotes?: { export: { count: number; total: number }; portal: { count: number; total: number } }
@@ -645,6 +654,9 @@ export const api = {
     return (await response.json()) as { has_signature: boolean }
   },
   /** Zoho Books export files (Invoice / Quote / Customer Payment CSV): preview, nothing written. */
+  async getZohoExportStatus(): Promise<{ last_import: ZohoExportLastImport }> {
+    return this.request('/finance/zoho-export/status')
+  },
   async previewZohoExport(files: File[]): Promise<ZohoExportResult & { token: string }> {
     const formData = new FormData()
     files.forEach((file) => formData.append('files[]', file))
@@ -661,8 +673,8 @@ export const api = {
     }
     return (await response.json()) as ZohoExportResult & { token: string }
   },
-  async importZohoExport(token: string): Promise<ZohoExportResult> {
-    return this.request('/finance/zoho-export/import', { method: 'POST', body: JSON.stringify({ token }) })
+  async importZohoExport(token: string, removeMissing = false): Promise<ZohoExportResult> {
+    return this.request('/finance/zoho-export/import', { method: 'POST', body: JSON.stringify({ token, remove_missing: removeMissing }) })
   },
   async deleteAgentSignature(employeeId: number): Promise<{ has_signature: boolean }> {
     return this.request(`/hrms/employees/${employeeId}/agent-signature`, { method: 'DELETE' })

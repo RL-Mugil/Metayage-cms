@@ -13,14 +13,25 @@ use Illuminate\Validation\ValidationException;
 
 /**
  * Financial Suite → "Import Zoho export": upload Zoho Books' Invoice / Quote / Customer
- * Payment CSV exports, preview what is new / changed / identical (nothing written), then
- * import. Super admin, partner and finance only.
+ * Payment / Credit Note / Contacts CSV exports, preview what is new / changed / identical
+ * (nothing written), then import. A full export can also remove records Zoho no longer has
+ * (only when asked, and only when plausible). Super admin, partner and finance only.
  */
 class ZohoExportController extends Controller
 {
     private const ROLES = ['super_admin', 'partner', 'finance'];
     private const DISK = 'local';
-    private const ORDER = ['invoices' => 0, 'quotes' => 1, 'payments' => 2];
+    private const ORDER = ['invoices' => 0, 'quotes' => 1, 'payments' => 2, 'creditnotes' => 3, 'contacts' => 4];
+
+    private const LAST_IMPORT_KEY = 'zoho_export_last_import';
+
+    /** When each kind of export was last imported, and by whom. */
+    public function status(Request $request): JsonResponse
+    {
+        $this->allow($request);
+
+        return response()->json(['last_import' => $this->lastImport()]);
+    }
 
     public function __construct(private readonly ZohoExportImporter $importer) {}
 
@@ -28,7 +39,7 @@ class ZohoExportController extends Controller
     {
         $this->allow($request);
         $request->validate([
-            'files'   => 'required|array|min:1|max:3',
+            'files'   => 'required|array|min:1|max:5',
             'files.*' => 'required|file|max:20480|mimes:csv,txt',
         ]);
 
@@ -54,13 +65,13 @@ class ZohoExportController extends Controller
         }
         Cache::put("zoho-export:{$token}", ['user' => $request->user()->id, 'files' => $stored], now()->addMinutes(30));
 
-        return response()->json(['token' => $token, 'reports' => $reports, 'reconciliation' => $this->importer->reconcile($reports)]);
+        return response()->json(['token' => $token, 'reports' => $reports, 'reconciliation' => $this->importer->reconcile($reports), 'last_import' => $this->lastImport()]);
     }
 
     public function import(Request $request): JsonResponse
     {
         $this->allow($request);
-        $validated = $request->validate(['token' => 'required|uuid']);
+        $validated = $request->validate(['token' => 'required|uuid', 'remove_missing' => 'nullable|boolean']);
         $batch = Cache::pull("zoho-export:{$validated['token']}");
         if (! $batch || (int) $batch['user'] !== (int) $request->user()->id) {
             throw ValidationException::withMessages(['token' => 'This preview has expired. Upload the files again.']);
@@ -68,19 +79,31 @@ class ZohoExportController extends Controller
 
         $reports = [];
         foreach ($batch['files'] as $kind => $file) {
-            $reports[] = ['file' => $file['name']] + $this->importer->run(Storage::disk(self::DISK)->path($file['path']), true);
+            $reports[] = ['file' => $file['name']] + $this->importer->run(Storage::disk(self::DISK)->path($file['path']), true, (bool) ($validated['remove_missing'] ?? false));
         }
         Storage::disk(self::DISK)->deleteDirectory("zoho-exports/{$validated['token']}");
+
+        $last = $this->lastImport();
+        foreach ($reports as $report) {
+            $last[$report['kind']] = ['at' => now()->toIso8601String(), 'by' => $request->user()->name, 'file' => $report['file'], 'documents' => $report['documents']];
+        }
+        \Illuminate\Support\Facades\DB::table('system_settings')->updateOrInsert(['key' => self::LAST_IMPORT_KEY], ['value' => json_encode($last), 'updated_at' => now()]);
         \Illuminate\Support\Facades\Cache::increment('dashboard_v');
 
         AuditLog::create([
             'user_id' => $request->user()->id, 'action' => 'import_zoho_export', 'subject_type' => 'Finance', 'subject_id' => 0,
-            'metadata' => collect($reports)->map(fn ($r) => array_intersect_key($r, array_flip(['file', 'kind', 'documents', 'new', 'changed', 'identical'])))->all(),
+            'metadata' => collect($reports)->map(fn ($r) => array_intersect_key($r, array_flip(['file', 'kind', 'documents', 'new', 'changed', 'identical', 'removed'])))->all(),
             'ip_address' => $request->ip(), 'user_agent' => $request->userAgent(),
         ]);
 
         // Export totals beside the portal's after the import: the difference should be 0.
-        return response()->json(['reports' => $reports, 'reconciliation' => $this->importer->reconcile($reports)]);
+        return response()->json(['reports' => $reports, 'reconciliation' => $this->importer->reconcile($reports), 'last_import' => $last]);
+    }
+
+    /** @return array<string, array{at: string, by: string, file: string, documents: int}> */
+    private function lastImport(): array
+    {
+        return json_decode((string) \Illuminate\Support\Facades\DB::table('system_settings')->where('key', self::LAST_IMPORT_KEY)->value('value'), true) ?: [];
     }
 
     private function allow(Request $request): void

@@ -2,24 +2,35 @@
 
 namespace App\Services;
 
+use App\Models\Client;
 use App\Models\PatentInvoiceIn;
 use App\Models\ZohoInvoice;
+use App\Models\ZohoOpeningBalance;
 use App\Models\ZohoSnapshot;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
 /**
- * Zoho Books exports (Invoice.csv, Quote.csv, Customer_Payment.csv) into the portal, as an
- * alternative to the API. Each document is rebuilt in the shape the API returns and written
- * to the same mirror (zoho_invoices) and snapshots (zoho_snapshots), so the existing hooks
- * fill the register, payments and client ledgers exactly as for an API sync. Keyed by Zoho
- * ID: a record already in the portal is skipped when identical and updated when Zoho changed
- * it; nothing is ever duplicated.
+ * Zoho Books exports (Invoice.csv, Quote.csv, Customer_Payment.csv, Credit_Note.csv,
+ * Contacts.csv) into the portal, as an alternative to the API. Each document is rebuilt in the
+ * shape the API returns and written to the same mirror (zoho_invoices) and snapshots
+ * (zoho_snapshots), so the existing hooks fill the register, payments and client ledgers
+ * exactly as for an API sync. Keyed by Zoho ID: a record already in the portal is skipped when
+ * identical and updated when Zoho changed it; nothing is ever duplicated.
+ *
+ * Contacts update only the Zoho side (the customer snapshot and its opening balance): portal
+ * clients are never edited. A full export can also remove records Zoho no longer has, when the
+ * importer asks for it and the number missing is plausible.
  */
 class ZohoExportImporter
 {
-    public const KINDS = ['invoices' => 'Invoice ID', 'quotes' => 'Quote ID', 'payments' => 'CustomerPayment ID'];
+    /** Header column that identifies each export (checked in this order: Contacts last). */
+    public const KINDS = ['invoices' => 'Invoice ID', 'quotes' => 'Quote ID', 'payments' => 'CustomerPayment ID',
+        'creditnotes' => 'CreditNotes ID', 'contacts' => 'Contact ID'];
+
+    /** Records missing from a full export are removed only up to this many, and at most 10% of the portal's. */
+    public const MAX_REMOVALS = 50;
 
     /** Which export a file is, from its header row. */
     public function detect(string $path): string
@@ -30,7 +41,7 @@ class ZohoExportImporter
                 return $kind;
             }
         }
-        throw new RuntimeException('Not a Zoho Books invoice, quote or customer payment export (header not recognised).');
+        throw new RuntimeException('Not a Zoho Books invoice, quote, customer payment, credit note or contacts export (header not recognised).');
     }
 
     /**
@@ -38,12 +49,21 @@ class ZohoExportImporter
      *
      * @return array<string, mixed> report: kind, counts (new/changed/identical), totals, changes, cross-check
      */
-    public function run(string $path, bool $write): array
+    public function run(string $path, bool $write, bool $removeMissing = false): array
     {
         $kind = $this->detect($path);
-        $documents = $kind === 'payments' ? $this->payments($path) : $this->documents($path, $kind);
+        $documents = match ($kind) {
+            'payments' => $this->payments($path),
+            'creditnotes' => $this->creditNotes($path),
+            'contacts' => $this->contacts($path),
+            default => $this->documents($path, $kind),
+        };
         $report = ['kind' => $kind, 'documents' => count($documents), 'new' => 0, 'changed' => 0, 'identical' => 0,
             'changes' => [], 'cross_check' => [], 'totals' => ['total' => 0.0, 'balance' => 0.0]];
+
+        if ($kind === 'creditnotes' || $kind === 'contacts') {
+            return $this->runOther($kind, $documents, $report, $write, $removeMissing);
+        }
 
         foreach ($documents as $doc) {
             $state = $kind === 'payments' ? $this->comparePayment($doc) : $this->compareDocument($doc, $kind);
@@ -69,6 +89,78 @@ class ZohoExportImporter
         }
         $report['totals'] = array_map(fn ($v) => round($v, 2), $report['totals']);
         $report['cross_check'] = array_slice($report['cross_check'], 0, 100);
+
+        return $this->missing($kind, $documents, $report, $write && $removeMissing);
+    }
+
+    /** Credit notes and contacts: compare, then write. */
+    private function runOther(string $kind, array $documents, array $report, bool $write, bool $removeMissing): array
+    {
+        $unlinked = 0;
+        foreach ($documents as $doc) {
+            $state = $kind === 'creditnotes' ? $this->compareCreditNote($doc) : $this->compareContact($doc);
+            $report[$state['state']]++;
+            if ($state['state'] === 'changed' && count($report['changes']) < 200) {
+                $report['changes'][] = ['number' => $doc['number'], 'what' => $state['what']];
+            }
+            if ($kind === 'creditnotes') {
+                if ($doc['status'] !== 'void') {
+                    $report['totals']['total'] += $doc['total'] * $doc['exchange_rate'];
+                    $report['totals']['balance'] += $doc['balance'] * $doc['exchange_rate'];
+                }
+            } else {
+                $report['totals']['total'] += (float) ($doc['opening_balance'] ?? 0) * $doc['opening_rate'];
+                if (! $this->clientForContact($doc['id'])) {
+                    $unlinked++;
+                }
+            }
+            if ($write && $state['state'] !== 'identical') {
+                DB::transaction(fn () => $kind === 'creditnotes' ? $this->writeCreditNote($doc) : $this->writeContact($doc));
+            }
+        }
+        $report['totals'] = array_map(fn ($v) => round($v, 2), $report['totals']);
+        if ($kind === 'contacts') {
+            // Customers with no portal client linked: shown only; portal clients are never edited here.
+            $report['unlinked'] = $unlinked;
+
+            return $report + ['missing' => 0, 'missing_sample' => [], 'removable' => false, 'removed' => 0];
+        }
+
+        return $this->missing($kind, $documents, $report, $write && $removeMissing);
+    }
+
+    /**
+     * Records the portal has that this export does not. Removed only on request (a full export)
+     * and when plausible: at most MAX_REMOVALS and at most 10% of the portal's records of this kind.
+     * Each removal goes through the same deletion path as the API sync.
+     */
+    private function missing(string $kind, array $documents, array $report, bool $remove): array
+    {
+        $resource = ['invoices' => 'invoices', 'quotes' => 'estimates', 'payments' => 'customerpayments', 'creditnotes' => 'creditnotes'][$kind];
+        $inFile = array_flip(array_map(fn ($d) => (string) $d['id'], $documents));
+        if (in_array($kind, ['invoices', 'quotes'], true)) {
+            $portal = ZohoInvoice::where('scope', $this->scope())->where('zoho_type', $kind === 'quotes' ? 'quote' : 'invoice')
+                ->pluck('number', 'zoho_id')->mapWithKeys(fn ($n, $id) => [(string) $id => (string) $n])->all();
+        } else {
+            $portal = [];
+            foreach (ZohoSnapshot::where('scope', $this->scope())->where('resource', $resource)->get() as $s) {
+                $doc = json_decode((string) ($s->detail ?: $s->summary), true) ?: [];
+                $portal[(string) $s->remote_id] = (string) ($doc['payment_number'] ?? $doc['creditnote_number'] ?? $s->remote_id);
+            }
+        }
+        $missing = array_diff_key($portal, $inFile);
+        $removable = $documents !== [] && $missing !== [] && count($missing) <= self::MAX_REMOVALS && count($missing) <= max(1, (int) floor(count($portal) * 0.1));
+        $report['missing'] = count($missing);
+        $report['missing_sample'] = array_slice(array_values($missing), 0, 50);
+        $report['removable'] = $removable;
+        $report['removed'] = 0;
+        if ($remove && $removable) {
+            $lifecycle = app(ZohoRecordLifecycle::class);
+            foreach (array_keys($missing) as $id) {
+                $lifecycle->delete($this->scope(), $resource, (string) $id, 'export_missing');
+                $report['removed']++;
+            }
+        }
 
         return $report;
     }
@@ -251,6 +343,66 @@ class ZohoExportImporter
         return array_values($docs);
     }
 
+    /** Credit notes, with the invoice each was applied to (the credited amount is its total less its balance). */
+    private function creditNotes(string $path): array
+    {
+        $docs = [];
+        foreach ($this->rows($path) as $row) {
+            $id = trim($row['CreditNotes ID'] ?? '');
+            if ($id === '') {
+                continue;
+            }
+            $docs[$id] ??= [
+                'id' => $id,
+                'number' => trim($row['Credit Note Number'] ?? ''),
+                'date' => $this->date($row['Credit Note Date'] ?? ''),
+                'status' => strtolower(trim($row['Credit Note Status'] ?? '')),
+                'customer_id' => trim($row['Customer ID'] ?? ''),
+                'customer_name' => trim($row['Customer Name'] ?? ''),
+                'currency' => trim($row['Currency Code'] ?? '') ?: 'INR',
+                'exchange_rate' => $this->num($row['Exchange Rate'] ?? '1') ?: 1.0,
+                'total' => $this->num($row['Total'] ?? ''),
+                'balance' => $this->num($row['Balance'] ?? ''),
+                'invoice_number' => '',
+            ];
+            $applied = trim($row['Applied Invoice Number'] ?? '') ?: trim($row['Associated Invoice Number'] ?? '');
+            if ($docs[$id]['invoice_number'] === '' && $applied !== '') {
+                $docs[$id]['invoice_number'] = $applied;
+            }
+        }
+
+        return array_values($docs);
+    }
+
+    /** Customers: the Zoho fields the portal uses (no personal contact details are kept). */
+    private function contacts(string $path): array
+    {
+        $docs = [];
+        foreach ($this->rows($path) as $row) {
+            $id = trim($row['Contact ID'] ?? '');
+            if ($id === '' || strtolower(trim($row['Contact Type'] ?? 'customer')) !== 'customer') {
+                continue;
+            }
+            $opening = trim((string) ($row['Opening Balance'] ?? ''));
+            $docs[$id] = [
+                'id' => $id,
+                'number' => trim($row['Display Name'] ?? '') ?: trim($row['Company Name'] ?? '') ?: $id,
+                'company_name' => trim($row['Company Name'] ?? ''),
+                'contact_name' => trim($row['Display Name'] ?? ''),
+                'customer_number' => trim($row['Customer Number'] ?? ''),
+                'status' => strtolower(trim($row['Status'] ?? '')),
+                'currency' => trim($row['Currency Code'] ?? '') ?: 'INR',
+                'gst_no' => trim($row['GST Identification Number (GSTIN)'] ?? ''),
+                'gst_treatment' => trim($row['GST Treatment'] ?? ''),
+                // null = the export did not say (left as it is); 0 = Zoho shows no opening balance.
+                'opening_balance' => $opening === '' ? null : $this->num($opening),
+                'opening_rate' => $this->num($row['Opening Balance Exchange Rate'] ?? '1') ?: 1.0,
+            ];
+        }
+
+        return array_values($docs);
+    }
+
     // ── Compare and write ────────────────────────────────────────────────────
 
     private function scope(): string
@@ -390,7 +542,7 @@ class ZohoExportImporter
             .(((float) ($i['tax_amount_withheld'] ?? 0)) > 0 ? ':t'.round((float) $i['tax_amount_withheld'], 2) : ''), $detail['invoices'] ?? []);
         sort($applied);
 
-        return ($detail['date'] ?? '').'|'.round((float) ($detail['amount'] ?? 0), 2).'|'.implode(',', $applied);
+        return ($detail['date'] ?? '').'|'.round((float) ($detail['amount'] ?? 0), 2).'|u'.round((float) ($detail['unused_amount'] ?? 0), 2).'|'.implode(',', $applied);
     }
 
     private function comparePayment(array $doc): array
@@ -405,7 +557,7 @@ class ZohoExportImporter
             $what[] = 'Restored (deleted earlier)';
         }
         if ($this->paymentKey($existing) !== $this->paymentKey($this->paymentDetail($doc))) {
-            $what[] = 'Amount, date or invoices applied';
+            $what[] = 'Amount, unused amount, date or invoices applied';
         }
 
         return ['state' => $what ? 'changed' : 'identical', 'what' => $what];
@@ -425,6 +577,154 @@ class ZohoExportImporter
         $snapshot->restore();
         $merged = array_merge(json_decode((string) $snapshot->detail, true) ?: [], $detail);
         $snapshot->update(['detail' => json_encode($merged), 'detail_synced_at' => now()]);
+    }
+
+    // ── Credit notes ─────────────────────────────────────────────────────────
+
+    private function creditNoteDetail(array $doc): array
+    {
+        $credited = [];
+        $amount = round($doc['total'] - $doc['balance'], 2);
+        if ($doc['invoice_number'] !== '' && $amount > 0 && $doc['status'] !== 'void') {
+            $invoiceId = ZohoInvoice::withTrashed()->where('zoho_type', 'invoice')->where('number', $doc['invoice_number'])->value('zoho_id');
+            if ($invoiceId) {
+                $credited[] = ['invoice_id' => (string) $invoiceId, 'invoice_number' => $doc['invoice_number'], 'amount_credited' => $amount, 'date' => $doc['date']];
+            }
+        }
+
+        return [
+            'creditnote_id' => $doc['id'], 'creditnote_number' => $doc['number'], 'date' => $doc['date'], 'status' => $doc['status'],
+            'customer_id' => $doc['customer_id'], 'customer_name' => $doc['customer_name'], 'currency_code' => $doc['currency'],
+            'exchange_rate' => $doc['exchange_rate'], 'total' => $doc['total'], 'balance' => $doc['balance'],
+            'invoices_credited' => $credited, 'source' => 'zoho_export',
+        ];
+    }
+
+    private function creditNoteKey(array $d): string
+    {
+        $credited = array_map(fn ($i) => ($i['invoice_id'] ?? '').':'.round((float) ($i['amount_credited'] ?? 0), 2), $d['invoices_credited'] ?? []);
+        sort($credited);
+
+        return ($d['date'] ?? '').'|'.strtolower((string) ($d['status'] ?? '')).'|'.round((float) ($d['total'] ?? 0), 2).'|'.round((float) ($d['balance'] ?? 0), 2).'|'.implode(',', $credited);
+    }
+
+    private function compareCreditNote(array $doc): array
+    {
+        $snapshot = $this->snapshot('creditnotes', $doc['id']);
+        if (! $snapshot) {
+            return ['state' => 'new', 'what' => []];
+        }
+        $what = $snapshot->trashed() ? ['Restored (deleted earlier)'] : [];
+        if ($this->creditNoteKey(json_decode((string) ($snapshot->detail ?: $snapshot->summary), true) ?: []) !== $this->creditNoteKey($this->creditNoteDetail($doc))) {
+            $what[] = 'Amount, balance, status or invoice credited';
+        }
+
+        return ['state' => $what ? 'changed' : 'identical', 'what' => $what];
+    }
+
+    private function writeCreditNote(array $doc): void
+    {
+        $detail = $this->creditNoteDetail($doc);
+        $snapshot = $this->snapshot('creditnotes', $doc['id']);
+        if (! $snapshot) {
+            $json = json_encode($detail);
+            ZohoSnapshot::create(['scope' => $this->scope(), 'resource' => 'creditnotes', 'remote_id' => $doc['id'],
+                'summary' => $json, 'detail' => $json, 'fingerprint' => hash('sha256', $json), 'detail_synced_at' => now()]);
+
+            return;
+        }
+        $snapshot->restore();
+        $merged = array_merge(json_decode((string) $snapshot->detail, true) ?: [], $detail);
+        $snapshot->update(['detail' => json_encode($merged), 'detail_synced_at' => now()]);
+    }
+
+    // ── Contacts (Zoho side only: portal clients are never edited) ───────────
+
+    /** The portal client already linked to this Zoho customer (read only). */
+    private function clientForContact(string $contactId): ?int
+    {
+        return Client::where('zoho_contact_id', $contactId)->value('id')
+            ?? ZohoInvoice::withTrashed()->where('zoho_contact_id', $contactId)->whereNotNull('client_id')->value('client_id');
+    }
+
+    private function contactDetail(array $doc): array
+    {
+        return [
+            'contact_id' => $doc['id'], 'contact_name' => $doc['contact_name'], 'company_name' => $doc['company_name'],
+            'customer_number' => $doc['customer_number'], 'contact_type' => 'customer', 'status' => $doc['status'],
+            'currency_code' => $doc['currency'], 'gst_no' => $doc['gst_no'], 'gst_treatment' => $doc['gst_treatment'],
+            'source' => 'zoho_export',
+        ] + ($doc['opening_balance'] === null ? [] : ['opening_balance_amount' => $doc['opening_balance']]);
+    }
+
+    private function openingTotal(string $contactId): float
+    {
+        return round((float) ZohoOpeningBalance::withoutGlobalScopes()->where('scope', $this->scope())->where('zoho_contact_id', $contactId)->sum('amount'), 2);
+    }
+
+    private function compareContact(array $doc): array
+    {
+        $snapshot = $this->snapshot('contacts', $doc['id']);
+        if (! $snapshot) {
+            return ['state' => 'new', 'what' => []];
+        }
+        $saved = json_decode((string) ($snapshot->detail ?: $snapshot->summary), true) ?: [];
+        $what = [];
+        foreach (['contact_name' => 'Name', 'company_name' => 'Company', 'status' => 'Status', 'currency_code' => 'Currency', 'gst_no' => 'GSTIN'] as $key => $label) {
+            $now = (string) ($this->contactDetail($doc)[$key] ?? '');
+            if ($now !== '' && strtolower($now) !== strtolower((string) ($saved[$key] ?? ''))) {
+                $what[] = $label;
+            }
+        }
+        if ($doc['opening_balance'] !== null && abs($this->openingTotal($doc['id']) - $doc['opening_balance']) > 0.009) {
+            $what[] = 'Opening balance ₹'.number_format($this->openingTotal($doc['id']), 2).' → ₹'.number_format($doc['opening_balance'], 2);
+        }
+
+        return ['state' => $what ? 'changed' : 'identical', 'what' => $what];
+    }
+
+    /**
+     * The customer snapshot (merged: fields the export lacks, such as Zoho's balances, are kept) and
+     * the opening balance: its amount from the export; the part already paid is kept from the
+     * last API reading (an export does not say it), so a new opening balance starts unpaid.
+     */
+    private function writeContact(array $doc): void
+    {
+        $detail = $this->contactDetail($doc);
+        $snapshot = $this->snapshot('contacts', $doc['id']);
+        if (! $snapshot) {
+            $json = json_encode($detail);
+            ZohoSnapshot::create(['scope' => $this->scope(), 'resource' => 'contacts', 'remote_id' => $doc['id'],
+                'summary' => $json, 'detail' => $json, 'fingerprint' => hash('sha256', $json), 'detail_synced_at' => now()]);
+        } else {
+            $snapshot->restore();
+            $merged = array_merge(json_decode((string) $snapshot->detail, true) ?: [], $detail);
+            $snapshot->update(['detail' => json_encode($merged), 'detail_synced_at' => now()]);
+        }
+        if ($doc['opening_balance'] === null) {
+            return;
+        }
+
+        $rows = ZohoOpeningBalance::withoutGlobalScopes()->where('scope', $this->scope())->where('zoho_contact_id', $doc['id'])->get();
+        $clientId = $this->clientForContact($doc['id']) ?? $rows->first()?->client_id;
+        if ($doc['opening_balance'] <= 0) {
+            $rows->each->delete();
+        } else {
+            $row = $rows->first();
+            $paid = $row ? max(0, (float) $row->amount - (float) $row->balance) : 0.0;
+            $values = ['client_id' => $clientId, 'customer_name' => $doc['company_name'] ?: $doc['contact_name'], 'amount' => $doc['opening_balance'],
+                'balance' => max(0, round($doc['opening_balance'] - $paid, 2)), 'currency' => $doc['currency'], 'source' => 'Zoho Opening Balance', 'synced_at' => now()];
+            if ($row) {
+                $row->update($values + ['balance_date' => ZohoOpeningBalanceMirror::openingDate()]);
+                $rows->slice(1)->each->delete();
+            } else {
+                ZohoOpeningBalance::create($values + ['scope' => $this->scope(), 'zoho_contact_id' => $doc['id'], 'location_id' => 'default',
+                    'balance_date' => ZohoOpeningBalanceMirror::openingDate()]);
+            }
+        }
+        if ($clientId) {
+            DB::afterCommit(fn () => app(ClientLedgerSync::class)->sync((int) $clientId));
+        }
     }
 
     /** Zoho's own CF fee fields against the portal's line-item split (shown, never applied). */
