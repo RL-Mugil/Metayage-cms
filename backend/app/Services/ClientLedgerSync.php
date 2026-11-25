@@ -79,6 +79,26 @@ class ClientLedgerSync
                 ];
             }
 
+            // Foreign-currency invoices: the INR received differs from the invoice's INR value at its
+            // own rate. Zoho books that difference to exchange gain/loss, not to the customer, so it
+            // gets its own line and the client's INR balance matches Zoho.
+            foreach ($invoices->filter(fn ($i) => strtoupper((string) ($i->currency ?: 'INR')) !== 'INR') as $invoice) {
+                $mine = $payments->where('patent_invoice_in_id', $invoice->id);
+                if ($mine->isEmpty()) {
+                    continue;
+                }
+                $rate = (float) ($invoice->exchange_rate ?? 1) ?: 1.0;
+                $diff = round((float) $mine->sum('amount_bcy') - (float) $mine->sum('amount') * $rate, 2);
+                if (abs($diff) >= 1) {
+                    $wanted["fx:{$invoice->id}"] = [
+                        'transaction_date' => $mine->max('payment_date'), 'document_type' => 'Exchange difference',
+                        'document_reference' => 'FX · '.($invoice->invoice_uin ?: "INV-{$invoice->id}"),
+                        'debit' => $diff > 0 ? $diff : 0, 'credit' => $diff < 0 ? -$diff : 0, 'tds' => 0,
+                        'notes' => ($diff > 0 ? 'Exchange gain' : 'Exchange loss').' ('.$invoice->currency.' at '.rtrim(rtrim(number_format($rate, 4, '.', ''), '0'), '.').' on the invoice)',
+                    ];
+                }
+            }
+
             // Money received but not applied to any invoice yet (Zoho "unused credit"): an advance
             // the client holds with us, and unapplied credit-note balances.
             foreach ($this->unusedCredits($clientId) as $key => $line) {

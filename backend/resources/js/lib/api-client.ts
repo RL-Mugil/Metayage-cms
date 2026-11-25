@@ -11,7 +11,7 @@ import type { ZohoQuotePreview } from '@/types/zoho'
 import type { TrademarkDetails, TrademarkInput } from '@/types/trademark'
 import type { Form1Input, Form1Prefill, InventorInput, InventorRecord, IpoAddress, IpoServiceAddress, IpoSettings } from '@/types/ipo-forms'
 
-function getCsrfToken(): string {
+export function getCsrfToken(): string {
   if (typeof document === 'undefined') return ''
   const match = document.cookie.match(/XSRF-TOKEN=([^;]+)/)
   return match ? decodeURIComponent(match[1]) : ''

@@ -30,19 +30,21 @@ class ClientStatement
     /**
      * Totals by kind. A minus closing balance is credit the client holds with us.
      *
-     * @return array{billed: float, received: float, tds: float, credit_notes: float, waived: float, advance: float, balance: float}
+     * @return array{billed: float, received: float, tds: float, credit_notes: float, waived: float, advance: float, exchange: float, balance: float}
      */
     public function summary(Collection $lines): array
     {
         $sum = fn (string $field, array $types) => round((float) $lines->filter(fn ($l) => in_array($l->document_type, $types, true))->sum(fn ($l) => (float) $l->{$field}), 2);
 
         return [
-            'billed' => round((float) $lines->sum(fn ($l) => (float) $l->debit), 2),
+            'billed' => round((float) $lines->filter(fn ($l) => $l->document_type !== 'Exchange difference')->sum(fn ($l) => (float) $l->debit), 2),
             'received' => $sum('credit', ['Payment']),
             'tds' => round((float) $lines->sum(fn ($l) => (float) $l->tds), 2),
             'credit_notes' => $sum('credit', ['Credit note']),
             'waived' => $sum('credit', ['Waiver']),
             'advance' => $sum('credit', ['Advance']),
+            // Exchange gain (+) / loss (-) on foreign-currency invoices.
+            'exchange' => round((float) $lines->filter(fn ($l) => $l->document_type === 'Exchange difference')->sum(fn ($l) => (float) $l->debit - (float) $l->credit), 2),
             'balance' => round((float) ($lines->last()?->balance ?? 0), 2),
         ];
     }

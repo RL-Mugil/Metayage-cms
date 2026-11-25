@@ -47,6 +47,7 @@ class InvoiceSettlement
     public function markPaid(PatentInvoiceIn $invoice, float $amount, string $date, string $mode, ?string $reference, User $user, ?string $ip = null, ?string $agent = null): RegisterPayment
     {
         abort_unless(self::canPay($user), 403, 'Only Accounts, a Director, a System Admin or someone on the Financial access list can mark invoices paid.');
+        \App\Support\FinancePeriod::assertOpen($date);
 
         $payment = DB::transaction(function () use ($invoice, $amount, $date, $mode, $reference, $user, $ip, $agent) {
             $row = PatentInvoiceIn::whereKey($invoice->id)->lockForUpdate()->firstOrFail();
@@ -88,6 +89,7 @@ class InvoiceSettlement
     public function requestWaiver(PatentInvoiceIn $invoice, float $amount, string $reason, User $user, ?string $ip = null, ?string $agent = null): void
     {
         abort_unless(self::canRequestWaiver($user), 403, 'You cannot request a waiver.');
+        \App\Support\FinancePeriod::assertOpen(now());   // the waiver is posted today
         DB::transaction(function () use ($invoice, $amount, $reason, $user, $ip, $agent) {
             $row = PatentInvoiceIn::whereKey($invoice->id)->lockForUpdate()->firstOrFail();
             $this->assertOpenInvoice($row);
@@ -110,6 +112,9 @@ class InvoiceSettlement
     public function decideWaiver(PatentInvoiceIn $invoice, bool $approve, User $user, ?string $note = null, ?string $ip = null, ?string $agent = null): void
     {
         abort_unless(in_array($user->role, self::WAIVE_APPROVE_ROLES, true), 403, 'Only a partner or super admin can approve waivers.');
+        if ($approve) {
+            \App\Support\FinancePeriod::assertOpen(now());
+        }
         $writeOff = false;
         DB::transaction(function () use ($invoice, $approve, $user, $note, $ip, $agent, &$writeOff) {
             $row = PatentInvoiceIn::whereKey($invoice->id)->lockForUpdate()->firstOrFail();

@@ -59,6 +59,7 @@ class PaymentsReceivedController extends Controller
         $user = $request->user();
         abort_unless(InvoiceSettlement::canPay($user), 403, 'Only Accounts, a Director, a System Admin or someone on the Financial access list can link advances.');
         $data = $request->validate(['quote_id' => 'required|integer', 'amount' => 'required|numeric|min:0.01', 'note' => 'nullable|string|max:255']);
+        \App\Support\FinancePeriod::assertOpen(now());
         $advance = $this->payments->advance($paymentId);
         abort_if(! $advance || $advance['unused'] <= 0, 422, 'This payment has no unused amount to link.');
         abort_if(! $advance['client_id'], 422, 'This payment is not linked to a portal client yet. Link the Zoho customer to the client first.');
@@ -97,6 +98,7 @@ class PaymentsReceivedController extends Controller
         $user = $request->user();
         abort_unless(InvoiceSettlement::canPay($user), 403, 'Only Accounts, a Director, a System Admin or someone on the Financial access list can link advances.');
         $link = AdvanceQuoteLink::findOrFail($id);
+        \App\Support\FinancePeriod::assertOpen($link->created_at);
         DB::transaction(function () use ($link, $user, $request) {
             AuditLog::create(['user_id' => $user->id, 'action' => 'unlink_advance_from_quote', 'subject_type' => 'PatentInvoiceIn', 'subject_id' => $link->patent_invoice_in_id,
                 'metadata' => ['payment' => $link->payment_number, 'zoho_payment_id' => $link->zoho_payment_id, 'amount' => (float) $link->amount],

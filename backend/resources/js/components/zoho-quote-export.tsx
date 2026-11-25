@@ -45,6 +45,17 @@ export function ZohoQuoteExport({ kind, id }: { kind: 'standard' | 'in'; id: num
       void queryClient.invalidateQueries({ queryKey: ['zoho-sync-status'] });
     },
   });
+  const askApproval = useMutation({
+    retry: false,
+    mutationFn: () => {
+      if (!data?.preview) throw new Error('Review the quotation first.');
+      return api.request(`/integrations/zoho/quotes/${kind}/${id}/request-approval`, { method: 'POST',
+        body: JSON.stringify({ customer_id: data.preview.payload.customer_id, version: data.preview.version }) });
+    },
+    onSuccess: () => toast.success('Sent to Accounts for approval.'),
+    onError: (failure: Error) => toast.error(failure.message),
+    onSettled: () => { setConfirmedVersion(''); void queryClient.invalidateQueries({ queryKey: key }); },
+  });
   const convert = useMutation({
     retry: false,
     mutationFn: () => api.zohoConvertQuoteToInvoice(kind, id),
@@ -66,12 +77,13 @@ export function ZohoQuoteExport({ kind, id }: { kind: 'standard' | 'in'; id: num
         <p className="text-sm text-muted-foreground">The accountant reviews this draft and creates the invoice in Zoho Books. The invoice returns with the daily sync. This action uses one quote-write call.</p>
         {data?.state === 'confirmed' ? <><p className="text-sm">Already sent: {data.estimate_id}. Make further changes in Zoho Books.</p>
           {data.conversion_state === 'converted' ? <p className="text-sm text-emerald-600">Converted to Zoho invoice: {data.invoice_id}.</p>
-            : <Button size="sm" disabled={convert.isPending || data.conversion_state === 'converting' || data.conversion_state === 'uncertain'} onClick={() => {
-              if (window.confirm('Convert this existing Zoho draft quote to one invoice? This will not create a second quote.')) convert.mutate();
-            }}>{convert.isPending || data.conversion_state === 'converting' ? 'Converting…' : data.conversion_state === 'uncertain' ? 'Awaiting reconciliation' : 'Convert existing quote to invoice'}</Button>}
-          <Button variant="destructive" size="sm" disabled={remove.isPending} onClick={() => {
+            : data.can_send && <Button size="sm" disabled={convert.isPending || data.conversion_state === 'converting' || data.conversion_state === 'uncertain'} onClick={() => {
+              if (window.confirm('Create the invoice in Zoho from this quote? This will not create a second quote.')) convert.mutate();
+            }}>{convert.isPending || data.conversion_state === 'converting' ? 'Creating…' : data.conversion_state === 'uncertain' ? 'Awaiting reconciliation'
+              : data.conversion_state === 'failed' ? 'Try creating the invoice again' : 'Create invoice in Zoho'}</Button>}
+          {data.can_send && <Button variant="destructive" size="sm" disabled={remove.isPending} onClick={() => {
             if (window.confirm('Delete this draft quotation from Zoho Books? This uses one write call and cannot be undone.')) remove.mutate();
-          }}>{remove.isPending ? 'Deleting…' : 'Delete draft in Zoho (manual)'}</Button></>
+          }}>{remove.isPending ? 'Deleting…' : 'Delete draft in Zoho (manual)'}</Button>}</>
           : data?.state === 'deleted' ? <p className="text-sm">Deleted in Zoho. The portal quotation is retained, and sending another copy is blocked.</p>
           : blocked ? <p className="text-sm">A previous send is awaiting reconciliation. Sending another copy is blocked; sync will check for the existing quote.</p>
           : <>
@@ -101,8 +113,13 @@ export function ZohoQuoteExport({ kind, id }: { kind: 'standard' | 'in'; id: num
                 I checked the customer and amounts and confirm this draft is for accountant review.</label>
             </div>}
             {(error || data?.error) && <p role="alert" className="text-sm text-destructive">{error?.message ?? data?.error}</p>}
-            <Button disabled={send.isPending || isFetching || !preview || confirmedVersion !== preview.version || !!data?.error}
-              onClick={() => send.mutate()}>{send.isPending ? 'Sending…' : 'Create draft in Zoho'}</Button>
+            {data?.approval && <p className={`text-xs ${data.approval.status === 'approved' && data.approval.current ? 'text-emerald-600' : data.approval.status === 'rejected' ? 'text-red-600' : 'text-amber-600'}`}>
+              Accounts approval: {data.approval.status}{data.approval.status !== 'rejected' && !data.approval.current ? ' (for an earlier version of this quote)' : ''}{data.approval.note ? ` · ${data.approval.note}` : ''}</p>}
+            {data?.can_send
+              ? <Button disabled={send.isPending || isFetching || !preview || confirmedVersion !== preview.version || !!data?.error}
+                  onClick={() => send.mutate()}>{send.isPending ? 'Sending…' : 'Approve and create draft in Zoho'}</Button>
+              : <Button disabled={askApproval.isPending || isFetching || !preview || confirmedVersion !== preview.version || !!data?.error || (data?.approval?.status === 'pending' && data.approval.current)}
+                  onClick={() => askApproval.mutate()}>{askApproval.isPending ? 'Sending…' : data?.approval?.status === 'pending' && data.approval.current ? 'Waiting for Accounts' : 'Request Accounts approval'}</Button>}
           </>}
       </DialogContent>
     </Dialog>

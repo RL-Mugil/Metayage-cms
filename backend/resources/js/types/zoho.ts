@@ -1,4 +1,6 @@
 export interface ZohoQuotePreview {
+  can_send?: boolean;
+  approval?: { status: 'pending' | 'approved' | 'rejected'; current: boolean; note: string | null } | null;
   state: 'new' | 'sending' | 'uncertain' | 'rejected' | 'confirmed' | 'deleted';
   estimate_id: string | null;
   invoice_id: string | null;

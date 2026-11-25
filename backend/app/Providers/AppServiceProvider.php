@@ -98,6 +98,33 @@ class AppServiceProvider extends ServiceProvider
             ));
         };
         \App\Models\ZohoInvoice::saved($importZoho);
+
+        // TDS lines feed the TDS tracker (Form 26AS / 16A); a deleted line's tracker row goes with it (FK cascade).
+        \App\Models\RegisterPayment::saved(function (\App\Models\RegisterPayment $p): void {
+            if ($p->kind === \App\Models\RegisterPayment::TDS || $p->wasChanged('kind')) {
+                rescue(fn () => app(\App\Services\TdsTracker::class)->syncPayment($p), null, true);
+            }
+        });
+
+        // Month close: a change that still reaches a locked month (a Zoho import) is flagged for review.
+        \App\Models\PatentInvoiceIn::updated(function (\App\Models\PatentInvoiceIn $row): void {
+            $changed = array_intersect(array_keys($row->getChanges()), ['invoice_amount', 'total_bcy', 'balance_due', 'status', 'invoice_date', 'waived_amount']);
+            // A settlement made in the portal (dated in an open month) is not an import change.
+            if ($changed && $row->type === 'invoice' && ! $row->wasChanged(['settlement', 'settled_at', 'zoho_writeback'])) {
+                \App\Support\FinancePeriod::flag($row->invoice_date, 'PatentInvoiceIn', $row->id, 'Invoice changed: '.implode(', ', $changed), $row->invoice_uin, $row->client_id);
+            }
+        });
+        foreach (['created' => 'added', 'updated' => 'changed', 'deleted' => 'removed'] as $event => $word) {
+            \App\Models\RegisterPayment::{$event}(function (\App\Models\RegisterPayment $p) use ($word): void {
+                if ($p->source === 'portal' && str_starts_with((string) $p->zoho_payment_id, 'portal:')) {
+                    return;   // marked paid in the portal: its own date was checked against the close
+                }
+                if ($word !== 'changed' || array_intersect(array_keys($p->getChanges()), ['amount', 'amount_bcy', 'payment_date', 'kind'])) {
+                    \App\Support\FinancePeriod::flag($p->payment_date, 'RegisterPayment', $p->id, ucfirst($p->kind ?? 'payment')." {$word}: ".number_format((float) $p->amount_bcy, 2),
+                        $p->payment_number, $p->client_id);
+                }
+            });
+        }
         \App\Models\ZohoInvoice::deleted($importZoho);
         // Zoho customer payments and credit notes → register lines (cash, TDS, credit note) → the
         // client's ledger (also the client of the Zoho customer: an unapplied advance touches no invoice).

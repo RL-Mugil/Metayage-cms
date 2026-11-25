@@ -6,6 +6,7 @@ import { SegmentTabs } from "@/components/modern/segment-tabs";
 import { createPortal } from "react-dom";
 import { Loader2, Plus, X, Trash2, Download, DollarSign, Clock, CheckCircle, AlertCircle, Search, ChevronLeft, ChevronRight, CheckSquare, Square, FileText, Pencil, IndianRupee, Upload } from "lucide-react";
 import { ZohoExportImport } from "@/components/finance/zoho-export-import";
+import { FinanceControls } from "@/components/finance/finance-controls";
 import AppLayout from "@/layouts/AppLayout";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -274,7 +275,9 @@ export default function Financial() {
   const canLinkZohoProject = ["super_admin", "manager", "galvanizer"].includes(role);
 
   // Tab
-  const [activeTab, setActiveTab] = useState<string>("india");
+  const isAccounts = !!pageProps.auth?.user?.access?.accounts;
+  const [activeTab, setActiveTab] = useState<string>(() =>
+    isAccounts && new URLSearchParams(window.location.search).get("tab") === "controls" ? "controls" : "india");
 
   // Invoices state
   const [invoices, setInvoices] = useState<any[]>([]);
@@ -1238,10 +1241,13 @@ export default function Financial() {
         }))} />
 
         {/* Tab bar */}
-        <SegmentTabs value={activeTab as "india" | "zoho"} onChange={(v) => setActiveTab(v)} options={[
+        <SegmentTabs value={activeTab as "india" | "zoho" | "controls"} onChange={(v) => setActiveTab(v)} options={[
           { value: "india", label: <span className="flex items-center gap-1.5"><IndianRupee className="h-3.5 w-3.5" />Indian Patents</span> },
           { value: "zoho", label: <span className="flex items-center gap-1.5"><DollarSign className="h-3.5 w-3.5" />Zoho Books</span> },
+          ...(isAccounts ? [{ value: "controls" as const, label: <span className="flex items-center gap-1.5"><CheckCircle className="h-3.5 w-3.5" />Close &amp; controls</span> }] : []),
         ]} />
+
+        {activeTab === "controls" && isAccounts && <FinanceControls />}
 
         {/* Invoices Tab — removed; use Indian Patents tab */}
         {false && (
@@ -1378,7 +1384,7 @@ export default function Financial() {
                           </td>
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-2">
-                              {["super_admin", "partner", "finance"].includes(role) && q.status !== "Cancelled" && (
+                              {(["super_admin", "partner", "finance"].includes(role) || pageProps.auth?.user?.access?.finance) && q.status !== "Cancelled" && (
                                 <ZohoQuoteExport kind="standard" id={q.id} />
                               )}
                               {q.status === "Draft" && (
@@ -1608,7 +1614,7 @@ export default function Financial() {
                                       <Button size="sm" variant="ghost" className="h-6 px-1.5 text-[10px] text-green-400 hover:bg-green-500/10" title="Mark Accepted"
                                         onClick={() => changeIndiaStatus(r.id, "Accepted")}>Accept</Button>
                                     )}
-                                    {!isInv && r.status !== "Cancelled" && ["super_admin", "partner", "finance"].includes(role) && (
+                                    {!isInv && r.status !== "Cancelled" && (["super_admin", "partner", "finance"].includes(role) || pageProps.auth?.user?.access?.finance) && (
                                       <ZohoQuoteExport kind="in" id={r.id} />
                                     )}
                                     {r.status !== "Cancelled" && (

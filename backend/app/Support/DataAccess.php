@@ -259,6 +259,8 @@ class DataAccess
             'all_finance' => self::seesAllFinance($user),
             'finance' => self::canOpenFinance($user),
             'finance_actions' => self::canActOnFinance($user),
+            // Accounts: mark paid, TDS tracker edits, month close, quote approvals.
+            'accounts' => \App\Services\InvoiceSettlement::canPay($user),
         ];
     }
 }

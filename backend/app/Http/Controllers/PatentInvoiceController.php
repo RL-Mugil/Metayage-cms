@@ -242,6 +242,8 @@ class PatentInvoiceController extends Controller
             'consultant_fees'                  => 'nullable|numeric|min:0',
             'referral_fees'                    => 'nullable|numeric|min:0',
         ]);
+        // Month close: neither the current nor the new invoice date may be in a locked month.
+        \App\Support\FinancePeriod::assertOpen($record->invoice_date, $v['invoice_date'] ?? null);
 
         // Imported from Zoho: Zoho owns the amounts, dates and status (re-imported on every
         // sync); the portal keeps its own fields (internal fees, remarks, references).
@@ -289,6 +291,7 @@ class PatentInvoiceController extends Controller
         abort_unless(\App\Support\DataAccess::canActOnFinance($user) || $user->isGalvanizer(), 403);
         if ($user->isGalvanizer() && ! $this->galvanizerCanAccessRecord($user, $record)) abort(403);
         if ($record->isFromZoho()) abort(422, 'This record comes from Zoho Books: void or delete it in Zoho and it is cancelled here automatically.');
+        \App\Support\FinancePeriod::assertOpen($record->invoice_date);
 
         $record->update(['status' => 'Cancelled']);
 

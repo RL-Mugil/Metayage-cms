@@ -14,7 +14,25 @@ class ZohoQuoteWriter
 {
     public function __construct(private ZohoBooksService $zoho, private ZohoQuoteDraft $drafts) {}
 
-    public function send(string $kind, int $id, string $customerId, string $version): array
+    /**
+     * Accounts' approval for this exact draft: an approved request with the same version, or the
+     * sender's own approval when the sender is Accounts. A changed quote needs approving again.
+     */
+    public function approveForSend(string $kind, int $id, string $customerId, string $version, \App\Models\User $user): \App\Models\QuoteSendApproval
+    {
+        $approved = \App\Models\QuoteSendApproval::where('quote_kind', $kind)->where('quote_id', $id)->where('status', 'approved')
+            ->where('version', $version)->latest('id')->first();
+        if ($approved) {
+            return $approved;
+        }
+        abort_unless(\App\Services\InvoiceSettlement::canPay($user), 403, 'This quote needs Accounts approval before it goes to Zoho. Use "Request Accounts approval".');
+        \App\Models\QuoteSendApproval::where('quote_kind', $kind)->where('quote_id', $id)->where('status', 'pending')->update(['status' => 'superseded']);
+
+        return \App\Models\QuoteSendApproval::create(['quote_kind' => $kind, 'quote_id' => $id, 'customer_id' => $customerId, 'version' => $version,
+            'requested_by_id' => $user->id, 'status' => 'approved', 'decided_by_id' => $user->id, 'decided_at' => now(), 'note' => 'Approved when sent by Accounts']);
+    }
+
+    public function send(string $kind, int $id, string $customerId, string $version, ?\App\Models\User $user = null): array
     {
         abort_unless($this->zoho->isConfigured(), 422, 'Zoho Books is not configured.');
         $scope = $this->zoho->scope();
@@ -31,6 +49,8 @@ class ZohoQuoteWriter
                 }
                 $draft = $this->drafts->build($quote, $scope, $customerId);
                 abort_unless(hash_equals($draft['version'], $version), 409, 'The quotation or customer changed. Review the refreshed draft before sending.');
+                // Accounts' approval of this exact draft (finance control).
+                $this->approveForSend($kind, $id, $customerId, $version, $user ?? auth()->user());
                 $export = ZohoQuoteExport::updateOrCreate(['scope' => $scope, 'source_type' => $kind, 'source_id' => $id], [
                     'client_id' => $quote->client_id, 'project_id' => $quote->project_id,
                     'customer_id' => $customerId, 'reference' => $draft['payload']['reference_number'],
@@ -130,8 +150,15 @@ class ZohoQuoteWriter
                 $this->audit($export, 'zoho_invoice_converted');
                 return $this->conversionResult($export->refresh());
             } catch (Throwable $error) {
-                $export->update(['conversion_state' => 'uncertain']);
-                $this->audit($export, 'zoho_invoice_conversion_uncertain');
+                // Not sent at all (allowance, login) or refused by Zoho: safe to try again.
+                $notSent = $error instanceof ZohoBudgetExhausted || $error instanceof \App\Exceptions\ZohoWriteNotSent
+                    || ($error instanceof ZohoApiException && in_array($error->status, [400, 401, 403, 404, 422], true));
+                $export->update(['conversion_state' => $notSent ? 'failed' : 'uncertain']);
+                $this->audit($export, $notSent ? 'zoho_invoice_conversion_failed' : 'zoho_invoice_conversion_uncertain');
+                if ($notSent) {
+                    $why = $error instanceof ZohoApiException ? ' Zoho said: HTTP '.$error->status.($error->zohoMessage ? ' - '.$error->zohoMessage : '').'.' : ' '.$error->getMessage();
+                    throw new \Symfony\Component\HttpKernel\Exception\HttpException(422, 'The invoice was not created in Zoho.'.$why.' You can try again.');
+                }
                 throw new \Symfony\Component\HttpKernel\Exception\HttpException(409, 'The conversion result is uncertain. Retry is blocked until the next Zoho reconciliation confirms whether an invoice exists.');
             }
         } finally {

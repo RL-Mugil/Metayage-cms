@@ -89,6 +89,8 @@ class ZohoExportController extends Controller
         }
         \Illuminate\Support\Facades\DB::table('system_settings')->updateOrInsert(['key' => self::LAST_IMPORT_KEY], ['value' => json_encode($last), 'updated_at' => now()]);
         \Illuminate\Support\Facades\Cache::increment('dashboard_v');
+        // The ledgers against Zoho after every import (Close & controls card; Accounts told of differences).
+        rescue(fn () => app(\App\Services\LedgerCheck::class)->run(1.0, true, true), null, true);
 
         AuditLog::create([
             'user_id' => $request->user()->id, 'action' => 'import_zoho_export', 'subject_type' => 'Finance', 'subject_id' => 0,

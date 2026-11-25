@@ -224,6 +224,18 @@ Route::middleware(['auth:sanctum', 'firm.context', 'throttle:120,1'])->group(fun
     Route::post('/pending-payments/{id}/waiver', [\App\Http\Controllers\SettlementController::class, 'requestWaiver']);
     Route::post('/pending-payments/{id}/waiver/decision', [\App\Http\Controllers\SettlementController::class, 'decideWaiver']);
     Route::post('/pending-payments/{id}/zoho-retry', [\App\Http\Controllers\SettlementController::class, 'retryZoho']);
+    // Financial Suite → Close & controls (month close, review, quote approvals, ledger check, FX).
+    Route::get('/finance/controls', [\App\Http\Controllers\FinanceControlsController::class, 'index']);
+    Route::post('/finance/controls/lock/{month}', [\App\Http\Controllers\FinanceControlsController::class, 'lock']);
+    Route::post('/finance/controls/unlock/{month}', [\App\Http\Controllers\FinanceControlsController::class, 'unlock']);
+    Route::post('/finance/controls/review', [\App\Http\Controllers\FinanceControlsController::class, 'review']);
+    Route::post('/finance/quote-approvals/{id}/decide', [\App\Http\Controllers\FinanceControlsController::class, 'decide'])->whereNumber('id');
+    // TDS tracker (Form 26AS / 16A).
+    Route::get('/tds', [\App\Http\Controllers\TdsController::class, 'index']);
+    Route::post('/tds/26as', [\App\Http\Controllers\TdsController::class, 'upload'])->middleware('throttle:10,1');
+    Route::put('/tds/deductors/{tan}', [\App\Http\Controllers\TdsController::class, 'mapDeductor']);
+    Route::put('/tds/{id}/form16a', [\App\Http\Controllers\TdsController::class, 'form16a'])->whereNumber('id');
+    Route::post('/tds/chase/{clientId}', [\App\Http\Controllers\TdsController::class, 'chase'])->whereNumber('clientId');
     // Payments received (one row per payment) and advances earmarked for proforma quotes.
     Route::get('/payments-received', [\App\Http\Controllers\PaymentsReceivedController::class, 'index'])->middleware('throttle:60,1');
     Route::get('/payments-received/quotes', [\App\Http\Controllers\PaymentsReceivedController::class, 'quotes']);
@@ -500,6 +512,7 @@ Route::middleware(['auth:sanctum', 'firm.context', 'throttle:120,1'])->group(fun
       Route::post('/integrations/zoho/quotes/{kind}/{id}', [\App\Http\Controllers\ZohoQuoteController::class, 'send'])->whereIn('kind', ['standard', 'in'])->whereNumber('id')->middleware('throttle:zoho-write');
       Route::post('/integrations/zoho/quotes/{kind}/{id}/delete-in-zoho', [\App\Http\Controllers\ZohoQuoteController::class, 'deleteInZoho'])->whereIn('kind', ['standard', 'in'])->whereNumber('id')->middleware('throttle:zoho-write');
       Route::post('/integrations/zoho/quotes/{kind}/{id}/convert-to-invoice', [\App\Http\Controllers\ZohoQuoteController::class, 'convertToInvoice'])->whereIn('kind', ['standard', 'in'])->whereNumber('id')->middleware('throttle:zoho-write');
+      Route::post('/integrations/zoho/quotes/{kind}/{id}/request-approval', [\App\Http\Controllers\ZohoQuoteController::class, 'requestApproval'])->middleware('throttle:20,1');
     Route::get('/integrations/zoho/records/{record}/pdf', [\App\Http\Controllers\ZohoSyncController::class, 'pdf'])->middleware('throttle:zoho-read');
     Route::get('/integrations/zoho/analytics/monthly', [\App\Http\Controllers\ZohoBooksController::class, 'monthlyAnalytics']);
 
