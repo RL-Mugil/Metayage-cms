@@ -1786,6 +1786,9 @@ class ProjectController extends Controller
                 'total_received' => $totalReceived,
                 'total_pending'  => $totalPending,
             ],
+            // The case's P&L (fees less official fees, associates, other costs and time): finance access only.
+            'profitability'        => \App\Support\DataAccess::canOpenFinance($request->user())
+                ? app(\App\Services\MatterProfitability::class)->rows($request->user(), ['project_id' => $project->id])->first() : null,
         ]);
     }
 

@@ -45,6 +45,8 @@ Route::middleware(['auth', 'firm.context'])->group(function () {
     Route::get('/pending-payments', fn () => Inertia::render('PendingPayments'))->name('pending-payments');
     Route::get('/payments-received', fn () => Inertia::render('PaymentsReceived'))->name('payments-received');
     Route::get('/tds', fn () => Inertia::render('Tds'))->name('tds');
+    Route::get('/costs', fn () => Inertia::render('Costs'))->name('costs');
+    Route::get('/profitability', fn () => Inertia::render('Profitability'))->name('profitability');
     Route::get('/documents', fn () => Inertia::render('Documents'))->name('documents');
     Route::get('/ai', fn () => Inertia::render('AI'))->name('ai');
     // Claude connector sign-in (OAuth consent).

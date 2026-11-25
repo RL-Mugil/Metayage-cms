@@ -148,6 +148,8 @@ const groups = [
       { to: "/pending-payments", title: "Pending Payments", icon: CreditCard, finance: true },
       { to: "/payments-received", title: "Payments Received", icon: Banknote, finance: true },
       { to: "/tds", title: "TDS Tracker", icon: Receipt, finance: true },
+      { to: "/costs", title: "Matter Costs", icon: Receipt, finance: true },
+      { to: "/profitability", title: "Profitability", icon: BarChart3, finance: true },
       { to: "/analytics", title: "Financial Analytics", icon: BarChart3, finance: true },
       { to: "/reports", title: "Reports", icon: FileBarChart2 },
     ],

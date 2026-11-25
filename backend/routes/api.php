@@ -230,6 +230,14 @@ Route::middleware(['auth:sanctum', 'firm.context', 'throttle:120,1'])->group(fun
     Route::post('/finance/controls/unlock/{month}', [\App\Http\Controllers\FinanceControlsController::class, 'unlock']);
     Route::post('/finance/controls/review', [\App\Http\Controllers\FinanceControlsController::class, 'review']);
     Route::post('/finance/quote-approvals/{id}/decide', [\App\Http\Controllers\FinanceControlsController::class, 'decide'])->whereNumber('id');
+    // Matter costs (official fees, associate bills), time cost rates and profitability.
+    Route::get('/finance/costs', [\App\Http\Controllers\MatterCostController::class, 'index']);
+    Route::post('/finance/costs', [\App\Http\Controllers\MatterCostController::class, 'store']);
+    Route::put('/finance/costs/{id}', [\App\Http\Controllers\MatterCostController::class, 'update'])->whereNumber('id');
+    Route::delete('/finance/costs/{id}', [\App\Http\Controllers\MatterCostController::class, 'destroy'])->whereNumber('id');
+    Route::get('/finance/time-cost-rates', [\App\Http\Controllers\MatterCostController::class, 'rates']);
+    Route::put('/finance/time-cost-rates', [\App\Http\Controllers\MatterCostController::class, 'saveRates']);
+    Route::get('/finance/profitability', [\App\Http\Controllers\ProfitabilityController::class, 'index'])->middleware('throttle:60,1');
     // TDS tracker (Form 26AS / 16A).
     Route::get('/tds', [\App\Http\Controllers\TdsController::class, 'index']);
     Route::post('/tds/26as', [\App\Http\Controllers\TdsController::class, 'upload'])->middleware('throttle:10,1');

@@ -35,6 +35,7 @@ class ToolRegistry
         Tools\UnbilledAndQuoted::class,
         Tools\RevenueForecast::class,
         Tools\RevenueBreakdown::class,
+        Tools\MatterProfitability::class,
         Tools\PeriodComparison::class,
         Tools\CaseTimeline::class,
         Tools\SearchDocuments::class,

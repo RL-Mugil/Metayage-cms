@@ -375,6 +375,22 @@ export function ProjectDetailPanel({ projectId, onClose }: Props) {
                       </div>
                     ))}
                   </div>
+                  {data.profitability && (
+                    <div className="rounded-lg border border-border p-3 text-xs">
+                      <p className="mb-1.5 text-[10px] uppercase tracking-wider text-muted-foreground">Case P&amp;L (INR, without GST)</p>
+                      <div className="grid grid-cols-3 gap-x-4 gap-y-1 sm:grid-cols-6">
+                        {[
+                          ["Billed", data.profitability.billed], ["Official fees", -data.profitability.official_paid], ["Associates", -data.profitability.associate],
+                          ["Other", -data.profitability.other], [`Time (${data.profitability.hours} h)`, -data.profitability.time_cost], ["Margin", data.profitability.margin],
+                        ].map(([label, value]) => (
+                          <div key={String(label)}><p className="text-[10px] text-muted-foreground">{label}</p>
+                            <p className={`font-mono font-semibold ${label === "Margin" ? (Number(value) < 0 ? "text-red-600" : "text-emerald-600") : ""}`}>
+                              {Number(value) < 0 ? "−" : ""}₹{Math.abs(Number(value)).toLocaleString("en-IN", { maximumFractionDigits: 0 })}</p></div>
+                        ))}
+                      </div>
+                      {data.profitability.leakage > 0 && <p className="mt-1.5 text-red-600">Official fees paid but not billed: ₹{Number(data.profitability.leakage).toLocaleString("en-IN")}</p>}
+                    </div>
+                  )}
                   {data.invoices.length === 0 ? (
                     <p className="text-muted-foreground text-sm text-center py-8">No invoices for this case.</p>
                   ) : (
