@@ -299,7 +299,8 @@ class ModuleActionsTest extends TestCase
     public function test_portal_toggle_and_invite_all(): void
     {
         $client = $this->client('Acme Corp', 'C01M');
-        Sanctum::actingAs($this->user('manager'));
+        // A Director manages every client's portal; Patent Attorneys only their PCM / SCM clients (PortalScopeTest).
+        Sanctum::actingAs($this->user('partner'));
 
         $this->postJson("/api/portal/clients/{$client->id}/toggle")->assertOk()->assertJson(['portal_enabled' => true]);
         $this->assertTrue((bool) $client->fresh()->portal_enabled);
