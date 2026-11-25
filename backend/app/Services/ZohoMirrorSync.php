@@ -309,7 +309,7 @@ class ZohoMirrorSync
                     }
                     $this->checkDuration();
                     $reads++;
-                    $record = $this->readDetail($resource, (string) $id, true, 'payment_check_detail_not_found');
+                    $record = $this->readDetail($resource, (string) $id, true, 'payment_check_not_found');
                     if ($record === null) {
                         $counts['removed']++;
                         continue;
@@ -340,7 +340,7 @@ class ZohoMirrorSync
                     $snapshot = $live[$id];
                     $clients = app(\App\Services\RegisterPaymentsImporter::class)->clientsFor($snapshot,
                         \App\Models\RegisterPayment::whereIn('zoho_payment_id', [(string) $id, "tds:{$id}", "cn:{$id}"])->pluck('patent_invoice_in_id')->all());
-                    if ($this->readDetail($resource, (string) $id, true, 'payment_check_missing_from_list') === null) {
+                    if ($this->readDetail($resource, (string) $id, true, 'payment_check_missing') === null) {
                         $counts['removed']++;
                         // The deleted snapshot no longer names its customer: rebuild the ledgers it touched.
                         DB::afterCommit(fn () => array_map(fn ($c) => app(\App\Services\ClientLedgerSync::class)->sync((int) $c), $clients));
