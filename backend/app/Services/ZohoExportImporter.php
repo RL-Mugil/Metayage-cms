@@ -651,7 +651,8 @@ class ZohoExportImporter
     {
         return [
             'contact_id' => $doc['id'], 'contact_name' => $doc['contact_name'], 'company_name' => $doc['company_name'],
-            'customer_number' => $doc['customer_number'], 'contact_type' => 'customer', 'status' => $doc['status'],
+            // Zoho's API field for the customer number (the portal client code).
+            'contact_number' => $doc['customer_number'], 'contact_type' => 'customer', 'status' => $doc['status'],
             'currency_code' => $doc['currency'], 'gst_no' => $doc['gst_no'], 'gst_treatment' => $doc['gst_treatment'],
             'source' => 'zoho_export',
         ] + ($doc['opening_balance'] === null ? [] : ['opening_balance_amount' => $doc['opening_balance']]);
