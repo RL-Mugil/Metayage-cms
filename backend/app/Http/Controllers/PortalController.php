@@ -6,6 +6,7 @@ use App\Mail\PortalInviteMail;
 use App\Models\Client;
 use App\Models\User;
 use App\Services\ClientPortalUsers;
+use App\Support\DataAccess;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -35,6 +36,21 @@ class PortalController extends Controller
             return response()->json(['message' => 'Forbidden'], 403);
         }
         return null;
+    }
+
+    /** Clients this user may see on the Client Portal page (PCM / SCM clients for case-scoped staff). */
+    private function visibleClients(Request $request)
+    {
+        $query = Client::query();
+        DataAccess::scopeManagedClients($query, $request->user());
+
+        return $query;
+    }
+
+    /** One client within the user's scope; 404 outside it. */
+    private function findClient(Request $request, $id): Client
+    {
+        return $this->visibleClients($request)->whereKey((int) $id)->firstOrFail();
     }
 
     /**
@@ -87,7 +103,7 @@ class PortalController extends Controller
         if ($deny = $this->denyNonInternal($request)) return $deny;
 
         return response()->json(
-            Client::whereNotNull('portal_user_id')->orderBy('company_name')->limit(500)->get()->map(fn ($c) => [
+            $this->visibleClients($request)->whereNotNull('portal_user_id')->orderBy('company_name')->limit(500)->get()->map(fn ($c) => [
                 'id'               => $c->id,
                 'client_code'      => $c->client_code,
                 'company_name'     => $c->company_name ?? $c->legal_name,
@@ -102,7 +118,7 @@ class PortalController extends Controller
     {
         if ($deny = $this->denyUnauthorized($request)) return $deny;
 
-        $client = Client::findOrFail($id);
+        $client = $this->findClient($request, $id);
         $client->portal_enabled = ! $client->portal_enabled;
         if ($client->portal_enabled && ! $client->portal_invited_at) {
             $client->portal_invited_at = now();
@@ -122,7 +138,7 @@ class PortalController extends Controller
     {
         if ($deny = $this->denyUnauthorized($request)) return $deny;
 
-        $count = Client::where('portal_enabled', false)->update([
+        $count = $this->visibleClients($request)->where('portal_enabled', false)->update([
             'portal_invited_at' => now(),
             'portal_enabled'    => true,
         ]);
@@ -157,7 +173,7 @@ class PortalController extends Controller
             'password'    => ['required', 'max:100', PasswordRule::min(8)->mixedCase()->symbols()],
         ]);
 
-        $client = Client::findOrFail($validated['client_id']);
+        $client = $this->findClient($request, $validated['client_id']);
         $companyName = $client->company_name ?? $client->legal_name ?? 'Client';
         $row = $portalUsers->add($client, [
             'name'        => $validated['name'] ?? $companyName,
@@ -189,7 +205,7 @@ class PortalController extends Controller
     {
         if ($deny = $this->denyNonInternal($request)) return $deny;
 
-        return response()->json($portalUsers->list(Client::findOrFail($id)));
+        return response()->json($portalUsers->list($this->findClient($request, $id)));
     }
 
     /** Add a portal login to a client; access follows the designation (see ClientPortalUsers). */
@@ -207,7 +223,7 @@ class PortalController extends Controller
             'inventor'    => 'nullable|array',
         ]);
 
-        $row = $portalUsers->add(Client::findOrFail($id), $validated, $request->user(), $request->ip(), $request->userAgent());
+        $row = $portalUsers->add($this->findClient($request, $id), $validated, $request->user(), $request->ip(), $request->userAgent());
 
         return response()->json(['ok' => true, 'user' => $row], 201);
     }
@@ -245,7 +261,7 @@ class PortalController extends Controller
     {
         if ($deny = $this->denyUnauthorized($request)) return $deny;
 
-        $portalUsers->remove(Client::findOrFail($clientId), User::findOrFail($userId), $request->user(), $request->ip());
+        $portalUsers->remove($this->findClient($request, $clientId), User::findOrFail($userId), $request->user(), $request->ip());
 
         return response()->json(['ok' => true]);
     }
@@ -257,7 +273,7 @@ class PortalController extends Controller
 
         $request->validate(['password' => 'required|string|min:8|max:100']);
 
-        $client = Client::findOrFail($clientId);
+        $client = $this->findClient($request, $clientId);
         $user   = User::findOrFail($userId);
 
         // Contact logins, the primary, and the client's inventors' logins.
@@ -287,8 +303,13 @@ class PortalController extends Controller
             'ids.*'  => 'integer|exists:clients,id',
         ]);
 
-        $ids    = $validated['ids'];
+        $ids    = array_values(array_unique(array_map('intval', $validated['ids'])));
         $action = $validated['action'];
+
+        // Case-scoped staff act only on their own PCM / SCM clients.
+        if ($this->visibleClients($request)->whereIn('id', $ids)->count() !== count($ids)) {
+            return response()->json(['message' => 'Some of these clients are not yours (you are not their Client Manager or Secondary Client Manager).'], 403);
+        }
 
         if ($action === 'enable') {
             Client::whereIn('id', $ids)->update([
@@ -323,7 +344,7 @@ class PortalController extends Controller
 
         $request->validate(['password' => 'required|string|min:6']);
 
-        $client = Client::findOrFail($clientId);
+        $client = $this->findClient($request, $clientId);
 
         if (! $client->portal_user_id) {
             return response()->json(['message' => 'No portal user linked to this client. Create the portal first.'], 422);
@@ -351,6 +372,9 @@ class PortalController extends Controller
                 $q->where('audit_logs.subject_type', 'Client')
                   ->orWhereIn('audit_logs.action', ['portal_invite_sent', 'portal_enabled', 'portal_disabled', 'portal_password_reset']);
             })
+            ->when(! DataAccess::seesAllCases($request->user()), fn ($q) => $q
+                ->where('audit_logs.subject_type', 'Client')
+                ->whereIn('audit_logs.subject_id', $this->visibleClients($request)->select('id')))
             ->orderByDesc('audit_logs.created_at')
             ->limit(15)
             ->select('audit_logs.id', 'audit_logs.action', 'audit_logs.subject_type', 'audit_logs.subject_id', 'audit_logs.metadata', 'audit_logs.created_at', 'users.name as user_name')

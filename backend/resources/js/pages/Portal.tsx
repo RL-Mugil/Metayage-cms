@@ -161,7 +161,7 @@ export default function Portal() {
   const loadPortal = () =>
     api.getPortalClients().then(setClients).catch(() => {}).finally(() => setLoading(false));
   const loadAll = () =>
-    api.getClients(new URLSearchParams({ per_page: '2000' }))
+    api.getClients(new URLSearchParams({ per_page: '2000', mine: '1' }))
       .then((res: any) => setAllClients(Array.isArray(res) ? res : res?.data ?? []))
       .catch(() => {});
   const loadActivity = () =>

@@ -243,6 +243,9 @@ class ClientController extends Controller
             $query->visibleToUser($user);
         } elseif ($user->isGalvanizer()) {
             $user->applyClientScope($query);
+        } elseif ($request->boolean('mine')) {
+            // e.g. the Client Portal picker: only the user's PCM / SCM clients.
+            \App\Support\DataAccess::scopeManagedClients($query, $user);
         }
 
         if ($request->filled('search')) {

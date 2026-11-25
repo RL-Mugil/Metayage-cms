@@ -91,6 +91,24 @@ class DataAccess
         $query->where(fn ($q) => $q->where("{$table}.assigned_manager_id", $id)->orWhere("{$table}.secondary_manager_id", $id));
     }
 
+    /**
+     * Limit a Client query to the clients the user may see: everyone for the full-view roles,
+     * the circle for a galvanizer, otherwise clients with at least one case where the user is
+     * Client Manager (PCM) or Secondary Client Manager (SCM).
+     */
+    public static function scopeManagedClients($query, User $user): void
+    {
+        if (self::seesAllCases($user)) {
+            return;
+        }
+        if ($user->isGalvanizer()) {
+            $user->applyClientScope($query);
+
+            return;
+        }
+        $query->whereHas('projects', fn ($p) => self::scopeManagedCases($p, $user));
+    }
+
     /** Ids of the user's CM / SCM cases. @return array<int, int> */
     public static function managedCaseIds(User $user): array
     {
