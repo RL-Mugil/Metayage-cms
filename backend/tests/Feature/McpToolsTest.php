@@ -86,7 +86,7 @@ class McpToolsTest extends TestCase
         $this->assertSame((int) $this->analyst->id, (int) $export->generated_by_id);
 
         $csv = $this->download($res['download_url'])->assertOk();
-        $body = $csv->streamedContent() ?: $csv->getContent();
+        $body = (string) $csv->getContent();
         $this->assertStringContainsString('971M001INPRV', $body);
         $this->assertStringNotContainsString('971M002INPRV', $body);        // not the analyst's case
         $this->assertStringContainsString('UNSIGNED DRAFT', $body);
@@ -159,8 +159,12 @@ class McpToolsTest extends TestCase
         $this->assertSame('971M002INPRV-INV', $all['invoices'][0]['invoice']);      // most overdue first
         $this->assertSame(6000.0, (float) $all['totals_by_currency']['INR']);
 
+        // A client filter must not widen the analyst's scope (only their CM case's invoice).
         $statement = $this->tool($this->analyst, 'client_statement', ['client_code' => '971M']);
         $this->assertCount(1, $statement['invoices']);
+        $this->assertSame(1000.0, (float) $statement['summary']['outstanding']);
+        $this->assertSame(1, $this->tool($this->analyst, 'outstanding_invoices', ['client_id' => $this->client->id])['total_invoices']);
+        $this->assertSame(2, $this->tool($this->admin, 'client_statement', ['client_code' => '971M'])['summary']['invoice_count']);
         foreach (['collections', 'unbilled_and_quoted', 'revenue_forecast', 'revenue_breakdown', 'period_comparison'] as $tool) {
             $this->assertArrayNotHasKey('error', $this->tool($this->admin, $tool), $tool);
         }

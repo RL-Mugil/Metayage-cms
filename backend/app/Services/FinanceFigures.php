@@ -32,9 +32,11 @@ class FinanceFigures
     private function scopedRegister(User $user, ?int $clientId = null): Builder
     {
         $query = PatentInvoiceIn::query()->where('type', 'invoice');
+        // A client filter narrows the user's own scope; it never widens it.
         if ($clientId !== null) {
             $query->where('client_id', $clientId);
-        } elseif ($user->isClientRole()) {
+        }
+        if ($user->isClientRole()) {
             $query->whereIn('client_id', Client::query()->visibleToUser($user)->select('id'));
         } else {
             // Staff: all finance, their circle (galvanizer) or their CM / SCM cases.
@@ -47,9 +49,11 @@ class FinanceFigures
     private function legacyInvoices(User $user, ?int $clientId = null): Builder
     {
         $query = Invoice::query()->where('status', '!=', 'Draft');
+        // A client filter narrows the user's own scope; it never widens it.
         if ($clientId !== null) {
             $query->where('client_id', $clientId);
-        } elseif ($user->isClientRole()) {
+        }
+        if ($user->isClientRole()) {
             $query->whereHas('client', fn ($q) => $q->visibleToUser($user));
         } else {
             // Staff: all finance, their circle (galvanizer) or their CM / SCM cases.
@@ -294,7 +298,8 @@ class FinanceFigures
             ->where(fn ($q) => $q->whereNull('zoho_status')->orWhereRaw('LOWER(zoho_status) <> ?', ['invoiced']));
         if ($clientId !== null) {
             $query->where('client_id', $clientId);
-        } elseif ($user->isClientRole()) {
+        }
+        if ($user->isClientRole()) {
             $query->whereIn('client_id', Client::query()->visibleToUser($user)->select('id'));
         } else {
             // Staff: all finance, their circle (galvanizer) or their CM / SCM cases.
