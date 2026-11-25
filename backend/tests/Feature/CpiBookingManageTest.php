@@ -181,8 +181,7 @@ class CpiBookingManageTest extends TestCase
 
         $this->putJson("/api/cpi-admin/bookings/{$b->id}/staff", ['user_ids' => [$priya->id, $karthik->id, $client->id]], $h)->assertOk()->assertJsonCount(2, 'staff');
 
-        Mail::assertSent(CpiBookingMail::class, fn ($m) => $m->kind === 'staff-invite' && $m->hasTo('priya@firm.test') && str_contains(str_replace("
- ", '', $m->icsData), 'mailto:karthik@firm.test'));
+        Mail::assertSent(CpiBookingMail::class, fn ($m) => $m->kind === 'staff-invite' && $m->hasTo('priya@firm.test') && str_contains(preg_replace("/\r?\n[ \t]/", '', $m->icsData), 'mailto:karthik@firm.test'));
         Mail::assertSent(CpiBookingMail::class, fn ($m) => $m->kind === 'staff-invite' && $m->hasTo('karthik@firm.test'));
         Mail::assertNotSent(CpiBookingMail::class, fn ($m) => $m->hasTo('asha@example.com'));
         $this->assertSame(2, DB::table('ip_notifications')->where('type', 'consultation_assigned')->count());
