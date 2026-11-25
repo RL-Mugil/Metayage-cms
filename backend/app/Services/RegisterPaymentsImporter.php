@@ -95,7 +95,8 @@ class RegisterPaymentsImporter
         if (! $snapshot->trashed() && strtolower((string) ($note['status'] ?? '')) !== 'void') {
             $rate = (float) ($note['exchange_rate'] ?? 1) ?: 1.0;
             foreach (($note['invoices_credited'] ?? []) as $credited) {
-                $amount = (float) ($credited['amount_credited'] ?? 0);
+                // Zoho's API names it credited_amount (amount_credited in older shapes).
+                $amount = (float) ($credited['credited_amount'] ?? $credited['amount_credited'] ?? 0);
                 $row = $this->registerRow($snapshot->scope, (string) ($credited['invoice_id'] ?? ''));
                 $date = $credited['date'] ?? $note['date'] ?? null;
                 if (! $row || ! $date || $amount <= 0) {

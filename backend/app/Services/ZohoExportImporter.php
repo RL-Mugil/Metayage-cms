@@ -588,7 +588,7 @@ class ZohoExportImporter
         if ($doc['invoice_number'] !== '' && $amount > 0 && $doc['status'] !== 'void') {
             $invoiceId = ZohoInvoice::withTrashed()->where('zoho_type', 'invoice')->where('number', $doc['invoice_number'])->value('zoho_id');
             if ($invoiceId) {
-                $credited[] = ['invoice_id' => (string) $invoiceId, 'invoice_number' => $doc['invoice_number'], 'amount_credited' => $amount, 'date' => $doc['date']];
+                $credited[] = ['invoice_id' => (string) $invoiceId, 'invoice_number' => $doc['invoice_number'], 'credited_amount' => $amount, 'date' => $doc['date']];
             }
         }
 
@@ -602,7 +602,7 @@ class ZohoExportImporter
 
     private function creditNoteKey(array $d): string
     {
-        $credited = array_map(fn ($i) => ($i['invoice_id'] ?? '').':'.round((float) ($i['amount_credited'] ?? 0), 2), $d['invoices_credited'] ?? []);
+        $credited = array_map(fn ($i) => ($i['invoice_id'] ?? '').':'.round((float) ($i['credited_amount'] ?? $i['amount_credited'] ?? 0), 2), $d['invoices_credited'] ?? []);
         sort($credited);
 
         return ($d['date'] ?? '').'|'.strtolower((string) ($d['status'] ?? '')).'|'.round((float) ($d['total'] ?? 0), 2).'|'.round((float) ($d['balance'] ?? 0), 2).'|'.implode(',', $credited);

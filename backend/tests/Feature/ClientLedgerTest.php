@@ -139,7 +139,7 @@ class ClientLedgerTest extends TestCase
         $this->snapshot('creditnotes', 'cn-1', [
             'creditnote_id' => 'cn-1', 'creditnote_number' => 'CN-00001', 'status' => 'open', 'date' => '2026-09-10', 'total' => 6000,
             'balance' => 1000, 'exchange_rate' => 1, 'currency_code' => 'INR', 'customer_id' => 'cust-445',
-            'invoices_credited' => [['invoice_id' => 'inv-9', 'amount_credited' => 5000, 'date' => '2026-09-10']],
+            'invoices_credited' => [['invoice_id' => 'inv-9', 'credited_amount' => 5000, 'date' => '2026-09-10']],
         ]);
 
         $this->assertSame(0, RegisterPayment::where('estimated', true)->count());
