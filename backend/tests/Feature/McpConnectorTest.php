@@ -105,7 +105,10 @@ class McpConnectorTest extends TestCase
 
         $tools = collect($this->rpc($access, 'tools/list')->assertOk()->json('result.tools'));
         $this->assertTrue($tools->contains('name', 'search_cases'));
-        $this->assertTrue($tools->every(fn ($t) => $t['annotations']['readOnlyHint'] === true && $t['annotations']['destructiveHint'] === false));
+        // Nothing destructive; only the report / file tools save something (a draft report, a signature, a link).
+        $this->assertTrue($tools->every(fn ($t) => $t['annotations']['destructiveHint'] === false));
+        $writers = $tools->filter(fn ($t) => $t['annotations']['readOnlyHint'] === false)->pluck('name')->sort()->values()->all();
+        $this->assertSame(['client_statement', 'deadline_calendar', 'download_saved_report', 'generate_report', 'my_hr', 'sign_report'], $writers);
         $this->assertFalse($tools->contains(fn ($t) => preg_match('/create|update|delete|edit|mark|send/i', $t['name'])));
 
         $result = $this->rpc($access, 'tools/call', ['name' => 'search_cases', 'arguments' => ['query' => '951M']])->assertOk()->json('result');

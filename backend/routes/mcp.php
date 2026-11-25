@@ -19,4 +19,8 @@ Route::post('/oauth/token', [OAuthController::class, 'token'])->middleware('thro
 Route::post('/oauth/revoke', [OAuthController::class, 'revoke'])->middleware('throttle:30,1');
 
 Route::post('/mcp', [McpController::class, 'handle'])->middleware('throttle:120,1');
+
+// Files Claude produced (reports, payslips, calendars): 30-minute secret links, no sign-in.
+Route::get('/files/claude/{token}', [\App\Http\Controllers\ClaudeFileController::class, 'show'])
+    ->where('token', '[A-Za-z0-9]{48}')->middleware('throttle:30,1');
 Route::get('/mcp', [McpController::class, 'get']);

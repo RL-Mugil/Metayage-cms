@@ -13,12 +13,13 @@ interface Props {
 }
 
 const CAN = [
-  "Read the clients, cases, deadlines, compliance items and tasks you can see in the portal",
-  "Read billing figures and invoices only where your role allows",
-  "Build summaries and analytics from that data",
+  "Read the clients, cases, deadlines, compliance items, tasks and documents you can see in the portal",
+  "Read billing, invoices and pending payments only where your role allows",
+  "Make Reports-tab reports (PDF / Excel / CSV) as drafts in your Reports history, with 30-minute download links",
+  "Sign a report as the firm signatory — only when you give the signatory PIN",
 ];
 const CANNOT = [
-  "Create, edit or delete anything",
+  "Create, edit or delete clients, cases, invoices or any other portal record",
   "See data outside your own access",
   "See payslips, salaries, bank details or passwords",
 ];
@@ -56,7 +57,7 @@ export default function OAuthConsent() {
             <div className="space-y-5">
               <div className="flex items-start gap-2 rounded-lg border border-gold/30 bg-gold/5 px-3 py-2 text-sm">
                 <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-gold" />
-                <span><strong>Read-only access.</strong> Claude will see exactly what you can see in the portal, and nothing more.</span>
+                <span><strong>Read and report access.</strong> Claude will see exactly what you can see in the portal, and nothing more.</span>
               </div>
               <div>
                 <div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground"><Eye className="h-3.5 w-3.5" /> Claude can</div>
@@ -74,7 +75,7 @@ export default function OAuthConsent() {
                   {busy === "deny" ? <Loader2 className="h-4 w-4 animate-spin" /> : "Deny"}
                 </Button>
                 <Button className="flex-1 bg-gold text-black hover:bg-gold/90" disabled={busy !== null} onClick={() => decide("approve")}>
-                  {busy === "approve" ? <Loader2 className="h-4 w-4 animate-spin" /> : "Allow read-only access"}
+                  {busy === "approve" ? <Loader2 className="h-4 w-4 animate-spin" /> : "Allow access"}
                 </Button>
               </div>
             </div>

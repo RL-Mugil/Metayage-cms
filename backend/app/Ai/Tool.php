@@ -30,6 +30,21 @@ abstract class Tool
     /** @return array<string, mixed> */
     abstract public function handle(User $user, array $args): array;
 
+    /**
+     * False for tools that save something (a report in Reports history, a signature, a download
+     * link). No tool edits or deletes portal records.
+     */
+    public function readOnly(): bool
+    {
+        return true;
+    }
+
+    /** A 30-minute download link (App\Services\ClaudeFiles); tools return these under "files". */
+    protected function fileLink(User $user, string $kind, ?int $refId, string $file, array $params = [], ?string $name = null): array
+    {
+        return app(\App\Services\ClaudeFiles::class)->link($user, $kind, $refId, $file, $params) + ['name' => $name ?? "{$kind}.{$file}"];
+    }
+
     /** Whether the user may use this tool at all (e.g. finance tools). */
     public function availableTo(User $user): bool
     {

@@ -763,6 +763,19 @@ class ReportsController extends Controller
      */
     public function download(Request $request, \App\Services\Reports\PaymentReportData $reportData, \App\Services\Reports\ReportSigner $signer)
     {
+        [$export, $data] = $this->createExport($request, $reportData, $signer);
+
+        return $this->renderExport($request, $export, $data, (string) $request->input('file'));
+    }
+
+    /**
+     * Build a report and save it to the user's Reports history (signed when a PIN is given).
+     * Shared by the Reports tab and the Claude connector (App\Ai\Tools\GenerateReport).
+     *
+     * @return array{0: ReportExport, 1: array}
+     */
+    public function createExport(Request $request, \App\Services\Reports\PaymentReportData $reportData, \App\Services\Reports\ReportSigner $signer, array $extraFilters = []): array
+    {
         $request->validate([
             'type' => ['required', Rule::in(array_keys(self::REPORT_ACCESS))],
             'file' => ['required', Rule::in(['xlsx', 'csv', 'pdf'])],
@@ -782,7 +795,7 @@ class ReportsController extends Controller
         $export = ReportExport::create([
             'generated_by_id' => $user->id, 'report_type' => $type, 'report_name' => self::REPORT_NAMES[$type] ?? $type,
             'format' => $file === 'xlsx' ? 'EXCEL' : strtoupper($file),
-            'filters' => ['from_date' => $from?->toDateString(), 'to_date' => $to?->toDateString(), 'client_code' => $clientCode],
+            'filters' => ['from_date' => $from?->toDateString(), 'to_date' => $to?->toDateString(), 'client_code' => $clientCode] + $extraFilters,
             'row_count' => $rowCount,
             'snapshot' => $data,
         ]);
@@ -790,7 +803,16 @@ class ReportsController extends Controller
             $signer->sign($export, $data, $user, (string) $request->input('pin'));
         }
 
-        return $this->renderExport($request, $export, $data, $file);
+        return [$export, $data];
+    }
+
+    /** The report types and names a user may run (Claude connector: list_reports). @return array<string, string> */
+    public static function availableTo(\App\Models\User $user): array
+    {
+        return collect(self::REPORT_NAMES)
+            ->filter(fn ($name, $type) => in_array($user->role, self::REPORT_ACCESS[$type] ?? [], true)
+                && (! in_array($type, self::FINANCE_REPORTS, true) || \App\Support\DataAccess::canOpenFinance($user)))
+            ->all();
     }
 
     /** Download a saved report again from its snapshot (keeps its signature; can be signed now). */
@@ -831,7 +853,7 @@ class ReportsController extends Controller
         $signed = $this->signatureFor($export);
         $seal = app(\App\Services\Reports\SignatureSeal::class);
         $signature = $signed ? [
-            'name' => $signed->signedBy?->name ?? $user->name, 'role' => ucwords(str_replace('_', ' ', (string) $signed->signer_role)),
+            'name' => app(\App\Services\Reports\ReportSigner::class)->signerName($signed) ?? $user->name, 'role' => ucwords(str_replace('_', ' ', (string) $signed->signer_role)),
             'at' => $signed->signed_at?->timezone('Asia/Kolkata')->format('d M Y, H:i').' IST', 'code' => $signed->verification_code,
             'url' => rtrim((string) config('app.url'), '/').'/reports?verify='.$signed->verification_code,
         ] : null;
@@ -942,7 +964,7 @@ class ReportsController extends Controller
 
         return response()->json([
             'valid' => $intact, 'report' => $export->report_name, 'format' => $export->format, 'filters' => $export->filters,
-            'signed_by' => $signature->signedBy?->name ?? $export->generatedBy?->name, 'signer_role' => $signature->signer_role,
+            'signed_by' => $signer->signerName($signature) ?? $export->generatedBy?->name, 'signer_role' => $signature->signer_role,
             'signed_at' => $signature->signed_at?->toDateTimeString(), 'rows' => $export->row_count,
         ]);
     }

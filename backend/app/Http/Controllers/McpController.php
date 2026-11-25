@@ -60,18 +60,24 @@ class McpController extends Controller
         return match ($msg['method']) {
             'initialize' => $this->result($id, [
                 'protocolVersion' => in_array($params['protocolVersion'] ?? '', self::VERSIONS, true) ? $params['protocolVersion'] : self::VERSIONS[0],
-                'capabilities' => ['tools' => ['listChanged' => false]],
+                'capabilities' => ['tools' => ['listChanged' => false], 'prompts' => ['listChanged' => false]],
                 'serverInfo' => ['name' => 'myipstrategy-portal', 'title' => 'MyIPStrategy portal', 'version' => '1.0.0'],
-                'instructions' => 'Read-only access to the MyIPStrategy IP practice portal: clients, cases, deadlines, compliance, tasks, workload and (where allowed) finance. '
-                    ."Data is limited to what {$user->name} may see. Nothing can be created, edited or deleted through this connector. Amounts are INR.",
+                'instructions' => 'Access to the MyIPStrategy IP practice portal: clients, cases, deadlines, compliance, tasks, workload, documents, tracker, '
+                    .'finance and pending payments (where allowed), and the Reports module. '
+                    ."Data is limited to what {$user->name} may see. Portal records cannot be created, edited or deleted. "
+                    .'generate_report saves a report as an unsigned draft and returns a download link valid for 30 minutes: always give the user the link. '
+                    .'To sign a report, ask the user for the signatory PIN and call sign_report; never repeat or store the PIN. Amounts are INR.',
             ]),
             'ping' => $this->result($id, (object) []),
             'tools/list' => $this->result($id, ['tools' => array_values(array_map(fn (Tool $t) => [
                 'name' => $t->name(), 'title' => $t->title(), 'description' => $t->description(),
                 'inputSchema' => $t->inputSchema() + ['type' => 'object'],
-                'annotations' => ['title' => $t->title(), 'readOnlyHint' => true, 'destructiveHint' => false, 'idempotentHint' => true, 'openWorldHint' => false],
+                'annotations' => ['title' => $t->title(), 'readOnlyHint' => $t->readOnly(), 'destructiveHint' => false, 'idempotentHint' => $t->readOnly(), 'openWorldHint' => false],
             ], $this->registry->for($user)))]),
             'tools/call' => $this->call($user, $id, $params),
+            'prompts/list' => $this->result($id, ['prompts' => app(\App\Ai\Prompts::class)->list($user)]),
+            'prompts/get' => ($prompt = app(\App\Ai\Prompts::class)->get($user, (string) ($params['name'] ?? ''), (array) ($params['arguments'] ?? [])))
+                ? $this->result($id, $prompt) : $this->error($id, -32602, 'Unknown prompt'),
             default => $this->error($id, -32601, 'Method not found'),
         };
     }
@@ -89,9 +95,17 @@ class McpController extends Controller
             $data = ['error' => 'The portal could not answer that just now.'];
         }
         $isError = isset($data['error']) && count($data) === 1;
+        $content = [['type' => 'text', 'text' => json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PARTIAL_OUTPUT_ON_ERROR)]];
+        // Files the tool produced (30-minute download links) also go out as resource links.
+        foreach ((array) ($data['files'] ?? []) as $file) {
+            if (is_array($file) && ! empty($file['url'])) {
+                $content[] = ['type' => 'resource_link', 'uri' => $file['url'], 'name' => (string) ($file['name'] ?? 'file'),
+                    'mimeType' => (string) ($file['mime'] ?? 'application/octet-stream'), 'description' => 'Download link, valid until '.($file['expires_at'] ?? '30 minutes')];
+            }
+        }
 
         return $this->result($id, [
-            'content' => [['type' => 'text', 'text' => json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PARTIAL_OUTPUT_ON_ERROR)]],
+            'content' => $content,
             'structuredContent' => $data,
             'isError' => $isError,
         ]);

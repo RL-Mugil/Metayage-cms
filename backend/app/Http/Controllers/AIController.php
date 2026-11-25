@@ -51,7 +51,9 @@ class AIController extends Controller
 
         AuditLog::create([
             'user_id' => $user->id, 'action' => 'ai_query',
-            'metadata' => ['query' => $validated['query'], 'provider' => $provider],
+            // A signature PIN typed into a question is not written to the audit log.
+            'metadata' => ['query' => preg_match('/\b(pin|sign)/i', $validated['query']) ? preg_replace('/\b\d{4}\b/', '****', $validated['query']) : $validated['query'],
+                'provider' => $provider],
             'ip_address' => $request->ip(), 'user_agent' => $request->userAgent(),
         ]);
 

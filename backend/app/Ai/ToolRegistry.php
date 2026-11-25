@@ -23,6 +23,28 @@ class ToolRegistry
         Tools\TeamWorkload::class,
         Tools\FinanceSummary::class,
         Tools\OutstandingInvoices::class,
+        Tools\ListReports::class,
+        Tools\GenerateReport::class,
+        Tools\SignReport::class,
+        Tools\ReportHistory::class,
+        Tools\DownloadSavedReport::class,
+        Tools\DeadlineCalendar::class,
+        Tools\PendingPayments::class,
+        Tools\Collections::class,
+        Tools\ClientStatement::class,
+        Tools\UnbilledAndQuoted::class,
+        Tools\RevenueForecast::class,
+        Tools\RevenueBreakdown::class,
+        Tools\PeriodComparison::class,
+        Tools\CaseTimeline::class,
+        Tools\SearchDocuments::class,
+        Tools\PortfolioSummary::class,
+        Tools\DashboardKpis::class,
+        Tools\MyDay::class,
+        Tools\SearchTracker::class,
+        Tools\StaffDirectory::class,
+        Tools\CaseDiscussions::class,
+        Tools\MyHr::class,
     ];
 
     /** @return array<string, Tool> */
@@ -54,7 +76,8 @@ class ToolRegistry
 
         AuditLog::create([
             'user_id' => $user->id, 'action' => 'ai_tool_call', 'subject_type' => 'AI',
-            'metadata' => ['tool' => $name, 'arguments' => $args, 'source' => $source],
+            // A signature PIN is never written to the audit log.
+            'metadata' => ['tool' => $name, 'arguments' => array_key_exists('pin', $args) ? ['pin' => '****'] + $args : $args, 'source' => $source],
             'ip_address' => request()?->ip(), 'user_agent' => mb_substr((string) request()?->userAgent(), 0, 255),
         ]);
 
@@ -66,6 +89,10 @@ class ToolRegistry
             return ['error' => 'You do not have access to that record.'];
         } catch (\InvalidArgumentException $e) {
             return ['error' => $e->getMessage()];
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return ['error' => implode(' ', $e->validator->errors()->all())];
+        } catch (\Symfony\Component\HttpKernel\Exception\HttpExceptionInterface $e) {
+            return ['error' => $e->getMessage() !== '' ? $e->getMessage() : 'Not allowed.'];
         }
     }
 }

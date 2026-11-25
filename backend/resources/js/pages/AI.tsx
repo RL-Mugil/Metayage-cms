@@ -22,6 +22,8 @@ interface Message {
 }
 
 const QUICK_PROMPTS = [
+  "Plan my day",
+  "Payment Collection report for this month as Excel",
   "Which of my deadlines fall in the next 30 days?",
   "Show overdue cases",
   "Summarize my client portfolio",
@@ -36,19 +38,31 @@ const TOOL_LABEL: Record<string, string> = {
   search_clients: "clients", get_client: "client details", search_cases: "cases", get_case: "case details",
   upcoming_deadlines: "deadlines", compliance_items: "compliance", list_tasks: "tasks", case_analytics: "case analytics",
   team_workload: "workload", finance_summary: "finance summary", outstanding_invoices: "outstanding invoices",
+  list_reports: "report list", generate_report: "report file", sign_report: "signature", report_history: "saved reports",
+  download_saved_report: "saved report", deadline_calendar: "calendar file", pending_payments: "pending payments", collections: "collections",
+  client_statement: "client statement", unbilled_and_quoted: "unbilled work", revenue_forecast: "forecast", revenue_breakdown: "revenue breakdown",
+  period_comparison: "period comparison", case_timeline: "case timeline", search_documents: "documents", portfolio_summary: "portfolio",
+  dashboard_kpis: "KPIs", my_day: "my day", search_tracker: "tracker", staff_directory: "staff directory", case_discussions: "discussions", my_hr: "my HR",
 };
 
 const WELCOME: Message = {
   role: "assistant",
-  content: "Hello! Ask me about your clients, cases, deadlines, compliance, tasks or billing. I only read the portal — I can't change anything — and I see exactly what you can see.",
+  content: "Hello! Ask me about your clients, cases, deadlines, compliance, tasks, billing or pending payments, or ask for any report as PDF / Excel. I can't change portal records, and I see exactly what you can see.",
 };
 
-/** Inline **bold** and `code`, as React nodes (no HTML injection). */
+/** Only links to this portal become clickable (e.g. report download links). */
+const safeHref = (url: string) => { try { const u = new URL(url); return u.protocol === "https:" && u.host === window.location.host ? u.href : null; } catch { return null; } };
+
+/** Inline **bold**, `code` and [links](https://…), as React nodes (no HTML injection). */
 function inline(text: string): ReactNode[] {
-  return text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g).filter(Boolean).map((part, i) =>
-    part.startsWith("**") && part.endsWith("**") ? <strong key={i}>{part.slice(2, -2)}</strong>
-      : part.startsWith("`") && part.endsWith("`") ? <code key={i} className="rounded bg-background/60 px-1 font-mono text-[12px]">{part.slice(1, -1)}</code>
-      : <Fragment key={i}>{part}</Fragment>);
+  return text.split(/(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\(https?:\/\/[^)\s]+\)|https?:\/\/[^\s)]+)/g).filter(Boolean).map((part, i) => {
+    if (part.startsWith("**") && part.endsWith("**")) return <strong key={i}>{part.slice(2, -2)}</strong>;
+    if (part.startsWith("`") && part.endsWith("`")) return <code key={i} className="rounded bg-background/60 px-1 font-mono text-[12px]">{part.slice(1, -1)}</code>;
+    const md = /^\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)$/.exec(part);
+    const href = md ? safeHref(md[2]) : /^https?:\/\//.test(part) ? safeHref(part) : null;
+    if (href) return <a key={i} href={href} className="font-medium text-gold underline underline-offset-2" rel="noopener noreferrer">{md ? md[1] : "Download"}</a>;
+    return <Fragment key={i}>{md ? md[1] : part}</Fragment>;
+  });
 }
 
 /** A small, safe renderer for the assistant's markdown: headings, bullets, numbered lists, pipe tables, paragraphs. */
@@ -110,7 +124,7 @@ function ConnectClaude({ providers }: { providers: AIProviders | null }) {
           <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-gold/30 bg-gold/10"><Plug className="h-5 w-5 text-gold" /></div>
           <div>
             <h2 className="font-display text-lg font-semibold">Connect Claude to the portal</h2>
-            <p className="text-sm text-muted-foreground">Use Claude (claude.ai, Claude Desktop or mobile) to read and analyse your portal data. It sees only what you can see and cannot create, edit or delete anything.</p>
+            <p className="text-sm text-muted-foreground">Use Claude (claude.ai, Claude Desktop or mobile) to read and analyse your portal data and make report files. It sees only what you can see and cannot create, edit or delete portal records.</p>
           </div>
         </div>
         {providers && !providers.mcp_enabled && (
