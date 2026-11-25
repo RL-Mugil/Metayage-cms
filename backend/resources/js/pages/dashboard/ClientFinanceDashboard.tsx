@@ -92,7 +92,7 @@ export function ClientFinanceDashboard() {
         <div className="grid gap-4 md:grid-cols-4">
           <StatCard label="Zoho Receivables" value={formatCurrency(metrics.zoho_total_receivables ?? metrics.zoho_outstanding ?? 0)} icon={Landmark} accent="info" subtitle={`Invoice ${formatCurrency(metrics.zoho_outstanding ?? 0)} · Opening ${formatCurrency(metrics.zoho_opening_balance ?? 0)}`} />
           <StatCard label="Collected (MTD)" value={formatCurrency(metrics.zoho_collected_mtd ?? 0)} icon={Wallet} accent="success" />
-          <StatCard label="Ledger Balance" value={formatCurrency(metrics.ledger_balance ?? 0)} icon={Scale} accent="neutral" />
+          <StatCard label={(metrics.ledger_balance ?? 0) < -0.009 ? "Credit with us" : "Ledger Balance"} value={formatCurrency(Math.abs(metrics.ledger_balance ?? 0))} icon={Scale} accent="neutral" />
         </div>
 
         <Card className="border-border">

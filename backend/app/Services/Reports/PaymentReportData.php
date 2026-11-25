@@ -61,7 +61,7 @@ class PaymentReportData
 
         $pending = $rows->filter(fn ($r) => $r['balance'] > 0.009)->sortByDesc('days_overdue')->values();
 
-        $payments = RegisterPayment::query()
+        $payments = RegisterPayment::query()->cash()
             ->whereIn('patent_invoice_in_id', $this->figures->registerInvoices($user, $clientId)->select('id'))
             ->with('invoice:id,invoice_uin,client_id,client_name', 'invoice.client:id,legal_name,company_name,client_code', 'recordedBy:id,name')
             ->orderByDesc('payment_date')->get()

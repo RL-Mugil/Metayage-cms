@@ -54,7 +54,7 @@ class ClientScorecard
             'renewals_total' => $renewals->count(),
             'money' => [
                 'billed_month' => round((float) $rows->filter(fn ($r) => $r['date'] && $r['date']->between($start, $end))->sum('billed')),
-                'paid_month' => round((float) RegisterPayment::where('client_id', $client->id)->whereBetween('payment_date', [$start->toDateString(), $end->toDateString()])->sum('amount_bcy')),
+                'paid_month' => round((float) RegisterPayment::cash()->where('client_id', $client->id)->whereBetween('payment_date', [$start->toDateString(), $end->toDateString()])->sum('amount_bcy')),
                 'outstanding' => round((float) $open->sum('outstanding')),
                 'overdue' => round((float) $open->filter(fn ($r) => $r['due_date'] && $r['due_date']->lt(now()->startOfDay()))->sum('outstanding')),
                 'open_invoices' => $open->count(),

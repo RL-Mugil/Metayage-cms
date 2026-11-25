@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { usePage } from "@inertiajs/react";
-import { X, Loader2, ShieldCheck } from "lucide-react";
+import { X, Loader2, ShieldCheck, FileDown } from "lucide-react";
 import { api } from "@/lib/api-client";
 import { ProjectDetailPanel } from "@/components/project-detail-panel";
 import { ClientInventors } from "@/components/inventors/client-inventors";
@@ -17,6 +17,25 @@ function verifyBadgeClass(status: string | undefined) {
   if (status === "Mismatch" || status === "Failed") return "bg-red-100 text-red-700 border-red-200";
   return "bg-muted text-muted-foreground border-border";
 }
+
+const inr = (v: number) => `₹${Math.abs(Number(v)).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
+/** A minus ledger balance is credit the client holds with us (Zoho "unused credit"). */
+const balanceText = (v: number) => (Number(v) < -0.009 ? `${inr(v)} Cr` : inr(v));
+
+interface LedgerLine {
+  id: number | string; transaction_date: string | null; created_at?: string | null; document_type: string;
+  document_reference: string | null; debit: number | string; credit: number | string; tds: number | string;
+  balance: number | string | null; notes?: string | null; quote?: boolean;
+}
+interface OpenQuote { id: number; date: string | null; number: string; status: string; amount: number; title: string | null }
+interface LedgerSummary { billed: number; received: number; tds: number; credit_notes: number; waived: number; advance: number; balance: number }
+
+const TYPE_BADGE: Record<string, string> = {
+  TDS: "bg-amber-100 text-amber-800 border-amber-200",
+  Advance: "bg-green-100 text-green-700 border-green-200",
+  "Credit note": "bg-sky-100 text-sky-700 border-sky-200",
+  Quote: "bg-muted text-muted-foreground border-border",
+};
 
 function fmtDate(d: string | null | undefined): string {
   if (!d) return "—";
@@ -46,6 +65,23 @@ export function ClientDetailPanel({ clientId, onClose }: Props) {
   const [detailProjectId, setDetailProjectId] = useState<number | null>(null);
   const [entityVerifying, setEntityVerifying] = useState(false);
   const [entityVerifyMessage, setEntityVerifyMessage] = useState("");
+  const [withQuotes, setWithQuotes] = useState(false);
+  const [downloading, setDownloading] = useState<string | null>(null);
+  const [downloadError, setDownloadError] = useState("");
+  const isClientUser = String(role).startsWith("client");
+
+  async function downloadStatement(format: "pdf" | "xlsx") {
+    const view = withQuotes && !isClientUser ? "internal" : "client";
+    setDownloading(format);
+    setDownloadError("");
+    try {
+      await api.downloadClientStatement(clientId, format, view);
+    } catch (e: any) {
+      setDownloadError(e.message || "Download failed.");
+    } finally {
+      setDownloading(null);
+    }
+  }
 
   function load() {
     let cancelled = false;
@@ -132,11 +168,13 @@ export function ClientDetailPanel({ clientId, onClose }: Props) {
               { label: "Active", value: (data.projects as any[]).filter((p: any) => p.status === "In Progress").length },
               { label: "Granted", value: (data.projects as any[]).filter((p: any) => p.status === "Granted" || p.status === "Completed").length },
               { label: "Invoiced", value: `₹${Number(data.invoice_summary.total_invoiced).toLocaleString("en-IN", { maximumFractionDigits: 0 })}` },
-              { label: "Balance", value: `₹${Number(data.invoice_summary.total_pending).toLocaleString("en-IN", { maximumFractionDigits: 0 })}` },
-            ].map((kpi) => (
+              data.ledger_summary && Number(data.ledger_summary.balance) < -0.009
+                ? { label: "Credit with us", value: inr(data.ledger_summary.balance), tone: "text-green-600" }
+                : { label: "Balance", value: inr(data.ledger_summary ? data.ledger_summary.balance : data.invoice_summary.total_pending) },
+            ].map((kpi: { label: string; value: string | number; tone?: string }) => (
               <div key={kpi.label} className="flex-1 text-center">
                 <p className="text-[10px] text-muted-foreground">{kpi.label}</p>
-                <p className="text-sm font-semibold font-mono">{kpi.value}</p>
+                <p className={`text-sm font-semibold font-mono ${kpi.tone ?? ""}`}>{kpi.value}</p>
               </div>
             ))}
           </div>
@@ -291,44 +329,110 @@ export function ClientDetailPanel({ clientId, onClose }: Props) {
                 </div>
               )}
 
-              {tab === "ledger" && (
-                <div className="p-6">
-                  {data.ledger.length === 0 ? (
-                    <p className="text-muted-foreground text-sm text-center py-8">No ledger entries for this client.</p>
-                  ) : (
-                    <table className="w-full text-xs">
-                      <thead>
-                        <tr className="text-left border-b border-border text-muted-foreground">
-                          <th className="pb-2 font-medium">Date</th>
-                          <th className="pb-2 font-medium">Type</th>
-                          <th className="pb-2 font-medium">Reference</th>
-                          <th className="pb-2 font-medium text-right">Debit</th>
-                          <th className="pb-2 font-medium text-right">Credit</th>
-                          <th className="pb-2 font-medium text-right">Balance</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {(data.ledger as any[]).map((l: any) => (
-                          <tr key={l.id} className="border-b border-border/50 hover:bg-muted/20">
-                            <td className="py-2.5 pr-3 font-mono text-muted-foreground">{fmtDate(l.transaction_date ?? l.created_at)}</td>
-                            <td className="py-2.5 pr-3 capitalize text-muted-foreground">{l.document_type}</td>
-                            <td className="py-2.5 pr-3 font-mono text-gold text-[10px]">{l.document_reference}</td>
-                            <td className="py-2.5 pr-3 text-right font-mono">
-                              {Number(l.debit) > 0 ? `₹${Number(l.debit).toLocaleString("en-IN", { maximumFractionDigits: 0 })}` : "—"}
-                            </td>
-                            <td className="py-2.5 pr-3 text-right font-mono text-green-600">
-                              {Number(l.credit) > 0 ? `₹${Number(l.credit).toLocaleString("en-IN", { maximumFractionDigits: 0 })}` : "—"}
-                            </td>
-                            <td className="py-2.5 text-right font-mono font-semibold">
-                              ₹{Number(l.balance).toLocaleString("en-IN", { maximumFractionDigits: 0 })}
-                            </td>
-                          </tr>
+              {tab === "ledger" && (() => {
+                const summary: LedgerSummary | undefined = data.ledger_summary;
+                const quotes: OpenQuote[] = data.quotes_open ?? [];
+                const lines: LedgerLine[] = [...(data.ledger as LedgerLine[])];
+                if (withQuotes && !isClientUser) {
+                  // Proforma quotes are listed in date order but never change the balance.
+                  for (const q of quotes) {
+                    lines.push({ id: `q-${q.id}`, transaction_date: q.date, document_type: "Quote", document_reference: q.number,
+                      debit: q.amount, credit: 0, tds: 0, balance: null, notes: q.title, quote: true });
+                  }
+                  lines.sort((a, b) => String(a.transaction_date ?? "").slice(0, 10).localeCompare(String(b.transaction_date ?? "").slice(0, 10)));
+                }
+                return (
+                  <div className="p-6 space-y-3">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      {!isClientUser ? (
+                        <div className="inline-flex rounded-md border border-border p-0.5 text-[11px]">
+                          {[["Ledger", false], ["Ledger with quotes", true]].map(([label, value]) => (
+                            <button key={String(label)} onClick={() => setWithQuotes(value as boolean)}
+                              className={`px-2.5 py-1 rounded ${withQuotes === value ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+                              {label as string}{value && quotes.length > 0 ? ` (${quotes.length})` : ""}
+                            </button>
+                          ))}
+                        </div>
+                      ) : <span />}
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[10px] text-muted-foreground">{withQuotes && !isClientUser ? "Internal statement" : "Client statement"}</span>
+                        {(["pdf", "xlsx"] as const).map((f) => (
+                          <button key={f} onClick={() => downloadStatement(f)} disabled={downloading !== null}
+                            className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded border border-border hover:bg-muted/50 disabled:opacity-50">
+                            {downloading === f ? <Loader2 className="h-3 w-3 animate-spin" /> : <FileDown className="h-3 w-3" />}{f === "pdf" ? "PDF" : "Excel"}
+                          </button>
                         ))}
-                      </tbody>
-                    </table>
-                  )}
-                </div>
-              )}
+                      </div>
+                    </div>
+                    {downloadError && <p className="text-[11px] text-red-600">{downloadError}</p>}
+
+                    {summary && (
+                      <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 text-center">
+                        {[
+                          ["Invoiced", summary.billed, ""],
+                          ["Received", summary.received, "text-green-600"],
+                          ["TDS withheld", summary.tds, "text-amber-700"],
+                          ["Credit notes", summary.credit_notes, ""],
+                          ["Advance (unused)", summary.advance, "text-green-600"],
+                          [Number(summary.balance) < -0.009 ? "Credit with us" : "Balance due", summary.balance, Number(summary.balance) < -0.009 ? "text-green-600" : Number(summary.balance) > 0.009 ? "text-red-600" : ""],
+                        ].map(([label, value, tone]) => (
+                          <div key={String(label)} className="rounded-md border border-border bg-muted/20 px-2 py-1.5">
+                            <p className="text-[9px] uppercase tracking-wide text-muted-foreground">{label as string}</p>
+                            <p className={`text-xs font-semibold font-mono ${tone as string}`}>{inr(Number(value))}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {lines.length === 0 ? (
+                      <p className="text-muted-foreground text-sm text-center py-8">No ledger entries for this client.</p>
+                    ) : (
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="text-left border-b border-border text-muted-foreground">
+                            <th className="pb-2 font-medium">Date</th>
+                            <th className="pb-2 font-medium">Type</th>
+                            <th className="pb-2 font-medium">Reference</th>
+                            <th className="pb-2 font-medium text-right">Debit</th>
+                            <th className="pb-2 font-medium text-right">Credit</th>
+                            <th className="pb-2 font-medium text-right">TDS</th>
+                            <th className="pb-2 font-medium text-right">Balance</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {lines.map((l) => (
+                            <tr key={l.id} className={`border-b border-border/50 hover:bg-muted/20 ${l.quote ? "opacity-60 italic" : ""}`}
+                              title={l.quote ? "Proforma quote, not invoiced: not in the balance" : (l.notes ?? undefined)}>
+                              <td className="py-2.5 pr-3 font-mono text-muted-foreground">{fmtDate(l.transaction_date ?? l.created_at)}</td>
+                              <td className="py-2.5 pr-3 text-muted-foreground">
+                                {TYPE_BADGE[l.document_type]
+                                  ? <span className={`text-[10px] px-1.5 py-0.5 rounded border ${TYPE_BADGE[l.document_type]}`}>{l.document_type}</span>
+                                  : l.document_type}
+                              </td>
+                              <td className="py-2.5 pr-3 font-mono text-gold text-[10px]">{l.document_reference}</td>
+                              <td className="py-2.5 pr-3 text-right font-mono">
+                                {Number(l.debit) > 0 ? inr(Number(l.debit)) : "—"}
+                              </td>
+                              <td className="py-2.5 pr-3 text-right font-mono text-green-600">
+                                {Number(l.credit) > 0 ? inr(Number(l.credit)) : "—"}
+                              </td>
+                              <td className="py-2.5 pr-3 text-right font-mono text-amber-700">
+                                {Number(l.tds) > 0 ? inr(Number(l.tds)) : "—"}
+                              </td>
+                              <td className={`py-2.5 text-right font-mono font-semibold ${l.balance !== null && Number(l.balance) < -0.009 ? "text-green-600" : ""}`}>
+                                {l.quote ? <span className="text-[10px] font-normal text-muted-foreground">not in balance</span> : balanceText(Number(l.balance))}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                    <p className="text-[10px] text-muted-foreground">
+                      TDS is tax the client withheld: it settles the invoice but is not cash received. "Cr" / Advance is money received and not yet applied to an invoice.
+                    </p>
+                  </div>
+                );
+              })()}
             </>
           )}
         </div>

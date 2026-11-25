@@ -913,10 +913,8 @@ class ClientController extends Controller
             'total_pending'  => $summary['outstanding'],
         ];
 
-        // In date order: the running balance is computed that way (ClientLedgerSync).
-        $ledger = \App\Models\ClientLedger::where('client_id', $client->id)
-            ->orderBy('transaction_date')->orderByRaw('CASE WHEN debit > 0 THEN 0 ELSE 1 END')->orderBy('id')
-            ->get(['id', 'transaction_date', 'document_type', 'document_reference', 'debit', 'credit', 'balance', 'notes', 'created_at']);
+        $statement = app(\App\Services\ClientStatement::class);
+        $ledger = $statement->lines($client->id);
 
         return response()->json([
             'client'          => $client,
@@ -924,6 +922,41 @@ class ClientController extends Controller
             'invoice_summary' => $invoiceSummary,
             'invoices'        => $invoices,
             'ledger'          => $ledger,
+            'ledger_summary'  => $statement->summary($ledger),
+            // Proforma quotes sent but not invoiced: internal "Ledger with quotes" view only.
+            'quotes_open'     => $user->isClientRole() ? [] : $statement->openQuotes($user, $client->id),
+        ]);
+    }
+
+    /**
+     * The client's statement as PDF or Excel: "client" (the ledger, ready to send) or
+     * "internal" (with source notes and the open proforma quotes).
+     */
+    public function statement(Request $request, $id)
+    {
+        $user = $request->user();
+        $client = Client::findOrFail($id);
+        if ($user->role === 'client_finance' || $user->isInventor()) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+        if ($user->isClientRole() && ! $client->isVisibleToUser($user)) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+        $this->authorize('view', $client);
+        $data = $request->validate(['format' => 'nullable|in:pdf,xlsx', 'view' => 'nullable|in:client,internal']);
+        $view = $user->isClientRole() ? 'client' : ($data['view'] ?? 'client');
+
+        $file = app(\App\Services\ClientStatement::class)->render($client, $user, $data['format'] ?? 'pdf', $view);
+        \App\Models\AuditLog::create([
+            'user_id' => $user->id, 'action' => 'download_statement', 'subject_type' => 'Client', 'subject_id' => $client->id,
+            'metadata' => ['format' => $data['format'] ?? 'pdf', 'view' => $view],
+            'ip_address' => $request->ip(), 'user_agent' => $request->userAgent(),
+        ]);
+
+        return response($file['bytes'], 200, [
+            'Content-Type' => $file['mime'],
+            'Content-Disposition' => 'attachment; filename="'.$file['name'].'"',
+            'Cache-Control' => 'no-store',
         ]);
     }
 

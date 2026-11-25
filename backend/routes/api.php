@@ -151,6 +151,7 @@ Route::middleware(['auth:sanctum', 'firm.context', 'throttle:120,1'])->group(fun
     Route::put('/clients/{id}', [ClientController::class, 'update']);
     Route::delete('/clients/{id}', [ClientController::class, 'destroy']);
     Route::get('/clients/{id}/detail', [ClientController::class, 'detail']);
+    Route::get('/clients/{id}/statement', [ClientController::class, 'statement'])->middleware('throttle:20,1');
     Route::post('/clients/{id}/contacts', [ClientController::class, 'addContact']);
 
     // Cases / Projects

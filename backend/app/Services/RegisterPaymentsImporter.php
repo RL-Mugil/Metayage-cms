@@ -16,14 +16,19 @@ use Carbon\Carbon;
  */
 class RegisterPaymentsImporter
 {
-    /** Imports one Zoho customer payment snapshot; returns the register invoice ids it touched. */
+    /**
+     * Imports one Zoho customer payment snapshot; returns the register invoice ids it touched.
+     * Each invoice it was applied to gets a cash line, plus a TDS line when the client withheld
+     * tax on it (Zoho "Tax Withheld"): TDS settles the invoice but is not money received.
+     */
     public function importPayment(ZohoSnapshot $snapshot): array
     {
         $paymentId = (string) $snapshot->remote_id;
-        $touched = RegisterPayment::where('zoho_payment_id', $paymentId)->pluck('patent_invoice_in_id')->all();
+        $keys = [$paymentId, "tds:{$paymentId}"];
+        $touched = RegisterPayment::whereIn('zoho_payment_id', $keys)->pluck('patent_invoice_in_id')->all();
 
         if ($snapshot->trashed()) {
-            RegisterPayment::where('zoho_payment_id', $paymentId)->delete();
+            RegisterPayment::whereIn('zoho_payment_id', $keys)->delete();
         } else {
             $payment = json_decode((string) ($snapshot->detail ?: $snapshot->summary), true) ?: [];
             $date = $payment['date'] ?? null;
@@ -31,38 +36,116 @@ class RegisterPaymentsImporter
             $keep = [];
             foreach (($payment['invoices'] ?? []) as $applied) {
                 $amount = (float) ($applied['amount_applied'] ?? 0);
-                $mirrorId = ZohoInvoice::withTrashed()->where('scope', $snapshot->scope)->where('zoho_type', 'invoice')
-                    ->where('zoho_id', (string) ($applied['invoice_id'] ?? ''))->value('id');
-                $row = $mirrorId ? PatentInvoiceIn::where('zoho_invoice_id', $mirrorId)->first() : null;
+                $tds = (float) ($applied['tax_amount_withheld'] ?? 0);
+                $row = $this->registerRow($snapshot->scope, (string) ($applied['invoice_id'] ?? ''));
+                if (! $row || ! $date || ($amount <= 0 && $tds <= 0)) {
+                    continue;
+                }
+                $common = [
+                    'client_id' => $row->client_id, 'payment_number' => $payment['payment_number'] ?? null,
+                    'payment_date' => $date, 'currency' => $payment['currency_code'] ?? $row->currency ?? 'INR',
+                    'exchange_rate' => $rate, 'payment_mode' => $payment['payment_mode'] ?? null, 'estimated' => false,
+                ];
+                if ($amount > 0) {
+                    // A payment marked in the portal and then recorded in Zoho (by hand, or a write-back
+                    // whose reply was lost) is the same money: adopt the portal line instead of adding one.
+                    if (! RegisterPayment::where('patent_invoice_in_id', $row->id)->where('zoho_payment_id', $paymentId)->exists()) {
+                        $portal = RegisterPayment::where('patent_invoice_in_id', $row->id)->where('source', 'portal')
+                            ->where('zoho_payment_id', 'like', 'portal:%')->where('amount', $amount)
+                            ->whereBetween('payment_date', [Carbon::parse($date)->subDays(7)->toDateString(), Carbon::parse($date)->addDays(7)->toDateString()])
+                            ->first();
+                        $portal?->update(['zoho_payment_id' => $paymentId]);
+                    }
+                    RegisterPayment::updateOrCreate(
+                        ['patent_invoice_in_id' => $row->id, 'zoho_payment_id' => $paymentId],
+                        $common + ['amount' => $amount, 'amount_bcy' => round($amount * $rate, 2),
+                            'reference' => $payment['reference_number'] ?? null, 'kind' => RegisterPayment::CASH]
+                    );
+                    $keep[] = "{$row->id}|{$paymentId}";
+                }
+                if ($tds > 0) {
+                    RegisterPayment::updateOrCreate(
+                        ['patent_invoice_in_id' => $row->id, 'zoho_payment_id' => "tds:{$paymentId}"],
+                        $common + ['amount' => $tds, 'amount_bcy' => round($tds * $rate, 2),
+                            'reference' => 'TDS withheld', 'kind' => RegisterPayment::TDS]
+                    );
+                    $keep[] = "{$row->id}|tds:{$paymentId}";
+                }
+                $touched[] = $row->id;
+            }
+            // Applications removed in Zoho (payment re-applied elsewhere, TDS removed).
+            RegisterPayment::whereIn('zoho_payment_id', $keys)->get()
+                ->reject(fn (RegisterPayment $p) => in_array("{$p->patent_invoice_in_id}|{$p->zoho_payment_id}", $keep, true))
+                ->each->delete();
+        }
+
+        return $this->afterImport($touched);
+    }
+
+    /**
+     * Imports one Zoho credit note: each invoice it was credited to gets a credit-note line, so
+     * the credit is not estimated as a payment. A void or deleted credit note removes them.
+     */
+    public function importCreditNote(ZohoSnapshot $snapshot): array
+    {
+        $key = 'cn:'.$snapshot->remote_id;
+        $touched = RegisterPayment::where('zoho_payment_id', $key)->pluck('patent_invoice_in_id')->all();
+        $note = json_decode((string) ($snapshot->detail ?: $snapshot->summary), true) ?: [];
+        $keep = [];
+        if (! $snapshot->trashed() && strtolower((string) ($note['status'] ?? '')) !== 'void') {
+            $rate = (float) ($note['exchange_rate'] ?? 1) ?: 1.0;
+            foreach (($note['invoices_credited'] ?? []) as $credited) {
+                $amount = (float) ($credited['amount_credited'] ?? 0);
+                $row = $this->registerRow($snapshot->scope, (string) ($credited['invoice_id'] ?? ''));
+                $date = $credited['date'] ?? $note['date'] ?? null;
                 if (! $row || ! $date || $amount <= 0) {
                     continue;
                 }
-                // A payment marked in the portal and then recorded in Zoho (by hand, or a write-back
-                // whose reply was lost) is the same money: adopt the portal line instead of adding one.
-                if (! RegisterPayment::where('patent_invoice_in_id', $row->id)->where('zoho_payment_id', $paymentId)->exists()) {
-                    $portal = RegisterPayment::where('patent_invoice_in_id', $row->id)->where('source', 'portal')
-                        ->where('zoho_payment_id', 'like', 'portal:%')->where('amount', $amount)
-                        ->whereBetween('payment_date', [\Carbon\Carbon::parse($date)->subDays(7)->toDateString(), \Carbon\Carbon::parse($date)->addDays(7)->toDateString()])
-                        ->first();
-                    $portal?->update(['zoho_payment_id' => $paymentId]);
-                }
                 RegisterPayment::updateOrCreate(
-                    ['patent_invoice_in_id' => $row->id, 'zoho_payment_id' => $paymentId],
-                    [
-                        'client_id' => $row->client_id, 'payment_number' => $payment['payment_number'] ?? null,
-                        'payment_date' => $date, 'amount' => $amount, 'currency' => $payment['currency_code'] ?? $row->currency ?? 'INR',
-                        'exchange_rate' => $rate, 'amount_bcy' => round($amount * $rate, 2),
-                        'payment_mode' => $payment['payment_mode'] ?? null, 'reference' => $payment['reference_number'] ?? null,
-                        'estimated' => false,
-                    ]
+                    ['patent_invoice_in_id' => $row->id, 'zoho_payment_id' => $key],
+                    ['client_id' => $row->client_id, 'payment_number' => $note['creditnote_number'] ?? null, 'payment_date' => $date,
+                        'amount' => $amount, 'currency' => $note['currency_code'] ?? $row->currency ?? 'INR', 'exchange_rate' => $rate,
+                        'amount_bcy' => round($amount * $rate, 2), 'payment_mode' => null, 'reference' => 'Credit note',
+                        'estimated' => false, 'kind' => RegisterPayment::CREDIT_NOTE]
                 );
                 $keep[] = $row->id;
                 $touched[] = $row->id;
             }
-            // Applications removed in Zoho (payment re-applied elsewhere).
-            RegisterPayment::where('zoho_payment_id', $paymentId)->whereNotIn('patent_invoice_in_id', $keep ?: [0])->delete();
+        }
+        RegisterPayment::where('zoho_payment_id', $key)->whereNotIn('patent_invoice_in_id', $keep ?: [0])->delete();
+
+        return $this->afterImport($touched);
+    }
+
+    /**
+     * The clients whose ledger a Zoho payment or credit note affects: those of the invoices it
+     * touched, and the client linked to its Zoho customer (an unapplied advance touches none).
+     *
+     * @param  array<int, int>  $touched
+     * @return array<int, int>
+     */
+    public function clientsFor(ZohoSnapshot $snapshot, array $touched): array
+    {
+        $ids = PatentInvoiceIn::whereIn('id', $touched)->whereNotNull('client_id')->distinct()->pluck('client_id')->all();
+        $customer = (string) ((json_decode((string) ($snapshot->detail ?: $snapshot->summary), true) ?: [])['customer_id'] ?? '');
+        if ($customer !== '') {
+            $ids = array_merge($ids, \App\Models\Client::where('zoho_contact_id', $customer)->pluck('id')->all(),
+                ZohoInvoice::withTrashed()->where('zoho_contact_id', $customer)->whereNotNull('client_id')->distinct()->pluck('client_id')->all());
         }
 
+        return array_values(array_unique(array_map('intval', $ids)));
+    }
+
+    private function registerRow(string $scope, string $zohoInvoiceId): ?PatentInvoiceIn
+    {
+        $mirrorId = ZohoInvoice::withTrashed()->where('scope', $scope)->where('zoho_type', 'invoice')->where('zoho_id', $zohoInvoiceId)->value('id');
+
+        return $mirrorId ? PatentInvoiceIn::where('zoho_invoice_id', $mirrorId)->first() : null;
+    }
+
+    /** @param array<int, int> $touched */
+    private function afterImport(array $touched): array
+    {
         $touched = array_values(array_unique($touched));
         foreach (PatentInvoiceIn::whereIn('id', $touched)->get() as $row) {
             $this->fillGap($row);
@@ -103,13 +186,19 @@ class RegisterPaymentsImporter
         );
     }
 
-    /** Every mirrored customer payment, then the gaps (used by finance:import-zoho). */
+    /** Every mirrored customer payment and credit note, then the gaps (used by finance:import-zoho). */
     public function importAll(): int
     {
         $count = 0;
         ZohoSnapshot::withTrashed()->where('resource', 'customerpayments')->orderBy('id')->chunkById(200, function ($snapshots) use (&$count) {
             foreach ($snapshots as $snapshot) {
                 $this->importPayment($snapshot);
+                $count++;
+            }
+        });
+        ZohoSnapshot::withTrashed()->where('resource', 'creditnotes')->orderBy('id')->chunkById(200, function ($snapshots) use (&$count) {
+            foreach ($snapshots as $snapshot) {
+                $this->importCreditNote($snapshot);
                 $count++;
             }
         });

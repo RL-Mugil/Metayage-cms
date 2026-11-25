@@ -422,6 +422,22 @@ export const api = {
     link.click()
     URL.revokeObjectURL(url)
   },
+  /** Client statement (ledger) as PDF / Excel: "client" view to send, or "internal" with quotes. */
+  async downloadClientStatement(clientId: number, format: 'pdf' | 'xlsx', view: 'client' | 'internal'): Promise<void> {
+    const q = new URLSearchParams({ format, view })
+    const response = await fetch(`/api/clients/${clientId}/statement?${q}`, { headers: { Accept: format === 'pdf' ? 'application/pdf' : 'application/octet-stream' }, credentials: 'same-origin' })
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}))
+      throw new Error((err as { message?: string }).message || 'Statement download failed')
+    }
+    const name = /filename="([^"]+)"/.exec(response.headers.get('Content-Disposition') ?? '')?.[1] ?? `Statement.${format}`
+    const url = URL.createObjectURL(await response.blob())
+    const link = document.createElement('a')
+    link.href = url
+    link.download = name
+    link.click()
+    URL.revokeObjectURL(url)
+  },
   async getPaymentDetails(): Promise<PaymentDetails> { return this.request('/settings/payment-details') },
   async updatePaymentDetails(data: PaymentDetails): Promise<PaymentDetails> {
     return this.request('/settings/payment-details', { method: 'PUT', body: JSON.stringify(data) })

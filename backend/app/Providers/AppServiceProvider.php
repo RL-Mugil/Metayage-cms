@@ -99,25 +99,26 @@ class AppServiceProvider extends ServiceProvider
         };
         \App\Models\ZohoInvoice::saved($importZoho);
         \App\Models\ZohoInvoice::deleted($importZoho);
-        // Zoho customer payments → register payments (real dates) → the client's ledger.
+        // Zoho customer payments and credit notes → register lines (cash, TDS, credit note) → the
+        // client's ledger (also the client of the Zoho customer: an unapplied advance touches no invoice).
         $importPayment = function (\App\Models\ZohoSnapshot $snapshot): void {
             \Illuminate\Support\Facades\DB::afterCommit(fn () => rescue(function () use ($snapshot) {
                 $fresh = \App\Models\ZohoSnapshot::withTrashed()->find($snapshot->id) ?? $snapshot;
-                $touched = app(\App\Services\RegisterPaymentsImporter::class)->importPayment($fresh);
-                $clients = \App\Models\PatentInvoiceIn::whereIn('id', $touched)->whereNotNull('client_id')->distinct()->pluck('client_id');
-                foreach ($clients as $client) {
-                    app(\App\Services\ClientLedgerSync::class)->sync((int) $client);
+                $importer = app(\App\Services\RegisterPaymentsImporter::class);
+                $touched = $fresh->resource === 'creditnotes' ? $importer->importCreditNote($fresh) : $importer->importPayment($fresh);
+                foreach ($importer->clientsFor($fresh, $touched) as $client) {
+                    app(\App\Services\ClientLedgerSync::class)->sync($client);
                 }
             }, null, true));
         };
         \App\Models\ZohoSnapshot::deleted(function (\App\Models\ZohoSnapshot $snapshot) use ($importPayment): void {
-            if ($snapshot->resource === 'customerpayments') {
+            if (in_array($snapshot->resource, ['customerpayments', 'creditnotes'], true)) {
                 $importPayment($snapshot);
             }
         });
 
         \App\Models\ZohoSnapshot::saved(function (\App\Models\ZohoSnapshot $snapshot) use ($importZoho, $importPayment): void {
-            if ($snapshot->resource === 'customerpayments') {
+            if (in_array($snapshot->resource, ['customerpayments', 'creditnotes'], true)) {
                 if ($snapshot->wasRecentlyCreated || $snapshot->wasChanged(['summary', 'detail'])) {
                     $importPayment($snapshot);
                 }

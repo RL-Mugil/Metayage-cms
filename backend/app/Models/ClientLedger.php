@@ -17,6 +17,7 @@ class ClientLedger extends Model
         'source_key',   // "reg-inv:<id>", "reg-pay:<id>", "zoho-open:<id>": lines rebuilt from the register
         'debit',
         'credit',
+        'tds',          // part of the credit that is TDS withheld by the client (not cash)
         'balance',
         'notes',
     ];
@@ -25,6 +26,7 @@ class ClientLedger extends Model
         'transaction_date' => 'date',
         'debit' => 'decimal:2',
         'credit' => 'decimal:2',
+        'tds' => 'decimal:2',
         'balance' => 'decimal:2',
     ];
 

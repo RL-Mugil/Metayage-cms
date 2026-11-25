@@ -5,14 +5,19 @@ namespace App\Services;
 use App\Models\ClientLedger;
 use App\Models\PatentInvoiceIn;
 use App\Models\RegisterPayment;
+use App\Models\ZohoInvoice;
 use App\Models\ZohoOpeningBalance;
+use App\Models\ZohoSnapshot;
 use Illuminate\Support\Facades\DB;
 
 /**
- * A client's ledger, rebuilt from the register: each billed invoice is a debit, each payment
- * a credit, and the Zoho opening balance (owed before the books moved to Zoho) an opening
- * debit. Lines written by other flows (portal invoices/payments) are kept. The running
- * balance is recomputed in date order every time.
+ * A client's ledger, rebuilt from the register, the way Zoho's customer statement reads:
+ * each billed invoice is a debit; payments, TDS withheld by the client (type "TDS", also in
+ * the TDS column: not cash until deposited) and credit notes are credits; money received but
+ * not yet applied to any invoice is an "Advance" credit (Zoho's unused credit); the Zoho
+ * opening balance (owed before the books moved to Zoho) is an opening debit. A minus balance
+ * is credit the client holds with us. Lines written by other flows (portal invoices/payments)
+ * are kept. The running balance is recomputed in date order every time.
  */
 class ClientLedgerSync
 {
@@ -60,23 +65,106 @@ class ClientLedgerSync
             }
             $payments = RegisterPayment::whereIn('patent_invoice_in_id', $invoices->pluck('id'))->with('invoice:id,invoice_uin')->get();
             foreach ($payments as $payment) {
-                $wanted["reg-pay:{$payment->id}"] = [
-                    'transaction_date' => $payment->payment_date, 'document_type' => 'Payment',
-                    'document_reference' => trim(($payment->payment_number ?: 'Payment').' → '.($payment->invoice?->invoice_uin ?? '')),
-                    'debit' => 0, 'credit' => (float) $payment->amount_bcy,
-                    'notes' => $payment->estimated ? 'Paid per Zoho (date estimated)' : trim(($payment->source === 'portal' ? 'Marked paid in portal · ' : '').($payment->payment_mode ?? ''), ' ·'),
+                $invoiceUin = $payment->invoice?->invoice_uin ?? '';
+                $line = match ($payment->kind) {
+                    RegisterPayment::TDS => ['document_type' => 'TDS', 'document_reference' => trim('TDS · '.($payment->payment_number ?: '').' → '.$invoiceUin),
+                        'tds' => (float) $payment->amount_bcy, 'notes' => 'Tax withheld by the client (not cash received)'],
+                    RegisterPayment::CREDIT_NOTE => ['document_type' => 'Credit note', 'document_reference' => trim(($payment->payment_number ?: 'Credit note').' → '.$invoiceUin),
+                        'tds' => 0, 'notes' => 'Credit note applied'],
+                    default => ['document_type' => 'Payment', 'document_reference' => trim(($payment->payment_number ?: 'Payment').' → '.$invoiceUin), 'tds' => 0,
+                        'notes' => $payment->estimated ? 'Paid per Zoho (date estimated)' : trim(($payment->source === 'portal' ? 'Marked paid in portal · ' : '').($payment->payment_mode ?? ''), ' ·')],
+                };
+                $wanted["reg-pay:{$payment->id}"] = $line + [
+                    'transaction_date' => $payment->payment_date, 'debit' => 0, 'credit' => (float) $payment->amount_bcy,
                 ];
+            }
+
+            // Money received but not applied to any invoice yet (Zoho "unused credit"): an advance
+            // the client holds with us, and unapplied credit-note balances.
+            foreach ($this->unusedCredits($clientId) as $key => $line) {
+                $wanted[$key] = $line;
             }
 
             // Drop register lines that no longer apply, upsert the rest.
             ClientLedger::where('client_id', $clientId)->whereNotNull('source_key')
                 ->whereNotIn('source_key', array_keys($wanted) ?: [''])->delete();
             foreach ($wanted as $key => $line) {
-                ClientLedger::updateOrCreate(['source_key' => $key], $line + ['client_id' => $clientId, 'balance' => 0]);
+                ClientLedger::updateOrCreate(['source_key' => $key], $line + ['client_id' => $clientId, 'balance' => 0, 'tds' => 0]);
             }
 
             $this->rebalance($clientId);
         });
+    }
+
+    /**
+     * Zoho customer payments and credit notes of this client with an unapplied amount, as
+     * ledger lines keyed "zoho-unused:<id>" / "zoho-cn-unused:<id>". Zoho's unused amount is the
+     * current one: once it is applied to an invoice, that application arrives as a payment line
+     * and the advance shrinks, so nothing is counted twice.
+     *
+     * @return array<string, array<string, mixed>>
+     */
+    public function unusedCredits(int $clientId): array
+    {
+        $contacts = $this->zohoContactIds($clientId);
+        $linkedPayments = RegisterPayment::where('client_id', $clientId)->whereNotNull('zoho_payment_id')->pluck('zoho_payment_id')
+            ->map(fn ($id) => preg_replace('/^(tds|cn):/', '', (string) $id))->unique()->values()->all();
+        $lines = [];
+        foreach (['customerpayments', 'creditnotes'] as $resource) {
+            $snapshots = ZohoSnapshot::where('resource', $resource)->where(function ($q) use ($contacts, $linkedPayments) {
+                $q->whereIn('remote_id', $linkedPayments ?: ['']);
+                foreach ($contacts as $contact) {
+                    $q->orWhere('detail', 'like', '%"customer_id":"'.$contact.'"%')->orWhere('summary', 'like', '%"customer_id":"'.$contact.'"%');
+                }
+            })->get();
+            foreach ($snapshots as $snapshot) {
+                $doc = json_decode((string) ($snapshot->detail ?: $snapshot->summary), true) ?: [];
+                $customer = (string) ($doc['customer_id'] ?? '');
+                if ($customer !== '' && ! in_array($customer, $contacts, true) && $this->claimedByAnotherClient($customer, $clientId)) {
+                    continue;
+                }
+                $rate = (float) ($doc['exchange_rate'] ?? 1) ?: 1.0;
+                if ($resource === 'customerpayments') {
+                    $unused = (float) ($doc['unused_amount'] ?? 0);
+                    if ($unused <= 0.009 || empty($doc['date'])) {
+                        continue;
+                    }
+                    $lines["zoho-unused:{$snapshot->remote_id}"] = [
+                        'transaction_date' => $doc['date'], 'document_type' => 'Advance',
+                        'document_reference' => trim(($doc['payment_number'] ?? 'Payment').' · unused credit'),
+                        'debit' => 0, 'credit' => round($unused * $rate, 2), 'tds' => 0,
+                        'notes' => 'Received, not yet applied to an invoice (advance)',
+                    ];
+                } else {
+                    $balance = (float) ($doc['balance'] ?? 0);
+                    if ($balance <= 0.009 || empty($doc['date']) || strtolower((string) ($doc['status'] ?? '')) === 'void') {
+                        continue;
+                    }
+                    $lines["zoho-cn-unused:{$snapshot->remote_id}"] = [
+                        'transaction_date' => $doc['date'], 'document_type' => 'Credit note',
+                        'document_reference' => trim(($doc['creditnote_number'] ?? 'Credit note').' · unused credit'),
+                        'debit' => 0, 'credit' => round($balance * $rate, 2), 'tds' => 0,
+                        'notes' => 'Credit note not yet applied to an invoice',
+                    ];
+                }
+            }
+        }
+
+        return $lines;
+    }
+
+    /** The client's Zoho customer ids: its linked contact, and the customer on its Zoho invoices. */
+    private function zohoContactIds(int $clientId): array
+    {
+        return collect([\App\Models\Client::whereKey($clientId)->value('zoho_contact_id')])
+            ->merge(ZohoInvoice::withTrashed()->where('client_id', $clientId)->whereNotNull('zoho_contact_id')->distinct()->pluck('zoho_contact_id'))
+            ->filter()->map(fn ($id) => (string) $id)->unique()->values()->all();
+    }
+
+    private function claimedByAnotherClient(string $customer, int $clientId): bool
+    {
+        return \App\Models\Client::where('zoho_contact_id', $customer)->whereKeyNot($clientId)->exists()
+            || ZohoInvoice::withTrashed()->where('zoho_contact_id', $customer)->whereNotNull('client_id')->where('client_id', '!=', $clientId)->exists();
     }
 
     /** Running balance in date order (debits add, credits subtract). */
@@ -94,7 +182,8 @@ class ClientLedgerSync
     public function syncAll(): int
     {
         $ids = PatentInvoiceIn::whereNotNull('client_id')->distinct()->pluck('client_id')
-            ->merge(ZohoOpeningBalance::whereNotNull('client_id')->pluck('client_id'))->unique();
+            ->merge(ZohoOpeningBalance::whereNotNull('client_id')->pluck('client_id'))
+            ->merge(\App\Models\Client::whereNotNull('zoho_contact_id')->pluck('id'))->unique();
         foreach ($ids as $id) {
             $this->sync((int) $id);
         }

@@ -215,7 +215,7 @@ class CaseInsights
             $items->push(['at' => $i->created_at, 'kind' => 'invoice', 'project_id' => $i->project_id,
                 'text' => "Invoice {$i->invoice_uin} raised: ₹".number_format((float) ($i->total_bcy ?? $i->invoice_amount))]);
         }
-        foreach (RegisterPayment::whereHas('invoice', fn ($q) => $q->whereIn('project_id', (clone $projectIds)))->with('invoice:id,invoice_uin,project_id')
+        foreach (RegisterPayment::cash()->whereHas('invoice', fn ($q) => $q->whereIn('project_id', (clone $projectIds)))->with('invoice:id,invoice_uin,project_id')
             ->where('payment_date', '>=', $since->toDateString())->orderByDesc('payment_date')->limit($limit)->get() as $pay) {
             $items->push(['at' => Carbon::parse($pay->payment_date), 'kind' => 'payment', 'project_id' => $pay->invoice?->project_id,
                 'text' => ($forClient ? 'Payment received, thank you: ₹' : 'Payment received: ₹').number_format((float) $pay->amount_bcy).' for '.$pay->invoice?->invoice_uin]);

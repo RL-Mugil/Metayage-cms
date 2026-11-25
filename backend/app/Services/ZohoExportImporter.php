@@ -241,9 +241,10 @@ class ZohoExportImporter
                 'invoices' => [],
             ];
             $applied = $this->num($row['Amount Applied to Invoice'] ?? '');
+            $withheld = $this->num($row['Withholding Tax Amount'] ?? '');
             $invoiceNumber = trim($row['Invoice Number'] ?? '');
-            if ($applied > 0 && $invoiceNumber !== '') {
-                $docs[$id]['invoices'][] = ['invoice_number' => $invoiceNumber, 'amount_applied' => $applied];
+            if (($applied > 0 || $withheld > 0) && $invoiceNumber !== '') {
+                $docs[$id]['invoices'][] = ['invoice_number' => $invoiceNumber, 'amount_applied' => $applied, 'tax_amount_withheld' => $withheld];
             }
         }
 
@@ -369,7 +370,8 @@ class ZohoExportImporter
         foreach ($doc['invoices'] as $applied) {
             $invoiceId = ZohoInvoice::withTrashed()->where('zoho_type', 'invoice')->where('number', $applied['invoice_number'])->value('zoho_id');
             if ($invoiceId) {
-                $invoices[] = ['invoice_id' => $invoiceId, 'invoice_number' => $applied['invoice_number'], 'amount_applied' => $applied['amount_applied']];
+                $invoices[] = ['invoice_id' => $invoiceId, 'invoice_number' => $applied['invoice_number'], 'amount_applied' => $applied['amount_applied'],
+                    'tax_amount_withheld' => $applied['tax_amount_withheld'] ?? 0];
             }
         }
 
@@ -384,7 +386,8 @@ class ZohoExportImporter
 
     private function paymentKey(array $detail): string
     {
-        $applied = array_map(fn ($i) => ($i['invoice_id'] ?? '').':'.round((float) ($i['amount_applied'] ?? 0), 2), $detail['invoices'] ?? []);
+        $applied = array_map(fn ($i) => ($i['invoice_id'] ?? '').':'.round((float) ($i['amount_applied'] ?? 0), 2)
+            .(((float) ($i['tax_amount_withheld'] ?? 0)) > 0 ? ':t'.round((float) $i['tax_amount_withheld'], 2) : ''), $detail['invoices'] ?? []);
         sort($applied);
 
         return ($detail['date'] ?? '').'|'.round((float) ($detail['amount'] ?? 0), 2).'|'.implode(',', $applied);

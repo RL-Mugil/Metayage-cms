@@ -95,7 +95,7 @@ class SendWeeklyDigest extends Command
                     'url' => $r['id'] ? "{$base}/projects/{$r['id']}?tab=deadlines" : $base,
                 ])->values()->all(),
             ],
-            'collected_last_week' => round((float) RegisterPayment::whereBetween('payment_date', [now()->subDays(7)->toDateString(), now()->toDateString()])->sum('amount_bcy')),
+            'collected_last_week' => round((float) RegisterPayment::cash()->whereBetween('payment_date', [now()->subDays(7)->toDateString(), now()->toDateString()])->sum('amount_bcy')),
         ];
     }
 }

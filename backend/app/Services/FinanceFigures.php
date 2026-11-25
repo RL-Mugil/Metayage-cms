@@ -112,10 +112,10 @@ class FinanceFigures
             ->sum('amount_bcy') + $this->legacyPaymentsIn($user, $clientId, $month), 2);
     }
 
-    /** Payments received against the register invoices the user may see. */
+    /** Money received (cash only: not TDS withheld or credit notes) against the register invoices the user may see. */
     public function payments(User $user, ?int $clientId = null): Builder
     {
-        return \App\Models\RegisterPayment::query()
+        return \App\Models\RegisterPayment::query()->cash()
             ->whereIn('patent_invoice_in_id', $this->registerInvoices($user, $clientId)->select('id'));
     }
 
