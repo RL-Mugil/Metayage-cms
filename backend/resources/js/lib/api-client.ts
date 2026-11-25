@@ -2,7 +2,7 @@ import type {
   User, Client, ClientContact, Project, Task, Invoice, InvoiceItem,
   Employee, Attendance, LeaveRequest, LeaveBalance, PayrollRun, Payslip, LopAdjustment,
   SalaryComponent, ReimbursementType, ExpenseClaim,
-  Notification, ReportResponse, AIResponse, DashboardMetrics,
+  Notification, ReportResponse, AIResponse, AIProviders, ClaudeConnection, DashboardMetrics,
   PaginatedResponse, SearchResult, Quotation, AuditLog, PatentInvoiceIn, ProjectTab,
   CodeRow, CodeRenameImpact, CodeRenameResult, CodeMergeAvailable, CodeMergeImpact, CodeMergeResult,
 } from '@/types'
@@ -1059,8 +1059,19 @@ export const api = {
   },
 
   // ── AI ──
-  async queryAI(query: string): Promise<AIResponse> {
-    return this.request('/ai/query', { method: 'POST', body: JSON.stringify({ query }) })
+  /** AI Assistant: read-only questions answered through the portal tools. */
+  async queryAI(query: string, provider: "claude" | "groq", history: { role: "user" | "assistant"; content: string }[] = []): Promise<AIResponse> {
+    return this.request('/ai/query', { method: 'POST', body: JSON.stringify({ query, provider, history }) })
+  },
+  async getAIProviders(): Promise<AIProviders> {
+    return this.request('/ai/providers')
+  },
+  /** Settings → Profile → Connected apps (Claude connector). */
+  async getClaudeConnections(): Promise<ClaudeConnection[]> {
+    return this.request('/oauth/connections')
+  },
+  async disconnectClaude(clientId: string): Promise<{ ok: boolean }> {
+    return this.request(`/oauth/connections/${encodeURIComponent(clientId)}`, { method: 'DELETE' })
   },
 
   // ── Calendar ──
@@ -1496,8 +1507,8 @@ export const api = {
   async toggleIntegration(slug: string): Promise<{ ok: boolean; connected: boolean; message: string }> {
     return this.request(`/integrations/${slug}/toggle`, { method: 'POST' })
   },
-  async saveIntegrationConfig(slug: string, apiKey: string): Promise<{ ok: boolean; message: string }> {
-    return this.request(`/integrations/${slug}/config`, { method: 'POST', body: JSON.stringify({ api_key: apiKey }) })
+  async saveIntegrationConfig(slug: string, apiKey: string, extra: { model?: string } = {}): Promise<{ ok: boolean; message: string }> {
+    return this.request(`/integrations/${slug}/config`, { method: 'POST', body: JSON.stringify({ api_key: apiKey, ...extra }) })
   },
   async saveZohoConfig(data: { client_id: string; client_secret: string; refresh_token: string; organization_id: string; region?: string }): Promise<{ ok: boolean; message: string }> {
     return this.request('/integrations/zoho/config', { method: 'POST', body: JSON.stringify(data) })

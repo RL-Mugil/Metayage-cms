@@ -20,7 +20,17 @@ interface Integration {
   lastSync?: string;
   syncFreq?: string;
   hasKey?: boolean;
+  model?: string | null;
+  switchOnly?: boolean;
 }
+
+/** AI Assistant keys and the Claude connector switch: System Admin only (IntegrationController::ADMIN_ONLY). */
+const AI_SLUGS = ["anthropic", "groq", "claude_mcp"];
+const AI_HELP: Record<string, string> = {
+  anthropic: "Anthropic API key from console.anthropic.com (starts with sk-ant-). Default model: claude-haiku-5-5.",
+  groq: "Groq API key from console.groq.com (starts with gsk_). Leave blank to keep the key already on the server.",
+  claude_mcp: "No key needed. While on, staff can add the portal as a custom connector in claude.ai or Claude Desktop; access is read-only and follows each person's role.",
+};
 
 const MANAGE_ROLES = ["super_admin", "manager", "galvanizer"];
 
@@ -164,6 +174,8 @@ export default function Integrations() {
   const [configOpen, setConfigOpen] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<Record<string, "ok" | "fail" | null>>({});
   const [apiKeys, setApiKeys] = useState<Record<string, string>>({});
+  const [models, setModels] = useState<Record<string, string>>({});
+  const role = props.auth?.user?.role ?? "";
   const [keySaved, setKeySaved] = useState<Record<string, boolean>>({});
   const [zohoFields, setZohoFields] = useState({ client_id: "", client_secret: "", refresh_token: "", organization_id: "", region: "in" });
   const [zohoSaving, setZohoSaving] = useState(false);
@@ -313,9 +325,10 @@ export default function Integrations() {
   };
 
   const saveKey = (id: string) => {
-    const key = apiKeys[id];
-    if (!key) return;
-    api.saveIntegrationConfig(id, key)
+    const key = apiKeys[id] ?? "";
+    const isAi = id === "anthropic" || id === "groq";
+    if (!key && !isAi) return;
+    api.saveIntegrationConfig(id, key, isAi ? { model: (models[id] ?? "").trim() || undefined } : {})
       .then(() => {
         setKeySaved((p) => ({ ...p, [id]: true }));
         setApiKeys((p) => ({ ...p, [id]: "" }));
@@ -381,7 +394,7 @@ export default function Integrations() {
                   </div>
                 </div>
                 <div className="flex gap-2 mt-4">
-                  {canManage ? (
+                  {canManage && (!AI_SLUGS.includes(intg.id) || role === "super_admin") ? (
                     <>
                       <Button size="sm" variant="outline" className="h-7 text-xs flex-1"
                         onClick={() => setConfigOpen(configOpen === intg.id ? null : intg.id)}
@@ -409,7 +422,7 @@ export default function Integrations() {
                   )}
                 </div>
 
-                {canManage && configOpen === intg.id && (
+                {canManage && (!AI_SLUGS.includes(intg.id) || role === "super_admin") && configOpen === intg.id && (
                   <div className="mt-4 pt-4 border-t border-border space-y-3">
                     {intg.id === "zoho" ? (
                       <div className="space-y-2">
@@ -509,6 +522,26 @@ export default function Integrations() {
                         <p className="text-[11px] text-muted-foreground">Redirect URI above — register this exact URL with DigiLocker as the callback.</p>
                         {keySaved.digilocker && <span className="text-xs text-green-600">Credentials saved securely.</span>}
                       </div>
+                    ) : intg.switchOnly ? (
+                      <p className="text-[11px] text-muted-foreground">{AI_HELP[intg.id]}</p>
+                    ) : intg.id === "anthropic" || intg.id === "groq" ? (
+                      <div className="space-y-2">
+                        <label className="text-xs font-medium text-muted-foreground">API Key {intg.hasKey && <span className="text-green-600">(saved — never shown again)</span>}</label>
+                        <p className="text-[11px] text-muted-foreground">{AI_HELP[intg.id]}</p>
+                        <input type="password" autoComplete="off" placeholder={intg.hasKey ? "Enter a new key to replace the saved one" : "Paste the API key"}
+                          value={apiKeys[intg.id] || ""}
+                          onChange={(e) => setApiKeys((p) => ({ ...p, [intg.id]: e.target.value }))}
+                          className="w-full h-8 rounded border border-border bg-background px-3 text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
+                        <div className="flex items-center gap-2">
+                          <input placeholder={intg.id === "anthropic" ? "Model (default claude-haiku-5-5)" : "Model (default from server)"}
+                            value={models[intg.id] ?? intg.model ?? ""}
+                            onChange={(e) => setModels((p) => ({ ...p, [intg.id]: e.target.value }))}
+                            className="flex-1 h-8 rounded border border-border bg-background px-3 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-gold" />
+                          <Button size="sm" variant="outline" className="h-8 text-xs" disabled={!apiKeys[intg.id] && !intg.hasKey}
+                            onClick={() => saveKey(intg.id)}>Save</Button>
+                        </div>
+                        {keySaved[intg.id] && <span className="text-xs text-green-600">Saved securely.</span>}
+                      </div>
                     ) : (
                       <div>
                         <label className="text-xs font-medium text-muted-foreground">API Key {intg.hasKey && <span className="text-green-600">(saved)</span>}</label>
@@ -523,7 +556,7 @@ export default function Integrations() {
                         {keySaved[intg.id] && <span className="text-xs text-green-600">Key saved securely.</span>}
                       </div>
                     )}
-                    <div>
+                    {!AI_SLUGS.includes(intg.id) && <div>
                       <label className="text-xs font-medium text-muted-foreground">Webhook URL</label>
                       <div className="mt-1 flex items-center gap-2">
                         <input readOnly value={`${webhookBase}/${intg.id}`}
@@ -535,7 +568,7 @@ export default function Integrations() {
                           <Copy className="h-3.5 w-3.5" />
                         </button>
                       </div>
-                    </div>
+                    </div>}
                     <div className="flex items-center gap-2 flex-wrap">
                       <Button size="sm" className="h-7 text-xs" onClick={() => testConnection(intg.id)}>
                         <Zap className="h-3 w-3 mr-1" /> Test Connection

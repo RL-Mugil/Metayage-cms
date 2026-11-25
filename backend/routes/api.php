@@ -316,7 +316,10 @@ Route::middleware(['auth:sanctum', 'firm.context', 'throttle:120,1'])->group(fun
     Route::delete('/my-portal/users/{userId}', [\App\Http\Controllers\MyPortalController::class, 'destroy']);
 
     // AI Chat — stricter limit: 10 requests per minute
-    Route::post('/ai/query', [AIController::class, 'query'])->middleware('throttle:10,1');
+    Route::post('/ai/query', [AIController::class, 'query'])->middleware('throttle:20,1');
+    Route::get('/ai/providers', [AIController::class, 'providers']);
+    Route::get('/oauth/connections', [\App\Http\Controllers\OAuthController::class, 'connections']);
+    Route::delete('/oauth/connections/{clientId}', [\App\Http\Controllers\OAuthController::class, 'disconnect'])->where('clientId', 'mcp_[A-Za-z0-9]{40}');
 
     // Calendar
     Route::get('/calendar/events', [ProjectTrackerController::class, 'calendarEvents']);

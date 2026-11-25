@@ -12,6 +12,10 @@ return Application::configure(basePath: dirname(__DIR__))
         commands: __DIR__.'/../routes/console.php',
         channels: __DIR__.'/../routes/channels.php',
         health: '/up',
+        // Claude connector (MCP + OAuth): api middleware, no /api prefix.
+        then: function () {
+            \Illuminate\Support\Facades\Route::middleware('api')->group(base_path('routes/mcp.php'));
+        },
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->web(append: [
@@ -23,6 +27,7 @@ return Application::configure(basePath: dirname(__DIR__))
             \Laravel\Sanctum\Http\Middleware\EnsureFrontendRequestsAreStateful::class,
         ]);
         $middleware->api(append: [
+            \App\Http\Middleware\RestrictConnectorTokens::class,
             \App\Http\Middleware\EnsureUserIsActive::class,
             \App\Http\Middleware\EnsureClientPortalEnabled::class,
             \App\Http\Middleware\EnforceMaintenanceMode::class,

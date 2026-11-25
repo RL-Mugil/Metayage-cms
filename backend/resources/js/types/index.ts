@@ -625,9 +625,23 @@ export interface SearchResult {
 // ── AI ────────────────────────────────────────────────────────────────────
 
 export interface AIResponse {
-  response: string
-  sql_query: string | null
-  results: Record<string, unknown>[]
+  response: string;
+  tools_used: string[];
+  provider: "claude" | "groq";
+}
+
+export interface AIProviders {
+  claude: boolean;
+  groq: boolean;
+  mcp_enabled: boolean;
+  mcp_url: string;
+}
+
+export interface ClaudeConnection {
+  client_id: string;
+  name: string;
+  connected_at: string | null;
+  last_used_at: string | null;
 }
 
 // ── Dashboard ─────────────────────────────────────────────────────────────

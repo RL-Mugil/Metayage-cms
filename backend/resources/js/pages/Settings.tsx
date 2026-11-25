@@ -1,4 +1,5 @@
 import { OpenAccessCard } from "@/components/settings/open-access-card";
+import { ConnectedAppsCard } from "@/components/settings/connected-apps-card";
 import { Head, usePage, router } from "@inertiajs/react";
 import { Fragment, useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
@@ -718,6 +719,7 @@ export default function Settings() {
   const [system, setSystem] = useState({ company: "My IP Law Firm", currency: "INR", fiscalMonth: "April", maxUploadMB: "50" });
 
   const isSuperAdmin = user?.role === "super_admin";
+  const isClientUser = ["client", "client_admin", "client_finance", "inventor"].includes(user?.role ?? "");
   const sysSettings = (props.systemSettings ?? {}) as any;
 
   const [flags, setFlags] = useState({
@@ -1474,6 +1476,7 @@ export default function Settings() {
           )}
 
           {/* ── Notifications ── */}
+          {tab === "profile" && !isClientUser && <div className="mt-6"><ConnectedAppsCard /></div>}
           {tab === "notifications" && (
             <Card className="border-border">
               <CardHeader><CardTitle className="font-display">Notification Preferences</CardTitle></CardHeader>

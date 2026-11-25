@@ -38,6 +38,26 @@ class Task extends Model
         'billable' => 'boolean',
     ];
 
+    /**
+     * Tasks a user may see (Tasks page, AI tools): a client its own client's tasks, Patent Analysts and
+     * paralegals their assigned tasks, a galvanizer the circle, an inventor their cases; others all.
+     */
+    public function scopeVisibleTo(\Illuminate\Database\Eloquent\Builder $query, User $user, ?Client $portalClient = null): \Illuminate\Database\Eloquent\Builder
+    {
+        if ($user->isClientRole()) {
+            $client = $portalClient ?? Client::forUser($user);
+            $client ? $query->whereHas('project', fn ($q) => $q->where('client_id', $client->id)) : $query->whereRaw('1=0');
+        } elseif (in_array($user->role, ['associate', 'paralegal'], true)) {
+            $query->where('assignee_id', $user->id);
+        } elseif ($user->isGalvanizer()) {
+            $query->whereHas('project', fn ($q) => $user->applyProjectScope($q));
+        } elseif ($user->isInventor()) {
+            $query->whereHas('project.inventors', fn ($q) => $q->where('inventors.user_id', $user->id));
+        }
+
+        return $query;
+    }
+
     public function project(): BelongsTo
     {
         return $this->belongsTo(Project::class);

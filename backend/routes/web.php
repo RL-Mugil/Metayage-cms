@@ -45,6 +45,9 @@ Route::middleware(['auth', 'firm.context'])->group(function () {
     Route::get('/pending-payments', fn () => Inertia::render('PendingPayments'))->name('pending-payments');
     Route::get('/documents', fn () => Inertia::render('Documents'))->name('documents');
     Route::get('/ai', fn () => Inertia::render('AI'))->name('ai');
+    // Claude connector sign-in (OAuth consent).
+    Route::get('/oauth/authorize', [\App\Http\Controllers\OAuthController::class, 'consent'])->name('oauth.authorize');
+    Route::post('/oauth/authorize', [\App\Http\Controllers\OAuthController::class, 'decide'])->middleware('throttle:20,1')->name('oauth.decide');
     Route::get('/analytics', fn () => Inertia::render('Analytics'))->name('analytics');
     Route::get('/reports', fn () => Inertia::render('Reports'))->name('reports');
     Route::get('/team', fn () => Inertia::render('Team'))->name('team');

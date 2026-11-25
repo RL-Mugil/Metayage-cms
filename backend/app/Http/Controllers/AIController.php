@@ -2,55 +2,67 @@
 
 namespace App\Http\Controllers;
 
+use App\Ai\Assistant;
+use App\Ai\Keys;
+use App\Ai\MissingKeyException;
 use App\Models\AuditLog;
-use App\Services\AIQueryService;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
+/** AI Assistant page: read-only questions answered through the portal tools (App\Ai). */
 class AIController extends Controller
 {
-    public function query(Request $request)
+    private function denied(Request $request): bool
     {
-        $user = $request->user();
-        if ($user->isClientRole()) {
-            return response()->json(['message' => 'AI Assistant is not available for portal accounts.'], 403);
+        return ! in_array($request->user()->role, User::FIRM_STAFF_ROLES, true);
+    }
+
+    /** Which providers are set up, and the Claude connector address. */
+    public function providers(Request $request)
+    {
+        if ($this->denied($request)) {
+            return response()->json(['message' => 'AI Assistant is not available for this account.'], 403);
         }
 
-        $request->validate([
-            'query' => 'required|string|max:1000',
+        return response()->json([
+            'claude' => Keys::available('claude'),
+            'groq' => Keys::available('groq'),
+            'mcp_enabled' => Keys::mcpEnabled(),
+            'mcp_url' => rtrim((string) config('app.url'), '/').'/mcp',
         ]);
+    }
+
+    public function query(Request $request, Assistant $assistant)
+    {
+        $user = $request->user();
+        if ($this->denied($request)) {
+            return response()->json(['message' => 'AI Assistant is not available for this account.'], 403);
+        }
+
+        $validated = $request->validate([
+            'query' => 'required|string|max:2000',
+            'provider' => 'nullable|in:claude,groq',
+            'history' => 'nullable|array|max:20',
+            'history.*.role' => 'required|in:user,assistant',
+            'history.*.content' => 'required|string|max:8000',
+        ]);
+        $provider = $validated['provider'] ?? (Keys::available('claude') ? 'claude' : 'groq');
 
         AuditLog::create([
-            'user_id'    => $user->id,
-            'action'     => 'ai_query',
-            'metadata'   => ['query' => $request->input('query')],
-            'ip_address' => $request->ip(),
-            'user_agent' => $request->userAgent(),
+            'user_id' => $user->id, 'action' => 'ai_query',
+            'metadata' => ['query' => $validated['query'], 'provider' => $provider],
+            'ip_address' => $request->ip(), 'user_agent' => $request->userAgent(),
         ]);
 
         try {
-            $service = new AIQueryService();
-            $result  = $service->ask($request->input('query'), [
-                'name'  => $user->name,
-                'email' => $user->email,
-                'role'  => $user->role,
-                'firm_id' => $request->attributes->get('firm_id'),
-            ]);
-
-            return response()->json($result);
-
+            return response()->json($assistant->ask($user, $provider, $validated['query'], $validated['history'] ?? []));
+        } catch (MissingKeyException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
         } catch (\Throwable $e) {
-            Log::error('AI query failed', [
-                'user_id' => $user->id,
-                'query' => $request->input('query'),
-                'error' => $e->getMessage(),
-            ]);
+            Log::error('AI query failed', ['user_id' => $user->id, 'provider' => $provider, 'error' => $e->getMessage()]);
 
-            // Return a generic message — never leak upstream/internal error
-            // detail (Groq errors, SQL, stack) to the client. Detail is logged above.
-            return response()->json([
-                'message' => 'AI service error. Please try again.',
-            ], 500);
+            return response()->json(['message' => 'The AI service did not answer. Please try again in a moment.'], 502);
         }
     }
 }

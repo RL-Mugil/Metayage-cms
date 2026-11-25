@@ -25,24 +25,8 @@ class TaskController extends Controller
     public function index(Request $request)
     {
         $user = $request->user();
-        $query = Task::with('project', 'assignee', 'documents:id,file_name');
-
-        if ($user->isClientRole()) {
-            $client = $request->attributes->get('portal_client') ?? \App\Models\Client::forUser($user);
-            if ($client) {
-                $query->whereHas('project', fn ($q) => $q->where('client_id', $client->id));
-            } else {
-                $query->whereRaw('1=0');
-            }
-        } elseif (in_array($user->role, ['associate', 'paralegal'], true)) {
-            // Patent Analysts and paralegals see their assigned tasks (access matrix: Assigned).
-            $query->where('assignee_id', $user->id);
-        } elseif ($user->isGalvanizer()) {
-            $query->whereHas('project', fn ($q) => $user->applyProjectScope($q));
-        } elseif ($user->isInventor()) {
-            // External inventor logins: only tasks on the cases they are named on.
-            $query->whereHas('project.inventors', fn ($q) => $q->where('inventors.user_id', $user->id));
-        }
+        $query = Task::with('project', 'assignee', 'documents:id,file_name')
+            ->visibleTo($user, $request->attributes->get('portal_client'));
 
         if ($request->filled('status')) {
             $query->where('status', $request->status);
