@@ -70,7 +70,9 @@ class PaymentsReceivedController extends Controller
 
         $amount = round((float) $data['amount'], 2);
         $link = DB::transaction(function () use ($paymentId, $quote, $advance, $amount, $data, $user, $request, $open) {
-            $others = (float) AdvanceQuoteLink::where('zoho_payment_id', $paymentId)->where('patent_invoice_in_id', '!=', $quote->id)->lockForUpdate()->sum('amount');
+            // Lock this payment's links (Postgres can't lock an aggregate), then add them up.
+            $others = (float) AdvanceQuoteLink::where('zoho_payment_id', $paymentId)->where('patent_invoice_in_id', '!=', $quote->id)
+                ->lockForUpdate()->get(['amount'])->sum('amount');
             abort_if($amount > round($advance['unused'] - $others, 2) + 0.009, 422, 'More than the unused amount still free on this payment (₹'.number_format(max(0, $advance['unused'] - $others), 2).').');
             $quoteAmount = (float) ($open->firstWhere('id', $quote->id)['amount'] ?? 0);
             $onQuote = (float) AdvanceQuoteLink::where('patent_invoice_in_id', $quote->id)->where('zoho_payment_id', '!=', $paymentId)->sum('amount');
