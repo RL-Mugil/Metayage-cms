@@ -111,11 +111,9 @@ class ClientLedgerSync
             ->map(fn ($id) => preg_replace('/^(tds|cn):/', '', (string) $id))->unique()->values()->all();
         $lines = [];
         foreach (['customerpayments', 'creditnotes'] as $resource) {
+            // By the plain customer column (the snapshot bodies are encrypted), or through the register.
             $snapshots = ZohoSnapshot::where('resource', $resource)->where(function ($q) use ($contacts, $linkedPayments) {
-                $q->whereIn('remote_id', $linkedPayments ?: ['']);
-                foreach ($contacts as $contact) {
-                    $q->orWhere('detail', 'like', '%"customer_id":"'.$contact.'"%')->orWhere('summary', 'like', '%"customer_id":"'.$contact.'"%');
-                }
+                $q->whereIn('remote_id', $linkedPayments ?: [''])->orWhereIn('zoho_customer_id', $contacts ?: ['']);
             })->get();
             foreach ($snapshots as $snapshot) {
                 $doc = json_decode((string) ($snapshot->detail ?: $snapshot->summary), true) ?: [];
