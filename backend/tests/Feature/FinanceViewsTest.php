@@ -157,7 +157,7 @@ class FinanceViewsTest extends TestCase
         $html = view('pdf.payment-report', ['title' => 'Payment Collection', 'data' => $data, 'cut' => [], 'letterhead' => app(\App\Services\Letterhead::class)->get(),
             'signature' => null, 'seal' => '', 'financialSummary' => true])->render();
         $this->assertStringContainsString('801M002/Q1', $html);
-        $this->assertStringContainsString('Unpaid quotes', $html);
+        $this->assertStringContainsString('Unpaid proformas', $html);
     }
 
     public function test_payment_reports_deduct_balance_credit_from_total_due(): void
