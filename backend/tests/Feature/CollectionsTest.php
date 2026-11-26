@@ -62,12 +62,14 @@ class CollectionsTest extends TestCase
         $this->postJson("/api/pending-payments/{$promised->id}/status-note", ['status_note' => 'Paying next week', 'promised_on' => now()->addDays(7)->toDateString()])->assertOk();
         $this->assertSame(1, InvoiceFollowUp::where('patent_invoice_in_id', $promised->id)->count());
 
+        // One reminder per client, holding every invoice due one (highest band: 60, escalated).
         $drafts = app(CollectionsPlanner::class)->prepare();
-        $this->assertCount(2, $drafts);   // band 7 (the 10-day invoice) and band 60 (the 70-day one)
-        $band7 = $drafts->firstWhere('band', 7);
-        $this->assertSame([$late->id], $band7->invoice_ids);
-        $this->assertSame([['name' => 'Priya (Accounts)', 'email' => 'ap@delta.test']], $band7->recipients);   // the billing contact only
-        $this->assertTrue($drafts->firstWhere('band', 60)->escalated);
+        $this->assertCount(1, $drafts);
+        $draft = $drafts->first();
+        $this->assertSame(60, (int) $draft->band);
+        $this->assertEqualsCanonicalizing([$late->id, $old->id], $draft->invoice_ids);
+        $this->assertSame([['name' => 'Priya (Accounts)', 'email' => 'ap@delta.test']], $draft->recipients);   // the billing contact only
+        $this->assertTrue((bool) $draft->escalated);
         $this->assertTrue(\Illuminate\Support\Facades\DB::table('ip_notifications')->where('user_id', $this->finance->id)->where('type', 'collections_escalation')->exists());
         $this->assertTrue(\Illuminate\Support\Facades\DB::table('ip_notifications')->where('user_id', $this->cm->id)->where('type', 'collections')->exists());
 
@@ -85,29 +87,48 @@ class CollectionsTest extends TestCase
     {
         $this->invoice('601M001/1', 10);
         $paid = $this->invoice('601M004/1', 40);
-        $drafts = app(CollectionsPlanner::class)->prepare();
-        $band7 = $drafts->firstWhere('band', 7);
-        $band30 = $drafts->firstWhere('band', 30);
+        $draft = app(CollectionsPlanner::class)->prepare()->first();
 
         // Another manager sees nothing and cannot send.
         Sanctum::actingAs($this->user('manager', 'other@col.test'));
         $this->assertSame([], $this->getJson('/api/collections/reminders')->assertOk()->json('data'));
-        $this->postJson('/api/collections/reminders/send', ['ids' => [$band7->id]])->assertOk()->assertJsonPath('sent', 0);
+        $this->postJson('/api/collections/reminders/send', ['ids' => [$draft->id]])->assertOk()->assertJsonPath('queued', 0);
         Mail::assertNothingSent();
 
-        // The Client Manager sends; the invoice paid in the meantime is skipped.
+        // The Client Manager sends (queued; sync in tests); the invoice paid in the meantime is left out.
         $paid->update(['balance_due' => 0, 'payment_status' => 'Confirmed']);
         Sanctum::actingAs($this->cm);
-        $result = $this->postJson('/api/collections/reminders/send', ['ids' => [$band7->id, $band30->id]])->assertOk()->json();
+        $result = $this->postJson('/api/collections/reminders/send', ['ids' => [$draft->id]])->assertOk()->json();
+        $this->assertSame(1, $result['queued']);
         $this->assertSame(1, $result['sent']);
-        $this->assertSame(1, $result['skipped']);
         Mail::assertSent(ClientPaymentReminderMail::class, fn ($m) => $m->hasTo('ap@delta.test') && count($m->attachments()) === 1
             && str_starts_with($m->statement['name'], 'Statement-601M'));
-        $this->assertSame('sent', $band7->fresh()->status);
+        $this->assertSame('sent', $draft->fresh()->status);
+        $this->assertNotContains($paid->id, $draft->fresh()->invoice_ids);
         $this->assertDatabaseHas('audit_logs', ['action' => 'payment_reminder_sent', 'subject_id' => $this->client->id]);
 
         // Sending again does nothing (already sent).
-        $this->postJson('/api/collections/reminders/send', ['ids' => [$band7->id]])->assertOk()->assertJsonPath('sent', 0);
+        $this->postJson('/api/collections/reminders/send', ['ids' => [$draft->id]])->assertOk()->assertJsonPath('queued', 0);
         Mail::assertSentCount(1);
+    }
+
+    public function test_a_later_run_supersedes_the_unsent_draft_and_stuck_sends_become_failed(): void
+    {
+        $this->invoice('601M001/1', 10);
+        $first = app(CollectionsPlanner::class)->prepare()->first();
+
+        // A new invoice falls due: one new draft for the client, the old one superseded.
+        $this->invoice('601M005/1', 35);
+        $second = app(CollectionsPlanner::class)->prepare()->first();
+        $this->assertNotNull($second);
+        $this->assertSame('skipped', $first->fresh()->status);
+        $this->assertCount(2, $second->invoice_ids);
+        $this->assertSame(1, CollectionReminder::where('status', 'draft')->count());
+
+        // A send interrupted for over 15 minutes is marked failed (and can be retried).
+        $second->update(['status' => 'sending']);
+        CollectionReminder::whereKey($second->id)->update(['updated_at' => now()->subMinutes(20)]);
+        CollectionsPlanner::sweepStuck();
+        $this->assertSame('failed', $second->fresh()->status);
     }
 }

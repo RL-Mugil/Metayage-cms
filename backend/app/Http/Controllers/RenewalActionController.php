@@ -173,15 +173,17 @@ class RenewalActionController extends Controller
             $profFee = $totals['professional_fee'];
             $currency = $totals['currency'];
 
+            // Quote-first billing: the client's approval raises a proforma; the tax invoice follows payment.
+            $docType = \App\Services\QuoteFirst::applies($client->id) ? 'quote' : 'invoice';
             $invoice = PatentInvoiceIn::create([
-                'type'                 => 'invoice',
+                'type'                 => $docType,
                 'status'               => 'Sent',
                 'payment_status'       => 'Pending',
                 'project_id'           => $project->id,
                 'client_id'            => $client->id,
                 'created_by_id'        => $user->id,
                 'docket_number'        => $project->docket_number,
-                'invoice_uin'          => app(PatentInvoiceUinService::class)->next($project->docket_number, 'invoice'),
+                'invoice_uin'          => app(PatentInvoiceUinService::class)->next($project->docket_number, $docType),
                 'invoice_date'         => now()->toDateString(),
                 'invention_title'      => $project->invention_title ?: $project->project_name,
                 'service_code'         => $project->service_code,
@@ -206,7 +208,8 @@ class RenewalActionController extends Controller
                 $schedule->update(['patent_invoice_in_id' => $invoice->id]);
             }
 
-            $this->appendLedgerEntry($client->id, 'Invoice', $invoice->invoice_uin, (float) $invoice->invoice_amount, 0, "Renewal invoice — {$years} year(s), {$project->docket_number}");
+            // The client ledger is rebuilt from the register (no separate ledger line: that counted it twice).
+            \App\Services\ClientLedgerSync::queue($client->id);
 
             // Single self-service action, not a two-party review — record and
             // resolve the Approval in the same transaction rather than waiting
@@ -217,7 +220,7 @@ class RenewalActionController extends Controller
                 'client_id'     => $client->id,
                 'type'          => 'client',
                 'title'         => "Renewal approved — {$project->docket_number}",
-                'description'   => "{$years} year(s) renewal approved and invoiced ({$invoice->invoice_uin}).",
+                'description'   => "{$years} year(s) renewal approved and ".($docType === 'quote' ? 'proforma raised' : 'invoiced')." ({$invoice->invoice_uin}).",
                 'subject_type'  => 'PatentInvoiceIn',
                 'subject_id'    => $invoice->id,
                 'status'        => 'Approved',
@@ -434,7 +437,17 @@ class RenewalActionController extends Controller
             $invoice->update(['payment_status' => 'Confirmed', 'payment_confirmed_at' => $confirmedAt]);
             $invoice->renewalSchedules()->update(['status' => 'Paid', 'paid_at' => $confirmedAt]);
 
-            $this->appendLedgerEntry($invoice->client_id, 'Payment', $invoice->invoice_uin, 0, (float) $invoice->invoice_amount, "Renewal payment confirmed — {$invoice->docket_number}");
+            // The receipt is a register payment, so the ledger, collections and quote-first rule see it.
+            $rate = (float) ($invoice->exchange_rate ?? 1) ?: 1.0;
+            $amount = (float) ($invoice->balance_due ?? $invoice->invoice_amount);
+            \App\Models\RegisterPayment::create(['patent_invoice_in_id' => $invoice->id, 'client_id' => $invoice->client_id, 'source' => 'portal',
+                'recorded_by_id' => $user->id, 'zoho_payment_id' => 'portal:'.\Illuminate\Support\Str::uuid(), 'payment_date' => $confirmedAt->toDateString(),
+                'amount' => round($amount, 2), 'currency' => $invoice->currency ?: 'INR', 'exchange_rate' => $rate, 'amount_bcy' => round($amount * $rate, 2),
+                'payment_mode' => 'Bank transfer', 'reference' => 'Renewal payment confirmed', 'estimated' => false, 'kind' => 'cash']);
+            if ($invoice->type === 'invoice') {
+                $invoice->update(['balance_due' => 0]);
+            }
+            \App\Services\ClientLedgerSync::queue((int) $invoice->client_id);
 
             AuditLog::create([
                 'user_id' => $user->id, 'action' => 'renewal_payment_confirmed',
@@ -568,9 +581,14 @@ class RenewalActionController extends Controller
         $totals = (clone $query)->reorder()->select('currency')->selectRaw("COALESCE(SUM({$balanceSql}), 0) AS amount")->groupBy('currency')
             ->pluck('amount', 'currency')->map(fn ($amount) => round((float) $amount, 2));
         // Advances earmarked for quotes (money already received): the due list shows the net.
-        $advanceOnQuotes = round((float) \App\Models\AdvanceQuoteLink::whereIn('patent_invoice_in_id', (clone $query)->reorder()->where('type', 'quote')->select('id'))->sum('amount'), 2);
-        if ($advanceOnQuotes > 0) {
-            $totals['INR'] = round(max(0, (float) ($totals['INR'] ?? 0) - $advanceOnQuotes), 2);
+        // Each advance is netted in its quote's own currency (advances are held in INR).
+        $advanceRows = \App\Models\AdvanceQuoteLink::query()->join('patent_invoices_in as q', 'q.id', '=', 'advance_quote_links.patent_invoice_in_id')
+            ->whereIn('q.id', (clone $query)->reorder()->where('type', 'quote')->select('id'))
+            ->get(['advance_quote_links.amount', 'q.currency', 'q.exchange_rate']);
+        $advanceOnQuotes = round((float) $advanceRows->sum('amount'), 2);
+        foreach ($advanceRows->groupBy(fn ($r) => $r->currency ?: 'INR') as $currency => $rows) {
+            $net = (float) $rows->sum(fn ($r) => (float) $r->amount / ((float) ($r->exchange_rate ?? 1) ?: 1.0));
+            $totals[$currency] = round(max(0, (float) ($totals[$currency] ?? 0) - $net), 2);
         }
         $overdue = (clone $query)->whereNotNull('due_date')->where('due_date', '<', now()->toDateString())->count();
         $staff = ! $user->isClientRole();
@@ -581,8 +599,23 @@ class RenewalActionController extends Controller
             ->paginate(min((int) $request->get('per_page', 25), 100));
         $links = \App\Models\AdvanceQuoteLink::whereIn('patent_invoice_in_id', $page->getCollection()->where('type', 'quote')->pluck('id'))
             ->get()->groupBy('patent_invoice_in_id');
-        $page->getCollection()->transform(function (PatentInvoiceIn $row) use ($today, $links) {
+        // Unused payments (advances), looked up once for the page: suggested for quotes they pay.
+        $advanceCache = null;
+        $advances = function () use (&$advanceCache) {
+            return $advanceCache ??= \App\Models\ZohoPaymentIndex::where('unused_amount', '>', 0)->get()
+                ->map(fn ($p) => ($adv = app(\App\Services\PaymentsReceived::class)->advance($p->remote_id)) ? $adv + ['id' => $p->remote_id] : null)->filter()->values();
+        };
+        $page->getCollection()->transform(function (PatentInvoiceIn $row) use ($today, $links, $advances) {
             $row->setAttribute('balance', (float) ($row->balance_due ?? $row->invoice_amount));
+            if ($row->type === 'quote') {
+                $state = \App\Services\QuoteFirst::paidState($row);
+                $row->setAttribute('paid_state', $state);
+                if (! $state['fully_paid'] && $row->client_id && \App\Services\QuoteFirst::enabled()) {
+                    // A payment from this client, not yet used, that would pay the quote.
+                    $match = $advances()->first(fn ($adv) => (int) $adv['client_id'] === (int) $row->client_id && $adv['unused'] + $state['allowance'] + 0.5 >= $state['due']);
+                    $row->setAttribute('payment_suggestion', $match ? ['zoho_payment_id' => $match['id'], 'number' => $match['number'], 'unused' => $match['unused']] : null);
+                }
+            }
             if ($row->type === 'quote' && isset($links[$row->id])) {
                 // Part of an advance already received is earmarked for this quote (INR).
                 $advance = round((float) $links[$row->id]->sum('amount'), 2);

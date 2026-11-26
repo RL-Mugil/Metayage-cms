@@ -35,8 +35,10 @@ class LedgerCheck
             // INR figures (_bcy) where Zoho gives them: a foreign customer's plain figures are in its currency.
             $zoho = round((float) ($contact['outstanding_receivable_amount_bcy'] ?? $contact['outstanding_receivable_amount'])
                 - (float) ($contact['unused_credits_receivable_amount_bcy'] ?? $contact['unused_credits_receivable_amount'] ?? 0), 2);
+            // Zoho's customer balance has no quotes (estimates): leave the portal's Quote lines out.
             $portal = round((float) (ClientLedger::where('client_id', $client->id)
-                ->orderByDesc('transaction_date')->orderByRaw('CASE WHEN debit > 0 THEN 1 ELSE 0 END')->orderByDesc('id')->value('balance') ?? 0), 2);
+                ->orderByDesc('transaction_date')->orderByRaw('CASE WHEN debit > 0 THEN 1 ELSE 0 END')->orderByDesc('id')->value('balance') ?? 0)
+                - (float) ClientLedger::where('client_id', $client->id)->where('document_type', 'Quote')->sum('debit'), 2);
             if (abs($portal - $zoho) > $tolerance) {
                 $differ[] = ['client_id' => $client->id, 'code' => $client->client_code, 'name' => $client->legal_name ?: $client->company_name,
                     'portal' => $portal, 'zoho' => $zoho, 'difference' => round($portal - $zoho, 2)];

@@ -21,6 +21,9 @@ use Illuminate\Support\Collection;
  */
 class PaymentsReceived
 {
+    /** Quote ids with a Zoho invoice (loaded once per listing). */
+    private $invoicedQuotes = [];
+
     /** @return Collection<int, array<string, mixed>> newest first */
     public function rows(User $user): Collection
     {
@@ -35,11 +38,17 @@ class PaymentsReceived
             ->where('zoho_invoices.zoho_type', 'invoice')
             ->get(['patent_invoices_in.id', 'patent_invoices_in.invoice_uin', 'patent_invoices_in.client_id', 'zoho_invoices.zoho_id'])
             ->keyBy(fn ($r) => (string) $r->zoho_id);
-        $links = AdvanceQuoteLink::with('quote:id,invoice_uin,zoho_number,zoho_status,status')->get()->groupBy('zoho_payment_id');
+        $links = AdvanceQuoteLink::with('quote:id,invoice_uin,zoho_number,zoho_status,status,converted_invoice_id')->get()->groupBy('zoho_payment_id');
+        $invoicedQuotes = \App\Models\ZohoQuoteExport::where('source_type', 'in')->whereNotNull('invoice_id')->pluck('source_id')->flip();
+        $this->invoicedQuotes = $invoicedQuotes;
 
         $rows = collect();
-        foreach (ZohoSnapshot::where('resource', 'customerpayments')->get(['remote_id', 'detail', 'summary']) as $snapshot) {
-            $p = json_decode((string) ($snapshot->detail ?: $snapshot->summary), true) ?: [];
+        foreach (\App\Models\ZohoPaymentIndex::query()->get() as $idx) {
+            $snapshot = $idx;   // remote_id for the row key
+            $p = ['payment_number' => $idx->payment_number, 'date' => $idx->date?->toDateString(), 'amount' => (float) $idx->amount,
+                'unused_amount' => (float) $idx->unused_amount, 'exchange_rate' => (float) $idx->exchange_rate, 'currency_code' => $idx->currency,
+                'customer_id' => $idx->customer_id, 'customer_name' => $idx->customer_name, 'payment_mode' => $idx->payment_mode,
+                'reference_number' => $idx->reference, 'invoices' => $idx->applications ?? []];
             if (empty($p['date'])) {
                 continue;
             }
@@ -95,10 +104,12 @@ class PaymentsReceived
             'unused' => $unused,
             'links' => $links->map(fn (AdvanceQuoteLink $l) => ['id' => $l->id, 'quote_id' => $l->patent_invoice_in_id,
                 'quote' => $l->quote?->invoice_uin ?: $l->quote?->zoho_number, 'amount' => (float) $l->amount, 'note' => $l->note,
-                'invoiced' => strtolower((string) $l->quote?->zoho_status) === 'invoiced'
-                    || \App\Models\ZohoQuoteExport::where('source_type', 'in')->where('source_id', $l->patent_invoice_in_id)->whereNotNull('invoice_id')->exists(),
+                'invoiced' => strtolower((string) $l->quote?->zoho_status) === 'invoiced' || isset($this->invoicedQuotes[$l->patent_invoice_in_id])
+                    || $l->quote?->converted_invoice_id !== null,
                 'applied' => $l->applied_at !== null])->values()->all(),
             'unlinked' => round(max(0, $unused - $linked), 2),
+            // Quote-first billing: open quotes this payment pays in full ("Create invoice & apply").
+            'suggestions' => $unused - $linked > 0 && $client ? app(QuoteInvoicing::class)->suggestions($client->id, $unused - $linked) : [],
         ];
     }
 
@@ -136,15 +147,15 @@ class PaymentsReceived
     /** The unused amount of one Zoho customer payment (INR), and its client. */
     public function advance(string $paymentId): ?array
     {
-        $snapshot = ZohoSnapshot::where('resource', 'customerpayments')->where('remote_id', $paymentId)->first();
-        if (! $snapshot) {
+        $idx = \App\Models\ZohoPaymentIndex::where('remote_id', $paymentId)->first();
+        if (! $idx) {
             return null;
         }
-        $p = json_decode((string) ($snapshot->detail ?: $snapshot->summary), true) ?: [];
-        $clientId = app(RegisterPaymentsImporter::class)->clientsFor($snapshot, [])[0]
+        $clientId = ($idx->customer_id ? (Client::where('zoho_contact_id', $idx->customer_id)->value('id')
+                ?? ZohoInvoice::withTrashed()->where('zoho_contact_id', $idx->customer_id)->whereNotNull('client_id')->value('client_id')) : null)
             ?? RegisterPayment::where('zoho_payment_id', $paymentId)->whereNotNull('client_id')->value('client_id');
 
-        return ['unused' => round((float) ($p['unused_amount'] ?? 0) * ((float) ($p['exchange_rate'] ?? 1) ?: 1.0), 2),
-            'number' => $p['payment_number'] ?? null, 'client_id' => $clientId];
+        return ['unused' => round((float) $idx->unused_amount * ((float) $idx->exchange_rate ?: 1.0), 2),
+            'number' => $idx->payment_number, 'client_id' => $clientId];
     }
 }

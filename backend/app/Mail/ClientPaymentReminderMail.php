@@ -37,12 +37,19 @@ class ClientPaymentReminderMail extends Mailable
     {
         $e = fn ($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
         $rows = $this->invoices->map(function (PatentInvoiceIn $i) use ($e) {
-            $late = $i->due_date && $i->due_date->isPast() ? (int) $i->due_date->diffInDays(now()).' days overdue' : 'due '.$i->due_date?->format('d M Y');
+            if ($i->type === 'quote') {
+                // A proforma: payable now; the tax invoice follows the payment.
+                $late = 'Proforma · payable now';
+                $amount = 'INR '.number_format(\App\Services\QuoteFirst::paidState($i)['due'], 2);
+            } else {
+                $late = $i->due_date && $i->due_date->isPast() ? (int) $i->due_date->diffInDays(now()).' days overdue' : 'due '.$i->due_date?->format('d M Y');
+                $amount = ($i->currency ?: 'INR').' '.number_format((float) $i->balance_due, 2);
+            }
 
             return '<tr><td style="padding:6px 8px;border-bottom:1px solid #eef2f7;font-family:monospace">'.$e($i->invoice_uin ?: $i->zoho_number).'</td>'
                 .'<td style="padding:6px 8px;border-bottom:1px solid #eef2f7">'.$e($i->invoice_date?->format('d M Y')).'</td>'
                 .'<td style="padding:6px 8px;border-bottom:1px solid #eef2f7">'.$e($late).'</td>'
-                .'<td style="padding:6px 8px;border-bottom:1px solid #eef2f7;text-align:right">'.$e(($i->currency ?: 'INR').' '.number_format((float) $i->balance_due, 2)).'</td></tr>';
+                .'<td style="padding:6px 8px;border-bottom:1px solid #eef2f7;text-align:right">'.$e($amount).'</td></tr>';
         })->implode('');
         $body = nl2br($e($this->reminder->body));
         $head = $this->letterhead;

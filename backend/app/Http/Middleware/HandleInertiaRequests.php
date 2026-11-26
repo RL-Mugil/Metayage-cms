@@ -89,6 +89,8 @@ class HandleInertiaRequests extends Middleware
                 'payroll_signatory_designation'  => $rows['payroll_signatory_designation'] ?? '',
                 // Settings → System → Open access switches (App\Support\DataAccess).
                 'open_access'                    => \App\Support\DataAccess::openAccess(),
+                // Settings → System → Quote-first billing (App\Services\QuoteFirst).
+                'quote_first'                    => \App\Services\QuoteFirst::settings(),
                 // Settings → System → Open access → Financial access: logins that see all finance.
                 'finance_access_user_ids'        => array_values(array_map('intval', (array) $decode('finance_access_user_ids', []))),
                 'payroll_signatory_user_id'      => isset($rows['payroll_signatory_user_id']) && $rows['payroll_signatory_user_id'] !== '' ? (int) $rows['payroll_signatory_user_id'] : null,

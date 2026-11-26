@@ -69,7 +69,7 @@ class TallyExport
                 'narration' => trim(($inv->docket_number ? "Docket {$inv->docket_number}. " : '').($inv->invention_title ? mb_substr($inv->invention_title, 0, 120) : '')), 'lines' => $lines]);
         }
 
-        $payments = RegisterPayment::with('invoice:id,invoice_uin,client_id,client_name', 'invoice.client:id,legal_name,company_name')
+        $payments = RegisterPayment::with('invoice', 'invoice.client:id,legal_name,company_name')
             ->where('estimated', false)->whereBetween('payment_date', [$from->toDateString(), $to->toDateString()])->orderBy('payment_date')->orderBy('id')->get();
         foreach ($payments as $p) {
             $amount = round((float) $p->amount_bcy, 2);
@@ -84,7 +84,9 @@ class TallyExport
                 'date' => $p->payment_date->toDateString(),
                 'narration' => match ($p->kind) { RegisterPayment::TDS => "TDS withheld by the client on {$ref}", RegisterPayment::CREDIT_NOTE => "Credit note {$ref}",
                     default => "Received against {$ref}".($p->payment_mode ? " ({$p->payment_mode})" : '').($p->reference ? ", ref {$p->reference}" : '') },
-                'lines' => [['ledger' => $other, 'dr' => $amount, 'cr' => 0.0], ['ledger' => $name, 'dr' => 0.0, 'cr' => $amount]]]);
+                'lines' => $p->kind === RegisterPayment::CREDIT_NOTE
+                    ? $this->balance(array_merge($this->creditNoteSplit($p->invoice, $amount, $L), [['ledger' => $name, 'dr' => 0.0, 'cr' => $amount]]), $L['round_off'])
+                    : [['ledger' => $other, 'dr' => $amount, 'cr' => 0.0], ['ledger' => $name, 'dr' => 0.0, 'cr' => $amount]]]);
         }
 
         $fx = ClientLedger::with('client:id,legal_name,company_name')->where('document_type', 'Exchange difference')
@@ -99,6 +101,35 @@ class TallyExport
         }
 
         return $vouchers->sortBy(fn ($v) => $v['date'].'|'.$v['type'].'|'.$v['number'])->values();
+    }
+
+    /**
+     * A credit note reverses part of its invoice: split it across the invoice's own income and
+     * output-GST ledgers in the invoice's proportions, so GST in Tally reverses correctly.
+     * Without a known split, the whole amount goes to the credit-note ledger.
+     *
+     * @return array<int, array{ledger: string, dr: float, cr: float}>
+     */
+    private function creditNoteSplit(?PatentInvoiceIn $inv, float $amount, array $L): array
+    {
+        if (! $inv) {
+            return [['ledger' => $L['credit_note'], 'dr' => $amount, 'cr' => 0.0]];
+        }
+        $parts = array_filter([
+            $L['professional_fees'] => max(0, (float) $inv->service_fees - (float) $inv->discount_amount),
+            $L['office_fees'] => (float) $inv->patent_office_fees, $L['other'] => (float) $inv->other_expenses,
+            $L['igst'] => (float) $inv->igst_amount, $L['cgst'] => (float) $inv->cgst_amount, $L['sgst'] => (float) $inv->sgst_amount,
+        ], fn ($v) => $v > 0.009);
+        $sum = array_sum($parts);
+        if ($sum <= 0) {
+            return [['ledger' => $L['credit_note'], 'dr' => $amount, 'cr' => 0.0]];
+        }
+        $lines = [];
+        foreach ($parts as $ledger => $part) {
+            $lines[] = ['ledger' => $ledger, 'dr' => round($amount * $part / $sum, 2), 'cr' => 0.0];
+        }
+
+        return $lines;
     }
 
     /** Debits equal credits: any paisa difference goes to the round-off ledger. */

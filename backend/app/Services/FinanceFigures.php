@@ -90,12 +90,15 @@ class FinanceFigures
         $billed = (float) $register->billed + (float) $legacy->billed;
         $outstanding = (float) $register->outstanding + (float) $legacy->outstanding;
         $waived = (float) $register->waived;
+        // Quote-first billing: unpaid quotes are money due too (not billed: no tax invoice yet).
+        $quoted = round((float) $this->openQuoteReceivables($user, $clientId)->sum('due'), 2);
 
         return [
             'billed' => round($billed, 2),
             // Waived-off balances are neither received nor outstanding.
             'received' => round(max(0, $billed - $outstanding - $waived), 2),
-            'outstanding' => round($outstanding, 2),
+            'outstanding' => round($outstanding + $quoted, 2),
+            'quoted_outstanding' => $quoted,
             'waived' => round($waived, 2),
             'overdue_count' => (int) $register->overdue_count + (int) $legacy->overdue_count,
             'draft_count' => $drafts,
@@ -211,6 +214,13 @@ class FinanceFigures
             $buckets[$key]['amount'] += $row['outstanding'];
             $buckets[$key]['count']++;
         }
+        // Quote-first billing: unpaid quotes age from the quote date.
+        foreach ($this->openQuoteReceivables($user, $clientId) as $q) {
+            $late = $q['date'] && $q['date']->lt($today) ? (int) $q['date']->diffInDays($today) : 0;
+            $key = match (true) { $late <= 0 => 'current', $late <= 30 => '1_30', $late <= 60 => '31_60', $late <= 90 => '61_90', default => '90_plus' };
+            $buckets[$key]['amount'] += $q['due'];
+            $buckets[$key]['count']++;
+        }
 
         return collect($buckets)->map(fn ($b, $key) => ['key' => $key, 'amount' => round($b['amount'], 2)] + $b)->values()->all();
     }
@@ -294,8 +304,7 @@ class FinanceFigures
      */
     public function quotedNotInvoiced(User $user, ?int $clientId = null): Builder
     {
-        $query = PatentInvoiceIn::query()->where('type', 'quote')->whereIn('status', ['Sent', 'Accepted'])
-            ->where(fn ($q) => $q->whereNull('zoho_status')->orWhereRaw('LOWER(zoho_status) <> ?', ['invoiced']));
+        $query = PatentInvoiceIn::query()->openQuotes();
         if ($clientId !== null) {
             $query->where('client_id', $clientId);
         }
@@ -307,6 +316,27 @@ class FinanceFigures
         }
 
         return $query;
+    }
+
+    /**
+     * Quote-first billing: open quotes are receivables. Each open quote (clients not exempt) with
+     * what is still due on it (INR, less advances earmarked for it), dated by the quote date.
+     *
+     * @return Collection<int, array{quote: PatentInvoiceIn, due: float, date: ?Carbon}>
+     */
+    public function openQuoteReceivables(User $user, ?int $clientId = null): Collection
+    {
+        if (! QuoteFirst::enabled()) {
+            return collect();
+        }
+        $exempt = QuoteFirst::settings()['exempt_client_ids'];
+        $quotes = $this->quotedNotInvoiced($user, $clientId)->when($exempt !== [], fn ($q) => $q->whereNotIn('client_id', $exempt))->get();
+        $earmarked = \App\Models\AdvanceQuoteLink::whereIn('patent_invoice_in_id', $quotes->pluck('id'))->selectRaw('patent_invoice_in_id, SUM(amount) s')
+            ->groupBy('patent_invoice_in_id')->pluck('s', 'patent_invoice_in_id');
+
+        return $quotes->map(fn (PatentInvoiceIn $q) => ['quote' => $q, 'date' => $q->invoice_date,
+            'due' => round(max(0, (float) ($q->total_bcy ?? (float) $q->invoice_amount * ((float) ($q->exchange_rate ?? 1) ?: 1)) - (float) ($earmarked[$q->id] ?? 0)), 2)])
+            ->filter(fn ($r) => $r['due'] > 0.009)->values();
     }
     /**
      * Expected collections for the next 3 months: unpaid invoice balances by due date (overdue

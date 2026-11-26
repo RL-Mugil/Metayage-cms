@@ -768,7 +768,7 @@ class ZohoExportImporter
             }
         }
         if ($clientId) {
-            DB::afterCommit(fn () => app(ClientLedgerSync::class)->sync((int) $clientId));
+            ClientLedgerSync::queue((int) $clientId);
         }
     }
 

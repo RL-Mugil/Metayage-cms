@@ -44,7 +44,8 @@ class MatterCostController extends Controller
     public function index(Request $request): JsonResponse
     {
         $f = $request->validate(['kind' => 'nullable|in:official_fee,associate,other', 'project_id' => 'nullable|integer', 'client_id' => 'nullable|integer',
-            'from' => 'nullable|date', 'to' => 'nullable|date', 'unassigned' => 'nullable|boolean', 'unbilled' => 'nullable|boolean', 'search' => 'nullable|string|max:100']);
+            'from' => 'nullable|date', 'to' => 'nullable|date', 'unassigned' => 'nullable|boolean', 'unbilled' => 'nullable|boolean',
+            'review' => 'nullable|boolean', 'search' => 'nullable|string|max:100']);
         $rows = $this->scoped($request)
             ->when($f['kind'] ?? null, fn ($q, $v) => $q->where('kind', $v))
             ->when($f['project_id'] ?? null, fn ($q, $v) => $q->where('project_id', $v))
@@ -52,7 +53,8 @@ class MatterCostController extends Controller
             ->when($f['from'] ?? null, fn ($q, $v) => $q->where('bill_date', '>=', $v))
             ->when($f['to'] ?? null, fn ($q, $v) => $q->where('bill_date', '<=', $v))
             ->when(! empty($f['unassigned']), fn ($q) => $q->whereNull('project_id'))
-            ->when(! empty($f['unbilled']), fn ($q) => $q->where('recoverable', true)->whereNull('billed_invoice_id'))
+            ->when(! empty($f['unbilled']), fn ($q) => $q->where('recoverable', true)->where('needs_review', false)->whereNull('billed_invoice_id'))
+            ->when(! empty($f['review']), fn ($q) => $q->where('needs_review', true))
             ->when($f['search'] ?? null, fn ($q, $s) => $q->where(fn ($w) => $w->where('vendor_name', 'ilike', "%{$s}%")->orWhere('vendor_reference', 'ilike', "%{$s}%")
                 ->orWhere('description', 'ilike', "%{$s}%")->orWhereHas('project', fn ($p) => $p->where('docket_number', 'ilike', "%{$s}%"))))
             ->orderByDesc('bill_date')->orderByDesc('id')->limit(1000)->get();
@@ -61,7 +63,8 @@ class MatterCostController extends Controller
             'data' => $rows->map(fn (MatterCost $c) => $this->row($c)),
             'totals' => collect(MatterCost::KINDS)->mapWithKeys(fn ($label, $kind) => [$kind => round((float) $rows->where('kind', $kind)->sum('amount_bcy'), 2)]),
             'unassigned' => (clone $this->scoped($request))->whereNull('project_id')->count(),
-            'unbilled' => round((float) (clone $this->scoped($request))->where('recoverable', true)->whereNull('billed_invoice_id')->sum('amount_bcy'), 2),
+            'unbilled' => round((float) (clone $this->scoped($request))->where('recoverable', true)->where('needs_review', false)->whereNull('billed_invoice_id')->sum('amount_bcy'), 2),
+            'to_review' => (clone $this->scoped($request))->where('needs_review', true)->count(),
             'can' => ['edit' => DataAccess::canActOnFinance($request->user()), 'rates' => InvoiceSettlement::canPay($request->user())],
         ]);
     }
@@ -92,7 +95,7 @@ class MatterCostController extends Controller
             $data = array_intersect_key($data, array_flip(['project_id', 'client_id', 'kind', 'recoverable', 'billed_invoice_id', 'notes', 'document_id']));
         }
         DB::transaction(function () use ($cost, $data, $request) {
-            $cost->update($data);
+            $cost->update($data + ['needs_review' => false]);   // saved by a person: reviewed
             $this->audit($request, 'matter_cost_updated', $cost);
         });
 
@@ -113,6 +116,18 @@ class MatterCostController extends Controller
         return response()->json(['ok' => true]);
     }
 
+    /** Confirm an imported cost: recoverable (to be billed to the client) or absorbed by the firm. */
+    public function confirm(Request $request, int $id): JsonResponse
+    {
+        $this->allowEdit($request);
+        $cost = $this->scoped($request)->findOrFail($id);
+        $recoverable = (bool) $request->validate(['recoverable' => 'required|boolean'])['recoverable'];
+        $cost->update(['recoverable' => $recoverable, 'needs_review' => false]);
+        $this->audit($request, 'matter_cost_confirmed', $cost);
+
+        return response()->json($this->row($cost->fresh(['project', 'client', 'billedInvoice', 'document', 'createdBy'])));
+    }
+
     /** Internal time cost rates (₹/hour per designation): Accounts only; salaries are never read. */
     public function rates(Request $request): JsonResponse
     {
@@ -129,6 +144,7 @@ class MatterCostController extends Controller
         $value = ['default' => (float) $data['default'],
             'designations' => collect($data['designations'] ?? [])->filter(fn ($v) => $v !== null && $v !== '')->map(fn ($v) => (float) $v)->all()];
         DB::table('system_settings')->updateOrInsert(['key' => MatterProfitability::RATES_KEY], ['value' => json_encode($value), 'updated_at' => now()]);
+        MatterProfitability::bump();
         AuditLog::create(['user_id' => $request->user()->id, 'action' => 'time_cost_rates_updated', 'subject_type' => 'Finance', 'subject_id' => 0,
             'metadata' => ['designations' => count($value['designations'])], 'ip_address' => $request->ip(), 'user_agent' => $request->userAgent()]);
 
@@ -164,7 +180,7 @@ class MatterCostController extends Controller
             'id' => $c->id, 'kind' => $c->kind, 'kind_label' => MatterCost::KINDS[$c->kind] ?? $c->kind, 'vendor_name' => $c->vendor_name,
             'vendor_reference' => $c->vendor_reference, 'description' => $c->description, 'bill_date' => $c->bill_date?->toDateString(),
             'paid_on' => $c->paid_on?->toDateString(), 'currency' => $c->currency, 'amount' => (float) $c->amount, 'exchange_rate' => (float) $c->exchange_rate,
-            'amount_bcy' => (float) $c->amount_bcy, 'recoverable' => $c->recoverable, 'source' => $c->source, 'notes' => $c->notes,
+            'amount_bcy' => (float) $c->amount_bcy, 'recoverable' => $c->recoverable, 'needs_review' => $c->needs_review, 'source' => $c->source, 'notes' => $c->notes,
             'project' => $c->project ? ['id' => $c->project->id, 'docket' => $c->project->docket_number, 'name' => $c->project->project_name] : null,
             'client' => $c->client ? ['id' => $c->client->id, 'code' => $c->client->client_code, 'name' => $c->client->legal_name ?: $c->client->company_name] : null,
             'billed_invoice' => $c->billedInvoice ? ['id' => $c->billedInvoice->id, 'uin' => $c->billedInvoice->invoice_uin] : null,

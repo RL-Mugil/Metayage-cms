@@ -22,7 +22,9 @@ class ClientStatement
     /** Ledger lines in date order (the order the running balance is computed in). */
     public function lines(int $clientId): Collection
     {
+        // The ₹0 "Opening Balance" seed row (kept for locking) is not a transaction: leave it out.
         return ClientLedger::where('client_id', $clientId)
+            ->where(fn ($q) => $q->whereNotNull('source_key')->orWhere('document_type', '!=', 'Opening Balance')->orWhere('debit', '!=', 0)->orWhere('credit', '!=', 0))
             ->orderBy('transaction_date')->orderByRaw('CASE WHEN debit > 0 THEN 0 ELSE 1 END')->orderBy('id')
             ->get(['id', 'transaction_date', 'document_type', 'document_reference', 'debit', 'credit', 'tds', 'balance', 'notes', 'created_at']);
     }
@@ -37,7 +39,9 @@ class ClientStatement
         $sum = fn (string $field, array $types) => round((float) $lines->filter(fn ($l) => in_array($l->document_type, $types, true))->sum(fn ($l) => (float) $l->{$field}), 2);
 
         return [
-            'billed' => round((float) $lines->filter(fn ($l) => $l->document_type !== 'Exchange difference')->sum(fn ($l) => (float) $l->debit), 2),
+            'billed' => round((float) $lines->filter(fn ($l) => ! in_array($l->document_type, ['Exchange difference', 'Quote'], true))->sum(fn ($l) => (float) $l->debit), 2),
+            // Quote-first billing: unpaid quotes (proformas) on the statement.
+            'quoted' => round((float) $lines->where('document_type', 'Quote')->sum(fn ($l) => (float) $l->debit), 2),
             'received' => $sum('credit', ['Payment']),
             'tds' => round((float) $lines->sum(fn ($l) => (float) $l->tds), 2),
             'credit_notes' => $sum('credit', ['Credit note']),

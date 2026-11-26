@@ -235,6 +235,7 @@ Route::middleware(['auth:sanctum', 'firm.context', 'throttle:120,1'])->group(fun
     Route::post('/finance/costs', [\App\Http\Controllers\MatterCostController::class, 'store']);
     Route::put('/finance/costs/{id}', [\App\Http\Controllers\MatterCostController::class, 'update'])->whereNumber('id');
     Route::delete('/finance/costs/{id}', [\App\Http\Controllers\MatterCostController::class, 'destroy'])->whereNumber('id');
+    Route::post('/finance/costs/{id}/confirm', [\App\Http\Controllers\MatterCostController::class, 'confirm'])->whereNumber('id');
     Route::get('/finance/time-cost-rates', [\App\Http\Controllers\MatterCostController::class, 'rates']);
     Route::put('/finance/time-cost-rates', [\App\Http\Controllers\MatterCostController::class, 'saveRates']);
     Route::get('/finance/profitability', [\App\Http\Controllers\ProfitabilityController::class, 'index'])->middleware('throttle:60,1');
@@ -258,6 +259,7 @@ Route::middleware(['auth:sanctum', 'firm.context', 'throttle:120,1'])->group(fun
     Route::post('/payments-received/{paymentId}/links', [\App\Http\Controllers\PaymentsReceivedController::class, 'link']);
     Route::delete('/advance-links/{id}', [\App\Http\Controllers\PaymentsReceivedController::class, 'unlink']);
     Route::post('/advance-links/{id}/apply', [\App\Http\Controllers\PaymentsReceivedController::class, 'apply'])->whereNumber('id')->middleware('throttle:zoho-write');
+    Route::post('/quotes/{id}/invoice-from-payment', [\App\Http\Controllers\QuoteInvoiceController::class, 'fromPayment'])->whereNumber('id')->middleware('throttle:zoho-write');
     Route::put('/finance/controls/renewal-quotes', [\App\Http\Controllers\FinanceControlsController::class, 'renewalQuotes']);
     Route::get('/finance/tally-export', [\App\Http\Controllers\TallyExportController::class, 'export'])->middleware('throttle:20,1');
     Route::put('/finance/tally-ledgers', [\App\Http\Controllers\TallyExportController::class, 'saveLedgers']);
@@ -452,6 +454,7 @@ Route::middleware(['auth:sanctum', 'firm.context', 'throttle:120,1'])->group(fun
     Route::put('/settings/payroll', [\App\Http\Controllers\SettingsController::class, 'updatePayrollSettings']);
     Route::put('/settings/finance-access', [\App\Http\Controllers\SettingsController::class, 'updateFinanceAccess']);
     Route::put('/settings/open-access', [\App\Http\Controllers\SettingsController::class, 'updateOpenAccess']);
+    Route::put('/settings/quote-first', [\App\Http\Controllers\SettingsController::class, 'updateQuoteFirst']);
     Route::get('/settings/ipo', [\App\Http\Controllers\Ipo\IpoSettingsController::class, 'show']);
     Route::put('/settings/ipo/service', [\App\Http\Controllers\Ipo\IpoSettingsController::class, 'updateService']);
     Route::put('/settings/escalation-cadence', [\App\Http\Controllers\SettingsController::class, 'updateEscalationCadence']);

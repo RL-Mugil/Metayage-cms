@@ -126,6 +126,10 @@ class ZohoQuoteController extends Controller
     public function convertToInvoice(Request $request, string $kind, int $id, ZohoQuoteWriter $writer, ZohoMirrorSync $mirror): ZohoSyncResource
     {
         $this->authorize('create', ZohoQuoteExport::class);
+        $quote = app(ZohoQuoteDraft::class)->source($kind, $id);
+        // Quote-first billing: invoice once the client has paid (or give a reason).
+        \App\Services\QuoteFirst::check($quote->client_id, $quote instanceof \App\Models\PatentInvoiceIn ? $quote : null,
+            $request->input('override_reason'), $request->user(), 'create invoice in Zoho');
         $result = $writer->convertToInvoice($kind, $id);
         if (! empty($result['invoice_id'])) {
             try {
@@ -133,6 +137,9 @@ class ZohoQuoteController extends Controller
             } catch (\Throwable $error) {
                 report($error);
                 $result['message'] .= ' The invoice was created in Zoho; portal mirroring is queued for the next poll.';
+            }
+            if ($quote instanceof \App\Models\PatentInvoiceIn) {
+                \App\Services\QuoteInvoicing::markConverted($quote, (string) $result['invoice_id']);
             }
         }
         return new ZohoSyncResource($result);

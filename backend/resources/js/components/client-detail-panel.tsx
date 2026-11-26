@@ -28,7 +28,7 @@ interface LedgerLine {
   balance: number | string | null; notes?: string | null; quote?: boolean;
 }
 interface OpenQuote { id: number; date: string | null; number: string; status: string; amount: number; title: string | null; advance_linked?: number; advance_payments?: string[]; net_due?: number }
-interface LedgerSummary { billed: number; received: number; tds: number; credit_notes: number; waived: number; advance: number; balance: number }
+interface LedgerSummary { billed: number; received: number; tds: number; credit_notes: number; waived: number; advance: number; balance: number; quoted?: number; exchange?: number }
 
 const TYPE_BADGE: Record<string, string> = {
   TDS: "bg-amber-100 text-amber-800 border-amber-200",
@@ -373,7 +373,7 @@ export function ClientDetailPanel({ clientId, onClose }: Props) {
                           ["Invoiced", summary.billed, ""],
                           ["Received", summary.received, "text-green-600"],
                           ["TDS withheld", summary.tds, "text-amber-700"],
-                          ["Credit notes", summary.credit_notes, ""],
+                          ...(summary.quoted ? [["Unpaid proformas", summary.quoted, "text-blue-600"]] : [["Credit notes", summary.credit_notes, ""]]),
                           ["Advance (unused)", summary.advance, "text-green-600"],
                           [Number(summary.balance) < -0.009 ? "Credit with us" : "Balance due", summary.balance, Number(summary.balance) < -0.009 ? "text-green-600" : Number(summary.balance) > 0.009 ? "text-red-600" : ""],
                         ].map(([label, value, tone]) => (

@@ -174,6 +174,10 @@ class PatentInvoiceController extends Controller
             abort(403);
         }
         $clientId = $project->client_id;
+        // Quote-first billing: a tax invoice before the client has paid needs a reason (logged).
+        if (($v['type'] ?? 'invoice') === 'invoice') {
+            \App\Services\QuoteFirst::check($clientId, null, $request->input('override_reason'), $user, 'new invoice');
+        }
 
         $record = DB::transaction(function () use ($v, $user, $clientId) {
             $data = $this->computeTotals($v);
@@ -367,6 +371,9 @@ class PatentInvoiceController extends Controller
         if ($record->type !== 'quote') abort(422, 'Only quotations can be converted to invoices.');
         if ($record->isFromZoho()) abort(422, 'Convert this quote to an invoice in Zoho Books; the invoice is imported here automatically.');
         if ($record->status === 'Cancelled') abort(422, 'Cannot convert a cancelled quotation.');
+        abort_if($record->converted_invoice_id, 422, 'This quote is already an invoice.');
+        // Quote-first billing: convert once the client has paid (or give a reason).
+        \App\Services\QuoteFirst::check($record->client_id, $record, $request->input('override_reason'), $user, 'convert quote');
 
         $invoice = DB::transaction(function () use ($record, $user) {
             $record = PatentInvoiceIn::whereKey($record->id)->lockForUpdate()->firstOrFail();
@@ -386,6 +393,14 @@ class PatentInvoiceController extends Controller
             $data['invoice_uin']    = $this->computeUin($record->docket_number, 'invoice');
 
             $inv = PatentInvoiceIn::create($data);
+            // Money received on the quote now settles the invoice.
+            $moved = \App\Models\RegisterPayment::where('patent_invoice_in_id', $record->id)->get();
+            if ($moved->isNotEmpty()) {
+                \App\Models\RegisterPayment::whereIn('id', $moved->pluck('id'))->update(['patent_invoice_in_id' => $inv->id]);
+                $left = round(max(0, (float) $inv->invoice_amount - (float) $moved->sum('amount')), 2);
+                $inv->update(['balance_due' => $left, 'payment_status' => $left <= 0.009 ? 'Confirmed' : 'Partially Paid']);
+            }
+            $record->update(['converted_invoice_id' => $inv->id]);
 
             AuditLog::create([
                 'user_id'      => $user->id,

@@ -1,0 +1,146 @@
+<?php
+
+namespace Tests\Feature;
+
+use App\Models\AdvanceQuoteLink;
+use App\Models\Client;
+use App\Models\ClientLedger;
+use App\Models\PatentInvoiceIn;
+use App\Models\User;
+use App\Services\ClientLedgerSync;
+use App\Services\QuoteFirst;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Laravel\Sanctum\Sanctum;
+use Tests\TestCase;
+
+/** Quote-first billing: quotes are the receivable; a tax invoice follows payment unless a reason is given or the client is exempt. */
+class QuoteFirstBillingTest extends TestCase
+{
+    use RefreshDatabase;
+
+    private User $admin;
+
+    private User $finance;
+
+    private Client $client;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->admin = $this->user('super_admin', 'admin@qf.test');
+        $this->finance = $this->user('finance', 'acc@qf.test');
+        $this->client = Client::create(['client_code' => '701M', 'client_type' => 'organization', 'legal_name' => 'Gamma Labs', 'company_name' => 'Gamma Labs',
+            'nationality' => 'India', 'status' => 'Active']);
+    }
+
+    private function user(string $role, string $email): User
+    {
+        return User::create(['name' => ucfirst($role), 'email' => $email, 'password' => bcrypt('password'), 'role' => $role, 'status' => 'Active']);
+    }
+
+    /** ₹10,000 professional fees + 18% GST = ₹11,800. */
+    private function quote(): PatentInvoiceIn
+    {
+        return PatentInvoiceIn::create(['type' => 'quote', 'status' => 'Sent', 'source' => 'manual', 'client_id' => $this->client->id,
+            'docket_number' => '701M001INPAT', 'invoice_uin' => '701M001INPAT/Q1', 'invoice_date' => now()->subDays(5)->toDateString(),
+            'service_fees' => 10000, 'patent_office_fees' => 0, 'other_expenses' => 0, 'igst_amount' => 1800, 'cgst_amount' => 0, 'sgst_amount' => 0,
+            'invoice_amount' => 11800, 'total_bcy' => 11800, 'exchange_rate' => 1, 'currency' => 'INR', 'payment_status' => 'Pending']);
+    }
+
+    private function turnOn(array $exempt = []): void
+    {
+        Sanctum::actingAs($this->admin);
+        $this->putJson('/api/settings/quote-first', ['enabled' => true, 'exempt_client_ids' => $exempt])->assertOk()->assertJsonPath('enabled', true);
+    }
+
+    public function test_only_a_system_admin_changes_the_rule_and_it_is_off_by_default(): void
+    {
+        $this->assertFalse(QuoteFirst::enabled());
+        Sanctum::actingAs($this->finance);
+        $this->putJson('/api/settings/quote-first', ['enabled' => true])->assertForbidden();
+        $this->turnOn();
+        $this->assertTrue(QuoteFirst::enabled());
+        $this->assertDatabaseHas('audit_logs', ['action' => 'update_quote_first_billing', 'user_id' => $this->admin->id]);
+    }
+
+    public function test_off_a_quote_converts_without_any_question(): void
+    {
+        $quote = $this->quote();
+        Sanctum::actingAs($this->finance);
+        $this->postJson("/api/patent-invoices/in/{$quote->id}/convert")->assertCreated();
+        $this->assertNotNull($quote->fresh()->converted_invoice_id);
+        $this->assertSame(0, PatentInvoiceIn::openQuotes()->count());
+    }
+
+    public function test_on_an_unpaid_quote_needs_a_reason_which_is_audited(): void
+    {
+        $quote = $this->quote();
+        $this->turnOn();
+        Sanctum::actingAs($this->finance);
+        $this->postJson("/api/patent-invoices/in/{$quote->id}/convert")->assertStatus(422)->assertJsonPath('code', 'quote_first');
+        $this->assertNull($quote->fresh()->converted_invoice_id);
+
+        $this->postJson("/api/patent-invoices/in/{$quote->id}/convert", ['override_reason' => 'Client asked for the tax invoice to release payment'])->assertCreated();
+        $this->assertNotNull($quote->fresh()->converted_invoice_id);
+        $this->assertDatabaseHas('audit_logs', ['action' => 'quote_first_override', 'subject_id' => $quote->id]);
+    }
+
+    public function test_an_exempt_client_is_invoiced_before_payment(): void
+    {
+        $quote = $this->quote();
+        $this->turnOn([$this->client->id]);
+        Sanctum::actingAs($this->finance);
+        $this->postJson("/api/patent-invoices/in/{$quote->id}/convert")->assertCreated();
+        $this->assertDatabaseMissing('audit_logs', ['action' => 'quote_first_override']);
+    }
+
+    public function test_a_tds_shortfall_up_to_ten_percent_of_fees_counts_as_paid(): void
+    {
+        $quote = $this->quote();
+        $this->turnOn();
+        // Paid ₹10,800: ₹1,000 short = 10% TDS on ₹10,000 fees.
+        AdvanceQuoteLink::create(['zoho_payment_id' => '9001', 'payment_number' => 'PAY-1', 'client_id' => $this->client->id,
+            'patent_invoice_in_id' => $quote->id, 'amount' => 10800, 'created_by_id' => $this->finance->id]);
+        $this->assertTrue(QuoteFirst::paidState($quote)['fully_paid']);
+
+        Sanctum::actingAs($this->finance);
+        $this->postJson("/api/patent-invoices/in/{$quote->id}/convert")->assertCreated();
+        $this->assertDatabaseMissing('audit_logs', ['action' => 'quote_first_override']);
+    }
+
+    public function test_a_short_payment_beyond_tds_is_not_paid(): void
+    {
+        $quote = $this->quote();
+        AdvanceQuoteLink::create(['zoho_payment_id' => '9002', 'payment_number' => 'PAY-2', 'client_id' => $this->client->id,
+            'patent_invoice_in_id' => $quote->id, 'amount' => 9000, 'created_by_id' => $this->finance->id]);
+        $state = QuoteFirst::paidState($quote);
+        $this->assertFalse($state['fully_paid']);
+        $this->assertSame(2800.0, $state['due']);
+    }
+
+    public function test_on_open_quotes_are_on_the_ledger_and_leave_it_once_invoiced(): void
+    {
+        $quote = $this->quote();
+        app(ClientLedgerSync::class)->sync($this->client->id);
+        $this->assertSame(0, ClientLedger::where('client_id', $this->client->id)->where('document_type', 'Quote')->count());   // off: no quote line
+
+        $this->turnOn();
+        app(ClientLedgerSync::class)->sync($this->client->id);
+        $line = ClientLedger::where('client_id', $this->client->id)->where('document_type', 'Quote')->first();
+        $this->assertNotNull($line);
+        $this->assertSame(11800.0, (float) $line->debit);
+
+        $quote->update(['converted_invoice_id' => PatentInvoiceIn::create(['type' => 'invoice', 'status' => 'Sent', 'source' => 'manual', 'client_id' => $this->client->id,
+            'invoice_uin' => '701M001INPAT/1', 'invoice_amount' => 11800, 'total_bcy' => 11800, 'balance_due' => 11800, 'exchange_rate' => 1, 'currency' => 'INR',
+            'invoice_date' => now()->toDateString(), 'payment_status' => 'Pending'])->id]);
+        app(ClientLedgerSync::class)->sync($this->client->id);
+        $this->assertSame(0, ClientLedger::where('client_id', $this->client->id)->where('document_type', 'Quote')->count());
+    }
+
+    public function test_a_new_invoice_before_payment_needs_a_reason_too(): void
+    {
+        $this->turnOn();
+        $this->expectException(\Illuminate\Http\Exceptions\HttpResponseException::class);
+        QuoteFirst::check($this->client->id, null, null, $this->finance, 'new invoice');
+    }
+}

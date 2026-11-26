@@ -39,7 +39,8 @@ class CollectionReminderController extends Controller
     public function index(Request $request): JsonResponse
     {
         $status = $request->validate(['status' => 'nullable|in:draft,sent,skipped,failed'])['status'] ?? 'draft';
-        $rows = $this->visible($request)->where('status', $status)->orderByDesc('escalated')->orderByDesc('band')->latest('id')->limit(300)->get();
+        CollectionsPlanner::sweepStuck();
+        $rows = $this->visible($request)->whereIn('status', $status === 'draft' ? ['draft', 'queued', 'sending'] : [$status])->orderByDesc('escalated')->orderByDesc('band')->latest('id')->limit(300)->get();
         $invoices = PatentInvoiceIn::whereIn('id', $rows->pluck('invoice_ids')->flatten()->unique())->get()->keyBy('id');
         $paused = CollectionClientSetting::whereIn('client_id', $rows->pluck('client_id'))->get()->keyBy('client_id');
 
@@ -50,10 +51,17 @@ class CollectionReminderController extends Controller
                 'sent_at' => $r->sent_at?->toIso8601String(), 'sent_by' => $r->sentBy?->name, 'created_at' => $r->created_at?->toIso8601String(),
                 'client' => ['id' => $r->client_id, 'code' => $r->client?->client_code, 'name' => $r->client?->legal_name ?: $r->client?->company_name,
                     'paused_until' => $paused->get($r->client_id)?->paused_until?->toDateString()],
-                'invoices' => collect($r->invoice_ids)->map(fn ($id) => $invoices->get($id))->filter()->map(fn (PatentInvoiceIn $i) => [
-                    'id' => $i->id, 'uin' => $i->invoice_uin ?: $i->zoho_number, 'due_date' => $i->due_date?->toDateString(), 'currency' => $i->currency ?: 'INR',
-                    'balance' => (float) $i->balance_due, 'paid' => (float) $i->balance_due <= 0.009 || $i->payment_status === 'Confirmed',
-                    'promised_on' => $i->promised_on?->toDateString()])->values(),
+                'invoices' => collect($r->invoice_ids)->map(fn ($id) => $invoices->get($id))->filter()->map(function (PatentInvoiceIn $i) {
+                    $quote = $i->type === 'quote';
+                    $state = $quote ? \App\Services\QuoteFirst::paidState($i) : null;
+                    $dueOn = $quote ? $i->invoice_date : $i->due_date;
+
+                    return ['id' => $i->id, 'uin' => $i->invoice_uin ?: $i->zoho_number, 'kind' => $quote ? 'proforma' : 'invoice',
+                        'due_date' => $dueOn?->toDateString(),'currency' => $quote ? 'INR' : ($i->currency ?: 'INR'),
+                        'balance' => $quote ? $state['due'] : (float) $i->balance_due,
+                        'paid' => $quote ? $state['fully_paid'] : ((float) $i->balance_due <= 0.009 || $i->payment_status === 'Confirmed'),
+                        'promised_on' => $i->promised_on?->toDateString()];
+                })->values(),
                 'can_send' => $r->client ? CollectionsPlanner::canSend($request->user(), $r->client) : false,
             ]),
             'counts' => (clone $this->visible($request))->selectRaw('status, count(*) n')->groupBy('status')->pluck('n', 'status'),
@@ -74,47 +82,28 @@ class CollectionReminderController extends Controller
         return response()->json(['ok' => true]);
     }
 
-    /** Send one or more drafts. Paid invoices are left out; a draft with nothing left unpaid is skipped. */
+    /**
+     * Approve and send drafts (or retry failed ones): each is claimed (status "queued") and sent by a
+     * queued job, so a bulk send never times out and a draft cannot be sent twice.
+     */
     public function send(Request $request): JsonResponse
     {
         $ids = $request->validate(['ids' => 'required|array|min:1|max:100', 'ids.*' => 'integer'])['ids'];
-        $cfg = CollectionsPlanner::settings();
-        $head = app(Letterhead::class)->get();
-        $result = ['sent' => 0, 'skipped' => 0, 'failed' => 0];
+        $queued = 0;
         foreach ($this->visible($request)->whereIn('id', $ids)->get() as $reminder) {
             if (! CollectionsPlanner::canSend($request->user(), $reminder->client)) {
                 continue;
             }
-            // Claim the draft first, so a double click or a second sender cannot send it twice.
-            $claimed = DB::transaction(fn () => CollectionReminder::whereKey($reminder->id)->where('status', 'draft')->lockForUpdate()->update(['status' => 'sending']));
-            if (! $claimed) {
-                continue;
-            }
-            $invoices = PatentInvoiceIn::whereIn('id', $reminder->invoice_ids)->where('balance_due', '>', 0)->where('payment_status', '!=', 'Confirmed')->get();
-            if ($invoices->isEmpty() || empty($reminder->recipients)) {
-                $reminder->update(['status' => 'skipped', 'error' => $invoices->isEmpty() ? 'Paid before sending.' : 'No recipient email.']);
-                $result['skipped']++;
-
-                continue;
-            }
-            try {
-                $statement = app(ClientStatement::class)->render($reminder->client, $request->user(), 'pdf', 'client');
-                Mail::to(collect($reminder->recipients)->pluck('email')->all())
-                    ->send(new ClientPaymentReminderMail($reminder, $invoices, $statement, $head, $cfg['reply_to'], $cfg['closing']));
-                $reminder->update(['status' => 'sent', 'sent_by_id' => $request->user()->id, 'sent_at' => now(), 'error' => null,
-                    'invoice_ids' => $invoices->pluck('id')->values()->all()]);
-                AuditLog::create(['user_id' => $request->user()->id, 'action' => 'payment_reminder_sent', 'subject_type' => 'Client', 'subject_id' => $reminder->client_id,
-                    'metadata' => ['reminder_id' => $reminder->id, 'band' => $reminder->band, 'invoices' => $invoices->pluck('invoice_uin')->all(),
-                        'to' => collect($reminder->recipients)->pluck('email')->all()], 'ip_address' => $request->ip(), 'user_agent' => $request->userAgent()]);
-                $result['sent']++;
-            } catch (\Throwable $e) {
-                report($e);
-                $reminder->update(['status' => 'failed', 'error' => mb_substr($e->getMessage(), 0, 500)]);
-                $result['failed']++;
+            $claimed = CollectionReminder::whereKey($reminder->id)->whereIn('status', ['draft', 'failed'])->update(['status' => 'queued', 'error' => null]);
+            if ($claimed) {
+                \App\Jobs\SendCollectionReminder::dispatch($reminder->id, $request->user()->id, $request->ip());
+                $queued++;
             }
         }
+        $after = CollectionReminder::whereIn('id', $ids)->get(['status']);
 
-        return response()->json($result);
+        return response()->json(['queued' => $queued, 'sent' => $after->where('status', 'sent')->count(),
+            'skipped' => $after->where('status', 'skipped')->count(), 'failed' => $after->where('status', 'failed')->count()]);
     }
 
     public function skip(Request $request, int $id): JsonResponse

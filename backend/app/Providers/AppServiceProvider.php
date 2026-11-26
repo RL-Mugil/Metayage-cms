@@ -106,6 +106,8 @@ class AppServiceProvider extends ServiceProvider
             }
         });
 
+        \App\Models\PatentInvoiceIn::saved(fn () => \App\Services\MatterProfitability::bump());
+
         // Month close: a change that still reaches a locked month (a Zoho import) is flagged for review.
         \App\Models\PatentInvoiceIn::updated(function (\App\Models\PatentInvoiceIn $row): void {
             $changed = array_intersect(array_keys($row->getChanges()), ['invoice_amount', 'total_bcy', 'balance_due', 'status', 'invoice_date', 'waived_amount']);
@@ -133,9 +135,7 @@ class AppServiceProvider extends ServiceProvider
                 $fresh = \App\Models\ZohoSnapshot::withTrashed()->find($snapshot->id) ?? $snapshot;
                 $importer = app(\App\Services\RegisterPaymentsImporter::class);
                 $touched = $fresh->resource === 'creditnotes' ? $importer->importCreditNote($fresh) : $importer->importPayment($fresh);
-                foreach ($importer->clientsFor($fresh, $touched) as $client) {
-                    app(\App\Services\ClientLedgerSync::class)->sync($client);
-                }
+                \App\Services\ClientLedgerSync::queue(...$importer->clientsFor($fresh, $touched));
             }, null, true));
         };
         \App\Models\ZohoSnapshot::deleted(function (\App\Models\ZohoSnapshot $snapshot) use ($importPayment): void {

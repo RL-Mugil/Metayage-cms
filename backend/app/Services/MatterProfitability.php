@@ -22,6 +22,14 @@ class MatterProfitability
 {
     public const RATES_KEY = 'time_cost_rates';
 
+    private const CACHE_VERSION = 'profitability_v';
+
+    /** Refresh cached profitability (a cost, invoice or rate changed). */
+    public static function bump(): void
+    {
+        \Illuminate\Support\Facades\Cache::increment(self::CACHE_VERSION);
+    }
+
     /** @return array{default: float, designations: array<string, float>} */
     public static function rates(): array
     {
@@ -54,6 +62,14 @@ class MatterProfitability
      * @return Collection<int, array<string, mixed>>
      */
     public function rows(User $user, array $f = []): Collection
+    {
+        // Cached for 5 minutes per user and filters; costs, rates and invoices bump the version.
+        $key = 'profitability:'.(int) \Illuminate\Support\Facades\Cache::get(self::CACHE_VERSION, 0).':'.$user->id.':'.md5(json_encode(array_intersect_key($f, array_flip(['from', 'to', 'client_id', 'project_id']))));
+
+        return \Illuminate\Support\Facades\Cache::remember($key, 300, fn () => $this->compute($user, $f));
+    }
+
+    private function compute(User $user, array $f): Collection
     {
         $from = $f['from'] ?? null;
         $to = $f['to'] ?? null;
@@ -100,8 +116,9 @@ class MatterProfitability
             $timeCost = round($hours->sum(fn ($t) => (float) $t->duration_hours * $rateFor($t->user_id)), 2);
             $margin = round($billed - $official - $associate - $other - $legacy - $timeCost, 2);
             // Leakage: recoverable official fees paid beyond what was billed, and recoverable costs left unbilled 30+ days.
-            $officialRecoverable = round((float) $cost->where('kind', 'official_fee')->where('recoverable', true)->sum('amount_bcy'), 2);
-            $unbilledOld = round((float) $cost->where('recoverable', true)->whereNull('billed_invoice_id')
+            // Only costs Accounts has confirmed as recoverable (imports wait for review).
+            $officialRecoverable = round((float) $cost->where('kind', 'official_fee')->where('recoverable', true)->where('needs_review', false)->sum('amount_bcy'), 2);
+            $unbilledOld = round((float) $cost->where('recoverable', true)->where('needs_review', false)->whereNull('billed_invoice_id')
                 ->filter(fn ($c) => $c->bill_date && $c->bill_date->lt(now()->subDays(30)))->sum('amount_bcy'), 2);
 
             return [

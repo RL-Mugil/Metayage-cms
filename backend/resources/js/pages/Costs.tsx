@@ -13,11 +13,11 @@ import { fmtDate } from "@/lib/date-utils";
 
 interface Cost {
   id: number; kind: "official_fee" | "associate" | "other"; kind_label: string; vendor_name: string | null; vendor_reference: string | null; description: string | null;
-  bill_date: string; paid_on: string | null; currency: string; amount: number; exchange_rate: number; amount_bcy: number; recoverable: boolean; source: string; notes: string | null;
+  bill_date: string; paid_on: string | null; currency: string; amount: number; exchange_rate: number; amount_bcy: number; recoverable: boolean; needs_review: boolean; source: string; notes: string | null;
   project: { id: number; docket: string; name: string } | null; client: { id: number; code: string; name: string } | null;
   billed_invoice: { id: number; uin: string } | null; document: { file_name: string; storage_path: string } | null; created_by: string | null;
 }
-interface Data { data: Cost[]; totals: Record<string, number>; unassigned: number; unbilled: number; can: { edit: boolean; rates: boolean } }
+interface Data { data: Cost[]; totals: Record<string, number>; unassigned: number; unbilled: number; to_review: number; can: { edit: boolean; rates: boolean } }
 
 const inr = (v: number) => `₹${Number(v).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 const KINDS = [["official_fee", "Official fee"], ["associate", "Foreign associate"], ["other", "Other cost"]] as const;
@@ -27,7 +27,7 @@ export default function Costs() {
   const [data, setData] = useState<Data | null>(null);
   const [kind, setKind] = useState("");
   const [search, setSearch] = useState("");
-  const [view, setView] = useState<"all" | "unbilled" | "unassigned">("all");
+  const [view, setView] = useState<"all" | "unbilled" | "unassigned" | "review">("all");
   const [loading, setLoading] = useState(true);
   const [edit, setEdit] = useState<Cost | "new" | null>(null);
 
@@ -38,10 +38,16 @@ export default function Costs() {
     if (search.trim()) p.set("search", search.trim());
     if (view === "unbilled") p.set("unbilled", "1");
     if (view === "unassigned") p.set("unassigned", "1");
+    if (view === "review") p.set("review", "1");
     api.request<Data>(`/finance/costs?${p}`).then(setData).catch((e: any) => toast.error(e?.message ?? "Could not load costs.")).finally(() => setLoading(false));
   };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { const t = window.setTimeout(load, 250); return () => window.clearTimeout(t); }, [kind, search, view]);
+
+  const confirm = async (c: Cost, recoverable: boolean) => {
+    try { await api.request(`/finance/costs/${c.id}/confirm`, { method: "POST", body: JSON.stringify({ recoverable }) }); toast.success(recoverable ? "Confirmed: bill to client" : "Confirmed: absorbed by the firm"); load(); }
+    catch (e: any) { toast.error(e?.message ?? "Failed."); }
+  };
 
   const remove = async (c: Cost) => {
     if (!window.confirm(`Delete this ${c.kind_label.toLowerCase()} of ${inr(c.amount_bcy)}?`)) return;
@@ -62,6 +68,7 @@ export default function Costs() {
               { label: "Other costs", value: inr(data?.totals.other ?? 0), color: "#64748b" },
               { label: "Recoverable, not billed", value: inr(data?.unbilled ?? 0), color: "#ef4444", onClick: () => setView(view === "unbilled" ? "all" : "unbilled"), active: view === "unbilled" },
               { label: "Not tied to a case", value: String(data?.unassigned ?? 0), color: "#f59e0b", onClick: () => setView(view === "unassigned" ? "all" : "unassigned"), active: view === "unassigned" },
+              { label: "To review (imported)", value: String(data?.to_review ?? 0), color: "#8b5cf6", onClick: () => setView(view === "review" ? "all" : "review"), active: view === "review" },
             ].map((c) => (
               <button key={c.label} type="button" onClick={c.onClick} disabled={!c.onClick}
                 className={`glass flex min-w-[130px] flex-1 items-center gap-2 rounded-xl px-2.5 py-1 text-left ${c.onClick ? "cursor-pointer hover:-translate-y-0.5" : "cursor-default"} ${c.active ? "ring-2 ring-gold/60" : ""} transition-transform`}>
@@ -97,7 +104,12 @@ export default function Costs() {
                       : <span className="text-amber-600">Not tied to a case</span>}</td>
                     <td className="px-3 py-2"><div className="font-medium">{c.kind_label}</div><div className="text-[10px] text-muted-foreground">{[c.vendor_name, c.vendor_reference].filter(Boolean).join(" · ")}{c.source !== "portal" ? " · from Zoho" : ""}</div></td>
                     <td className="whitespace-nowrap px-3 py-2 text-right font-semibold">{inr(c.amount_bcy)}{c.currency !== "INR" && <div className="text-[10px] font-normal text-muted-foreground">{c.currency} {c.amount.toLocaleString("en-IN")}</div>}</td>
-                    <td className="px-3 py-2">{!c.recoverable ? <span className="text-muted-foreground">Not recoverable</span> : c.billed_invoice ? <span className="font-mono text-emerald-600">{c.billed_invoice.uin}</span> : <span className="text-red-600">Not billed yet</span>}</td>
+                    <td className="px-3 py-2">{c.needs_review ? (
+                      data.can.edit ? <span className="flex flex-wrap gap-1"><span className="text-violet-600">To review:</span>
+                        <button className="rounded border border-border px-1.5 text-[10px] hover:bg-muted" onClick={() => confirm(c, true)}>Bill to client</button>
+                        <button className="rounded border border-border px-1.5 text-[10px] hover:bg-muted" onClick={() => confirm(c, false)}>Firm absorbs</button></span>
+                        : <span className="text-violet-600">To review</span>
+                    ) : !c.recoverable ? <span className="text-muted-foreground">Not recoverable</span> : c.billed_invoice ? <span className="font-mono text-emerald-600">{c.billed_invoice.uin}</span> : <span className="text-red-600">Not billed yet</span>}</td>
                     <td className="whitespace-nowrap px-3 py-2 text-right">
                       {c.document && <button className="mr-1 text-[10px] underline" onClick={() => api.downloadDocument(c.document!.storage_path, c.document!.file_name)}>Bill</button>}
                       {data.can.edit && <button className="rounded p-1 text-muted-foreground hover:text-foreground" onClick={() => setEdit(c)}><Pencil className="h-3.5 w-3.5" /></button>}

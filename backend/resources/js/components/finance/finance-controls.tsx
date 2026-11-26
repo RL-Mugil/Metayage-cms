@@ -16,6 +16,7 @@ interface Controls {
   months: Month[]; flags: Flag[]; approvals: Approval[]; ledger_check: LedgerCheck | null
   exchange: { from: string; gain: number; loss: number; lines: { date: string; reference: string; client: string | null; amount: number; notes: string | null }[] }
   renewal_quotes: { enabled: boolean; days: number }
+  quote_first: { enabled: boolean; before_payment: { at: string | null; action: string; by: string; what: string; reference: string | null; reason: string | null }[] }
   can: { unlock: boolean }
 }
 
@@ -191,6 +192,22 @@ export function FinanceControls() {
       </section>
 
       <TallyCard months={data.months} />
+
+      {/* Quote-first billing: invoices raised before payment */}
+      {data.quote_first.enabled && (
+        <section className="rounded-xl border border-border p-4 xl:col-span-2">
+          <h3 className="mb-1 text-sm font-semibold">Invoices raised before payment (quote-first billing, last 90 days)</h3>
+          {data.quote_first.before_payment.length === 0 ? <p className="text-xs text-muted-foreground">None: every invoice followed a payment, or was for an exempt client.</p> : (
+            <table className="w-full text-xs">
+              <thead className="text-[10px] uppercase text-muted-foreground"><tr><th className="py-1 text-left">When</th><th className="text-left">Invoice / quote</th><th className="text-left">By</th><th className="text-left">How</th><th className="text-left">Reason</th></tr></thead>
+              <tbody>{data.quote_first.before_payment.map((b, i) => (
+                <tr key={i} className="border-t border-border/60"><td className="py-1 font-mono">{b.at ? fmtDate(b.at) : ""}</td><td className="font-mono">{b.reference ?? "—"}</td><td>{b.by}</td>
+                  <td>{b.action === "invoice_before_payment" ? "Raised in Zoho while unpaid" : b.what}</td><td className="text-muted-foreground">{b.reason ?? "—"}</td></tr>
+              ))}</tbody>
+            </table>
+          )}
+        </section>
+      )}
 
       {/* Renewal quotes, quote first */}
       <section className="rounded-xl border border-border p-4 xl:col-span-2">

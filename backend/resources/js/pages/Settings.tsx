@@ -1,4 +1,5 @@
 import { OpenAccessCard } from "@/components/settings/open-access-card";
+import { QuoteFirstCard } from "@/components/settings/quote-first-card";
 import { ConnectedAppsCard } from "@/components/settings/connected-apps-card";
 import { Head, usePage, router } from "@inertiajs/react";
 import { Fragment, useState, useEffect, useRef, useCallback } from "react";
@@ -1584,6 +1585,7 @@ export default function Settings() {
           {tab === "system" && (
             <div className="space-y-6">
               {isSuperAdmin && <OpenAccessCard />}
+              {isSuperAdmin && <QuoteFirstCard />}
               {/* General config */}
               <Card className="border-border">
                 <CardHeader><CardTitle className="font-display">System Configuration</CardTitle></CardHeader>

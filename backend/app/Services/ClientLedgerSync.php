@@ -99,6 +99,23 @@ class ClientLedgerSync
                 }
             }
 
+            // Quote-first billing: an unpaid quote (proforma) is money due, until it becomes the tax invoice.
+            if (QuoteFirst::applies($clientId)) {
+                foreach (PatentInvoiceIn::openQuotes()->where('client_id', $clientId)->whereNotNull('invoice_date')->get() as $quote) {
+                    $wanted["quote:{$quote->id}"] = [
+                        'transaction_date' => $quote->invoice_date, 'document_type' => 'Quote',
+                        'document_reference' => $quote->invoice_uin ?: $quote->zoho_number ?: "Q-{$quote->id}",
+                        'debit' => round((float) ($quote->total_bcy ?? (float) $quote->invoice_amount * ((float) ($quote->exchange_rate ?? 1) ?: 1)), 2),
+                        'credit' => 0, 'tds' => 0, 'notes' => 'Proforma (not a tax invoice): the tax invoice follows payment',
+                    ];
+                    foreach (RegisterPayment::where('patent_invoice_in_id', $quote->id)->get() as $paid) {
+                        $wanted["reg-pay:{$paid->id}"] = ['transaction_date' => $paid->payment_date, 'document_type' => 'Payment',
+                            'document_reference' => trim(($paid->payment_number ?: 'Payment').' → '.($quote->invoice_uin ?: 'quote')),
+                            'debit' => 0, 'credit' => (float) $paid->amount_bcy, 'tds' => 0, 'notes' => 'Received against the proforma'];
+                    }
+                }
+            }
+
             // Money received but not applied to any invoice yet (Zoho "unused credit"): an advance
             // the client holds with us, and unapplied credit-note balances.
             foreach ($this->unusedCredits($clientId) as $key => $line) {
@@ -130,7 +147,24 @@ class ClientLedgerSync
         $linkedPayments = RegisterPayment::where('client_id', $clientId)->whereNotNull('zoho_payment_id')->pluck('zoho_payment_id')
             ->map(fn ($id) => preg_replace('/^(tds|cn):/', '', (string) $id))->unique()->values()->all();
         $lines = [];
-        foreach (['customerpayments', 'creditnotes'] as $resource) {
+        $payments = \App\Models\ZohoPaymentIndex::where('unused_amount', '>', 0)->where(function ($q) use ($contacts, $linkedPayments) {
+            $q->whereIn('remote_id', $linkedPayments ?: [''])->orWhereIn('customer_id', $contacts ?: ['']);
+        })->get();
+        foreach ($payments as $p) {
+            if ($p->customer_id && ! in_array($p->customer_id, $contacts, true) && $this->claimedByAnotherClient($p->customer_id, $clientId)) {
+                continue;
+            }
+            if (! $p->date || (float) $p->unused_amount <= 0.009) {
+                continue;
+            }
+            $lines["zoho-unused:{$p->remote_id}"] = [
+                'transaction_date' => $p->date->toDateString(), 'document_type' => 'Advance',
+                'document_reference' => trim(($p->payment_number ?: 'Payment').' · unused credit'),
+                'debit' => 0, 'credit' => round((float) $p->unused_amount * ((float) $p->exchange_rate ?: 1.0), 2), 'tds' => 0,
+                'notes' => 'Received, not yet applied to an invoice (advance)',
+            ];
+        }
+        foreach (['creditnotes'] as $resource) {
             // By the plain customer column (the snapshot bodies are encrypted), or through the register.
             $snapshots = ZohoSnapshot::where('resource', $resource)->where(function ($q) use ($contacts, $linkedPayments) {
                 $q->whereIn('remote_id', $linkedPayments ?: [''])->orWhereIn('zoho_customer_id', $contacts ?: ['']);
@@ -183,6 +217,17 @@ class ClientLedgerSync
     {
         return \App\Models\Client::where('zoho_contact_id', $customer)->whereKeyNot($clientId)->exists()
             || ZohoInvoice::withTrashed()->where('zoho_contact_id', $customer)->whereNotNull('client_id')->where('client_id', '!=', $clientId)->exists();
+    }
+
+    /**
+     * Rebuild these clients' ledgers in the background, once each: a burst of Zoho changes for one
+     * client collapses into one rebuild (unique job, short delay), after the change is committed.
+     */
+    public static function queue(int ...$clientIds): void
+    {
+        foreach (array_unique(array_filter($clientIds)) as $id) {
+            \App\Jobs\RebuildClientLedger::dispatch((int) $id)->afterCommit()->delay(now()->addSeconds(10));
+        }
     }
 
     /** Running balance in date order (debits add, credits subtract). */

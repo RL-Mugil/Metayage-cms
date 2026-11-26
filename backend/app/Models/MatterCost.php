@@ -15,14 +15,22 @@ class MatterCost extends Model
 
     protected $fillable = [
         'project_id', 'client_id', 'kind', 'vendor_name', 'vendor_reference', 'description', 'bill_date', 'paid_on',
-        'currency', 'amount', 'exchange_rate', 'amount_bcy', 'recoverable', 'billed_invoice_id', 'source', 'zoho_id',
+        'currency', 'amount', 'exchange_rate', 'amount_bcy', 'recoverable', 'needs_review', 'billed_invoice_id', 'source', 'zoho_id',
         'document_id', 'notes', 'created_by_id',
     ];
 
     protected $casts = [
         'bill_date' => 'date:Y-m-d', 'paid_on' => 'date:Y-m-d', 'amount' => 'decimal:2', 'exchange_rate' => 'decimal:6',
-        'amount_bcy' => 'decimal:2', 'recoverable' => 'boolean',
+        'amount_bcy' => 'decimal:2', 'recoverable' => 'boolean', 'needs_review' => 'boolean',
     ];
+
+    protected static function booted(): void
+    {
+        // Profitability figures are cached: any cost change refreshes them.
+        $bump = fn () => \App\Services\MatterProfitability::bump();
+        static::saved($bump);
+        static::deleted($bump);
+    }
 
     public function project(): BelongsTo
     {

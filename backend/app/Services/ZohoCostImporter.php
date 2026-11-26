@@ -167,7 +167,8 @@ class ZohoCostImporter
 
             return;
         }
-        MatterCost::create($values + ['zoho_id' => $doc['zoho_id'], 'recoverable' => true,
+        // New from Zoho: Accounts confirms it (recoverable or not) before it counts as unbilled.
+        MatterCost::create($values + ['zoho_id' => $doc['zoho_id'], 'recoverable' => true, 'needs_review' => true,
             'project_id' => $project?->id, 'client_id' => $project?->client_id]);
     }
 

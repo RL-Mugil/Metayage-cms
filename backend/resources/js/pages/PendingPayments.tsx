@@ -45,6 +45,8 @@ interface Row {
   client?: { id: number; company_name?: string; legal_name?: string; client_code?: string; contact_name?: string; contact_email?: string; phone?: string } | null;
   proof_document?: { id: number; file_name: string; storage_path: string } | null;
   /** Quotes: part of an advance already received, earmarked for this quote (INR), and what is left to pay. */
+  paid_state?: { total: number; received: number; allowance: number; due: number; fully_paid: boolean };
+  payment_suggestion?: { zoho_payment_id: string; number: string | null; unused: number } | null;
   advance_linked?: number;
   advance_payments?: string[];
   net_due?: number;
@@ -262,6 +264,17 @@ export default function PendingPayments() {
                       <td className="whitespace-nowrap px-3 py-2 text-right">
                         <div className="font-semibold">{money(balance, r.currency)}</div>
                         {balance < Number(r.invoice_amount) && <div className="text-[10px] text-muted-foreground">of {money(r.invoice_amount, r.currency)}</div>}
+                        {r.type === "quote" && r.paid_state && (r.paid_state.received > 0 || r.paid_state.fully_paid) && (
+                          <div className={`text-[10px] ${r.paid_state.fully_paid ? "font-medium text-emerald-600" : "text-amber-600"}`}>
+                            {r.paid_state.fully_paid ? "Paid: ready to invoice" : `Paid ${money(r.paid_state.received, "INR")} of ${money(r.paid_state.total, "INR")}`}
+                          </div>
+                        )}
+                        {r.type === "quote" && r.payment_suggestion && extra.can.mark_paid && (
+                          <button className="text-[10px] font-medium text-emerald-700 hover:underline" title="The client's payment covers this quote"
+                            onClick={() => act(r.id, () => api.invoiceQuoteFromPayment(r.id, r.payment_suggestion!.zoho_payment_id), "Invoice created and payment applied")}>
+                            {r.payment_suggestion.number ?? "Payment"} received → Create invoice &amp; apply
+                          </button>
+                        )}
                         {r.advance_linked ? (
                           <div className="text-[10px] text-green-600" title={`Advance received${r.advance_payments?.length ? ` (${r.advance_payments.join(", ")})` : ""}, earmarked for this quote`}>
                             − advance {money(r.advance_linked, "INR")} · net {money(r.net_due ?? 0, r.currency)}

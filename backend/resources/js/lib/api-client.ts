@@ -11,6 +11,24 @@ import type { ZohoQuotePreview } from '@/types/zoho'
 import type { TrademarkDetails, TrademarkInput } from '@/types/trademark'
 import type { Form1Input, Form1Prefill, InventorInput, InventorRecord, IpoAddress, IpoServiceAddress, IpoSettings } from '@/types/ipo-forms'
 
+/**
+ * Quote-first billing: raising a tax invoice before the client has paid is allowed only with a
+ * reason (logged). When the server says so, ask for the reason and try once more with it.
+ */
+async function withQuoteFirstReason<T>(call: (reason?: string) => Promise<T>): Promise<T> {
+  try {
+    return await call()
+  } catch (error) {
+    const message = error instanceof Error ? error.message : ''
+    if (!message.startsWith('Quote-first billing')) throw error
+    const reason = window.prompt(`${message}
+
+Reason for invoicing before payment (at least 10 characters):`)
+    if (!reason || reason.trim().length < 10) throw new Error('Not invoiced: a reason of at least 10 characters is needed to invoice before payment.')
+    return call(reason.trim())
+  }
+}
+
 export function getCsrfToken(): string {
   if (typeof document === 'undefined') return ''
   const match = document.cookie.match(/XSRF-TOKEN=([^;]+)/)
@@ -740,6 +758,11 @@ export const api = {
     return this.request(`/projects/${projectId}/docket/application`, { method: 'PATCH', body: JSON.stringify(data) })
   },
   // ── Renewal approve → invoice → proof → confirm loop (PatentInvoiceIn-backed) ──
+  /** Quote-first billing: a payment arrived → create the tax invoice in Zoho and apply the payment. */
+  async invoiceQuoteFromPayment(quoteId: number, zohoPaymentId: string): Promise<{ earmarked: number; invoice_id: string; applied: boolean; message: string }> {
+    return withQuoteFirstReason((reason) => this.request(`/quotes/${quoteId}/invoice-from-payment`, { method: 'POST',
+      body: JSON.stringify({ zoho_payment_id: zohoPaymentId, ...(reason ? { override_reason: reason } : {}) }) }))
+  },
   async getPaymentsReceived(params?: URLSearchParams): Promise<any> {
     return this.request(`/payments-received${params ? `?${params.toString()}` : ''}`)
   },
@@ -1059,7 +1082,7 @@ export const api = {
     return this.request(`/patent-invoices/in${query}`)
   },
   async createPatentInvoiceIn(data: Partial<PatentInvoiceIn>): Promise<PatentInvoiceIn> {
-    return this.request('/patent-invoices/in', { method: 'POST', body: JSON.stringify(data) })
+    return withQuoteFirstReason((reason) => this.request('/patent-invoices/in', { method: 'POST', body: JSON.stringify({ ...data, ...(reason ? { override_reason: reason } : {}) }) }))
   },
   async updatePatentInvoiceIn(id: number, data: Partial<PatentInvoiceIn>): Promise<PatentInvoiceIn> {
     return this.request(`/patent-invoices/in/${id}`, { method: 'PUT', body: JSON.stringify(data) })
@@ -1071,7 +1094,7 @@ export const api = {
     return this.request('/patent-invoices/in/batch', { method: 'POST', body: JSON.stringify({ ids, action }) })
   },
   async convertPatentQuoteToInvoice(id: number): Promise<PatentInvoiceIn> {
-    return this.request(`/patent-invoices/in/${id}/convert`, { method: 'POST' })
+    return withQuoteFirstReason((reason) => this.request(`/patent-invoices/in/${id}/convert`, { method: 'POST', body: JSON.stringify(reason ? { override_reason: reason } : {}) }))
   },
   async recordPayment(data: {
     invoice_id: number; amount: number; payment_method: string
@@ -1605,7 +1628,7 @@ export const api = {
     return this.request(`/integrations/zoho/quotes/${kind}/${id}/delete-in-zoho`, { method: 'POST' })
   },
   async zohoConvertQuoteToInvoice(kind: 'standard' | 'in', id: number): Promise<{ state: string; estimate_id: string; invoice_id: string | null; message: string }> {
-    return this.request(`/integrations/zoho/quotes/${kind}/${id}/convert-to-invoice`, { method: 'POST' })
+    return withQuoteFirstReason((reason) => this.request(`/integrations/zoho/quotes/${kind}/${id}/convert-to-invoice`, { method: 'POST', body: JSON.stringify(reason ? { override_reason: reason } : {}) }))
   },
   async zohoSyncStatus(): Promise<{ budget: { used: number; limit: number; remaining: number; nightly_limit: number; evening_used: number; addon_limit: number; addon_used: number; pools: Record<'automatic' | 'manual_read' | 'write' | 'emergency' | 'addon', { used: number; limit: number; remaining: number }> }; pending: number; evening: { evening_eligible_date: string | null; pause_reason: string | null; completed_at: string | null } | null; deletions: { mode: string; configured: boolean; pending: number; failed: number; last_received_at: string | null }; last_run: { status: string; summary: string; created_at: string } | null }> {
     return this.request('/integrations/zoho/sync-status')

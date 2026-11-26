@@ -44,8 +44,11 @@ class FinanceControlsController extends Controller
 
         $approvals = QuoteSendApproval::with('requestedBy:id,name', 'decidedBy:id,name')
             ->where(fn ($q) => $q->where('status', 'pending')->orWhere('decided_at', '>=', now()->subDays(30)))
-            ->orderByRaw("CASE status WHEN 'pending' THEN 0 ELSE 1 END")->latest('id')->limit(60)->get()
-            ->map(fn (QuoteSendApproval $a) => $this->approvalRow($a));
+            ->orderByRaw("CASE status WHEN 'pending' THEN 0 ELSE 1 END")->latest('id')->limit(60)->get();
+        // The quotes behind the approvals, loaded once (not one query per row).
+        $quotes = ['in' => PatentInvoiceIn::with('client:id,client_code,legal_name,company_name')->whereIn('id', $approvals->where('quote_kind', 'in')->pluck('quote_id'))->get()->keyBy('id'),
+            'standard' => Quotation::with('client:id,client_code,legal_name,company_name')->whereIn('id', $approvals->where('quote_kind', 'standard')->pluck('quote_id'))->get()->keyBy('id')];
+        $approvals = $approvals->map(fn (QuoteSendApproval $a) => $this->approvalRow($a, $quotes[$a->quote_kind === 'in' ? 'in' : 'standard']->get($a->quote_id)));
 
         $fyStart = now()->month >= 4 ? now()->startOfYear()->month(4) : now()->subYear()->startOfYear()->month(4);
         $fx = ClientLedger::where('document_type', 'Exchange difference')->where('transaction_date', '>=', $fyStart->toDateString())
@@ -65,6 +68,12 @@ class FinanceControlsController extends Controller
                     'client' => $l->client?->client_code, 'amount' => round((float) $l->debit - (float) $l->credit, 2), 'notes' => $l->notes])->values(),
             ],
             'renewal_quotes' => \App\Services\RenewalQuotes::settings(),
+            'quote_first' => ['enabled' => \App\Services\QuoteFirst::enabled(),
+                'before_payment' => \App\Models\AuditLog::whereIn('action', ['quote_first_override', 'invoice_before_payment'])->where('created_at', '>=', now()->subDays(90))
+                    ->with('user:id,name')->latest('id')->limit(100)->get()->map(fn ($a) => ['at' => $a->created_at?->toIso8601String(), 'action' => $a->action,
+                        'by' => $a->user?->name ?? 'Zoho Books', 'what' => $a->metadata['what'] ?? 'Invoice raised in Zoho',
+                        'reference' => $a->metadata['uin'] ?? (PatentInvoiceIn::whereKey($a->subject_id)->value('invoice_uin')),
+                        'reason' => $a->metadata['reason'] ?? null])],
             'can' => ['unlock' => in_array($request->user()->role, self::UNLOCK_ROLES, true)],
         ]);
     }
@@ -148,9 +157,11 @@ class FinanceControlsController extends Controller
         return response()->json($this->approvalRow($approval->fresh()));
     }
 
-    private function approvalRow(QuoteSendApproval $a): array
+    private function approvalRow(QuoteSendApproval $a, $quote = false): array
     {
-        $quote = $a->quote_kind === 'in' ? PatentInvoiceIn::find($a->quote_id) : Quotation::find($a->quote_id);
+        if ($quote === false) {
+            $quote = $a->quote_kind === 'in' ? PatentInvoiceIn::find($a->quote_id) : Quotation::find($a->quote_id);
+        }
         $client = $quote?->client;
 
         return ['id' => $a->id, 'kind' => $a->quote_kind, 'quote_id' => $a->quote_id, 'status' => $a->status, 'note' => $a->note,

@@ -29,6 +29,15 @@ class ZohoSnapshot extends Model
                 $snapshot->zoho_customer_id = self::customerOf($snapshot) ?? $snapshot->zoho_customer_id;
             }
         });
+        // Customer payments: keep the plain payment index in step.
+        $index = function (self $snapshot): void {
+            if ($snapshot->resource === 'customerpayments') {
+                ZohoPaymentIndex::syncFrom($snapshot);
+            }
+        };
+        static::saved($index);
+        static::deleted($index);
+        static::restored($index);
     }
 
     public static function customerOf(self $snapshot): ?string

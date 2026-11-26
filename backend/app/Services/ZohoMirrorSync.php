@@ -343,7 +343,7 @@ class ZohoMirrorSync
                     if ($this->readDetail($resource, (string) $id, true, 'payment_check_missing') === null) {
                         $counts['removed']++;
                         // The deleted snapshot no longer names its customer: rebuild the ledgers it touched.
-                        DB::afterCommit(fn () => array_map(fn ($c) => app(\App\Services\ClientLedgerSync::class)->sync((int) $c), $clients));
+                        \App\Services\ClientLedgerSync::queue(...array_map('intval', $clients));
                     }
                 }
             }

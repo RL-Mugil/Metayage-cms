@@ -28,6 +28,7 @@ interface Payment {
   unused: number;
   links: { id: number; quote_id: number; quote: string | null; amount: number; note: string | null; invoiced: boolean; applied: boolean }[];
   unlinked: number;
+  suggestions?: { id: number; number: string; due: number }[];
 }
 interface Quote { id: number; number: string; date: string | null; status: string; amount: number; advance_linked: number; net_due: number; title: string | null }
 
@@ -74,6 +75,11 @@ export default function PaymentsReceived() {
   };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { load(); }, [page, query, clientId, from, to, unusedOnly, perPage]);
+
+  const invoiceFromPayment = async (r: Payment, q: { id: number; number: string; due: number }) => {
+    if (!window.confirm(`${r.number} pays quote ${q.number} (${inr(q.due)} due). Create the tax invoice in Zoho and apply this payment to it?`)) return;
+    try { const res = await api.invoiceQuoteFromPayment(q.id, r.id); toast.success(res.message); load(); } catch (e: any) { toast.error(e?.message ?? "Failed."); }
+  };
 
   const applyInZoho = async (id: number, amount: number, quote: string | null) => {
     if (!window.confirm(`Apply ${inr(amount)} of this payment to the Zoho invoice made from ${quote ?? "the quote"}? This writes to Zoho Books.`)) return;
@@ -192,6 +198,11 @@ export default function PaymentsReceived() {
                               {canLink && l.invoiced && !l.applied && <button onClick={() => applyInZoho(l.id, l.amount, l.quote)} className="text-gold hover:underline">Apply in Zoho</button>}
                               {canLink && !l.applied && <button onClick={() => unlink(l.id)} className="text-muted-foreground hover:text-red-600" title="Unlink"><X className="h-3 w-3" /></button>}
                             </div>
+                          ))}
+                          {canLink && (r.suggestions ?? []).map((q) => (
+                            <button key={q.id} onClick={() => invoiceFromPayment(r, q)} className="block text-left text-[10px] font-medium text-emerald-700 hover:underline">
+                              Pays {q.number} ({inr(q.due)}) → Create invoice &amp; apply
+                            </button>
                           ))}
                           {canLink && r.unlinked > 0 && r.client && (
                             <button onClick={() => setLinkRow(r)} className="inline-flex items-center gap-1 text-[10px] text-gold hover:underline">

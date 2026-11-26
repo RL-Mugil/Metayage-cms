@@ -16,7 +16,10 @@ class ProfitabilityController extends Controller
         $user = $request->user();
         abort_unless(DataAccess::canOpenFinance($user), 403, 'You do not have access to finance.');
         $f = $request->validate(['by' => 'nullable|in:matter,client,service,office,manager', 'from' => 'nullable|date', 'to' => 'nullable|date',
-            'client_id' => 'nullable|integer', 'project_id' => 'nullable|integer', 'export' => 'nullable|in:xlsx']);
+            'client_id' => 'nullable|integer', 'project_id' => 'nullable|integer', 'export' => 'nullable|in:xlsx', 'refresh' => 'nullable|boolean']);
+        if (! empty($f['refresh'])) {
+            MatterProfitability::bump();
+        }
         $rows = $this->profit->rows($user, $f);
         $grouped = $this->profit->grouped($rows, $f['by'] ?? 'matter');
 

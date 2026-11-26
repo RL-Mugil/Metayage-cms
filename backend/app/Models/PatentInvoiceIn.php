@@ -27,7 +27,7 @@ class PatentInvoiceIn extends Model
         'payment_status', 'proof_document_id', 'status_note', 'status_note_by_id', 'status_note_at', 'promised_on', 'promise_note',
         'payment_confirmed_at',
         // Imported from Zoho Books (ZohoRegisterImporter): the register is the single source of truth.
-        'source', 'zoho_invoice_id', 'zoho_number', 'zoho_status', 'due_date',
+        'source', 'zoho_invoice_id', 'zoho_number', 'zoho_status', 'converted_invoice_id', 'due_date',
         'exchange_rate', 'total_bcy', 'balance_due', 'amount_split_pending',
         'settlement', 'waived_amount', 'waiver_requested_amount', 'waiver_requested_by_id', 'waiver_requested_at', 'waiver_reason', 'settled_by_id', 'settled_at', 'zoho_writeback', 'zoho_writeback_error',
     ];
@@ -103,6 +103,18 @@ class PatentInvoiceIn extends Model
     public function waiverRequestedBy(): \Illuminate\Database\Eloquent\Relations\BelongsTo
     {
         return $this->belongsTo(User::class, 'waiver_requested_by_id');
+    }
+
+    /**
+     * Quotes still open: sent or accepted, and not yet turned into a tax invoice (in the portal,
+     * through Zoho, or invoiced in Zoho). One definition for receivables, ledgers and reminders.
+     */
+    public function scopeOpenQuotes($query)
+    {
+        return $query->where('patent_invoices_in.type', 'quote')->whereIn('patent_invoices_in.status', ['Sent', 'Accepted'])
+            ->whereNull('patent_invoices_in.converted_invoice_id')
+            ->where(fn ($q) => $q->whereNull('patent_invoices_in.zoho_status')->orWhereRaw('LOWER(patent_invoices_in.zoho_status) <> ?', ['invoiced']))
+            ->whereNotIn('patent_invoices_in.id', \App\Models\ZohoQuoteExport::where('source_type', 'in')->whereNotNull('invoice_id')->select('source_id'));
     }
 
     public function payments(): \Illuminate\Database\Eloquent\Relations\HasMany

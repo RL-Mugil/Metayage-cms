@@ -66,7 +66,7 @@ class ZohoRegisterImporter
                 $existing->update(['status' => 'Cancelled', 'zoho_status' => 'deleted']);
                 app(RegisterPaymentsImporter::class)->fillGap($existing);
                 if ($existing->client_id && ! $this->bulk) {
-                    app(ClientLedgerSync::class)->sync((int) $existing->client_id);
+                    ClientLedgerSync::queue((int) $existing->client_id);
                 }
             }
 
@@ -110,6 +110,7 @@ class ZohoRegisterImporter
             $row->update($attrs);
         } else {
             $row = PatentInvoiceIn::create($attrs + ['source' => 'zoho']);
+            $this->flagInvoiceBeforePayment($row, $mirror);
         }
 
         // Payments with real dates (Zoho customer payments; any unrecorded part estimated) and
@@ -118,11 +119,30 @@ class ZohoRegisterImporter
         if (! $this->bulk) {
             app(RegisterPaymentsImporter::class)->fillGap($row, $this->detail($mirror)['last_payment_date'] ?? null);
             foreach (array_unique(array_filter([$row->client_id, $previousClient])) as $client) {
-                app(ClientLedgerSync::class)->sync((int) $client);
+                ClientLedgerSync::queue((int) $client);
             }
         }
 
         return ['action' => $action, 'row' => $row];
+    }
+
+    /**
+     * Quote-first billing: a tax invoice raised in Zoho for a non-exempt client while unpaid (and
+     * not from the portal's payment → invoice flow) is listed on Close & controls for review.
+     */
+    private function flagInvoiceBeforePayment(PatentInvoiceIn $row, ZohoInvoice $mirror): void
+    {
+        $cfg = QuoteFirst::settings();
+        if ($row->type !== 'invoice' || ! QuoteFirst::applies($row->client_id) || ! $cfg['enabled_at'] || (float) $row->balance_due <= 0.009
+            || ! $row->invoice_date || $row->invoice_date->lt(\Carbon\Carbon::parse($cfg['enabled_at'])->startOfDay())) {
+            return;
+        }
+        if (\Illuminate\Support\Facades\Cache::pull('quote_first_expected:'.$mirror->zoho_id)
+            || \App\Models\ZohoQuoteExport::where('invoice_id', $mirror->zoho_id)->exists()) {
+            return;   // made from a paid quote by the portal
+        }
+        \App\Models\AuditLog::create(['user_id' => null, 'action' => 'invoice_before_payment', 'subject_type' => 'PatentInvoiceIn', 'subject_id' => $row->id,
+            'metadata' => ['uin' => $row->invoice_uin ?: $row->zoho_number, 'client_id' => $row->client_id, 'balance' => (float) $row->balance_due, 'source' => 'zoho']]);
     }
 
     /** Imports every mirrored record; returns counts (and totals) for the command's report. */
