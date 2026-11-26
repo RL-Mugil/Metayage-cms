@@ -26,7 +26,8 @@ export function KpiStrip({ items, className }: { items: KpiChip[]; className?: s
       {items.map((k, i) => (
         <motion.button key={k.key} type="button" onClick={k.onClick} title={k.hint ?? (k.onClick ? `Show ${k.label.toLowerCase()}` : undefined)}
           initial={reduce ? false : { opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.03, type: "spring", stiffness: 300, damping: 26 }}
-          whileHover={k.onClick && !reduce ? { y: -2 } : undefined} whileTap={k.onClick && !reduce ? { scale: 0.98 } : undefined}
+          style={{ transformPerspective: 700 }}
+          whileHover={!reduce ? { y: -3, rotateX: 8, rotateY: -4, boxShadow: "var(--shadow-3d-lg)" } : undefined} whileTap={k.onClick && !reduce ? { scale: 0.97, rotateX: 0 } : undefined}
           className={cn("glass group relative flex min-w-[120px] flex-1 items-center gap-2.5 overflow-hidden rounded-xl px-3 py-2 text-left",
             k.onClick ? "cursor-pointer" : "cursor-default", k.active && "ring-2 ring-gold/50")}>
           <span aria-hidden className="pointer-events-none absolute -right-6 -top-8 h-16 w-16 rounded-full opacity-25 blur-xl transition-opacity group-hover:opacity-45" style={{ background: k.color }} />

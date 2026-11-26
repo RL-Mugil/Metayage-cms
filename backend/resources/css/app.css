@@ -170,8 +170,19 @@
   .shadow-3d { box-shadow: var(--shadow-3d); }
   /* Tables inside TableCard: header stays visible while rows scroll; rows lift with a gold edge. */
   .table-sticky-head { position: sticky; top: 0; z-index: 5; background: color-mix(in oklab, var(--muted) 85%, var(--background)); backdrop-filter: blur(8px); }
-  .table-rows-3d > tr { transition: background-color 0.15s, box-shadow 0.15s; }
-  .table-rows-3d > tr:hover { background: color-mix(in oklab, var(--gold) 6%, transparent); box-shadow: inset 3px 0 0 0 var(--gold); }
+  .table-rows-3d > tr { transition: background-color 0.15s, box-shadow 0.18s, transform 0.18s; }
+  .table-rows-3d > tr:hover { background: color-mix(in oklab, var(--gold) 6%, transparent); transform: translateY(-1px);
+    box-shadow: inset 3px 0 0 0 var(--gold), 0 8px 16px -10px color-mix(in oklab, oklch(0.27 0.06 260) 45%, transparent); position: relative; z-index: 1; }
+  /* Finance popups open with a perspective flip and sit on a deep shadow. */
+  .dialog-3d { animation: dialog-3d-in 0.32s cubic-bezier(0.2, 0.8, 0.2, 1) both; transform-origin: 50% 0%; box-shadow: var(--shadow-3d-lg); }
+  @keyframes dialog-3d-in {
+    from { opacity: 0; transform: perspective(1400px) rotateX(-14deg) translateY(28px) scale(0.94); }
+    to { opacity: 1; transform: perspective(1400px) rotateX(0deg) translateY(0) scale(1); }
+  }
+  @media (prefers-reduced-motion: reduce) { .dialog-3d { animation: none; } .table-rows-3d > tr:hover { transform: none; } }
+  /* Raised cards on finance pages. */
+  .card-3d { box-shadow: var(--shadow-3d); transition: transform 0.2s, box-shadow 0.2s; }
+  .card-3d:hover { transform: translateY(-2px); box-shadow: var(--shadow-3d-lg); }
   .shadow-3d-lg { box-shadow: var(--shadow-3d-lg); }
   .no-scrollbar { scrollbar-width: none; }
   .no-scrollbar::-webkit-scrollbar { display: none; }

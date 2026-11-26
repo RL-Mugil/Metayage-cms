@@ -99,20 +99,12 @@ class FinancialController extends Controller
         $user = $request->user();
         $this->authorize('viewAny', \App\Models\Invoice::class);
 
-        // The portal register (portal-raised + imported from Zoho Books) is the single source.
-        $cacheKey = "financial_stats_{$user->id}_".\App\Support\DataAccess::financeScopeKey($user).'_v'.Cache::get('dashboard_v', 0);
-        $stats = Cache::remember($cacheKey, 300, function () use ($user) {
-            $figures = app(\App\Services\FinanceFigures::class)->summary($user);
-            return [
-                'total_billed' => $figures['billed'],
-                'total_received' => $figures['received'],
-                'total_outstanding' => $figures['outstanding'],
-                'total_waived' => $figures['waived'],
-                'overdue_count' => $figures['overdue_count'],
-                'draft_count' => $figures['draft_count'],
-                'paid_count' => $figures['paid_count'],
-            ];
-        });
+        // The portal register (portal-raised + imported from Zoho Books) is the single source. The
+        // cards follow the register's filters (search, type, status, dates), as the list does.
+        $f = $request->validate(['search' => 'nullable|string|max:100', 'type' => 'nullable|in:invoice,quote,all', 'status' => 'nullable|string|max:40',
+            'source' => 'nullable|string|max:20', 'client_id' => 'nullable|integer', 'project_id' => 'nullable|integer', 'from' => 'nullable|date', 'to' => 'nullable|date']);
+        $cacheKey = "financial_stats_{$user->id}_".\App\Support\DataAccess::financeScopeKey($user).'_v'.Cache::get('dashboard_v', 0).'_'.md5(json_encode($f));
+        $stats = Cache::remember($cacheKey, 300, fn () => app(\App\Services\FinanceFigures::class)->filteredSummary($user, $f));
 
         return response()->json($stats);
     }
@@ -137,9 +129,12 @@ class FinancialController extends Controller
         });
         $names = \App\Models\Client::whereIn('id', $rows->pluck('client_id')->filter()->unique())->get(['id', 'legal_name', 'company_name'])
             ->mapWithKeys(fn ($c) => [$c->id => $c->legal_name ?: $c->company_name]);
-        $q = strtolower(trim((string) $request->query('search', '')));
-        if ($q !== '') {
-            $rows = $rows->filter(fn ($r) => str_contains(strtolower((string) $r['number']), $q) || str_contains(strtolower((string) ($names[$r['client_id']] ?? '')), $q));
+        // The register's filters (as on the KPI cards): only the matching register invoices.
+        $filters = array_filter($request->only(\App\Services\FinanceFigures::REGISTER_FILTERS), fn ($v) => $v !== null && $v !== '' && $v !== 'all');
+        if ($filters !== []) {
+            $ids = array_flip(\App\Services\FinanceFigures::applyRegisterFilters($figures->registerInvoices($request->user()), array_diff_key($filters, ['type' => 1]))
+                ->pluck('patent_invoices_in.id')->all());
+            $rows = ($filters['type'] ?? null) === 'quote' ? collect() : $rows->filter(fn ($r) => empty($r['legacy']) && isset($ids[$r['id']]));
         }
         $rows = $rows->sortByDesc(fn ($r) => $r['date']?->timestamp ?? 0)->values();
         $per = max(1, min((int) $request->query('per_page', 15), 100));

@@ -7,6 +7,7 @@ import { FitPage } from "@/components/modern/fit-page";
 import { TableCard } from "@/components/modern/table-card";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Bars3D, inrShort } from "@/components/three/chart-3d";
 import { api, getCsrfToken } from "@/lib/api-client";
 import { fmtDate } from "@/lib/date-utils";
 
@@ -26,6 +27,18 @@ interface Data {
   can: { edit: boolean };
 }
 
+/** TDS by financial-year quarter: seen in 26AS vs not yet, for the 3D chart. */
+function byQuarter(rows: Row[]) {
+  const map = new Map<string, { label: string; fy: string; quarter: string; matched: number; missing: number }>();
+  for (const r of rows) {
+    const key = `${r.fy} ${r.quarter}`;
+    const m = map.get(key) ?? { label: `FY${r.fy.slice(-5)} ${r.quarter}`, fy: r.fy, quarter: r.quarter, matched: 0, missing: 0 };
+    if (r.status === "in_26as") m.matched += r.amount; else m.missing += r.amount;
+    map.set(key, m);
+  }
+  return [...map.entries()].sort(([a], [b]) => a.localeCompare(b)).slice(-12).map(([, v]) => v);
+}
+
 const inr = (v: number) => `₹${Number(v).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 
 /** Finance → TDS: tax the clients withheld, matched to Form 26AS, with the Form 16A certificates received. */
@@ -41,6 +54,7 @@ export default function Tds() {
   const [uploading, setUploading] = useState(false);
   const [form16a, setForm16a] = useState<Row | null>(null);
   const [view, setView] = useState<"lines" | "26as" | "deductors">("lines");
+  const [showChart, setShowChart] = useState(true);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   const load = () => {
@@ -107,7 +121,7 @@ export default function Tds() {
               { label: "No Form 16A", value: s ? `${s.no_16a} of ${s.count}` : "—", color: "#8b5cf6", onClick: () => setStatus(status === "no_16a" ? "" : "no_16a"), active: status === "no_16a" },
             ].map((c) => (
               <button key={c.label} type="button" onClick={c.onClick} disabled={!c.onClick}
-                className={`glass flex min-w-[130px] flex-1 items-center gap-2 rounded-xl px-2.5 py-1 text-left ${c.onClick ? "cursor-pointer hover:-translate-y-0.5" : "cursor-default"} ${c.active ? "ring-2 ring-gold/60" : ""} transition-transform`}>
+                className={`card-3d glass flex min-w-[130px] flex-1 items-center gap-2 rounded-xl px-2.5 py-1 text-left ${c.onClick ? "cursor-pointer" : "cursor-default"} ${c.active ? "ring-2 ring-gold/60" : ""}`}>
                 <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: c.color, boxShadow: `0 0 8px ${c.color}` }} />
                 <span className="min-w-0"><span className="block truncate font-display text-sm font-semibold leading-tight xl:text-base">{c.value}</span>
                   <span className="block truncate text-[9px] uppercase tracking-wider text-muted-foreground">{c.label}</span></span>
@@ -138,6 +152,19 @@ export default function Tds() {
               </div>
             )}
           </div>
+          <button className="shrink-0 self-start text-[11px] text-muted-foreground hover:text-foreground" onClick={() => setShowChart((v) => !v)}>{showChart ? "Hide" : "Show"} 3D TDS by quarter</button>
+          {showChart && data && data.rows.length > 0 && view === "lines" && (
+            <div className="shrink-0">
+              <Bars3D height={180} format={inrShort}
+                data={byQuarter(data.rows).map((q) => ({ label: q.label, values: { matched: q.matched, missing: q.missing } }))}
+                series={[{ key: "matched", label: "Seen in 26AS", color: "#16a34a" }, { key: "missing", label: "Not in 26AS yet", color: "#ef4444" }]}
+                onSelect={(label, key) => {
+                  const q = byQuarter(data.rows).find((x) => x.label === label);
+                  if (q) { setFy(q.fy); setQuarter(q.quarter); }
+                  setStatus(key === "matched" ? "in_26as" : "pending");
+                }} />
+            </div>
+          )}
           {data?.can.edit && data.uploaded.length > 0 && (
             <p className="shrink-0 text-[11px] text-muted-foreground">26AS uploaded for: {data.uploaded.map((u) => `FY ${u.fy} ${u.quarter} (${u.n})`).join(" · ")}</p>
           )}
@@ -237,7 +264,7 @@ function Form16aDialog({ row, onClose, onDone }: { row: Row; onClose: () => void
   };
   return (
     <Dialog open onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-md">
+      <DialogContent flip3d className="max-w-md">
         <DialogHeader><DialogTitle>Form 16A · {row.client?.code} · {inr(row.amount)}</DialogTitle></DialogHeader>
         <div className="space-y-3 text-sm">
           <label className="block text-xs">Received on<input type="date" value={receivedOn} onChange={(e) => setReceivedOn(e.target.value)} className="mt-1 h-8 w-full rounded-md border border-border bg-background px-2" /></label>

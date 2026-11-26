@@ -29,6 +29,14 @@ Reason for invoicing before payment (at least 10 characters):`)
   }
 }
 
+/** Financial Suite KPI cards (follow the register's filters) and 12 months for the 3D chart. */
+export interface FinancialStats {
+  total_billed: number; total_received: number; total_outstanding: number; total_waived: number
+  overdue_count: number; draft_count: number; paid_count: number
+  quotes_unpaid_count?: number; quotes_unpaid_value?: number; filtered?: boolean
+  monthly?: { month: string; key: string; billed: number; received: number; outstanding: number; quoted: number }[]
+}
+
 export function getCsrfToken(): string {
   if (typeof document === 'undefined') return ''
   const match = document.cookie.match(/XSRF-TOKEN=([^;]+)/)
@@ -196,6 +204,10 @@ export interface FinancialAnalyticsSource {
 export interface FinancialAnalytics {
   currency: 'INR'; generated_at: string;
   portal: FinancialAnalyticsSource; zoho: FinancialAnalyticsSource;
+  quotes?: { unpaid_count: number; unpaid_value: number }
+  receivables?: { invoices: number; quotes: number; opening: number; total: number }
+  ageing?: { key: string; band: string; invoices: number; quotes: number }[]
+  costs?: { unbilled: number; to_review: number; unassigned: number } | null
   comparison: { portal_invoice_count: number; zoho_invoice_count: number; linked_zoho_invoice_count: number; unlinked_zoho_invoice_count: number; portal_billed: number; zoho_billed: number; billed_difference: number; portal_outstanding: number; zoho_outstanding: number; zoho_opening_balance: number; zoho_total_receivables: number; outstanding_difference: number };
 }
 
@@ -1020,8 +1032,9 @@ export const api = {
   },
 
   // ── Financial ──
-  async getFinancialStats(): Promise<{ total_billed: number; total_received: number; total_outstanding: number; total_waived: number; overdue_count: number; draft_count: number; paid_count: number }> {
-    return this.request('/financial/stats')
+  async getFinancialStats(params?: URLSearchParams): Promise<FinancialStats> {
+    const query = params && params.toString() ? `?${params.toString()}` : ''
+    return this.request(`/financial/stats${query}`)
   },
   async getFinancialAnalytics(): Promise<FinancialAnalytics> { return this.request('/financial/analytics') },
   async getInvoices(params?: URLSearchParams): Promise<Invoice[]> {

@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { Link2, Loader2, Search, X } from "lucide-react";
 import AppLayout from "@/layouts/AppLayout";
 import { FitPage } from "@/components/modern/fit-page";
+import { Bars3D, inrShort } from "@/components/three/chart-3d";
 import { TableCard } from "@/components/modern/table-card";
 import { useFitRows } from "@/components/modern/use-fit-rows";
 import { Button } from "@/components/ui/button";
@@ -37,6 +38,8 @@ const inr = (v: number) => `₹${Number(v).toLocaleString("en-IN", { maximumFrac
 export default function PaymentsReceived() {
   const [fitRef, perPage] = useFitRows(52, 25, 0);
   const [rows, setRows] = useState<Payment[]>([]);
+  const [monthly, setMonthly] = useState<{ month: string; key: string; received: number; tds: number; unused: number }[]>([]);
+  const [showChart, setShowChart] = useState(true);
   const [meta, setMeta] = useState({ current_page: 1, last_page: 1, total: 0 });
   const [totals, setTotals] = useState({ received: 0, tds: 0, unused: 0, unlinked: 0 });
   const [clients, setClients] = useState<{ id: number; code: string | null; name: string | null }[]>([]);
@@ -68,6 +71,7 @@ export default function PaymentsReceived() {
         setMeta({ current_page: res?.current_page ?? 1, last_page: res?.last_page ?? 1, total: res?.total ?? 0 });
         setTotals(res?.totals ?? { received: 0, tds: 0, unused: 0, unlinked: 0 });
         setClients(res?.clients ?? []);
+        setMonthly(res?.monthly ?? []);
         setCanLink(!!res?.can?.link);
       })
       .catch((e: any) => toast.error(e?.message || "Failed to load payments."))
@@ -106,7 +110,7 @@ export default function PaymentsReceived() {
               { label: "Payments", value: meta.total.toLocaleString("en-IN"), color: "#3b82f6" },
             ].map((c) => (
               <button key={c.label} type="button" onClick={c.onClick} disabled={!c.onClick}
-                className={`glass flex min-w-[120px] flex-1 items-center gap-2 rounded-xl px-2.5 py-1 text-left ${c.onClick ? "cursor-pointer hover:-translate-y-0.5" : "cursor-default"} ${c.active ? "ring-2 ring-sky-500/60" : ""} transition-transform`}>
+                className={`card-3d glass flex min-w-[120px] flex-1 items-center gap-2 rounded-xl px-2.5 py-1 text-left ${c.onClick ? "cursor-pointer" : "cursor-default"} ${c.active ? "ring-2 ring-sky-500/60" : ""}`}>
                 <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: c.color, boxShadow: `0 0 8px ${c.color}` }} />
                 <span className="min-w-0"><span className="block truncate font-display text-sm font-semibold leading-tight xl:text-base">{c.value}</span>
                   <span className="block truncate text-[9px] uppercase tracking-wider text-muted-foreground">{c.label}</span></span>
@@ -133,7 +137,22 @@ export default function PaymentsReceived() {
             <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
               <input type="checkbox" checked={unusedOnly} onChange={(e) => setUnusedOnly(e.target.checked)} /> With advance only
             </label>
+            <button className="text-[11px] text-muted-foreground hover:text-foreground" onClick={() => setShowChart((v) => !v)}>{showChart ? "Hide" : "Show"} 3D chart</button>
           </div>
+          {showChart && monthly.length > 0 && (
+            <div className="shrink-0">
+              <Bars3D height={190} format={inrShort}
+                data={monthly.map((m) => ({ label: m.month, values: { received: m.received, tds: m.tds, unused: m.unused } }))}
+                series={[{ key: "received", label: "Received", color: "#16a34a" }, { key: "tds", label: "TDS withheld", color: "#d97706" }, { key: "unused", label: "Advance (unused)", color: "#0ea5e9" }]}
+                onSelect={(label, key) => {
+                  const m = monthly.find((x) => x.month === label);
+                  if (!m) return;
+                  const [y, mo] = m.key.split("-").map(Number);
+                  setFrom(`${m.key}-01`); setTo(`${m.key}-${String(new Date(y, mo, 0).getDate()).padStart(2, "0")}`);
+                  if (key === "unused") setUnusedOnly(true);
+                }} />
+            </div>
+          )}
 
           <TableCard ref={fitRef} footer={meta.total > 0 && (
             <div className="flex items-center justify-between px-4 py-1.5 text-xs text-muted-foreground">
@@ -255,7 +274,7 @@ function LinkDialog({ row, onClose, onDone }: { row: Payment; onClose: () => voi
 
   return (
     <Dialog open onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-lg">
+      <DialogContent flip3d className="max-w-lg">
         <DialogHeader><DialogTitle>Earmark {row.number}'s advance for a quote</DialogTitle></DialogHeader>
         <p className="text-xs text-muted-foreground">
           {inr(row.unlinked)} of this payment is not applied to any invoice. Zoho can't apply money to a proforma quote, so this is noted in the portal:

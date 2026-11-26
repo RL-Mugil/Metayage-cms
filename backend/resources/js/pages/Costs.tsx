@@ -10,6 +10,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { ProjectCombobox } from "@/components/project-combobox";
 import { api } from "@/lib/api-client";
 import { fmtDate } from "@/lib/date-utils";
+import { TieCaseDialog } from "@/components/finance/tie-case-dialog";
+import { Bars3D, inrShort } from "@/components/three/chart-3d";
 
 interface Cost {
   id: number; kind: "official_fee" | "associate" | "other"; kind_label: string; vendor_name: string | null; vendor_reference: string | null; description: string | null;
@@ -17,7 +19,8 @@ interface Cost {
   project: { id: number; docket: string; name: string } | null; client: { id: number; code: string; name: string } | null;
   billed_invoice: { id: number; uin: string } | null; document: { file_name: string; storage_path: string } | null; created_by: string | null;
 }
-interface Data { data: Cost[]; totals: Record<string, number>; unassigned: number; unbilled: number; to_review: number; can: { edit: boolean; rates: boolean } }
+interface Data { data: Cost[]; totals: Record<string, number>; unassigned: number; unbilled: number; to_review: number; can: { edit: boolean; rates: boolean };
+  monthly?: { month: string; key: string; official_fee: number; associate: number; other: number }[] }
 
 const inr = (v: number) => `₹${Number(v).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 const KINDS = [["official_fee", "Official fee"], ["associate", "Foreign associate"], ["other", "Other cost"]] as const;
@@ -30,6 +33,8 @@ export default function Costs() {
   const [view, setView] = useState<"all" | "unbilled" | "unassigned" | "review">("all");
   const [loading, setLoading] = useState(true);
   const [edit, setEdit] = useState<Cost | "new" | null>(null);
+  const [tie, setTie] = useState<Cost | null>(null);
+  const [showChart, setShowChart] = useState(true);
 
   const load = () => {
     setLoading(true);
@@ -71,7 +76,7 @@ export default function Costs() {
               { label: "To review (imported)", value: String(data?.to_review ?? 0), color: "#8b5cf6", onClick: () => setView(view === "review" ? "all" : "review"), active: view === "review" },
             ].map((c) => (
               <button key={c.label} type="button" onClick={c.onClick} disabled={!c.onClick}
-                className={`glass flex min-w-[130px] flex-1 items-center gap-2 rounded-xl px-2.5 py-1 text-left ${c.onClick ? "cursor-pointer hover:-translate-y-0.5" : "cursor-default"} ${c.active ? "ring-2 ring-gold/60" : ""} transition-transform`}>
+                className={`card-3d glass flex min-w-[130px] flex-1 items-center gap-2 rounded-xl px-2.5 py-1 text-left ${c.onClick ? "cursor-pointer" : "cursor-default"} ${c.active ? "ring-2 ring-gold/60" : ""}`}>
                 <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: c.color, boxShadow: `0 0 8px ${c.color}` }} />
                 <span className="min-w-0"><span className="block truncate font-display text-sm font-semibold leading-tight xl:text-base">{c.value}</span>
                   <span className="block truncate text-[9px] uppercase tracking-wider text-muted-foreground">{c.label}</span></span>
@@ -87,7 +92,16 @@ export default function Costs() {
             <select value={kind} onChange={(e) => setKind(e.target.value)} className="h-8 rounded-md border border-border bg-background/70 px-2 text-xs">
               <option value="">All kinds</option>{KINDS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
             </select>
+            <button className="text-[11px] text-muted-foreground hover:text-foreground" onClick={() => setShowChart((v) => !v)}>{showChart ? "Hide" : "Show"} 3D chart</button>
           </div>
+          {showChart && data?.monthly && (
+            <div className="shrink-0">
+              <Bars3D height={190} format={inrShort}
+                data={data.monthly.map((m) => ({ label: m.month, values: { official_fee: m.official_fee, associate: m.associate, other: m.other } }))}
+                series={[{ key: "official_fee", label: "Official fees", color: "#3b82f6" }, { key: "associate", label: "Foreign associates", color: "#8b5cf6" }, { key: "other", label: "Other costs", color: "#64748b" }]}
+                onSelect={(_label, key) => setKind(kind === key ? "" : key)} />
+            </div>
+          )}
           <TableCard>
             <table className="w-full min-w-[900px] text-xs">
               <thead className="table-sticky-head text-[10px] uppercase tracking-wider text-muted-foreground">
@@ -101,6 +115,7 @@ export default function Costs() {
                   <tr key={c.id} className="border-t border-border/60">
                     <td className="whitespace-nowrap px-3 py-2 font-mono text-[11px]">{fmtDate(c.bill_date)}{c.paid_on && <div className="text-[10px] text-muted-foreground">paid {fmtDate(c.paid_on)}</div>}</td>
                     <td className="max-w-[220px] px-3 py-2">{c.project ? <><div className="font-mono text-[11px]">{c.project.docket}</div><div className="truncate text-[10px] text-muted-foreground">{c.client?.code} · {c.project.name}</div></>
+                      : data.can.edit ? <button className="rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-amber-700 hover:bg-amber-500/20 dark:text-amber-400" title="Tie this cost to a case" onClick={() => setTie(c)}>Not tied to a case · Tie →</button>
                       : <span className="text-amber-600">Not tied to a case</span>}</td>
                     <td className="px-3 py-2"><div className="font-medium">{c.kind_label}</div><div className="text-[10px] text-muted-foreground">{[c.vendor_name, c.vendor_reference].filter(Boolean).join(" · ")}{c.source !== "portal" ? " · from Zoho" : ""}</div></td>
                     <td className="whitespace-nowrap px-3 py-2 text-right font-semibold">{inr(c.amount_bcy)}{c.currency !== "INR" && <div className="text-[10px] font-normal text-muted-foreground">{c.currency} {c.amount.toLocaleString("en-IN")}</div>}</td>
@@ -122,6 +137,7 @@ export default function Costs() {
           </TableCard>
         </div>
       </FitPage>
+      {tie && <TieCaseDialog cost={tie} onClose={() => setTie(null)} onDone={() => { setTie(null); load(); }} />}
       {edit && <CostDialog cost={edit === "new" ? null : edit} onClose={() => setEdit(null)} onDone={() => { setEdit(null); load(); }} />}
     </AppLayout>
   );
@@ -166,7 +182,7 @@ function CostDialog({ cost, onClose, onDone }: { cost: Cost | null; onClose: () 
   const input = "mt-1 h-8 w-full rounded-md border border-border bg-background px-2 text-sm";
   return (
     <Dialog open onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-xl">
+      <DialogContent flip3d className="max-w-xl">
         <DialogHeader><DialogTitle>{cost ? "Edit cost" : "Record a cost"}</DialogTitle></DialogHeader>
         {fromZoho && <p className="text-[11px] text-muted-foreground">Imported from Zoho: amounts and dates stay as Zoho has them; you can set the case, kind, billing and notes.</p>}
         <div className="grid grid-cols-2 gap-3 text-xs">

@@ -40,6 +40,14 @@ class PaymentsReceivedController extends Controller
                 'unused' => round($rows->sum('unused'), 2), 'unlinked' => round($rows->sum('unlinked'), 2),
             ],
             'clients' => $all->pluck('client')->filter()->unique('id')->sortBy('code')->values(),
+            // Last 12 months of the filtered payments for the 3D chart.
+            'monthly' => collect(range(11, 0))->map(function ($ago) use ($rows) {
+                $m = now()->startOfMonth()->subMonths($ago);
+                $in = $rows->filter(fn ($r) => str_starts_with((string) $r['date'], $m->format('Y-m')));
+
+                return ['month' => $m->format('M y'), 'key' => $m->format('Y-m'), 'received' => round((float) $in->sum('amount'), 2),
+                    'tds' => round((float) $in->sum('tds'), 2), 'unused' => round((float) $in->sum('unused'), 2)];
+            })->values(),
             'can' => ['link' => InvoiceSettlement::canPay($user)],
         ]);
     }

@@ -13,6 +13,10 @@ import { api } from "@/lib/api-client";
 import { fmtDate } from "@/lib/date-utils";
 import { ReportDownloadDialog } from "@/components/reports/report-download-dialog";
 import { RemindersPanel } from "@/components/finance/reminders-panel";
+import { Bars3D, inrShort } from "@/components/three/chart-3d";
+
+type Doc = "both" | "invoices" | "quotes";
+interface AgeBand { key: string; band: string; invoices: number; quotes: number }
 
 /** One unpaid invoice from the portal register (portal renewals and invoices imported from Zoho). */
 interface Row {
@@ -76,11 +80,16 @@ export default function PendingPayments() {
   const [page, setPage] = useState(1);
   const [meta, setMeta] = useState({ current_page: 1, last_page: 1, total: 0 });
   const [extra, setExtra] = useState<{ totals: Record<string, number>; overdue: number; waivers: number; writeback: number; waived: number;
-    clients: { id: number; name: string; code: string | null }[]; can: { mark_paid: boolean; request_waiver: boolean; approve_waiver: boolean } }>(
-    { totals: {}, overdue: 0, waivers: 0, writeback: 0, waived: 0, clients: [], can: { mark_paid: false, request_waiver: false, approve_waiver: false } });
+    clients: { id: number; name: string; code: string | null }[]; can: { mark_paid: boolean; request_waiver: boolean; approve_waiver: boolean };
+    byDoc: { invoices: Record<string, number>; quotes: Record<string, number> }; counts: { invoices: number; quotes: number }; ageing: AgeBand[] }>(
+    { totals: {}, overdue: 0, waivers: 0, writeback: 0, waived: 0, clients: [], can: { mark_paid: false, request_waiver: false, approve_waiver: false },
+      byDoc: { invoices: {}, quotes: {} }, counts: { invoices: 0, quotes: 0 }, ageing: [] });
+  // Unpaid invoices, unpaid quotes (sent, not yet invoiced) or both.
+  const [doc, setDoc] = useState<Doc>(() => (["invoices", "quotes"].includes(params0.get("doc") ?? "") ? params0.get("doc") as Doc : "both"));
+  const [showChart, setShowChart] = useState(true);
   const [search, setSearch] = useState(params0.get("search") ?? "");
   const [query, setQuery] = useState((params0.get("search") ?? "").trim());
-  const [age, setAge] = useState<string>(params0.get("overdue") === "1" ? "1_30" : "");
+  const [age, setAge] = useState<string>(params0.get("age") ?? (params0.get("overdue") === "1" ? "1_30" : ""));
   const [clientId, setClientId] = useState("");
   const [waiversOnly, setWaiversOnly] = useState(params0.get("waivers") === "1");
   const [dateField, setDateField] = useState<"invoice" | "due">("invoice");
@@ -100,7 +109,7 @@ export default function PendingPayments() {
 
   const load = () => {
     setLoading(true);
-    const p = new URLSearchParams({ page: String(page), per_page: String(perPage) });
+    const p = new URLSearchParams({ page: String(page), per_page: String(perPage), doc });
     if (query) p.set("search", query);
     // "Overdue" from links: any age past due.
     if (age) p.set("age", age);
@@ -112,14 +121,15 @@ export default function PendingPayments() {
         setRows(res?.data ?? []);
         setMeta({ current_page: res?.current_page ?? 1, last_page: res?.last_page ?? 1, total: res?.total ?? 0 });
         setExtra({ totals: res?.pending_totals ?? {}, overdue: res?.overdue_count ?? 0, waivers: res?.waivers_pending ?? 0, writeback: res?.writeback_pending ?? 0,
-          waived: res?.waived_this_year ?? 0, clients: res?.clients ?? [], can: res?.can ?? { mark_paid: false, request_waiver: false, approve_waiver: false } });
+          waived: res?.waived_this_year ?? 0, clients: res?.clients ?? [], can: res?.can ?? { mark_paid: false, request_waiver: false, approve_waiver: false },
+          byDoc: res?.totals_by_doc ?? { invoices: {}, quotes: {} }, counts: res?.doc_counts ?? { invoices: 0, quotes: 0 }, ageing: res?.ageing ?? [] });
       })
       .catch((e: any) => toast.error(e?.message || "Failed to load pending payments."))
       .finally(() => setLoading(false));
   };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { load(); }, [page, query, age, clientId, waiversOnly, from, to, dateField, perPage]);
-  useEffect(() => { setPage(1); }, [age, clientId, waiversOnly, from, to, dateField, perPage]);
+  useEffect(() => { load(); }, [page, query, age, clientId, waiversOnly, from, to, dateField, perPage, doc]);
+  useEffect(() => { setPage(1); }, [age, clientId, waiversOnly, from, to, dateField, perPage, doc]);
 
   const act = async (id: number, fn: () => Promise<unknown>, ok: string) => {
     setBusy(id);
@@ -127,6 +137,12 @@ export default function PendingPayments() {
   };
 
   const totalLabel = Object.entries(extra.totals).map(([c, a]) => money(a, c)).join(" + ") || "₹0";
+  const sumLabel = (t: Record<string, number>) => Object.entries(t).filter(([, a]) => a > 0).map(([c, a]) => money(a, c)).join(" + ") || "₹0";
+  const DOCS: { key: Doc; label: string; count: number; total: string; color: string }[] = [
+    { key: "both", label: "Invoices + quotes", count: extra.counts.invoices + extra.counts.quotes, total: totalLabel, color: "#f59e0b" },
+    { key: "invoices", label: "Unpaid invoices", count: extra.counts.invoices, total: sumLabel(extra.byDoc.invoices), color: "#3b82f6" },
+    { key: "quotes", label: "Unpaid quotes", count: extra.counts.quotes, total: sumLabel(extra.byDoc.quotes), color: "#8b5cf6" },
+  ];
   const fromN = meta.total === 0 ? 0 : (meta.current_page - 1) * perPage + 1;
   const toN = Math.min(meta.current_page * perPage, meta.total);
   const clientName = (r: Row) => r.client?.legal_name ?? r.client?.company_name ?? r.client_name ?? "—";
@@ -150,11 +166,42 @@ export default function PendingPayments() {
         )}
         {isStaff && view === "reminders" ? <RemindersPanel /> : (
         <div className="flex min-h-0 flex-1 flex-col gap-2.5">
+          {/* Invoices, quotes or both (each tab shows what the current filters leave) */}
+          <div className="flex shrink-0 flex-wrap items-stretch gap-2" style={{ perspective: 900 }}>
+            {DOCS.map((d) => (
+              <button key={d.key} type="button" onClick={() => setDoc(d.key)}
+                className={`card-3d glass flex min-w-[170px] flex-1 items-center gap-2.5 rounded-xl px-3 py-1.5 text-left ${doc === d.key ? "ring-2" : "opacity-80 hover:opacity-100"}`}
+                style={doc === d.key ? { boxShadow: `0 0 0 2px ${d.color}, var(--shadow-3d-lg)`, transform: "translateY(-2px) rotateX(4deg)" } : undefined}>
+                <span className="h-3 w-3 shrink-0 rounded" style={{ background: d.color, boxShadow: `0 0 10px ${d.color}` }} />
+                <span className="min-w-0">
+                  <span className="block font-display text-sm font-semibold leading-tight">{d.count.toLocaleString("en-IN")} · <span className="text-amber-600">{d.total}</span></span>
+                  <span className="block text-[9px] uppercase tracking-wider text-muted-foreground">{d.label}</span>
+                </span>
+              </button>
+            ))}
+            {isStaff && (
+              <button type="button" onClick={() => setShowChart((v) => !v)} className="rounded-xl border border-border px-3 text-[11px] text-muted-foreground hover:text-foreground">
+                {showChart ? "Hide" : "Show"} 3D ageing
+              </button>
+            )}
+          </div>
+          {isStaff && showChart && (
+            <div className="shrink-0">
+              <Bars3D height={190} format={inrShort} activeLabel={extra.ageing.find((b) => b.key === age)?.band ?? null}
+                data={extra.ageing.map((b) => ({ label: b.band, values: { invoices: b.invoices, quotes: b.quotes } }))}
+                series={[{ key: "invoices", label: "Unpaid invoices (INR)", color: "#3b82f6" }, { key: "quotes", label: "Unpaid quotes (INR)", color: "#8b5cf6" }]}
+                onSelect={(label, key) => {
+                  const band = extra.ageing.find((b) => b.band === label);
+                  if (band) setAge(band.key === age ? "" : band.key);
+                  setDoc(key === "quotes" ? "quotes" : "invoices");
+                }} />
+            </div>
+          )}
           {/* Chips */}
           <div className="flex shrink-0 flex-wrap gap-2">
             {[
               { label: "Total pending", value: <span className="text-amber-600">{totalLabel}</span>, color: "#f59e0b" },
-              { label: query || age || clientId || from || to ? "Matching invoices" : "Unpaid invoices", value: <AnimatedNumber value={meta.total} />, color: "#3b82f6" },
+              { label: query || age || clientId || from || to ? "Matching" : doc === "quotes" ? "Unpaid quotes" : doc === "invoices" ? "Unpaid invoices" : "Invoices + quotes", value: <AnimatedNumber value={meta.total} />, color: "#3b82f6" },
               { label: "Overdue", value: <AnimatedNumber value={extra.overdue} className="text-red-600" />, color: "#ef4444" },
               ...(isStaff ? [
                 { label: "Waivers to approve", value: <AnimatedNumber value={extra.waivers} />, color: "#8b5cf6", onClick: () => setWaiversOnly((v) => !v), active: waiversOnly },
@@ -163,7 +210,7 @@ export default function PendingPayments() {
               ] : []),
             ].map((c) => (
               <button key={c.label} type="button" onClick={(c as any).onClick} disabled={!(c as any).onClick}
-                className={`glass flex min-w-[104px] flex-1 items-center gap-2 rounded-xl px-2.5 py-1 text-left ${(c as any).onClick ? "cursor-pointer hover:-translate-y-0.5" : "cursor-default"} ${(c as any).active ? "ring-2 ring-violet-500/60" : ""} transition-transform`}>
+                className={`card-3d glass flex min-w-[104px] flex-1 items-center gap-2 rounded-xl px-2.5 py-1 text-left ${(c as any).onClick ? "cursor-pointer" : "cursor-default"} ${(c as any).active ? "ring-2 ring-violet-500/60" : ""}`}>
                 <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: c.color, boxShadow: `0 0 8px ${c.color}` }} />
                 <span className="min-w-0"><span className="block truncate font-display text-sm font-semibold leading-tight xl:text-base">{c.value}</span>
                   <span className="block truncate text-[9px] uppercase tracking-wider text-muted-foreground">{c.label}</span></span>
@@ -243,7 +290,7 @@ export default function PendingPayments() {
                       <td className="w-1 p-0" style={{ background: col }} />
                       <td className="px-3 py-2">
                         <div className="font-mono font-semibold text-gold">{r.invoice_uin}</div>
-                        {r.type === "quote" && <div className="text-[10px] text-amber-600">Estimate</div>}
+                        {r.type === "quote" && <div className="mt-0.5 inline-block rounded bg-violet-500/15 px-1.5 py-0.5 text-[10px] font-medium text-violet-600">Quote · {r.status}</div>}
                         {r.source === "zoho" && isStaff && <div className="text-[10px] text-muted-foreground">Zoho Books</div>}
                       </td>
                       {isStaff && (
@@ -257,7 +304,7 @@ export default function PendingPayments() {
                         <div className="truncate text-[10px] text-muted-foreground">{r.project?.project_name ?? r.invention_title ?? ""}</div>
                       </td>
                       <td className="hidden whitespace-nowrap px-3 py-2 font-mono text-[11px] text-muted-foreground xl:table-cell">{fmtDate(r.invoice_date)}</td>
-                      <td className="whitespace-nowrap px-3 py-2 font-mono text-[11px]">{r.due_date ? fmtDate(r.due_date) : "—"}</td>
+                      <td className="whitespace-nowrap px-3 py-2 font-mono text-[11px]">{r.type === "quote" ? <span title="A quote is payable from its date">{fmtDate(r.invoice_date)}</span> : r.due_date ? fmtDate(r.due_date) : "—"}</td>
                       <td className="px-3 py-2 text-right">
                         {r.days_overdue ? <span className="whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-semibold text-white" style={{ background: col }}>{r.days_overdue} d</span> : <span className="text-[10px] text-blue-600">not due</span>}
                       </td>
@@ -376,7 +423,7 @@ function MarkPaidDialog({ row, onClose, onDone }: { row: Row; onClose: () => voi
   };
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-md">
+      <DialogContent flip3d className="max-w-md">
         <DialogHeader><DialogTitle>Mark {row.invoice_uin} paid</DialogTitle></DialogHeader>
         <div className="grid grid-cols-2 gap-3 text-xs">
           <label className="col-span-2">Amount received ({row.currency}) · balance {money(balance, row.currency)}
@@ -409,7 +456,7 @@ function WaiveDialog({ row, onClose, onDone }: { row: Row; onClose: () => void; 
   };
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-md">
+      <DialogContent flip3d className="max-w-md">
         <DialogHeader><DialogTitle>Waive off {row.invoice_uin}</DialogTitle></DialogHeader>
         <div className="space-y-3 text-xs">
           <label className="block">Amount to waive ({row.currency}) · balance {money(balance, row.currency)}
@@ -448,7 +495,7 @@ function NoteDialog({ row, onClose, onDone }: { row: Row; onClose: () => void; o
   };
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-md">
+      <DialogContent flip3d className="max-w-md">
         <DialogHeader><DialogTitle>Follow-up · {row.invoice_uin}</DialogTitle></DialogHeader>
         {row.status_note && <p className="rounded-md bg-muted/50 px-3 py-2 text-xs">Last: {row.status_note}{row.status_note_at ? ` · ${fmtDate(row.status_note_at)}` : ""}</p>}
         <textarea autoFocus rows={3} value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Called accounts, paying by 13 Dec"

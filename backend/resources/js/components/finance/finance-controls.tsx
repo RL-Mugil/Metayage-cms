@@ -4,6 +4,7 @@ import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { api } from "@/lib/api-client"
 import { fmtDate } from "@/lib/date-utils"
+import { Donut3D } from "@/components/three/chart-3d"
 
 interface Month { month: string; label: string; locked: boolean; locked_by: string | null; locked_at: string | null; open_flags: number }
 interface Flag { id: number; month: string; what: string; reference: string | null; at: string | null; client: string | null }
@@ -42,7 +43,7 @@ function TallyCard({ months }: { months: Month[] }) {
     catch (e: any) { toast.error(e?.message ?? "Failed.") }
   }
   return (
-    <section className="rounded-xl border border-border p-4">
+    <section className="card-3d rounded-xl border border-border p-4">
       <h3 className="mb-1 text-sm font-semibold">Export to Tally</h3>
       <p className="mb-2 text-[11px] text-muted-foreground">A month's sales invoices, receipts, TDS, credit notes and exchange differences as TallyPrime vouchers (Import Data → Vouchers). Ledger names must match your Tally exactly; each client's ledger is its legal name.</p>
       <div className="flex flex-wrap items-center gap-2 text-xs">
@@ -104,8 +105,22 @@ export function FinanceControls() {
 
   return (
     <div className="grid gap-4 xl:grid-cols-2">
+      {/* Checks at a glance (3D): what is in order and what needs a look. */}
+      <section className="card-3d rounded-xl border border-border p-4 xl:col-span-2">
+        <h3 className="mb-2 text-sm font-semibold">Controls at a glance</h3>
+        <Donut3D label="Checks" size={200} format={(n) => String(Math.round(n))}
+          total={(data.ledger_check?.checked ?? 0) + data.flags.length + pending.length + (data.quote_first.before_payment.length)}
+          data={[
+            { code: "ok", name: "Client ledgers matching Zoho", value: Math.max(0, (data.ledger_check?.checked ?? 0) - (data.ledger_check?.differ.length ?? 0)), color: "#16a34a" },
+            { code: "differ", name: "Ledgers differing", value: data.ledger_check?.differ.length ?? 0, color: "#ef4444" },
+            { code: "flags", name: "Locked-month changes to review", value: data.flags.length, color: "#f59e0b" },
+            { code: "approvals", name: "Quote approvals pending", value: pending.length, color: "#3b82f6" },
+            { code: "before", name: "Invoices before payment", value: data.quote_first.before_payment.length, color: "#a855f7" },
+          ]}
+          onSelect={(code) => { if (code) document.getElementById(`controls-${code}`)?.scrollIntoView({ behavior: "smooth", block: "center" }) }} />
+      </section>
       {/* Ledger vs Zoho */}
-      <section className="rounded-xl border border-border p-4">
+      <section id="controls-differ" className="card-3d rounded-xl border border-border p-4">
         <div className="mb-2 flex items-center justify-between">
           <h3 className="flex items-center gap-1.5 text-sm font-semibold"><ShieldCheck className="h-4 w-4 text-gold" />Client ledgers vs Zoho Books</h3>
           <span className="text-[11px] text-muted-foreground">{data.ledger_check ? `checked ${fmtDate(data.ledger_check.at)}` : "not run yet"} · nightly 04:00 and after each import</span>
@@ -117,7 +132,7 @@ export function FinanceControls() {
             <p className="mb-2 text-sm"><span className="font-semibold text-amber-600">{data.ledger_check.differ.length}</span> of {data.ledger_check.checked} clients differ from Zoho.</p>
             <table className="w-full text-xs">
               <thead className="text-[10px] uppercase text-muted-foreground"><tr><th className="py-1 text-left">Client</th><th className="text-right">Portal</th><th className="text-right">Zoho</th><th className="text-right">Difference</th></tr></thead>
-              <tbody>{data.ledger_check.differ.map((d) => (
+              <tbody className="table-rows-3d">{data.ledger_check.differ.map((d) => (
                 <tr key={d.client_id} className="border-t border-border/60"><td className="py-1"><span className="font-mono">{d.code}</span> {d.name}</td>
                   <td className="text-right font-mono">{inr(d.portal)}{d.portal < 0 ? " Cr" : ""}</td><td className="text-right font-mono">{inr(d.zoho)}{d.zoho < 0 ? " Cr" : ""}</td>
                   <td className="text-right font-mono text-amber-600">{d.difference < 0 ? "−" : ""}{inr(d.difference)}</td></tr>
@@ -128,7 +143,7 @@ export function FinanceControls() {
       </section>
 
       {/* Quote approvals */}
-      <section className="rounded-xl border border-border p-4">
+      <section id="controls-approvals" className="card-3d rounded-xl border border-border p-4">
         <h3 className="mb-2 text-sm font-semibold">Quotes waiting for approval before Zoho {pending.length > 0 && <span className="ml-1 rounded-full bg-amber-500/15 px-1.5 text-amber-700">{pending.length}</span>}</h3>
         {data.approvals.length === 0 ? <p className="text-xs text-muted-foreground">No requests. Quotes sent by Accounts are approved as they are sent.</p> : (
           <ul className="max-h-72 space-y-1.5 overflow-auto text-xs">
@@ -152,7 +167,7 @@ export function FinanceControls() {
       </section>
 
       {/* Month close */}
-      <section className="rounded-xl border border-border p-4">
+      <section className="card-3d rounded-xl border border-border p-4">
         <h3 className="mb-1 text-sm font-semibold">Month close</h3>
         <p className="mb-2 text-[11px] text-muted-foreground">A closed month refuses portal edits dated in it (mark paid, waivers, invoice edits, costs). Zoho imports still apply and are listed for review.</p>
         <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-4">
@@ -174,7 +189,7 @@ export function FinanceControls() {
       </section>
 
       {/* Changes in closed months */}
-      <section className="rounded-xl border border-border p-4">
+      <section id="controls-flags" className="card-3d rounded-xl border border-border p-4">
         <div className="mb-2 flex items-center justify-between">
           <h3 className="flex items-center gap-1.5 text-sm font-semibold"><TriangleAlert className="h-4 w-4 text-amber-500" />Changes in closed months</h3>
           {data.flags.length > 0 && <Button size="sm" variant="outline" className="h-7" disabled={busy !== null} onClick={() => review({ ids: data.flags.map((f) => f.id) })}>Mark all reviewed</Button>}
@@ -195,12 +210,12 @@ export function FinanceControls() {
 
       {/* Quote-first billing: invoices raised before payment */}
       {data.quote_first.enabled && (
-        <section className="rounded-xl border border-border p-4 xl:col-span-2">
+        <section id="controls-before" className="card-3d rounded-xl border border-border p-4 xl:col-span-2">
           <h3 className="mb-1 text-sm font-semibold">Invoices raised before payment (quote-first billing, last 90 days)</h3>
           {data.quote_first.before_payment.length === 0 ? <p className="text-xs text-muted-foreground">None: every invoice followed a payment, or was for an exempt client.</p> : (
             <table className="w-full text-xs">
               <thead className="text-[10px] uppercase text-muted-foreground"><tr><th className="py-1 text-left">When</th><th className="text-left">Invoice / quote</th><th className="text-left">By</th><th className="text-left">How</th><th className="text-left">Reason</th></tr></thead>
-              <tbody>{data.quote_first.before_payment.map((b, i) => (
+              <tbody className="table-rows-3d">{data.quote_first.before_payment.map((b, i) => (
                 <tr key={i} className="border-t border-border/60"><td className="py-1 font-mono">{b.at ? fmtDate(b.at) : ""}</td><td className="font-mono">{b.reference ?? "—"}</td><td>{b.by}</td>
                   <td>{b.action === "invoice_before_payment" ? "Raised in Zoho while unpaid" : b.what}</td><td className="text-muted-foreground">{b.reason ?? "—"}</td></tr>
               ))}</tbody>
@@ -210,7 +225,7 @@ export function FinanceControls() {
       )}
 
       {/* Renewal quotes, quote first */}
-      <section className="rounded-xl border border-border p-4 xl:col-span-2">
+      <section className="card-3d rounded-xl border border-border p-4 xl:col-span-2">
         <h3 className="mb-1 text-sm font-semibold">Renewal quotes</h3>
         <p className="mb-2 text-[11px] text-muted-foreground">When on, the daily scan drafts a renewal quote before each annuity. Accounts reviews it and sends it to Zoho; the client then approves it in the portal and Accounts creates the invoice in Zoho.</p>
         <div className="flex flex-wrap items-center gap-3 text-xs">
@@ -224,7 +239,7 @@ export function FinanceControls() {
       </section>
 
       {/* Exchange gain / loss */}
-      <section className="rounded-xl border border-border p-4 xl:col-span-2">
+      <section className="card-3d rounded-xl border border-border p-4 xl:col-span-2">
         <div className="mb-2 flex items-center justify-between">
           <h3 className="flex items-center gap-1.5 text-sm font-semibold"><RefreshCw className="h-4 w-4 text-gold" />Exchange gain / loss (since {fmtDate(data.exchange.from)})</h3>
           <span className="text-xs">Gain <span className="font-mono text-emerald-600">{inr(data.exchange.gain)}</span> · Loss <span className="font-mono text-red-600">{inr(data.exchange.loss)}</span> · Net <span className="font-mono">{data.exchange.gain - data.exchange.loss < 0 ? "−" : ""}{inr(data.exchange.gain - data.exchange.loss)}</span></span>
@@ -232,7 +247,7 @@ export function FinanceControls() {
         {data.exchange.lines.length === 0 ? <p className="text-xs text-muted-foreground">No foreign-currency invoices settled at a different rate this year.</p> : (
           <table className="w-full text-xs">
             <thead className="text-[10px] uppercase text-muted-foreground"><tr><th className="py-1 text-left">Date</th><th className="text-left">Invoice</th><th className="text-left">Client</th><th className="text-right">Gain / loss</th><th className="text-left pl-3">Note</th></tr></thead>
-            <tbody>{data.exchange.lines.map((l, i) => (
+            <tbody className="table-rows-3d">{data.exchange.lines.map((l, i) => (
               <tr key={i} className="border-t border-border/60"><td className="py-1 font-mono">{fmtDate(l.date)}</td><td className="font-mono">{l.reference.replace("FX · ", "")}</td><td className="font-mono">{l.client ?? "—"}</td>
                 <td className={`text-right font-mono ${l.amount < 0 ? "text-red-600" : "text-emerald-600"}`}>{l.amount < 0 ? "−" : "+"}{inr(l.amount)}</td><td className="pl-3 text-muted-foreground">{l.notes}</td></tr>
             ))}</tbody>

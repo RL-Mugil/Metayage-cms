@@ -107,6 +107,182 @@ class FinanceFigures
         ];
     }
 
+    /** Register filters the Financial Suite list and its KPI cards share. */
+    public const REGISTER_FILTERS = ['search', 'type', 'status', 'source', 'client_id', 'project_id', 'from', 'to'];
+
+    /**
+     * Apply the register list's filters (search covers invoice no., docket, client name and code,
+     * title and application no.; dates are the document date). The list and the KPI cards use
+     * this one function, so they always agree.
+     */
+    public static function applyRegisterFilters(Builder $q, array $f): Builder
+    {
+        foreach (['type', 'status', 'source'] as $key) {
+            if (($f[$key] ?? '') !== '' && ($f[$key] ?? null) !== null && $f[$key] !== 'all') {
+                $q->where('patent_invoices_in.'.$key, $f[$key]);
+            }
+        }
+        if (! empty($f['client_id'])) {
+            $q->where('patent_invoices_in.client_id', (int) $f['client_id']);
+        }
+        if (! empty($f['project_id'])) {
+            $q->where('patent_invoices_in.project_id', (int) $f['project_id']);
+        }
+        if (! empty($f['from'])) {
+            $q->whereDate('patent_invoices_in.invoice_date', '>=', $f['from']);
+        }
+        if (! empty($f['to'])) {
+            $q->whereDate('patent_invoices_in.invoice_date', '<=', $f['to']);
+        }
+        $search = trim((string) ($f['search'] ?? ''));
+        if ($search !== '') {
+            $like = '%'.str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $search).'%';
+            $q->where(fn ($w) => $w->where('patent_invoices_in.docket_number', 'ilike', $like)
+                ->orWhere('patent_invoices_in.invoice_uin', 'ilike', $like)
+                ->orWhere('patent_invoices_in.zoho_number', 'ilike', $like)
+                ->orWhere('patent_invoices_in.client_name', 'ilike', $like)
+                ->orWhere('patent_invoices_in.invention_title', 'ilike', $like)
+                ->orWhere('patent_invoices_in.patent_office_application_number', 'ilike', $like)
+                ->orWhereIn('patent_invoices_in.client_id', Client::query()->where(fn ($c) => $c->where('client_code', 'ilike', $like)
+                    ->orWhere('legal_name', 'ilike', $like)->orWhere('company_name', 'ilike', $like))->select('id')));
+        }
+
+        return $q;
+    }
+
+    /** Whether any register filter is set. */
+    public static function hasRegisterFilters(array $f): bool
+    {
+        foreach (self::REGISTER_FILTERS as $key) {
+            if (($f[$key] ?? '') !== '' && ($f[$key] ?? null) !== null && ($f[$key] ?? null) !== 'all') {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * The Financial Suite KPI cards for the register as filtered (search, type, status, dates):
+     * invoices billed / received / outstanding / waived / overdue, unpaid quotes, and 12 months
+     * billed vs received for the 3D chart. Unfiltered, the cards are the firm-wide summary.
+     *
+     * @return array<string, mixed>
+     */
+    public function filteredSummary(User $user, array $f): array
+    {
+        $type = $f['type'] ?? null;
+        $quotes = $this->openQuotesFiltered($user, $f);
+        $quoteDue = $this->quoteDue($quotes);
+        if (! self::hasRegisterFilters($f)) {
+            $s = $this->summary($user);
+            $base = ['total_billed' => $s['billed'], 'total_received' => $s['received'], 'total_outstanding' => $s['outstanding'], 'total_waived' => $s['waived'],
+                'overdue_count' => $s['overdue_count'], 'draft_count' => $s['draft_count'], 'paid_count' => $s['paid_count'], 'filtered' => false];
+        } else {
+            $today = now()->toDateString();
+            $inv = $type === 'quote' ? null : self::applyRegisterFilters($this->registerInvoices($user), array_diff_key($f, ['type' => 1]))->selectRaw('
+                COALESCE(SUM('.self::TOTAL_INR.'), 0) AS billed,
+                COALESCE(SUM('.self::BALANCE_INR.'), 0) AS outstanding,
+                COALESCE(SUM(COALESCE(waived_amount, 0) * COALESCE(NULLIF(exchange_rate, 0), 1)), 0) AS waived,
+                SUM(CASE WHEN due_date < ? AND '.self::BALANCE_INR.' > 0 THEN 1 ELSE 0 END) AS overdue_count,
+                SUM(CASE WHEN '.self::BALANCE_INR.' <= 0 THEN 1 ELSE 0 END) AS paid_count', [$today])->first();
+            $billed = (float) ($inv->billed ?? 0);
+            $outstanding = (float) ($inv->outstanding ?? 0);
+            $waived = (float) ($inv->waived ?? 0);
+            $base = ['total_billed' => round($billed, 2), 'total_received' => round(max(0, $billed - $outstanding - $waived), 2),
+                'total_outstanding' => round($outstanding + (QuoteFirst::enabled() ? $quoteDue : 0), 2), 'total_waived' => round($waived, 2),
+                'overdue_count' => (int) ($inv->overdue_count ?? 0), 'draft_count' => 0, 'paid_count' => (int) ($inv->paid_count ?? 0), 'filtered' => true];
+        }
+
+        return $base + [
+            'quotes_unpaid_count' => $quotes->count(),
+            'quotes_unpaid_value' => $quoteDue,
+            'monthly' => $this->monthlyFiltered($user, $f),
+        ];
+    }
+
+    /** Open quotes (sent / accepted, not yet invoiced) the user may see, with the register filters. */
+    public function openQuotesFiltered(User $user, array $f = []): Collection
+    {
+        if (($f['type'] ?? null) === 'invoice') {
+            return collect();
+        }
+        $q = PatentInvoiceIn::query()->openQuotes();
+        if ($user->isClientRole()) {
+            $q->whereIn('client_id', Client::query()->visibleToUser($user)->select('id'));
+        } else {
+            \App\Support\DataAccess::scopeFinance($q, $user);
+        }
+
+        return self::applyRegisterFilters($q, array_diff_key($f, ['type' => 1, 'status' => 1]))->get(['id', 'total_bcy', 'invoice_amount', 'exchange_rate', 'invoice_date', 'client_id']);
+    }
+
+    /** What is still due on these quotes (INR), net of advances earmarked for them. */
+    public function quoteDue(Collection $quotes): float
+    {
+        if ($quotes->isEmpty()) {
+            return 0.0;
+        }
+        $earmarked = \App\Models\AdvanceQuoteLink::whereIn('patent_invoice_in_id', $quotes->pluck('id'))->selectRaw('patent_invoice_in_id, SUM(amount) s')
+            ->groupBy('patent_invoice_in_id')->pluck('s', 'patent_invoice_in_id');
+
+        return round((float) $quotes->sum(fn ($q) => max(0, (float) ($q->total_bcy ?? (float) $q->invoice_amount * ((float) ($q->exchange_rate ?? 1) ?: 1)) - (float) ($earmarked[$q->id] ?? 0))), 2);
+    }
+
+    /**
+     * Last 12 months for the 3D chart: invoiced (by invoice date), received (by payment date)
+     * and still outstanding from that month's invoices, all INR, for the filtered register.
+     *
+     * @return array<int, array{month: string, key: string, billed: float, received: float, outstanding: float, quoted: float}>
+     */
+    private function monthlyFiltered(User $user, array $f): array
+    {
+        $from = now()->subMonths(11)->startOfMonth();
+        $months = [];
+        for ($i = 0; $i < 12; $i++) {
+            $d = $from->copy()->addMonths($i);
+            $months[$d->format('Y-m')] = ['month' => $d->format('M y'), 'key' => $d->format('Y-m'), 'billed' => 0.0, 'received' => 0.0, 'outstanding' => 0.0, 'quoted' => 0.0];
+        }
+        $filters = array_diff_key($f, ['type' => 1]);
+        if (($f['type'] ?? null) !== 'quote') {
+            $register = self::applyRegisterFilters($this->registerInvoices($user), $filters);
+            $rows = (clone $register)->where('invoice_date', '>=', $from->toDateString())
+                ->selectRaw("to_char(invoice_date, 'YYYY-MM') AS ym, COALESCE(SUM(".self::TOTAL_INR."), 0) AS billed, COALESCE(SUM(".self::BALANCE_INR."), 0) AS outstanding")
+                ->groupByRaw("to_char(invoice_date, 'YYYY-MM')")->get();
+            foreach ($rows as $r) {
+                if (isset($months[$r->ym])) {
+                    $months[$r->ym]['billed'] = round((float) $r->billed, 2);
+                    $months[$r->ym]['outstanding'] = round((float) $r->outstanding, 2);
+                }
+            }
+            $paid = \App\Models\RegisterPayment::query()->cash()->whereIn('patent_invoice_in_id', (clone $register)->select('patent_invoices_in.id'))
+                ->where('payment_date', '>=', $from->toDateString())
+                ->selectRaw("to_char(payment_date, 'YYYY-MM') AS ym, COALESCE(SUM(amount_bcy), 0) AS amount")->groupByRaw("to_char(payment_date, 'YYYY-MM')")->get();
+            foreach ($paid as $r) {
+                if (isset($months[$r->ym])) {
+                    $months[$r->ym]['received'] = round((float) $r->amount, 2);
+                }
+            }
+        }
+        if (($f['type'] ?? null) !== 'invoice') {
+            $q = PatentInvoiceIn::query()->openQuotes()->where('invoice_date', '>=', $from->toDateString());
+            if ($user->isClientRole()) {
+                $q->whereIn('client_id', Client::query()->visibleToUser($user)->select('id'));
+            } else {
+                \App\Support\DataAccess::scopeFinance($q, $user);
+            }
+            $quoted = self::applyRegisterFilters($q, array_diff_key($filters, ['status' => 1]))
+                ->selectRaw("to_char(invoice_date, 'YYYY-MM') AS ym, COALESCE(SUM(".self::TOTAL_INR."), 0) AS amount")->groupByRaw("to_char(invoice_date, 'YYYY-MM')")->get();
+            foreach ($quoted as $r) {
+                if (isset($months[$r->ym])) {
+                    $months[$r->ym]['quoted'] = round((float) $r->amount, 2);
+                }
+            }
+        }
+
+        return array_values($months);
+    }
+
     /** Amount received in the given month, by payment date (INR). */
     public function collectedInMonth(User $user, Carbon $month, ?int $clientId = null): float
     {
@@ -174,7 +350,7 @@ class FinanceFigures
             ];
         });
         $legacy = $this->legacyInvoices($user, $clientId)->get()->map(fn (Invoice $invoice) => [
-            'id' => $invoice->id, 'source' => 'portal', 'number' => $invoice->invoice_code, 'client_id' => $invoice->client_id,
+            'id' => $invoice->id, 'legacy' => true, 'source' => 'portal', 'number' => $invoice->invoice_code, 'client_id' => $invoice->client_id,
             'project_id' => $invoice->project_id, 'date' => $invoice->issue_date, 'due_date' => $invoice->due_date,
             'billed' => (float) $invoice->total_amount, 'outstanding' => $invoice->status === 'Paid' ? 0.0 : (float) $invoice->balance_due,
             'status' => strtolower((string) $invoice->status), 'currency' => $invoice->currency,

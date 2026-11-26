@@ -56,9 +56,50 @@ class FinancialAnalyticsService
         $zohoInvoicePrefixes = $zohoInvoices->map(fn ($r) => substr(strtoupper((string) $r->number), 0, 9))->filter()->unique();
         $zohoConverted = $zohoQuotes->filter(fn ($q) => $zohoInvoicePrefixes->contains(substr(strtoupper((string) $q->number), 0, 9)))->count();
 
+        // Unpaid quotes (sent / accepted, not yet invoiced), receivables split and ageing by band.
+        $figures = app(FinanceFigures::class);
+        $openQuotes = $figures->openQuotesFiltered($user);
+        $earmarked = \App\Models\AdvanceQuoteLink::whereIn('patent_invoice_in_id', $openQuotes->pluck('id'))->selectRaw('patent_invoice_in_id, SUM(amount) s')
+            ->groupBy('patent_invoice_in_id')->pluck('s', 'patent_invoice_in_id');
+        $quoteDue = fn ($q) => max(0, (float) ($q->total_bcy ?? (float) $q->invoice_amount * ((float) ($q->exchange_rate ?? 1) ?: 1)) - (float) ($earmarked[$q->id] ?? 0));
+        $today = now()->startOfDay();
+        $band = function ($date) use ($today): string {
+            $date = $date ? Carbon::parse($date) : null;
+            if (! $date || $date->gte($today)) {
+                return 'not_due';
+            }
+            $d = (int) $date->diffInDays($today);
+
+            return $d <= 30 ? '1_30' : ($d <= 60 ? '31_60' : ($d <= 90 ? '61_90' : '90_plus'));
+        };
+        $ageing = [];
+        foreach (['not_due' => 'Not due', '1_30' => '1–30', '31_60' => '31–60', '61_90' => '61–90', '90_plus' => '90+'] as $key => $label) {
+            $ageing[$key] = ['key' => $key, 'band' => $label, 'invoices' => 0.0, 'quotes' => 0.0];
+        }
+        foreach ($portalRows->where('outstanding', '>', 0.009) as $row) {
+            $ageing[$band($row['due_date'])]['invoices'] += (float) $row['outstanding'];
+        }
+        foreach ($openQuotes as $q) {
+            $ageing[$band($q->invoice_date)]['quotes'] += $quoteDue($q);
+        }
+        $quotesValue = round((float) $openQuotes->sum($quoteDue), 2);
+        $costs = \App\Models\MatterCost::query();
+        if (! \App\Support\DataAccess::seesAllFinance($user)) {
+            $costs->whereIn('project_id', app(MatterProfitability::class)->projects($user)->select('projects.id'));
+        }
+
         return [
             'currency' => 'INR',
             'generated_at' => now()->toIso8601String(),
+            'quotes' => ['unpaid_count' => $openQuotes->count(), 'unpaid_value' => $quotesValue],
+            'receivables' => ['invoices' => round($portalOutstanding, 2), 'quotes' => $quotesValue, 'opening' => round($zohoOpeningBalance, 2),
+                'total' => round($portalOutstanding + $quotesValue + $zohoOpeningBalance, 2)],
+            'ageing' => array_values(array_map(fn ($a) => ['key' => $a['key'], 'band' => $a['band'], 'invoices' => round($a['invoices'], 2), 'quotes' => round($a['quotes'], 2)], $ageing)),
+            'costs' => $user->isClientRole() ? null : [
+                'unbilled' => round((float) (clone $costs)->where('recoverable', true)->where('needs_review', false)->whereNull('billed_invoice_id')->sum('amount_bcy'), 2),
+                'to_review' => (clone $costs)->where('needs_review', true)->count(),
+                'unassigned' => (clone $costs)->whereNull('project_id')->count(),
+            ],
             'portal' => $this->source($portalInvoices, $portalQuotes, $portalBilled, $portalPaid, $portalOutstanding, $portalPrefixes, $this->monthlyPortal($portalRows, app(FinanceFigures::class)->collectedByMonth($user))),
             'zoho' => $this->source($zohoInvoices, $zohoQuotes, $zohoBilled, $zohoCollected, $zohoOutstanding, $zohoConverted, $this->monthlyZoho($zohoInvoices), $zohoOpeningBalance),
             'comparison' => [

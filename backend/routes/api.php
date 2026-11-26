@@ -236,6 +236,8 @@ Route::middleware(['auth:sanctum', 'firm.context', 'throttle:120,1'])->group(fun
     Route::put('/finance/costs/{id}', [\App\Http\Controllers\MatterCostController::class, 'update'])->whereNumber('id');
     Route::delete('/finance/costs/{id}', [\App\Http\Controllers\MatterCostController::class, 'destroy'])->whereNumber('id');
     Route::post('/finance/costs/{id}/confirm', [\App\Http\Controllers\MatterCostController::class, 'confirm'])->whereNumber('id');
+    Route::get('/finance/costs/{id}/case-suggestions', [\App\Http\Controllers\MatterCostController::class, 'caseSuggestions'])->whereNumber('id');
+    Route::post('/finance/costs/assign', [\App\Http\Controllers\MatterCostController::class, 'assign']);
     Route::get('/finance/time-cost-rates', [\App\Http\Controllers\MatterCostController::class, 'rates']);
     Route::put('/finance/time-cost-rates', [\App\Http\Controllers\MatterCostController::class, 'saveRates']);
     Route::get('/finance/profitability', [\App\Http\Controllers\ProfitabilityController::class, 'index'])->middleware('throttle:60,1');

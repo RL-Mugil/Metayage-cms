@@ -78,23 +78,11 @@ class PatentInvoiceController extends Controller
             // Newest document first (imported Zoho records all share one created_at).
             ->orderByRaw('invoice_date DESC NULLS LAST')->orderByDesc('id');
 
-        if ($request->filled('type'))       $q->where('type',       $request->type);
-        if ($request->filled('source'))     $q->where('source',     $request->source);
+        // Shared with the KPI cards (FinanceFigures::applyRegisterFilters): search covers the client code too.
+        \App\Services\FinanceFigures::applyRegisterFilters($q, $request->only(\App\Services\FinanceFigures::REGISTER_FILTERS));
         // Imported rows still needing a look: no client matched, or the fee split not available yet.
         if ($request->boolean('needs_attention')) {
             $q->where(fn ($w) => $w->whereNull('client_id')->orWhere('amount_split_pending', true));
-        }
-        if ($request->filled('status'))     $q->where('status',     $request->status);
-        if ($request->filled('project_id')) $q->where('project_id', (int) $request->project_id);
-        if ($request->filled('search')) {
-            $s = $request->search;
-            $q->where(function ($query) use ($s) {
-                $query->where('docket_number', 'ilike', "%{$s}%")
-                      ->orWhere('invoice_uin',  'ilike', "%{$s}%")
-                      ->orWhere('client_name',  'ilike', "%{$s}%")
-                      ->orWhere('invention_title', 'ilike', "%{$s}%")
-                      ->orWhere('patent_office_application_number', 'ilike', "%{$s}%");
-            });
         }
 
         // Client logins (incl. client finance): their own client only. Staff: all finance, their

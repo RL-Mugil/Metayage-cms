@@ -2,6 +2,7 @@ import { Head, usePage } from "@inertiajs/react";
 import { useEffect, useState, useCallback, useRef } from "react";
 import { FitPage } from "@/components/modern/fit-page";
 import { KpiStrip } from "@/components/modern/kpi-strip";
+import { Bars3D, inrShort } from "@/components/three/chart-3d";
 import { SegmentTabs } from "@/components/modern/segment-tabs";
 import { createPortal } from "react-dom";
 import { Loader2, Plus, X, Trash2, Download, DollarSign, Clock, CheckCircle, AlertCircle, Search, ChevronLeft, ChevronRight, CheckSquare, Square, FileText, Pencil, IndianRupee, Upload } from "lucide-react";
@@ -13,7 +14,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { api, downloadCSV } from "@/lib/api-client";
-import type { Quotation, PatentInvoiceIn, ZohoOpeningBalanceRow } from "@/lib/api-client";
+import type { Quotation, PatentInvoiceIn, ZohoOpeningBalanceRow, FinancialStats } from "@/lib/api-client";
 import { ZohoBooksPanel } from "@/components/zoho-books-panel";
 import { ZohoRecordSync, ZohoSyncStatus } from "@/components/zoho-sync-controls";
 import { ZohoQuoteExport } from "@/components/zoho-quote-export";
@@ -171,9 +172,11 @@ const KPI_DEFS: KpiDef[] = [
   { label: "Outstanding",    key: "total_outstanding", color: "text-blue-500",     isCurrency: true,  filterParams: { kind: "outstanding" }, icon: Clock        },
   { label: "Waived",         key: "total_waived",      color: "text-violet-500",   isCurrency: true,  filterParams: { kind: "waived" },      icon: CheckCircle  },
   { label: "Overdue",        key: "overdue_count",     color: "text-destructive",  isCurrency: false, filterParams: { kind: "overdue" },     icon: AlertCircle  },
+  { label: "Unpaid quotes",  key: "quotes_unpaid_value", color: "text-violet-500", isCurrency: true,  filterParams: { kind: "quotes" },      icon: Clock        },
 ];
+FIN_COLORS.quotes_unpaid_value = "#a855f7";
 
-function FinancialKpiModal({ kpi, onClose }: { kpi: KpiDef; onClose: () => void }) {
+function FinancialKpiModal({ kpi, onClose, filters = {} }: { kpi: KpiDef; onClose: () => void; filters?: Record<string, string> }) {
   const [result, setResult]   = useState<{ data: any[]; total: number }>({ data: [], total: 0 });
   const [search, setSearch]   = useState("");
   const [loading, setLoading] = useState(false);
@@ -183,12 +186,13 @@ function FinancialKpiModal({ kpi, onClose }: { kpi: KpiDef; onClose: () => void 
   const fetchPage = useCallback(async (pg: number, q: string) => {
     setLoading(true);
     try {
-      const params = new URLSearchParams({ per_page: String(PER_PAGE), page: String(pg), ...kpi.filterParams });
+      // The register's filters (as on the cards), then the modal's own search.
+      const params = new URLSearchParams({ per_page: String(PER_PAGE), page: String(pg), ...filters, ...kpi.filterParams });
       if (q) params.set("search", q);
       const res: any = await api.getFinancialKpiList(params);
       setResult({ data: Array.isArray(res) ? res : (res?.data ?? []), total: res?.total ?? 0 });
     } finally { setLoading(false); }
-  }, [kpi]);
+  }, [kpi, JSON.stringify(filters)]);
 
   useEffect(() => { fetchPage(1, ""); }, [fetchPage]);
 
@@ -198,7 +202,7 @@ function FinancialKpiModal({ kpi, onClose }: { kpi: KpiDef; onClose: () => void 
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-      <div className="bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-3xl max-h-[88vh] flex flex-col">
+      <div className="dialog-3d bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-3xl max-h-[88vh] flex flex-col">
         <div className="flex items-center justify-between px-6 py-4 border-b border-border flex-shrink-0">
           <div>
             <h2 className="font-display text-lg font-semibold">{kpi.label}</h2>
@@ -228,7 +232,7 @@ function FinancialKpiModal({ kpi, onClose }: { kpi: KpiDef; onClose: () => void 
                   <th className="px-4 py-3 text-left">Due Date</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="table-rows-3d">
                 {result.data.map((inv) => (
                   <tr key={inv.id} className="border-t border-border hover:bg-muted/30">
                     <td className="px-4 py-2.5 font-mono text-xs text-gold font-semibold">{inv.invoice_code ?? "—"}</td>
@@ -285,8 +289,10 @@ export default function Financial() {
   const [projects, setProjects] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState("All");
-  const [stats, setStats] = useState({ total_billed: 0, total_received: 0, total_outstanding: 0, total_waived: 0, overdue_count: 0 });
+  const [stats, setStats] = useState<FinancialStats>({ total_billed: 0, total_received: 0, total_outstanding: 0, total_waived: 0, overdue_count: 0, draft_count: 0, paid_count: 0 });
+  const [showFinChart, setShowFinChart] = useState(true);
   const [kpiModal, setKpiModal] = useState<KpiDef | null>(null);
+  const [kpiMonth, setKpiMonth] = useState<Record<string, string> | null>(null);
 
   // New invoice modal
   const [showModal, setShowModal] = useState(false);
@@ -324,6 +330,20 @@ export default function Financial() {
   const [indiaTypeFilter, setIndiaType]     = useState<"all" | "invoice" | "quote">("all");
   const [indiaStatusFilter, setIndiaStatus] = useState("all");
   const [indiaPage, setIndiaPage]           = useState(1);
+  // The register's filters drive the KPI cards too.
+  const statsFilters = (): Record<string, string> => {
+    const f: Record<string, string> = {};
+    if (indiaSearch.trim()) f.search = indiaSearch.trim();
+    if (indiaTypeFilter !== "all") f.type = indiaTypeFilter;
+    if (indiaStatusFilter !== "all") f.status = indiaStatusFilter;
+    return f;
+  };
+  const refreshStats = () => api.getFinancialStats(new URLSearchParams(statsFilters())).then(setStats).catch(() => {});
+  useEffect(() => {
+    const t = window.setTimeout(refreshStats, 300);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [indiaSearch, indiaTypeFilter, indiaStatusFilter]);
   const [indiaTotal, setIndiaTotal]         = useState(0);
   const [indiaSelectedIds, setIndiaSelIds]  = useState<Set<number>>(new Set());
   const [indiaBatching, setIndiaBatching]   = useState(false);
@@ -553,7 +573,7 @@ export default function Financial() {
   }
 
   useEffect(() => {
-    api.getFinancialStats().then(setStats).catch(() => {});
+    refreshStats();
     api.getFeeRateCards().then(setFeeRateCards).catch(() => setFeeRateCards([]));
     Promise.all([api.getInvoices(), api.getClients(), api.getProjects()])
       .then(([i, c, p]) => {
@@ -805,7 +825,7 @@ export default function Financial() {
       const result = await api.batchUpdateInvoices(Array.from(selectedIds), action, extra);
       const updated = await api.getInvoices();
       setInvoices(Array.isArray(updated) ? updated : (updated as any).data || []);
-      api.getFinancialStats().then(setStats).catch(() => {});
+      refreshStats();
       setSelectedIds(new Set());
       if (result.errors.length > 0) alert(`Completed with errors:\n${result.errors.join("\n")}`);
     } catch (e: any) { alert(e.message || "Batch action failed."); }
@@ -997,7 +1017,7 @@ export default function Financial() {
       {/* New Invoice Modal */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm overflow-y-auto py-8">
-          <div className="bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-2xl p-6 m-4">
+          <div className="dialog-3d bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-2xl p-6 m-4">
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-display text-lg font-semibold">New Invoice</h2>
               <button onClick={() => setShowModal(false)}><X className="h-5 w-5 text-muted-foreground" /></button>
@@ -1082,7 +1102,7 @@ export default function Financial() {
       {/* New Quotation Modal */}
       {showQuotModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm overflow-y-auto py-8">
-          <div className="bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-2xl p-6 m-4">
+          <div className="dialog-3d bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-2xl p-6 m-4">
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-display text-lg font-semibold">New Quotation</h2>
               <button onClick={() => setShowQuotModal(false)}><X className="h-5 w-5 text-muted-foreground" /></button>
@@ -1175,7 +1195,7 @@ export default function Financial() {
       {/* Record Payment Modal */}
       {showPayment && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-md p-6 m-4">
+          <div className="dialog-3d bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-md p-6 m-4">
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-display text-lg font-semibold">Record Payment</h2>
               <button onClick={() => setShowPayment(null)}><X className="h-5 w-5 text-muted-foreground" /></button>
@@ -1210,7 +1230,7 @@ export default function Financial() {
       {/* Batch Pay Method Modal */}
       {showBatchPayModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-sm p-6 m-4">
+          <div className="dialog-3d bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-sm p-6 m-4">
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-display text-lg font-semibold">Batch Mark Paid</h2>
               <button onClick={() => setShowBatchPayModal(false)}><X className="h-5 w-5 text-muted-foreground" /></button>
@@ -1232,13 +1252,49 @@ export default function Financial() {
         </div>
       )}
 
-      {kpiModal && <FinancialKpiModal kpi={kpiModal} onClose={() => setKpiModal(null)} />}
+      {kpiModal && <FinancialKpiModal kpi={kpiModal} filters={{ ...statsFilters(), ...(kpiMonth ?? {}) }} onClose={() => { setKpiModal(null); setKpiMonth(null); }} />}
 
       <div className="space-y-4">
+        {stats.filtered && (
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <span className="rounded-full border border-gold/40 bg-gold/10 px-2.5 py-1 font-medium text-gold">
+              Cards show only: {Object.entries(statsFilters()).map(([k, v]) => `${k === "search" ? "" : `${k} `}${v}`).join(" · ")}
+            </span>
+            <button className="text-muted-foreground hover:text-foreground" onClick={() => { setIndiaSearch(""); setIndiaType("all"); setIndiaStatus("all"); setIndiaPage(1); loadIndia({ type: "all", status: "all", page: 1 }); }}>
+              <X className="inline h-3.5 w-3.5" /> Clear filters
+            </button>
+          </div>
+        )}
         <KpiStrip items={KPI_DEFS.map((kpi) => ({
-          key: kpi.key, label: kpi.label, value: Number(stats[kpi.key as keyof typeof stats] ?? 0),
-          format: kpi.isCurrency ? "lakh" as const : "number" as const, color: FIN_COLORS[kpi.key] ?? "#d4a017", onClick: () => setKpiModal(kpi),
+          key: kpi.key, label: kpi.key === "quotes_unpaid_value" ? `Unpaid quotes (${stats.quotes_unpaid_count ?? 0})` : kpi.label,
+          value: Number(stats[kpi.key as keyof FinancialStats] ?? 0),
+          format: kpi.isCurrency ? "lakh" as const : "number" as const, color: FIN_COLORS[kpi.key] ?? "#d4a017",
+          onClick: kpi.key === "quotes_unpaid_value"
+            ? () => { setActiveTab("india"); setIndiaType("quote"); setIndiaStatus("Sent"); setIndiaPage(1); loadIndia({ type: "quote", status: "Sent", page: 1 }); }
+            : () => setKpiModal(kpi),
         }))} />
+        {!isClientUser && (stats.monthly?.length ?? 0) > 0 && (
+          <div>
+            <button className="mb-1 text-[11px] text-muted-foreground hover:text-foreground" onClick={() => setShowFinChart((v) => !v)}>
+              {showFinChart ? "Hide" : "Show"} 3D billing by month{stats.filtered ? " (filtered)" : ""}
+            </button>
+            {showFinChart && (
+              <Bars3D height={230} format={inrShort}
+                data={(stats.monthly ?? []).map((m) => ({ label: m.month, values: { billed: m.billed, received: m.received, outstanding: m.outstanding, quoted: m.quoted } }))}
+                series={[{ key: "billed", label: "Invoiced", color: "#d4a017" }, { key: "received", label: "Received", color: "#22c55e" },
+                  { key: "outstanding", label: "Still due (from that month)", color: "#3b82f6" }, { key: "quoted", label: "Unpaid quotes raised", color: "#a855f7" }]}
+                onSelect={(label, key) => {
+                  const m = (stats.monthly ?? []).find((x) => x.month === label);
+                  if (!m) return;
+                  if (key === "quoted") { setActiveTab("india"); setIndiaType("quote"); setIndiaPage(1); loadIndia({ type: "quote", page: 1 }); return; }
+                  const [y, mo] = m.key.split("-").map(Number);
+                  const last = new Date(y, mo, 0).getDate();
+                  setKpiMonth({ from: `${m.key}-01`, to: `${m.key}-${String(last).padStart(2, "0")}` });
+                  setKpiModal(KPI_DEFS.find((k) => k.key === (key === "received" ? "total_received" : key === "outstanding" ? "total_outstanding" : "total_billed")) ?? KPI_DEFS[0]);
+                }} />
+            )}
+          </div>
+        )}
 
         {/* Tab bar */}
         <SegmentTabs value={activeTab as "india" | "zoho" | "controls"} onChange={(v) => setActiveTab(v)} options={[
@@ -1287,7 +1343,7 @@ export default function Financial() {
                           <th className="px-4 py-3 text-left">Actions</th>
                         </tr>
                       </thead>
-                      <tbody>
+                      <tbody className="table-rows-3d">
                         {filtered.map((i) => (
                           <tr key={i.id} className={`border-t border-border hover:bg-muted/30 ${selectedIds.has(i.id) ? "bg-gold/5" : ""}`}>
                             {!isClientUser && (
@@ -1371,7 +1427,7 @@ export default function Financial() {
                         <th className="px-4 py-3 text-left">Actions</th>
                       </tr>
                     </thead>
-                    <tbody>
+                    <tbody className="table-rows-3d">
                       {quotations.map((q) => (
                         <tr key={q.id} className="border-t border-border hover:bg-muted/30">
                           <td className="px-4 py-3 font-mono text-xs font-medium text-gold">{q.quote_code}</td>
@@ -1511,7 +1567,7 @@ export default function Financial() {
                           <th className="px-2 py-2.5 text-left min-w-[120px]">Actions</th>
                         </tr>
                       </thead>
-                      <tbody>
+                      <tbody className="table-rows-3d">
                         {indiaRecords.map(r => {
                           const isInv = r.type === "invoice";
                           const f = (n: number | null | undefined) => (n ?? 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -1662,7 +1718,7 @@ export default function Financial() {
                       <thead className="bg-muted/40 text-[10px] uppercase tracking-wider text-muted-foreground">
                         <tr><th className="px-3 py-2 text-left">Type</th><th className="px-3 py-2 text-left">UIN / Number</th><th className="px-3 py-2 text-left">Case</th><th className="px-3 py-2 text-left">Client</th><th className="px-3 py-2 text-left">Status</th><th className="px-3 py-2 text-right">Total</th><th className="px-3 py-2 text-right">Balance</th></tr>
                       </thead>
-                      <tbody>{indiaLinkedZoho.map(record => <tr key={`${record.type}-${record.id}`} className="border-t border-border">
+                      <tbody className="table-rows-3d">{indiaLinkedZoho.map(record => <tr key={`${record.type}-${record.id}`} className="border-t border-border">
                         <td className="px-3 py-2"><Badge variant="outline" className="text-[10px]">{record.type === "invoice" ? "INV" : "QUO"}</Badge></td>
                         <td className="px-3 py-2 font-mono text-gold">{record.number || "—"}</td>
                         <td className="px-3 py-2 font-mono">{record.docket_number || "—"}</td>
@@ -1749,7 +1805,7 @@ export default function Financial() {
             </div>
 
             {["super_admin", "partner", "finance", "manager", "galvanizer"].includes(role) && <ZohoSyncStatus />}
-            {zohoOpeningBalances.length > 0 && <Card className="border-amber-500/30"><CardHeader className="py-3"><CardTitle className="font-display text-base">Zoho opening balance receivables <span className="ml-2 text-amber-600">{fmt(zohoOpeningTotal)}</span></CardTitle><p className="text-xs text-muted-foreground">Customer opening balances are receivables, not invoices, and are included separately from invoice totals.</p></CardHeader><CardContent className="p-0"><div className="overflow-x-auto"><table className="w-full text-xs"><thead className="bg-muted/40 text-[10px] uppercase tracking-wider text-muted-foreground"><tr><th className="px-3 py-2.5 text-left">Customer</th><th className="px-3 py-2.5 text-left">Balance date</th><th className="px-3 py-2.5 text-right">Amount</th><th className="px-3 py-2.5 text-right">Balance</th></tr></thead><tbody>{zohoOpeningBalances.map(row => <tr key={row.id} className="border-t border-border"><td className="px-3 py-2">{row.customer_name || "?"}</td><td className="px-3 py-2 text-muted-foreground">{fmtDate(row.balance_date)}</td><td className="px-3 py-2 text-right font-mono">{fmt(row.amount)}</td><td className="px-3 py-2 text-right font-mono text-amber-600">{fmt(row.balance)}</td></tr>)}</tbody></table></div></CardContent></Card>}
+            {zohoOpeningBalances.length > 0 && <Card className="border-amber-500/30"><CardHeader className="py-3"><CardTitle className="font-display text-base">Zoho opening balance receivables <span className="ml-2 text-amber-600">{fmt(zohoOpeningTotal)}</span></CardTitle><p className="text-xs text-muted-foreground">Customer opening balances are receivables, not invoices, and are included separately from invoice totals.</p></CardHeader><CardContent className="p-0"><div className="overflow-x-auto"><table className="w-full text-xs"><thead className="bg-muted/40 text-[10px] uppercase tracking-wider text-muted-foreground"><tr><th className="px-3 py-2.5 text-left">Customer</th><th className="px-3 py-2.5 text-left">Balance date</th><th className="px-3 py-2.5 text-right">Amount</th><th className="px-3 py-2.5 text-right">Balance</th></tr></thead><tbody className="table-rows-3d">{zohoOpeningBalances.map(row => <tr key={row.id} className="border-t border-border"><td className="px-3 py-2">{row.customer_name || "?"}</td><td className="px-3 py-2 text-muted-foreground">{fmtDate(row.balance_date)}</td><td className="px-3 py-2 text-right font-mono">{fmt(row.amount)}</td><td className="px-3 py-2 text-right font-mono text-amber-600">{fmt(row.balance)}</td></tr>)}</tbody></table></div></CardContent></Card>}
             {zohoAllLoading ? (
               <div className="flex items-center justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-gold" /></div>
             ) : (
@@ -1770,7 +1826,7 @@ export default function Financial() {
                           <th className="px-3 py-2.5"></th>
                         </tr>
                       </thead>
-                      <tbody>
+                      <tbody className="table-rows-3d">
                         {zohoAllRows.map(r => (
                           <tr key={`${r.type}-${r.id}`} className="border-t border-border hover:bg-muted/20">
                             <td className="px-3 py-2">
@@ -1860,7 +1916,7 @@ export default function Financial() {
         );
         return (
           <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 backdrop-blur-sm overflow-y-auto py-6 px-4">
-            <div className="bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-5xl flex flex-col">
+            <div className="dialog-3d bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-5xl flex flex-col">
               {/* Header */}
               <div className="flex items-center justify-between px-6 py-4 border-b border-border sticky top-0 bg-background z-10 rounded-t-xl">
                 <div>

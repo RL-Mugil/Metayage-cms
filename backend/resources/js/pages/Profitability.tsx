@@ -8,6 +8,7 @@ import { TableCard } from "@/components/modern/table-card";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { api } from "@/lib/api-client";
+import { Bars3D, inrShort } from "@/components/three/chart-3d";
 
 type Row = Record<string, any>;
 const inr = (v: number) => `₹${Math.round(Number(v)).toLocaleString("en-IN")}`;
@@ -25,6 +26,8 @@ export default function Profitability() {
   const [data, setData] = useState<{ rows: Row[]; total: Row; rates_set: boolean } | null>(null);
   const [loading, setLoading] = useState(true);
   const [ratesOpen, setRatesOpen] = useState(false);
+  const [showChart, setShowChart] = useState(true);
+  const [focus, setFocus] = useState<string | null>(null);
 
   const query = () => { const p = new URLSearchParams({ by }); if (from) p.set("from", from); if (to) p.set("to", to); return p; };
   const load = () => {
@@ -44,7 +47,8 @@ export default function Profitability() {
 
   const rows = useMemo(() => (data?.rows ?? [])
     .filter((r) => !lowOnly || (r.margin_pct !== null && r.margin_pct < 20))
-    .sort((a, b) => ((a[sort.key] ?? -Infinity) > (b[sort.key] ?? -Infinity) ? 1 : -1) * sort.dir), [data, lowOnly, sort]);
+    .filter((r) => !focus || String(by === "matter" ? r.docket : r.group) === focus)
+    .sort((a, b) => ((a[sort.key] ?? -Infinity) > (b[sort.key] ?? -Infinity) ? 1 : -1) * sort.dir), [data, lowOnly, sort, focus, by]);
   const t = data?.total ?? {};
   const totalPct = t.billed > 0 ? Math.round((t.margin / t.billed) * 1000) / 10 : null;
   const head = (key: string, label: string, right = true) => (
@@ -69,7 +73,7 @@ export default function Profitability() {
               ["Time cost", `${inr(t.time_cost ?? 0)} · ${Math.round(t.hours ?? 0)} h`, "#f59e0b"], ["Margin", `${inr(t.margin ?? 0)}${totalPct !== null ? ` · ${totalPct}%` : ""}`, (t.margin ?? 0) < 0 ? "#ef4444" : "#16a34a"],
               ["Official fees not billed", inr(t.leakage ?? 0), "#ef4444"],
             ].map(([label, value, color]) => (
-              <div key={label} className="glass flex min-w-[130px] flex-1 items-center gap-2 rounded-xl px-2.5 py-1">
+              <div key={label} className="card-3d glass flex min-w-[130px] flex-1 items-center gap-2 rounded-xl px-2.5 py-1">
                 <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: color, boxShadow: `0 0 8px ${color}` }} />
                 <span className="min-w-0"><span className="block truncate font-display text-sm font-semibold leading-tight xl:text-base">{value}</span>
                   <span className="block truncate text-[9px] uppercase tracking-wider text-muted-foreground">{label}</span></span>
@@ -85,7 +89,20 @@ export default function Profitability() {
             <span className="text-muted-foreground">–</span>
             <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="h-8 rounded-md border border-border bg-background/70 px-1.5" title="To" />
             <label className="flex items-center gap-1.5 text-muted-foreground"><input type="checkbox" checked={lowOnly} onChange={(e) => setLowOnly(e.target.checked)} />Margin under 20%</label>
+            <button className="text-[11px] text-muted-foreground hover:text-foreground" onClick={() => setShowChart((v) => !v)}>{showChart ? "Hide" : "Show"} 3D chart</button>
+            {focus && <button className="rounded-full border border-gold/40 bg-gold/10 px-2 py-0.5 text-[11px] text-gold" onClick={() => setFocus(null)}>Showing {focus} ✕</button>}
           </div>
+          {showChart && (data?.rows.length ?? 0) > 0 && (
+            <div className="shrink-0">
+              {/* The 12 largest by fees billed: billed, costs (official + associate + other + time) and margin. */}
+              <Bars3D height={200} format={inrShort} activeLabel={focus}
+                data={[...(data?.rows ?? [])].filter((r) => !lowOnly || (r.margin_pct !== null && r.margin_pct < 20)).sort((a, b) => (b.billed ?? 0) - (a.billed ?? 0)).slice(0, 12).map((r) => ({
+                  label: String(by === "matter" ? r.docket : r.group ?? "—"),
+                  values: { billed: r.billed ?? 0, costs: (r.official_paid ?? 0) + (r.associate ?? 0) + (r.other ?? 0) + (r.time_cost ?? 0), margin: r.margin ?? 0 } }))}
+                series={[{ key: "billed", label: "Billed (ex GST)", color: "#3b82f6" }, { key: "costs", label: "Costs + time", color: "#f59e0b" }, { key: "margin", label: "Margin", color: "#16a34a" }]}
+                onSelect={(label) => setFocus(focus === label ? null : label)} />
+            </div>
+          )}
           <TableCard>
             <table className="w-full min-w-[1000px] text-xs">
               <thead className="table-sticky-head text-[10px] uppercase tracking-wider text-muted-foreground">
@@ -148,7 +165,7 @@ function RatesDialog({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
   };
   return (
     <Dialog open onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-md">
+      <DialogContent flip3d className="max-w-md">
         <DialogHeader><DialogTitle>Internal time cost rates (₹ per hour)</DialogTitle></DialogHeader>
         <p className="text-[11px] text-muted-foreground">What an hour of each designation costs the firm. Used only for profitability, seen only by Accounts; salaries are never read.</p>
         {!data ? <Loader2 className="mx-auto h-5 w-5 animate-spin text-gold" /> : (

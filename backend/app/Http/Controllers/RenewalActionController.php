@@ -512,8 +512,11 @@ class RenewalActionController extends Controller
         $user = $request->user();
         $query = PatentInvoiceIn::with(['project:id,docket_number,project_name', 'client:id,company_name,legal_name,client_code,contact_name,contact_email,phone',
                 'proofDocument:id,file_name,storage_path', 'waiverRequestedBy:id,name'])
-            ->whereNotNull('payment_status')
             ->whereNotIn('status', ['Draft', 'Cancelled']);
+        // Unpaid invoices, unpaid quotes (sent / accepted, not yet invoiced) or both.
+        $doc = in_array($request->get('doc'), ['invoices', 'quotes', 'both'], true) ? $request->get('doc') : 'both';
+        // A quote is payable from its date; an invoice from its due date.
+        $dueExpr = "(CASE WHEN patent_invoices_in.type = 'quote' THEN patent_invoices_in.invoice_date ELSE patent_invoices_in.due_date END)";
 
         if ($user->isClientRole()) {
             $client = $request->attributes->get('portal_client') ?? Client::forUser($user);
@@ -528,14 +531,22 @@ class RenewalActionController extends Controller
             \App\Support\DataAccess::scopeFinance($query, $user);
         }
 
-        if ($request->filled('payment_status')) {
-            $query->where('payment_status', $request->get('payment_status'));
-        } else {
-            // Every unpaid invoice in the register: portal renewals and invoices imported from Zoho
-            // (a Zoho invoice is pending while Zoho shows a balance). Confirmed = paid.
-            $query->where('payment_status', '!=', 'Confirmed')
-                ->where(fn ($q) => $q->whereNull('balance_due')->orWhere('balance_due', '>', 0));
-        }
+        // Every unpaid invoice in the register: portal renewals and invoices imported from Zoho
+        // (a Zoho invoice is pending while Zoho shows a balance). Confirmed = paid.
+        $unpaidInvoices = function ($q) use ($request) {
+            $q->where('patent_invoices_in.type', '!=', 'quote')->whereNotNull('payment_status');
+            if ($request->filled('payment_status')) {
+                $q->where('payment_status', $request->get('payment_status'));
+            } else {
+                $q->where('payment_status', '!=', 'Confirmed')->where(fn ($w) => $w->whereNull('balance_due')->orWhere('balance_due', '>', 0));
+            }
+        };
+        $openQuotes = fn ($q) => $q->whereIn('patent_invoices_in.id', PatentInvoiceIn::query()->openQuotes()->select('patent_invoices_in.id'));
+        match ($doc) {
+            'invoices' => $query->where($unpaidInvoices),
+            'quotes' => $query->where($openQuotes),
+            default => $query->where(fn ($q) => $q->where($unpaidInvoices)->orWhere($openQuotes)),
+        };
         if ($request->filled('search')) {
             $like = '%'.str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], trim((string) $request->get('search'))).'%';
             $query->where(fn ($q) => $q->where('invoice_uin', 'ilike', $like)->orWhere('client_name', 'ilike', $like)
@@ -543,7 +554,7 @@ class RenewalActionController extends Controller
                 ->orWhereHas('client', fn ($c) => $c->where('client_code', 'ilike', $like)->orWhere('company_name', 'ilike', $like)->orWhere('legal_name', 'ilike', $like)));
         }
         if ($request->boolean('overdue')) {
-            $query->whereNotNull('due_date')->where('due_date', '<', now()->toDateString());
+            $query->whereRaw("{$dueExpr} < ?", [now()->toDateString()]);
         }
         // Staff follow-up filters: one client, an ageing band, a date or date range, waivers to decide.
         if (! $user->isClientRole() && $request->filled('client_id')) {
@@ -554,11 +565,11 @@ class RenewalActionController extends Controller
         if ($age !== '') {
             $daysAgo = fn (int $d) => $today->copy()->subDays($d)->toDateString();
             match ($age) {
-                'not_due' => $query->where(fn ($q) => $q->whereNull('due_date')->orWhere('due_date', '>=', $today->toDateString())),
-                '1_30' => $query->where('due_date', '<', $today->toDateString())->where('due_date', '>=', $daysAgo(30)),
-                '31_60' => $query->where('due_date', '<', $daysAgo(30))->where('due_date', '>=', $daysAgo(60)),
-                '61_90' => $query->where('due_date', '<', $daysAgo(60))->where('due_date', '>=', $daysAgo(90)),
-                '90_plus' => $query->where('due_date', '<', $daysAgo(90)),
+                'not_due' => $query->whereRaw("({$dueExpr} IS NULL OR {$dueExpr} >= ?)", [$today->toDateString()]),
+                '1_30' => $query->whereRaw("{$dueExpr} < ? AND {$dueExpr} >= ?", [$today->toDateString(), $daysAgo(30)]),
+                '31_60' => $query->whereRaw("{$dueExpr} < ? AND {$dueExpr} >= ?", [$daysAgo(30), $daysAgo(60)]),
+                '61_90' => $query->whereRaw("{$dueExpr} < ? AND {$dueExpr} >= ?", [$daysAgo(60), $daysAgo(90)]),
+                '90_plus' => $query->whereRaw("{$dueExpr} < ?", [$daysAgo(90)]),
                 default => null,
             };
         }
@@ -578,8 +589,11 @@ class RenewalActionController extends Controller
         }
 
         $balanceSql = 'COALESCE(balance_due, invoice_amount)';
-        $totals = (clone $query)->reorder()->select('currency')->selectRaw("COALESCE(SUM({$balanceSql}), 0) AS amount")->groupBy('currency')
+        $sumByCurrency = fn ($q) => $q->reorder()->select('currency')->selectRaw("COALESCE(SUM({$balanceSql}), 0) AS amount")->groupBy('currency')
             ->pluck('amount', 'currency')->map(fn ($amount) => round((float) $amount, 2));
+        $totals = $sumByCurrency(clone $query);
+        $invoiceTotals = $sumByCurrency((clone $query)->where('patent_invoices_in.type', '!=', 'quote'));
+        $quoteTotals = $sumByCurrency((clone $query)->where('patent_invoices_in.type', 'quote'));
         // Advances earmarked for quotes (money already received): the due list shows the net.
         // Each advance is netted in its quote's own currency (advances are held in INR).
         $advanceRows = \App\Models\AdvanceQuoteLink::query()->join('patent_invoices_in as q', 'q.id', '=', 'advance_quote_links.patent_invoice_in_id')
@@ -589,13 +603,18 @@ class RenewalActionController extends Controller
         foreach ($advanceRows->groupBy(fn ($r) => $r->currency ?: 'INR') as $currency => $rows) {
             $net = (float) $rows->sum(fn ($r) => (float) $r->amount / ((float) ($r->exchange_rate ?? 1) ?: 1.0));
             $totals[$currency] = round(max(0, (float) ($totals[$currency] ?? 0) - $net), 2);
+            $quoteTotals[$currency] = round(max(0, (float) ($quoteTotals[$currency] ?? 0) - $net), 2);
         }
-        $overdue = (clone $query)->whereNotNull('due_date')->where('due_date', '<', now()->toDateString())->count();
+        $overdue = (clone $query)->whereRaw("{$dueExpr} < ?", [now()->toDateString()])->count();
+        $docCounts = ['invoices' => (clone $query)->where('patent_invoices_in.type', '!=', 'quote')->count(),
+            'quotes' => (clone $query)->where('patent_invoices_in.type', 'quote')->count()];
+        // Ageing for the 3D chart: buckets × (invoices, quotes), INR.
+        $ageing = $this->pendingAgeing(clone $query, $dueExpr, $balanceSql);
         $staff = ! $user->isClientRole();
         $scoped = fn () => PatentInvoiceIn::query()->when($staff, fn ($q) => \App\Support\DataAccess::scopeFinance($q, $user));
 
         // Most overdue first, then the newest.
-        $page = $query->orderByRaw('due_date ASC NULLS LAST')->orderByDesc('invoice_date')->orderByDesc('id')
+        $page = $query->orderByRaw("{$dueExpr} ASC NULLS LAST")->orderByDesc('invoice_date')->orderByDesc('id')
             ->paginate(min((int) $request->get('per_page', 25), 100));
         $links = \App\Models\AdvanceQuoteLink::whereIn('patent_invoice_in_id', $page->getCollection()->where('type', 'quote')->pluck('id'))
             ->get()->groupBy('patent_invoice_in_id');
@@ -624,7 +643,8 @@ class RenewalActionController extends Controller
                 $row->setAttribute('advance_payments', $links[$row->id]->pluck('payment_number')->filter()->unique()->values());
                 $row->setAttribute('net_due', round(max(0, (float) $row->getAttribute('balance') - $advance / $rate), 2));
             }
-            $row->setAttribute('days_overdue', $row->due_date && $row->due_date->lt($today) ? (int) $row->due_date->diffInDays($today) : 0);
+            $dueOn = $row->type === 'quote' ? $row->invoice_date : $row->due_date;
+            $row->setAttribute('days_overdue', $dueOn && $dueOn->lt($today) ? (int) $dueOn->diffInDays($today) : 0);
             // A promise to pay that has passed while the invoice is still unpaid.
             $row->setAttribute('promise_broken', $row->promised_on && $row->promised_on->lt($today));
             if ($row->isFromZoho()) {
@@ -638,6 +658,10 @@ class RenewalActionController extends Controller
         return response()->json(array_merge($page->toArray(), [
             'pending_totals' => $totals,
             'pending_count' => $page->total(),
+            'doc' => $doc,
+            'totals_by_doc' => ['invoices' => $invoiceTotals, 'quotes' => $quoteTotals],
+            'doc_counts' => $docCounts,
+            'ageing' => $ageing,
             'advance_on_quotes' => $advanceOnQuotes,
             'overdue_count' => $overdue,
             // Staff only: waivers to decide, settlements not yet in Zoho, waived this year, clients for the filter.
@@ -655,5 +679,29 @@ class RenewalActionController extends Controller
                 'approve_waiver' => in_array($user->role, \App\Services\InvoiceSettlement::WAIVE_APPROVE_ROLES, true),
             ],
         ]));
+    }
+
+    /**
+     * Unpaid amounts (INR) by age band, split into invoices and quotes.
+     *
+     * @return array<int, array{band: string, invoices: float, quotes: float}>
+     */
+    private function pendingAgeing($query, string $dueExpr, string $balanceSql): array
+    {
+        $today = now()->toDateString();
+        $rows = $query->setEagerLoads([])->reorder()->selectRaw("CASE WHEN {$dueExpr} IS NULL OR {$dueExpr} >= ? THEN 'not_due'
+                WHEN {$dueExpr} >= ? THEN '1_30' WHEN {$dueExpr} >= ? THEN '31_60' WHEN {$dueExpr} >= ? THEN '61_90' ELSE '90_plus' END AS band,
+                CASE WHEN patent_invoices_in.type = 'quote' THEN 'quotes' ELSE 'invoices' END AS doc,
+                COALESCE(SUM({$balanceSql} * COALESCE(NULLIF(exchange_rate, 0), 1)), 0) AS amount",
+            [$today, now()->subDays(30)->toDateString(), now()->subDays(60)->toDateString(), now()->subDays(90)->toDateString()])
+            ->groupBy('band', 'doc')->get();
+        $out = [];
+        foreach (['not_due' => 'Not due', '1_30' => '1–30', '31_60' => '31–60', '61_90' => '61–90', '90_plus' => '90+'] as $key => $label) {
+            $out[] = ['key' => $key, 'band' => $label,
+                'invoices' => round((float) $rows->where('band', $key)->where('doc', 'invoices')->sum('amount'), 2),
+                'quotes' => round((float) $rows->where('band', $key)->where('doc', 'quotes')->sum('amount'), 2)];
+        }
+
+        return $out;
     }
 }

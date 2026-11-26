@@ -138,7 +138,7 @@ function EditDialog({ reminder, onClose, onDone }: { reminder: Reminder; onClose
   const field = "mt-1 w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm"
   return (
     <Dialog open onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-xl">
+      <DialogContent flip3d className="max-w-xl">
         <DialogHeader><DialogTitle>Reminder to {reminder.client.code} · {reminder.client.name}</DialogTitle></DialogHeader>
         <div className="space-y-3 text-xs">
           <label className="block">To (comma-separated)<input value={to} onChange={(e) => setTo(e.target.value)} className={field} /></label>
@@ -163,7 +163,7 @@ function PauseDialog({ reminder, onClose, onDone }: { reminder: Reminder; onClos
   }
   return (
     <Dialog open onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-sm">
+      <DialogContent flip3d className="max-w-sm">
         <DialogHeader><DialogTitle>Pause reminders · {reminder.client.code}</DialogTitle></DialogHeader>
         <label className="block text-xs">Pause until (leave empty to resume)<input type="date" value={until} onChange={(e) => setUntil(e.target.value)} className="mt-1 h-8 w-full rounded-md border border-border bg-background px-2" /></label>
         <label className="block text-xs">Why (optional)<input value={note} onChange={(e) => setNote(e.target.value)} maxLength={255} className="mt-1 h-8 w-full rounded-md border border-border bg-background px-2" /></label>
@@ -189,7 +189,7 @@ function SettingsDialog({ settings, onClose, onDone }: { settings: Settings; onC
   const field = "mt-1 w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm"
   return (
     <Dialog open onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-lg">
+      <DialogContent flip3d className="max-w-lg">
         <DialogHeader><DialogTitle>Reminder settings</DialogTitle></DialogHeader>
         <div className="space-y-3 text-xs">
           <label className="block">Bands: days relative to the due date (negative = before due), e.g. -3, 7, 30, 60<input value={bands} onChange={(e) => setBands(e.target.value)} className={field} /></label>

@@ -65,6 +65,14 @@ class MatterCostController extends Controller
             'unassigned' => (clone $this->scoped($request))->whereNull('project_id')->count(),
             'unbilled' => round((float) (clone $this->scoped($request))->where('recoverable', true)->where('needs_review', false)->whereNull('billed_invoice_id')->sum('amount_bcy'), 2),
             'to_review' => (clone $this->scoped($request))->where('needs_review', true)->count(),
+            // Last 12 months by kind (the rows shown) for the 3D chart.
+            'monthly' => collect(range(11, 0))->map(function ($ago) use ($rows) {
+                $m = now()->startOfMonth()->subMonths($ago);
+                $in = $rows->filter(fn ($c) => $c->bill_date && $c->bill_date->format('Y-m') === $m->format('Y-m'));
+
+                return ['month' => $m->format('M y'), 'key' => $m->format('Y-m')] + collect(array_keys(MatterCost::KINDS))
+                    ->mapWithKeys(fn ($k) => [$k => round((float) $in->where('kind', $k)->sum('amount_bcy'), 2)])->all();
+            })->values(),
             'can' => ['edit' => DataAccess::canActOnFinance($request->user()), 'rates' => InvoiceSettlement::canPay($request->user())],
         ]);
     }
@@ -114,6 +122,66 @@ class MatterCostController extends Controller
         });
 
         return response()->json(['ok' => true]);
+    }
+
+    /**
+     * Cases this cost probably belongs to (docket codes in the bill's reference, description or
+     * notes, by the import's own matching rules, then the client's cases), and the other
+     * unassigned lines of the same vendor bill.
+     */
+    public function caseSuggestions(Request $request, int $id, \App\Services\ZohoCostImporter $importer): JsonResponse
+    {
+        $cost = $this->scoped($request)->findOrFail($id);
+        $text = strtoupper(implode(' ', array_filter([$cost->vendor_reference, $cost->description, $cost->notes])));
+        $projects = $this->profit->projects($request->user())->whereNotNull('docket_number')
+            ->with('client:id,client_code,legal_name,company_name')->get(['id', 'client_id', 'docket_number', 'project_code', 'project_name']);
+        $found = collect();
+        $add = function ($p, string $why) use ($found) {
+            if ($p && ! $found->has($p->id)) {
+                $found->put($p->id, ['id' => $p->id, 'docket' => $p->docket_number, 'title' => $p->project_name,
+                    'client' => $p->client ? trim(($p->client->client_code ?? '').' '.($p->client->legal_name ?: $p->client->company_name)) : null, 'why' => $why]);
+            }
+        };
+        $add($importer->projectFor($text, $projects), 'Docket code on the bill');
+        preg_match_all('/(?<![0-9A-Z])[0-9A-Z]{3}[MY]\d{3}[0-9A-Z]*/', $text, $m);
+        foreach (array_unique($m[0] ?? []) as $code) {
+            foreach ($projects->filter(fn ($p) => strlen($code) >= 9 && str_starts_with(strtoupper((string) $p->docket_number), substr($code, 0, 9))) as $p) {
+                $add($p, 'Same invention and office as '.$code);
+            }
+            foreach ($projects->filter(fn ($p) => str_starts_with(strtoupper((string) $p->docket_number), substr($code, 0, 7))) as $p) {
+                $add($p, 'Same case number as '.substr($code, 0, 7));
+            }
+        }
+        if ($cost->client_id) {
+            foreach ($projects->where('client_id', $cost->client_id)->take(15) as $p) {
+                $add($p, 'Same client');
+            }
+        }
+        // The rest of the same vendor bill, still not tied to a case.
+        $siblings = $cost->vendor_reference ? $this->scoped($request)->whereNull('project_id')->where('id', '!=', $cost->id)
+            ->where('vendor_reference', $cost->vendor_reference)->when($cost->vendor_name, fn ($q, $v) => $q->where('vendor_name', $v))
+            ->get(['id', 'kind', 'amount_bcy', 'bill_date'])->map(fn ($c) => ['id' => $c->id, 'kind' => $c->kind, 'amount_bcy' => (float) $c->amount_bcy])->values() : collect();
+
+        return response()->json(['suggestions' => $found->values()->take(20), 'siblings' => $siblings]);
+    }
+
+    /** Tie one or more costs to a case (the client follows the case); the review flag is left as it is. */
+    public function assign(Request $request): JsonResponse
+    {
+        $this->allowEdit($request);
+        $data = $request->validate(['ids' => 'required|array|min:1|max:200', 'ids.*' => 'integer', 'project_id' => 'required|integer|exists:projects,id']);
+        abort_unless($this->profit->projects($request->user())->whereKey($data['project_id'])->exists(), 403, 'That case is not one of yours.');
+        $costs = $this->scoped($request)->whereIn('id', $data['ids'])->get();
+        abort_if($costs->count() !== count(array_unique($data['ids'])), 404, 'Some of those costs were not found.');
+        $clientId = Project::whereKey($data['project_id'])->value('client_id');
+        DB::transaction(function () use ($costs, $data, $clientId, $request) {
+            foreach ($costs as $cost) {
+                $cost->update(['project_id' => $data['project_id'], 'client_id' => $clientId]);
+                $this->audit($request, 'matter_cost_assigned', $cost);
+            }
+        });
+
+        return response()->json(['assigned' => $costs->count()]);
     }
 
     /** Confirm an imported cost: recoverable (to be billed to the client) or absorbed by the firm. */
