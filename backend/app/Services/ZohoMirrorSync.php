@@ -620,7 +620,7 @@ class ZohoMirrorSync
 
     public function syncRemote(string $resource, string $remoteId): void
     {
-        abort_unless(in_array($resource, ['invoices', 'estimates'], true), 422, 'Unsupported Zoho polling resource.');
+        abort_unless(in_array($resource, ['invoices', 'estimates', 'customerpayments'], true), 422, 'Unsupported Zoho polling resource.');
         $record = $this->readDetail($resource, $remoteId, true);
         if ($record === null) return;
         DB::transaction(function () use ($resource, $record): void {

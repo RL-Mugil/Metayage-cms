@@ -75,6 +75,9 @@ class ZohoQuoteWriter
                     $locked = ZohoQuoteExport::whereKey($export->id)->lockForUpdate()->firstOrFail();
                     $locked->update(['estimate_id' => (string) $record['estimate_id'], 'state' => $deleted ? 'deleted' : 'confirmed']);
                     $this->audit($locked, 'zoho_quote_created');
+                    if (! $deleted && $locked->source_type === 'in') {
+                        \App\Models\PatentInvoiceIn::whereKey($locked->source_id)->where('status', 'Draft')->update(['status' => 'Sent']);
+                    }
                 });
                 return $this->result($export->refresh());
             } catch (Throwable $error) {

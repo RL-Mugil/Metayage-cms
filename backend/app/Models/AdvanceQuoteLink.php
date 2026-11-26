@@ -11,9 +11,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  */
 class AdvanceQuoteLink extends Model
 {
-    protected $fillable = ['zoho_payment_id', 'payment_number', 'client_id', 'patent_invoice_in_id', 'amount', 'note', 'created_by_id'];
+    protected $fillable = ['zoho_payment_id', 'payment_number', 'client_id', 'patent_invoice_in_id', 'amount', 'note', 'created_by_id',
+        'applied_zoho_invoice_id', 'applied_at', 'applied_by_id'];
 
-    protected $casts = ['amount' => 'decimal:2'];
+    protected $casts = ['amount' => 'decimal:2', 'applied_at' => 'datetime'];
 
     public function quote(): BelongsTo
     {

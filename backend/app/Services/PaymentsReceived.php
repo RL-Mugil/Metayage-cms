@@ -95,7 +95,9 @@ class PaymentsReceived
             'unused' => $unused,
             'links' => $links->map(fn (AdvanceQuoteLink $l) => ['id' => $l->id, 'quote_id' => $l->patent_invoice_in_id,
                 'quote' => $l->quote?->invoice_uin ?: $l->quote?->zoho_number, 'amount' => (float) $l->amount, 'note' => $l->note,
-                'invoiced' => strtolower((string) $l->quote?->zoho_status) === 'invoiced'])->values()->all(),
+                'invoiced' => strtolower((string) $l->quote?->zoho_status) === 'invoiced'
+                    || \App\Models\ZohoQuoteExport::where('source_type', 'in')->where('source_id', $l->patent_invoice_in_id)->whereNotNull('invoice_id')->exists(),
+                'applied' => $l->applied_at !== null])->values()->all(),
             'unlinked' => round(max(0, $unused - $linked), 2),
         ];
     }

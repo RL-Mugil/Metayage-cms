@@ -15,6 +15,7 @@ interface LedgerCheck { checked: number; at: string; differ: { client_id: number
 interface Controls {
   months: Month[]; flags: Flag[]; approvals: Approval[]; ledger_check: LedgerCheck | null
   exchange: { from: string; gain: number; loss: number; lines: { date: string; reference: string; client: string | null; amount: number; notes: string | null }[] }
+  renewal_quotes: { enabled: boolean; days: number }
   can: { unlock: boolean }
 }
 
@@ -139,6 +140,20 @@ export function FinanceControls() {
             ))}
           </ul>
         )}
+      </section>
+
+      {/* Renewal quotes, quote first */}
+      <section className="rounded-xl border border-border p-4 xl:col-span-2">
+        <h3 className="mb-1 text-sm font-semibold">Renewal quotes</h3>
+        <p className="mb-2 text-[11px] text-muted-foreground">When on, the daily scan drafts a renewal quote before each annuity. Accounts reviews it and sends it to Zoho; the client then approves it in the portal and Accounts creates the invoice in Zoho.</p>
+        <div className="flex flex-wrap items-center gap-3 text-xs">
+          <label className="flex items-center gap-1.5"><input type="checkbox" checked={data.renewal_quotes.enabled} disabled={busy !== null}
+            onChange={(e) => run("rq", () => api.request("/finance/controls/renewal-quotes", { method: "PUT", body: JSON.stringify({ enabled: e.target.checked, days: data.renewal_quotes.days }) }), e.target.checked ? "Renewal quotes on" : "Renewal quotes off")} />
+            Draft renewal quotes automatically</label>
+          <label className="flex items-center gap-1.5">Days before the annuity
+            <input type="number" min={7} max={365} defaultValue={data.renewal_quotes.days} className="h-7 w-20 rounded-md border border-border bg-background px-2"
+              onBlur={(e) => Number(e.target.value) !== data.renewal_quotes.days && run("rq", () => api.request("/finance/controls/renewal-quotes", { method: "PUT", body: JSON.stringify({ enabled: data.renewal_quotes.enabled, days: Number(e.target.value) }) }), "Saved")} /></label>
+        </div>
       </section>
 
       {/* Exchange gain / loss */}

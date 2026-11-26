@@ -427,11 +427,11 @@ export default function Integrations() {
                     {intg.id === "zoho" ? (
                       <div className="space-y-2">
                         <label className="text-xs font-medium text-muted-foreground">
-                          Zoho Books credentials (read access and draft quote creation) {intg.hasKey && <span className="text-green-600">(saved)</span>}
+                          Zoho Books credentials (read access, quotes, invoices from quotes and payments) {intg.hasKey && <span className="text-green-600">(saved)</span>}
                         </label>
                         <p className="text-[11px] text-muted-foreground">
                           From a Zoho API Console Self Client for org <code>924754718</code> (Metayage Private Ltd).
-                          {' '}Allow READ for invoices, estimates, contacts, customer payments, credit notes and settings, plus ZohoBooks.estimates.CREATE. Invoice write permission is not needed.
+                          {' '}Allow READ for invoices, estimates, contacts, customer payments, credit notes and settings, plus ZohoBooks.estimates.CREATE (quotes), ZohoBooks.invoices.CREATE (invoice from an approved quote, applying advances) and ZohoBooks.customerpayments.CREATE (payments marked paid in the portal). After adding scopes, generate a new refresh token.
                         </p>
                         <input placeholder="Client ID" value={zohoFields.client_id}
                           onChange={(e) => setZohoFields((p) => ({ ...p, client_id: e.target.value }))}

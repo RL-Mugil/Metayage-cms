@@ -259,7 +259,7 @@ class RenewalActionController extends Controller
      * below; staff still raise the real, final invoice manually via the existing
      * PatentInvoiceController::convert() quote->invoice action — this method never does that.
      */
-    public function autoCreateQuote(RenewalSchedule $renewal): ?PatentInvoiceIn
+    public function autoCreateQuote(RenewalSchedule $renewal, string $status = 'Sent'): ?PatentInvoiceIn
     {
         if ($renewal->patent_invoice_in_id) {
             return null;
@@ -275,10 +275,10 @@ class RenewalActionController extends Controller
         $totals = $this->renewalTotals((string) ($project?->patent_office_code ?: $application->jurisdiction), $client->fee_entity_tier, collect([$renewal->renewal_year]));
         $docketForUin = $project?->docket_number ?? $application->application_number ?? "APP{$application->id}";
 
-        return DB::transaction(function () use ($application, $project, $client, $renewal, $totals, $docketForUin) {
+        return DB::transaction(function () use ($application, $project, $client, $renewal, $totals, $docketForUin, $status) {
             $quote = PatentInvoiceIn::create([
                 'type'                 => 'quote',
-                'status'               => 'Sent',
+                'status'               => $status,
                 'payment_status'       => 'Pending',
                 'project_id'           => $project?->id,
                 'client_id'            => $client->id,

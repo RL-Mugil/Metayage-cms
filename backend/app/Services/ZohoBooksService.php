@@ -262,6 +262,20 @@ class ZohoBooksService
     }
 
     /** Exactly one Books POST: write off an invoice's remaining balance (portal waiver write-back). */
+    /**
+     * Apply a customer's excess payment (unused credit) to an invoice: Zoho's "apply credits"
+     * for invoices, one write call. Returns Zoho's response body.
+     */
+    public function applyPaymentToInvoice(string $invoiceId, string $paymentId, float $amount): array
+    {
+        abort_unless(preg_match('/^[0-9]{1,80}$/', $invoiceId) === 1 && preg_match('/^[0-9]{1,80}$/', $paymentId) === 1, 422, 'Invalid Zoho invoice or payment ID.');
+        $response = $this->request('/invoices/'.$invoiceId.'/credits', [], [
+            'invoice_payments' => [['payment_id' => $paymentId, 'amount_applied' => round($amount, 2)]],
+        ], 'POST');
+
+        return $response->json() ?: [];
+    }
+
     public function writeOffInvoice(string $invoiceId): void
     {
         abort_unless(preg_match('/^[0-9]{1,80}$/', $invoiceId) === 1, 422, 'Invalid Zoho invoice ID.');

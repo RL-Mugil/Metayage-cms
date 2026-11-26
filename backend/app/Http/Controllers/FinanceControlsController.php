@@ -64,6 +64,7 @@ class FinanceControlsController extends Controller
                 'lines' => $fx->take(100)->map(fn ($l) => ['date' => $l->transaction_date?->toDateString(), 'reference' => $l->document_reference,
                     'client' => $l->client?->client_code, 'amount' => round((float) $l->debit - (float) $l->credit, 2), 'notes' => $l->notes])->values(),
             ],
+            'renewal_quotes' => \App\Services\RenewalQuotes::settings(),
             'can' => ['unlock' => in_array($request->user()->role, self::UNLOCK_ROLES, true)],
         ]);
     }
@@ -96,6 +97,18 @@ class FinanceControlsController extends Controller
         FinancePeriod::forget();
 
         return response()->json(['ok' => true]);
+    }
+
+    /** The renewal quote-first switch (drafts a renewal quote N days before each annuity). */
+    public function renewalQuotes(Request $request): JsonResponse
+    {
+        $this->allow($request);
+        $data = $request->validate(['enabled' => 'required|boolean', 'days' => 'required|integer|min:7|max:365']);
+        $saved = \App\Services\RenewalQuotes::save((bool) $data['enabled'], (int) $data['days']);
+        AuditLog::create(['user_id' => $request->user()->id, 'action' => 'renewal_auto_quotes_updated', 'subject_type' => 'Finance', 'subject_id' => 0,
+            'metadata' => $saved, 'ip_address' => $request->ip(), 'user_agent' => $request->userAgent()]);
+
+        return response()->json($saved);
     }
 
     /** Mark changes in a locked month reviewed (one, or all of a month). */

@@ -93,11 +93,49 @@ class PaymentsReceivedController extends Controller
         return response()->json($link, 201);
     }
 
+    /**
+     * Apply an earmarked advance in Zoho to the invoice made from its quote (one write call),
+     * then re-read the payment and the invoice so Payments Received and the ledger follow.
+     */
+    public function apply(Request $request, int $id): JsonResponse
+    {
+        $user = $request->user();
+        abort_unless(InvoiceSettlement::canPay($user), 403, 'Only Accounts can apply advances in Zoho.');
+        \App\Support\FinancePeriod::assertOpen(now());
+        $link = AdvanceQuoteLink::findOrFail($id);
+        abort_if($link->applied_at, 422, 'This advance has already been applied.');
+        $export = \App\Models\ZohoQuoteExport::where('source_type', 'in')->where('source_id', $link->patent_invoice_in_id)->whereNotNull('invoice_id')->first();
+        abort_unless($export, 422, 'The quote has not been turned into a Zoho invoice yet. Create the invoice first.');
+        $advance = $this->payments->advance($link->zoho_payment_id);
+        abort_unless($advance && $advance['unused'] + 0.009 >= (float) $link->amount, 422, 'The payment no longer has that much unused in Zoho. Refresh and check.');
+
+        $zoho = app(\App\Services\ZohoBooksService::class);
+        try {
+            $zoho->applyPaymentToInvoice((string) $export->invoice_id, $link->zoho_payment_id, (float) $link->amount);
+        } catch (\App\Exceptions\ZohoBudgetExhausted $e) {
+            abort(429, $e->getMessage());
+        } catch (\App\Exceptions\ZohoApiException $e) {
+            abort(422, 'Zoho did not apply it: HTTP '.$e->status.($e->zohoMessage ? ' - '.$e->zohoMessage : '').'. Check the invoice-payments permission and try again.');
+        }
+        DB::transaction(function () use ($link, $export, $user, $request) {
+            $link->update(['applied_zoho_invoice_id' => (string) $export->invoice_id, 'applied_at' => now(), 'applied_by_id' => $user->id]);
+            AuditLog::create(['user_id' => $user->id, 'action' => 'advance_applied_in_zoho', 'subject_type' => 'PatentInvoiceIn', 'subject_id' => $link->patent_invoice_in_id,
+                'metadata' => ['payment' => $link->payment_number, 'zoho_invoice_id' => $export->invoice_id, 'amount' => (float) $link->amount],
+                'ip_address' => $request->ip(), 'user_agent' => $request->userAgent()]);
+        });
+        $sync = app(\App\Services\ZohoMirrorSync::class);
+        rescue(fn () => $sync->syncRemote('customerpayments', $link->zoho_payment_id), null, true);
+        rescue(fn () => $sync->syncRemote('invoices', (string) $export->invoice_id), null, true);
+
+        return response()->json(['ok' => true]);
+    }
+
     public function unlink(Request $request, int $id): JsonResponse
     {
         $user = $request->user();
         abort_unless(InvoiceSettlement::canPay($user), 403, 'Only Accounts, a Director, a System Admin or someone on the Financial access list can link advances.');
         $link = AdvanceQuoteLink::findOrFail($id);
+        abort_if($link->applied_at, 422, 'This advance was applied in Zoho; it cannot be unlinked here.');
         \App\Support\FinancePeriod::assertOpen($link->created_at);
         DB::transaction(function () use ($link, $user, $request) {
             AuditLog::create(['user_id' => $user->id, 'action' => 'unlink_advance_from_quote', 'subject_type' => 'PatentInvoiceIn', 'subject_id' => $link->patent_invoice_in_id,

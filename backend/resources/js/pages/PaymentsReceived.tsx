@@ -26,7 +26,7 @@ interface Payment {
   applied_total: number;
   tds: number;
   unused: number;
-  links: { id: number; quote_id: number; quote: string | null; amount: number; note: string | null; invoiced: boolean }[];
+  links: { id: number; quote_id: number; quote: string | null; amount: number; note: string | null; invoiced: boolean; applied: boolean }[];
   unlinked: number;
 }
 interface Quote { id: number; number: string; date: string | null; status: string; amount: number; advance_linked: number; net_due: number; title: string | null }
@@ -74,6 +74,11 @@ export default function PaymentsReceived() {
   };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { load(); }, [page, query, clientId, from, to, unusedOnly, perPage]);
+
+  const applyInZoho = async (id: number, amount: number, quote: string | null) => {
+    if (!window.confirm(`Apply ${inr(amount)} of this payment to the Zoho invoice made from ${quote ?? "the quote"}? This writes to Zoho Books.`)) return;
+    try { await api.request(`/advance-links/${id}/apply`, { method: "POST", body: "{}" }); toast.success("Applied in Zoho"); load(); } catch (e: any) { toast.error(e?.message ?? "Failed."); }
+  };
 
   const unlink = async (id: number) => {
     try { await api.unlinkAdvance(id); toast.success("Advance unlinked from the quote"); load(); } catch (e: any) { toast.error(e?.message ?? "Failed."); }
@@ -182,9 +187,10 @@ export default function PaymentsReceived() {
                           {r.links.map((l) => (
                             <div key={l.id} className="flex items-center gap-1 text-[10px]">
                               <span className="rounded border border-green-200 bg-green-50 px-1.5 py-0.5 text-green-700">
-                                {inr(l.amount)} → {l.quote ?? "quote"}{l.invoiced ? " (invoiced: apply in Zoho)" : ""}
+                                {inr(l.amount)} → {l.quote ?? "quote"}{l.applied ? " · applied in Zoho" : l.invoiced ? " · invoiced" : ""}
                               </span>
-                              {canLink && <button onClick={() => unlink(l.id)} className="text-muted-foreground hover:text-red-600" title="Unlink"><X className="h-3 w-3" /></button>}
+                              {canLink && l.invoiced && !l.applied && <button onClick={() => applyInZoho(l.id, l.amount, l.quote)} className="text-gold hover:underline">Apply in Zoho</button>}
+                              {canLink && !l.applied && <button onClick={() => unlink(l.id)} className="text-muted-foreground hover:text-red-600" title="Unlink"><X className="h-3 w-3" /></button>}
                             </div>
                           ))}
                           {canLink && r.unlinked > 0 && r.client && (

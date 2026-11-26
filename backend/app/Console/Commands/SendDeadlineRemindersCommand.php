@@ -480,10 +480,18 @@ class SendDeadlineRemindersCommand extends Command
                 continue;
             }
 
-            // Auto-generating a renewal quote here (and notifying staff to review it) was
-            // disabled at the user's request — RenewalActionController::autoCreateQuote()
-            // is still there for a manual/future path, it's just no longer invoked from
-            // this scheduled scan. Staff raise quotes/invoices by hand from now on.
+            // Renewal quotes, quote first (Financial Suite → Close & controls switch, off by default):
+            // a Draft quote N days ahead, which Accounts reviews and sends to Zoho; the client then
+            // approves it in the portal and Accounts creates the invoice in Zoho.
+            $auto = \App\Services\RenewalQuotes::settings();
+            if ($auto['enabled'] && $days <= $auto['days'] && ! $renewal->patent_invoice_in_id) {
+                $quote = rescue(fn () => app(\App\Http\Controllers\RenewalActionController::class)->autoCreateQuote($renewal, 'Draft'), null, true);
+                if ($quote) {
+                    $accounts = \App\Models\User::where('status', 'Active')->get()->filter(fn ($u) => \App\Services\InvoiceSettlement::canPay($u))->pluck('id')->all();
+                    \App\Support\Notifier::push($accounts, 'renewal_quote', "Renewal quote to review: {$label}",
+                        "{$renewal->display_label} is due in {$days} days. A draft quote ({$quote->invoice_uin}) is ready: review it and send it to Zoho.", '/financial');
+                }
+            }
 
             $urgent = $days <= $leadDays;
             $title = $urgent
