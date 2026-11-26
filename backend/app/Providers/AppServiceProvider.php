@@ -131,6 +131,8 @@ class AppServiceProvider extends ServiceProvider
         // Zoho customer payments and credit notes → register lines (cash, TDS, credit note) → the
         // client's ledger (also the client of the Zoho customer: an unapplied advance touches no invoice).
         $importPayment = function (\App\Models\ZohoSnapshot $snapshot): void {
+            // The payment index first: the ledger rebuild below reads advances from it.
+            \App\Models\ZohoPaymentIndex::syncFrom($snapshot);
             \Illuminate\Support\Facades\DB::afterCommit(fn () => rescue(function () use ($snapshot) {
                 $fresh = \App\Models\ZohoSnapshot::withTrashed()->find($snapshot->id) ?? $snapshot;
                 $importer = app(\App\Services\RegisterPaymentsImporter::class);
