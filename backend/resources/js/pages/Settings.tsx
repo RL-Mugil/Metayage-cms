@@ -6,7 +6,6 @@ import { Fragment, useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { User, Bell, Shield, Palette, Settings as SettingsIcon, Key, Building, Loader2, Camera, Trash2, ZoomIn, ZoomOut, RotateCcw, Plus, X, Landmark, Check, Hash, Pencil, ArrowRightLeft, LayoutGrid, Wallet, ChevronUp, ChevronDown, Globe, FileText } from "lucide-react";
 import AppLayout from "@/layouts/AppLayout";
-import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -17,6 +16,8 @@ import { IpoSettingsPanel } from "@/components/ipo/ipo-settings-panel";
 import { FirmSwitches } from "@/components/settings/firm-switches";
 import { NotificationChannels } from "@/components/settings/notification-channels";
 import { PaymentDetailsCard } from "@/components/settings/payment-details-card";
+import { SettingsShell, type SettingsSection } from "@/components/settings/settings-shell";
+import { FitPage } from "@/components/modern/fit-page";
 import type { ProjectTab, CodeRow, CodeRenameImpact, CodeMergeAvailable, CodeMergeImpact } from "@/types";
 
 function loadPrefs<T>(key: string, fallback: T): T {
@@ -39,18 +40,18 @@ const LANGUAGES = ["English", "Hindi", "Tamil", "Telugu"];
 
 type Tab = "profile" | "notifications" | "security" | "appearance" | "system" | "codes" | "projectTabs" | "finance" | "payroll" | "ipo" | "site";
 
-const tabs: { id: Tab; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
-  { id: "profile",       label: "Profile",       icon: User },
-  { id: "notifications", label: "Notifications", icon: Bell },
-  { id: "security",      label: "Security",      icon: Shield },
-  { id: "appearance",    label: "Appearance",    icon: Palette },
-  { id: "system",        label: "System",        icon: Building },
-  { id: "codes",         label: "Codes",         icon: Hash },
-  { id: "projectTabs",   label: "Project Tabs",  icon: LayoutGrid },
-  { id: "finance",       label: "Finance",       icon: Landmark },
-  { id: "payroll",       label: "Payroll",       icon: Wallet },
-  { id: "ipo",           label: "IPO Forms",     icon: FileText },
-  { id: "site",          label: "Site",          icon: Globe },
+const tabs: SettingsSection<Tab>[] = [
+  { id: "profile",       label: "Profile",       icon: User,       group: "Your account", color: "#d4a017", hint: "Name, photo, contact and language" },
+  { id: "notifications", label: "Notifications", icon: Bell,       group: "Your account", color: "#f97316", hint: "What reaches you, and where" },
+  { id: "security",      label: "Security",      icon: Shield,     group: "Your account", color: "#ef4444", hint: "Password and signature PIN" },
+  { id: "appearance",    label: "Appearance",    icon: Palette,    group: "Your account", color: "#a855f7", hint: "Theme and display" },
+  { id: "system",        label: "System",        icon: Building,   group: "Firm",         color: "#3b82f6", hint: "Firm details, access and billing rules" },
+  { id: "codes",         label: "Codes",         icon: Hash,       group: "Firm",         color: "#06b6d4", hint: "Service and office codes" },
+  { id: "projectTabs",   label: "Project Tabs",  icon: LayoutGrid, group: "Firm",         color: "#14b8a6", hint: "Tabs shown on a case" },
+  { id: "site",          label: "Site",          icon: Globe,      group: "Firm",         color: "#0ea5e9", hint: "Public site content" },
+  { id: "finance",       label: "Finance",       icon: Landmark,   group: "Money & forms", color: "#16a34a", hint: "Fee rate cards and payment details" },
+  { id: "payroll",       label: "Payroll",       icon: Wallet,     group: "Money & forms", color: "#22c55e", hint: "Salary components, tax and signatory" },
+  { id: "ipo",           label: "IPO Forms",     icon: FileText,   group: "Money & forms", color: "#8b5cf6", hint: "Indian Patent Office form defaults" },
 ];
 
 const BLANK_SALARY_COMPONENT = { name: "", code: "", calc_type: "flat", category: "earning", value: "", percentage_of: "" };
@@ -1347,30 +1348,13 @@ export default function Settings() {
   return (
     <AppLayout>
       <Head title="Settings" />
-      <PageHeader eyebrow="Operations" title="Settings" description="Manage your account, preferences, and system configuration" />
-      <div className="flex min-h-[calc(100vh-180px)]">
-        {/* Sidebar */}
-        <div className="w-56 border-r border-border flex-shrink-0 py-4">
-          {visibleTabs.map(({ id, label, icon: Icon }) => (
-            <button key={id} onClick={() => setTab(id)}
-              className={`w-full flex items-center gap-3 px-6 py-2.5 text-sm transition-colors ${tab === id ? "text-gold font-semibold bg-gold/10 border-r-2 border-gold" : "text-muted-foreground hover:text-foreground hover:bg-muted/30"}`}>
-              <Icon className="h-4 w-4" />{label}
-            </button>
-          ))}
-        </div>
-
-        {/* Content */}
-        <div className="flex-1 p-8 space-y-6 max-w-2xl">
-          {saved && (
-            <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700 font-medium">
-              ✓ Settings saved successfully
+      <FitPage eyebrow="Operations" title="Settings" summary="Your account, the firm's configuration, billing rules and forms">
+        <SettingsShell sections={visibleTabs} active={tab} onChange={setTab}
+          banner={(saved || error) && (
+            <div className={`mt-2 rounded-lg border px-3 py-1.5 text-xs font-medium ${error ? "border-red-200 bg-red-50 text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300" : "border-green-200 bg-green-50 text-green-700 dark:border-green-500/30 dark:bg-green-500/10 dark:text-green-300"}`}>
+              {error || "✓ Settings saved"}
             </div>
-          )}
-          {error && (
-            <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 font-medium">
-              {error}
-            </div>
-          )}
+          )}>
 
           {/* ── Profile ── */}
           {tab === "profile" && (
@@ -1753,7 +1737,7 @@ export default function Settings() {
           )}
 
           {tab === "site" && isSuperAdmin && <SiteAdminPanel />}
-          {tab === "ipo" && canManageSystem && <div className="p-8"><IpoSettingsPanel /></div>}
+          {tab === "ipo" && canManageSystem && <IpoSettingsPanel />}
 
           {tab === "projectTabs" && isSuperAdmin && (
             <div className="space-y-6">
@@ -2463,8 +2447,8 @@ export default function Settings() {
               </Card>
             </div>
           )}
-        </div>
-      </div>
+        </SettingsShell>
+      </FitPage>
       {/* ── Crop / Zoom Modal ── */}
       {cropSrc && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">

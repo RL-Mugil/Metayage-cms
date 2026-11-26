@@ -180,6 +180,14 @@
     to { opacity: 1; transform: perspective(1400px) rotateX(0deg) translateY(0) scale(1); }
   }
   @media (prefers-reduced-motion: reduce) { .dialog-3d { animation: none; } .table-rows-3d > tr:hover { transform: none; } }
+  /* Settings sections: cards lift, tables and fields read as raised / inset surfaces. */
+  .settings-3d .shadow-3d { transition: transform 0.2s, box-shadow 0.2s; }
+  .settings-3d .shadow-3d:hover { transform: translateY(-2px); box-shadow: var(--shadow-3d-lg); }
+  .settings-3d input:not([type="checkbox"]):not([type="radio"]):not([type="file"]), .settings-3d select, .settings-3d textarea {
+    box-shadow: inset 0 1px 2px color-mix(in oklab, oklch(0.27 0.06 260) 10%, transparent); }
+  .settings-3d table tbody tr { transition: background-color 0.15s, box-shadow 0.15s; }
+  .settings-3d table tbody tr:hover { background: color-mix(in oklab, var(--gold) 6%, transparent); box-shadow: inset 3px 0 0 0 var(--gold); }
+  @media (prefers-reduced-motion: reduce) { .settings-3d .shadow-3d:hover { transform: none; } }
   /* Raised cards on finance pages. */
   .card-3d { box-shadow: var(--shadow-3d); transition: transform 0.2s, box-shadow 0.2s; }
   .card-3d:hover { transform: translateY(-2px); box-shadow: var(--shadow-3d-lg); }
