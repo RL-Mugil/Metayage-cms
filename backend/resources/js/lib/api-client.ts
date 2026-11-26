@@ -210,7 +210,7 @@ export interface NewPortalUser {
 /** One uploaded Zoho export file: what is new / changed / identical in the portal. */
 export interface ZohoExportReport {
   file: string
-  kind: 'invoices' | 'quotes' | 'payments' | 'creditnotes' | 'contacts'
+  kind: 'invoices' | 'quotes' | 'payments' | 'creditnotes' | 'contacts' | 'bills' | 'expenses'
   documents: number
   new: number
   changed: number
@@ -225,6 +225,9 @@ export interface ZohoExportReport {
   removed?: number
   /** Contacts: customers with no portal client linked (shown only). */
   unlinked?: number
+  /** Bills / expenses: costs not tied to a case, and overhead lines left out. */
+  unassigned?: number
+  skipped_overhead?: number
 }
 export type ZohoExportLastImport = Partial<Record<ZohoExportReport['kind'], { at: string; by: string; file: string; documents: number }>>
 export interface ZohoExportResult {

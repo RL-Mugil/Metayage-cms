@@ -21,7 +21,7 @@ class ZohoExportController extends Controller
 {
     private const ROLES = ['super_admin', 'partner', 'finance'];
     private const DISK = 'local';
-    private const ORDER = ['invoices' => 0, 'quotes' => 1, 'payments' => 2, 'creditnotes' => 3, 'contacts' => 4];
+    private const ORDER = ['invoices' => 0, 'quotes' => 1, 'payments' => 2, 'creditnotes' => 3, 'contacts' => 4, 'bills' => 5, 'expenses' => 6];
 
     private const LAST_IMPORT_KEY = 'zoho_export_last_import';
 
@@ -39,7 +39,7 @@ class ZohoExportController extends Controller
     {
         $this->allow($request);
         $request->validate([
-            'files'   => 'required|array|min:1|max:5',
+            'files'   => 'required|array|min:1|max:7',
             'files.*' => 'required|file|max:20480|mimes:csv,txt',
         ]);
 

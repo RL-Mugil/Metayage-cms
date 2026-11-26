@@ -6,8 +6,9 @@ import { api, type ZohoExportLastImport, type ZohoExportReport, type ZohoExportR
 
 const KIND_LABEL: Record<ZohoExportReport["kind"], string> = {
   invoices: "Invoices", quotes: "Quotes", payments: "Customer payments", creditnotes: "Credit notes", contacts: "Customers",
+  bills: "Bills (matter costs)", expenses: "Expenses (matter costs)",
 }
-const KIND_ORDER: ZohoExportReport["kind"][] = ["invoices", "quotes", "payments", "creditnotes", "contacts"]
+const KIND_ORDER: ZohoExportReport["kind"][] = ["invoices", "quotes", "payments", "creditnotes", "contacts", "bills", "expenses"]
 const ago = (iso: string) => {
   const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000)
   return days <= 0 ? "today" : days === 1 ? "yesterday" : `${days} days ago`
@@ -73,7 +74,7 @@ export function ZohoExportImport({ onClose, onImported }: { onClose: () => void;
           <div>
             <h3 className="font-display text-base font-semibold">Import Zoho export</h3>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              In Zoho Books, export Invoices, Quotes, Customer Payments, Credit Notes and Customers (Contacts) as CSV, for all dates and all
+              In Zoho Books, export Invoices, Quotes, Customer Payments, Credit Notes, Customers (Contacts), Bills and Expenses as CSV, for all dates and all
               statuses, then upload them here. Records already in the portal are skipped, records Zoho changed are updated, and new ones are
               added. Customers update only the Zoho side (opening balances); the Clients tab is not changed. Nothing is written until you confirm.
             </p>
@@ -98,9 +99,9 @@ export function ZohoExportImport({ onClose, onImported }: { onClose: () => void;
             <div className="flex flex-wrap items-center gap-3">
               <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-dashed border-border px-3 py-2 text-xs hover:bg-muted/40">
                 <FileUp className="h-4 w-4" />
-                {files.length ? files.map((f) => f.name).join(", ") : "Choose up to 5: Invoice / Quote / Customer_Payment / Credit_Note / Contacts .csv"}
+                {files.length ? files.map((f) => f.name).join(", ") : "Choose up to 7: Invoice / Quote / Customer_Payment / Credit_Note / Contacts / Bill / Expense .csv"}
                 <input type="file" accept=".csv,text/csv" multiple className="hidden"
-                  onChange={(e) => { setFiles(Array.from(e.target.files ?? []).slice(0, 5)); setPreview(null) }} />
+                  onChange={(e) => { setFiles(Array.from(e.target.files ?? []).slice(0, 7)); setPreview(null) }} />
               </label>
               <Button size="sm" variant="outline" disabled={busy || files.length === 0} onClick={check}>
                 {busy && !preview ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}Check files
@@ -129,6 +130,10 @@ export function ZohoExportImport({ onClose, onImported }: { onClose: () => void;
                           {report.changes.map((c) => <li key={c.number}><span className="font-mono">{c.number}</span>: {c.what.join(", ")}</li>)}
                         </ul>
                       </details>
+                    )}
+                    {(report.kind === "bills" || report.kind === "expenses") && (
+                      <p className="mt-2 text-[11px] text-muted-foreground">Matter accounts only (attorney fees, Patent Office fees, stamps){report.skipped_overhead ? `; ${report.skipped_overhead} overhead line(s) left out` : ""}.
+                        {(report.unassigned ?? 0) > 0 && <> {report.unassigned} not tied to a case: assign them on Matter Costs.</>}</p>
                     )}
                     {report.kind === "contacts" && (report.unlinked ?? 0) > 0 && (
                       <p className="mt-2 text-[11px] text-muted-foreground">{report.unlinked} customer(s) have no portal client linked (shown only; the Clients tab is not changed).</p>

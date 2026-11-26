@@ -27,7 +27,7 @@ class ZohoExportImporter
 {
     /** Header column that identifies each export (checked in this order: Contacts last). */
     public const KINDS = ['invoices' => 'Invoice ID', 'quotes' => 'Quote ID', 'payments' => 'CustomerPayment ID',
-        'creditnotes' => 'CreditNotes ID', 'contacts' => 'Contact ID'];
+        'creditnotes' => 'CreditNotes ID', 'bills' => 'Bill ID', 'expenses' => 'Expense Reference ID', 'contacts' => 'Contact ID'];
 
     /** Records missing from a full export are removed only up to this many, and at most 10% of the portal's. */
     public const MAX_REMOVALS = 50;
@@ -41,7 +41,7 @@ class ZohoExportImporter
                 return $kind;
             }
         }
-        throw new RuntimeException('Not a Zoho Books invoice, quote, customer payment, credit note or contacts export (header not recognised).');
+        throw new RuntimeException('Not a Zoho Books invoice, quote, customer payment, credit note, bill, expense or contacts export (header not recognised).');
     }
 
     /**
@@ -52,6 +52,9 @@ class ZohoExportImporter
     public function run(string $path, bool $write, bool $removeMissing = false): array
     {
         $kind = $this->detect($path);
+        if ($kind === 'bills' || $kind === 'expenses') {
+            return $this->runCosts($kind, $path, $write, $removeMissing);
+        }
         $documents = match ($kind) {
             'payments' => $this->payments($path),
             'creditnotes' => $this->creditNotes($path),
@@ -91,6 +94,47 @@ class ZohoExportImporter
         $report['cross_check'] = array_slice($report['cross_check'], 0, 100);
 
         return $this->missing($kind, $documents, $report, $write && $removeMissing);
+    }
+
+    /** Zoho bills / expenses → matter costs (matter accounts only), tied to a case by docket code. */
+    private function runCosts(string $kind, string $path, bool $write, bool $removeMissing): array
+    {
+        $costs = app(ZohoCostImporter::class);
+        $num = fn ($v) => $this->num($v);
+        $date = fn ($v) => $this->date($v);
+        $parsed = $kind === 'bills' ? $costs->bills($this->rows($path), $num, $date) : $costs->expenses($this->rows($path), $num, $date);
+        $docs = $parsed['docs'];
+        $projects = \App\Models\Project::whereNotNull('docket_number')->get(['id', 'client_id', 'docket_number', 'project_code']);
+        $report = ['kind' => $kind, 'documents' => count($docs), 'new' => 0, 'changed' => 0, 'identical' => 0, 'changes' => [], 'cross_check' => [],
+            'totals' => ['total' => 0.0, 'balance' => 0.0], 'unassigned' => 0, 'skipped_overhead' => $parsed['skipped']];
+        foreach ($docs as $doc) {
+            $project = $costs->projectFor($doc['text'], $projects);
+            $state = $costs->compare($doc, $project);
+            $report[$state['state']]++;
+            if ($state['state'] === 'changed' && count($report['changes']) < 200) {
+                $report['changes'][] = ['number' => $doc['number'], 'what' => $state['what']];
+            }
+            $report['totals']['total'] += $doc['amount'] * $doc['exchange_rate'];
+            if (! $project && ! \App\Models\MatterCost::where('zoho_id', $doc['zoho_id'])->whereNotNull('project_id')->exists()) {
+                $report['unassigned']++;
+            }
+            if ($write && $state['state'] !== 'identical') {
+                DB::transaction(fn () => $costs->write($doc, $project));
+            }
+        }
+        $report['totals'] = array_map(fn ($v) => round($v, 2), $report['totals']);
+
+        $source = $kind === 'bills' ? 'zoho_bill' : 'zoho_expense';
+        $missing = $costs->missing($source, $docs);
+        $portal = \App\Models\MatterCost::where('source', $source)->count();
+        $removable = $docs !== [] && $missing->isNotEmpty() && $missing->count() <= self::MAX_REMOVALS && $missing->count() <= max(1, (int) floor($portal * 0.1));
+        $report += ['missing' => $missing->count(), 'missing_sample' => $missing->take(50)->map(fn ($c) => (string) ($c->vendor_reference ?: $c->zoho_id))->values()->all(),
+            'removable' => $removable, 'removed' => 0];
+        if ($write && $removeMissing && $removable) {
+            $report['removed'] = \App\Models\MatterCost::whereIn('id', $missing->pluck('id'))->delete();
+        }
+
+        return $report;
     }
 
     /** Credit notes and contacts: compare, then write. */
