@@ -49,8 +49,8 @@ const tabs: SettingsSection<Tab>[] = [
   { id: "codes",         label: "Codes",         icon: Hash,       group: "Firm",         color: "#06b6d4", hint: "Service and office codes" },
   { id: "projectTabs",   label: "Project Tabs",  icon: LayoutGrid, group: "Firm",         color: "#14b8a6", hint: "Tabs shown on a case" },
   { id: "site",          label: "Site",          icon: Globe,      group: "Firm",         color: "#0ea5e9", hint: "Public site content" },
-  { id: "finance",       label: "Finance",       icon: Landmark,   group: "Money & forms", color: "#16a34a", hint: "Fee rate cards and payment details" },
-  { id: "payroll",       label: "Payroll",       icon: Wallet,     group: "Money & forms", color: "#22c55e", hint: "Salary components, tax and signatory" },
+  { id: "finance",       label: "Finance",       icon: Landmark,   group: "Money & forms", color: "#16a34a", hint: "Fee rate cards and payment details", wide: true },
+  { id: "payroll",       label: "Payroll",       icon: Wallet,     group: "Money & forms", color: "#22c55e", hint: "Salary components, tax and signatory", wide: true },
   { id: "ipo",           label: "IPO Forms",     icon: FileText,   group: "Money & forms", color: "#8b5cf6", hint: "Indian Patent Office form defaults" },
 ];
 

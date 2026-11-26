@@ -10,6 +10,8 @@ export interface SettingsSection<T extends string> {
   group: string
   /** Accent colour of the section's 3D icon tile. */
   color: string
+  /** Wide sections (big tables) use the full width of the content panel. */
+  wide?: boolean
 }
 
 /** A raised, glossy 3D icon tile (gradient face, lighter top edge, coloured glow). */
@@ -95,7 +97,7 @@ export function SettingsShell<T extends string>({ sections, active, onChange, ba
           {banner}
         </div>
         <AnimatePresence mode="wait" initial={false}>
-          <motion.div key={active} className="settings-3d mx-auto max-w-5xl space-y-5 p-5"
+          <motion.div key={active} className={cn("settings-3d mx-auto space-y-5 p-5", current.wide ? "max-w-none" : "max-w-5xl")}
             initial={reduce ? { opacity: 0 } : { opacity: 0, rotateX: -10, y: 24, scale: 0.98 }}
             animate={{ opacity: 1, rotateX: 0, y: 0, scale: 1 }}
             exit={reduce ? { opacity: 0 } : { opacity: 0, rotateX: 8, y: -12, scale: 0.99 }}
