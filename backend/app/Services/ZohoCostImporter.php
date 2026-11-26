@@ -110,6 +110,13 @@ class ZohoCostImporter
             if ($prefixed) {
                 return $prefixed;
             }
+            // Same invention at the same office (Zoho names the service, e.g. 940M001USNOA → the portal's 940M001USCPT).
+            if (strlen($code) >= 9) {
+                $office = $projects->filter(fn ($p) => str_starts_with(strtoupper((string) $p->docket_number), substr($code, 0, 9)));
+                if ($office->count() === 1) {
+                    return $office->first();
+                }
+            }
             $seq = substr($code, 0, 7);   // client code + case number, e.g. 538M005
             $hits = $projects->filter(fn ($p) => str_starts_with(strtoupper((string) $p->docket_number), $seq));
             if ($hits->count() === 1) {

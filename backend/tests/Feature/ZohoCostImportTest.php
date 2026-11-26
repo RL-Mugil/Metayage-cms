@@ -93,6 +93,17 @@ class ZohoCostImportTest extends TestCase
         $this->assertSame($other->id, MatterCost::where('zoho_id', 'bill:b-3:associate')->value('project_id'));
     }
 
+    public function test_a_service_code_finds_the_same_invention_at_the_same_office(): void
+    {
+        foreach (['940M001USCPT', '940M001INCPT', '940M001CNCPT'] as $docket) {
+            Project::create(['project_code' => $docket, 'docket_number' => $docket, 'client_id' => $this->case->client_id, 'project_type' => 'Patent',
+                'project_name' => $docket, 'patent_office_code' => substr($docket, 7, 2), 'service_code' => 'CPT', 'status' => 'Open']);
+        }
+        $found = app(\App\Services\ZohoCostImporter::class)->projectFor('Office action fee 940M001USNOA');
+        $this->assertSame('940M001USCPT', $found?->docket_number);
+        $this->assertNull(app(\App\Services\ZohoCostImporter::class)->projectFor('940M001EPNOA'));   // no EP case, and 940M001 alone is ambiguous
+    }
+
     public function test_expenses_import_only_matter_accounts(): void
     {
         $report = $this->import([$this->csv('Expense.csv', self::EXPENSE_HEADER, [
