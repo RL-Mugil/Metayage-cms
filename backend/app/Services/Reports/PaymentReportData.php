@@ -123,18 +123,32 @@ class PaymentReportData
             return $row;
         })->sortByDesc('Total')->values();
 
+        // Balance credit: money the client has paid that is not yet applied to an invoice (the client
+        // ledger's balance credit lines and unapplied credit notes). Deducted from what is due.
+        $credits = $this->balanceCredits($user, $clientId, $rows->pluck('client_code')->concat($quotes->pluck('client_code')));
         $quotesByClient = $quotes->groupBy('client');
-        $byClient = $rows->concat($quotes)->groupBy('client')->map(function (Collection $g, $client) use ($quotesByClient) {
+        $byClient = $rows->concat($quotes)->groupBy('client')->map(function (Collection $g, $client) use ($quotesByClient, $credits) {
             $inv = $g->where('type', 'Invoice');
             $quoted = round((float) ($quotesByClient[$client] ?? collect())->sum('balance'), 2);
+            $credit = round((float) ($credits[$g->first()['client_code']]['amount'] ?? 0), 2);
 
             return [
                 'client' => $client, 'client_code' => $g->first()['client_code'], 'invoices' => $inv->count(),
                 'billed' => round($inv->sum('billed'), 2), 'received' => round($inv->sum('received'), 2),
                 'waived' => round($inv->sum('waived'), 2), 'outstanding' => round($inv->sum('balance'), 2),
-                'quotes' => $g->where('type', 'Quote')->count(), 'quotes_due' => $quoted, 'total_due' => round($inv->sum('balance') + $quoted, 2),
+                'quotes' => $g->where('type', 'Quote')->count(), 'quotes_due' => $quoted, 'balance_credit' => $credit,
+                'total_due' => round($inv->sum('balance') + $quoted - $credit, 2),
             ];
-        })->sortByDesc('total_due')->values();
+        });
+        // Clients holding only a balance credit (nothing due) still show, so the deduction is visible.
+        foreach ($credits as $code => $c) {
+            if (! $byClient->contains(fn ($r) => $r['client_code'] === $code)) {
+                $byClient->put('credit:'.$code, ['client' => $c['client'], 'client_code' => $code, 'invoices' => 0, 'billed' => 0.0, 'received' => 0.0,
+                    'waived' => 0.0, 'outstanding' => 0.0, 'quotes' => 0, 'quotes_due' => 0.0, 'balance_credit' => round($c['amount'], 2), 'total_due' => round(-$c['amount'], 2)]);
+            }
+        }
+        $byClient = $byClient->sortByDesc('total_due')->values();
+        $balanceCredit = round((float) collect($credits)->sum('amount'), 2);
 
         $billed = (float) $rows->sum('billed');
         $outstanding = (float) $rows->sum('balance');
@@ -157,7 +171,9 @@ class PaymentReportData
                 'payments' => $payments->count(), 'payments_amount' => round((float) $payments->sum('amount'), 2),
                 // Unpaid quotes (proformas) and the total due (invoices + quotes).
                 'quotes' => $quotes->count(), 'quotes_amount' => round((float) $quotes->sum('balance'), 2),
-                'total_due' => round($outstanding + (float) $quotes->sum('balance'), 2),
+                // Total due = unpaid invoices + unpaid proformas − balance credit (minus: credit with us).
+                'balance_credit' => $balanceCredit,
+                'total_due' => round($outstanding + (float) $quotes->sum('balance') - $balanceCredit, 2),
             ],
             'ageing_totals' => collect($bands)->map(fn ($label, $key) => ['band' => $label, 'amount' => round((float) $pending->where('age', $key)->sum('balance'), 2), 'count' => $pending->where('age', $key)->count(),
                 'invoices' => round((float) $pending->where('age', $key)->where('type', 'Invoice')->sum('balance'), 2), 'quotes' => round((float) $pending->where('age', $key)->where('type', 'Quote')->sum('balance'), 2)])->values()->all(),
@@ -169,6 +185,37 @@ class PaymentReportData
             'by_client' => $byClient->all(),
             'monthly' => $this->figures->monthly($user, $clientId),
         ];
+    }
+
+    /**
+     * Balance credit per client code (INR): ledger lines of money received and not yet applied
+     * (balance credit, unapplied credit notes), for the clients in the report's scope.
+     *
+     * @return array<string, array{client: string, amount: float}>
+     */
+    private function balanceCredits(User $user, ?int $clientId, Collection $codesInReport): array
+    {
+        $clients = Client::query();
+        if ($clientId) {
+            $clients->whereKey($clientId);
+        } elseif ($user->isClientRole()) {
+            $clients->visibleToUser($user);
+        } elseif (! \App\Support\DataAccess::seesAllFinance($user)) {
+            // Scoped staff: only clients already in their report.
+            $clients->whereIn('client_code', $codesInReport->filter()->unique()->values()->all() ?: ['']);
+        }
+        $sums = \App\Models\ClientLedger::query()->whereIn('client_id', $clients->select('id'))
+            ->where(fn ($q) => $q->whereIn('document_type', ['Balance credit', 'Advance'])
+                ->orWhere(fn ($w) => $w->where('document_type', 'Credit note')->where('document_reference', 'like', '% · balance credit')))
+            ->selectRaw('client_id, SUM(credit) AS amount')->groupBy('client_id')->pluck('amount', 'client_id');
+        $out = [];
+        foreach (Client::whereIn('id', $sums->keys())->get(['id', 'client_code', 'legal_name', 'company_name']) as $c) {
+            if ((float) $sums[$c->id] > 0.009) {
+                $out[(string) $c->client_code] = ['client' => $c->legal_name ?: $c->company_name ?: $c->client_code, 'amount' => (float) $sums[$c->id]];
+            }
+        }
+
+        return $out;
     }
 
     private function ageBand(?Carbon $due, Carbon $today, float $balance): string

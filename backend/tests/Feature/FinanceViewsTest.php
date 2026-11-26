@@ -159,4 +159,31 @@ class FinanceViewsTest extends TestCase
         $this->assertStringContainsString('801M002/Q1', $html);
         $this->assertStringContainsString('Unpaid quotes', $html);
     }
+
+    public function test_payment_reports_deduct_balance_credit_from_total_due(): void
+    {
+        // Alpha holds ₹3,600 received and not yet applied; Gamma only holds a ₹2,000 balance credit.
+        $gamma = $this->client('803M', 'Gamma Tools');
+        foreach ([[$this->a, 3600], [$gamma, 2000]] as [$c, $amount]) {
+            \App\Models\ClientLedger::create(['client_id' => $c->id, 'transaction_date' => now()->subDays(5)->toDateString(), 'document_type' => 'Balance credit',
+                'document_reference' => 'P9 · balance credit', 'debit' => 0, 'credit' => $amount, 'balance' => -$amount, 'source_key' => "zoho-unused:t{$c->id}"]);
+        }
+        $data = app(\App\Services\Reports\PaymentReportData::class)->build($this->finance, null, null, null);
+        $this->assertEquals(5600, $data['summary']['balance_credit']);
+        $this->assertEquals(31800 + 5900 - 5600, $data['summary']['total_due']);
+        $alpha = collect($data['by_client'])->firstWhere('client_code', '801M');
+        $this->assertEquals(3600, $alpha['balance_credit']);
+        $this->assertEquals(11800 + 5900 - 3600, $alpha['total_due']);
+        $g = collect($data['by_client'])->firstWhere('client_code', '803M');
+        $this->assertEquals(-2000, $g['total_due']);   // credit only: shown as balance credit
+
+        // One client: in credit overall.
+        $one = app(\App\Services\Reports\PaymentReportData::class)->build($this->finance, null, null, $gamma->id);
+        $this->assertEquals(-2000, $one['summary']['total_due']);
+        $html = view('pdf.payment-report', ['title' => 'Payment Collection', 'data' => $one, 'cut' => [], 'letterhead' => app(\App\Services\Letterhead::class)->get(),
+            'signature' => null, 'seal' => '', 'financialSummary' => false])->render();
+        $this->assertStringContainsString('Less: balance credit', $html);
+        $this->assertStringContainsString('2,000.00 Cr', $html);
+        $this->assertNotEmpty(app(\App\Services\Reports\ExcelReport::class)->render('Payment Collection', $data, app(\App\Services\Letterhead::class)->get(), null, false));
+    }
 }

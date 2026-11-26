@@ -52,8 +52,8 @@ class ExcelReport
         $ageHead = array_keys($data['ageing'][0] ?? ['client' => 0, 'client_code' => 0, 'Not yet due' => 0, '1–30 days' => 0, '31–60 days' => 0, '61–90 days' => 0, '90+ days' => 0, 'Total' => 0, 'Invoices' => 0]);
         $this->table($book, 'Ageing', array_map(fn ($h) => ucwords(str_replace('_', ' ', $h)), $ageHead),
             array_map(fn ($r) => array_values($r), $data['ageing']), ['C', 'D', 'E', 'F', 'G', 'H']);
-        $this->table($book, 'By client', ['Client', 'Client code', 'Invoices', 'Billed', 'Received', 'Waived', 'Invoices outstanding', 'Unpaid quotes', 'Quotes due', 'Total due'],
-            array_map(fn ($r) => [$r['client'], $r['client_code'], $r['invoices'], $r['billed'], $r['received'], $r['waived'], $r['outstanding'], $r['quotes'] ?? 0, $r['quotes_due'] ?? 0, $r['total_due'] ?? $r['outstanding']], $data['by_client']), ['D', 'E', 'F', 'G', 'I', 'J']);
+        $this->table($book, 'By client', ['Client', 'Client code', 'Invoices', 'Billed', 'Received', 'Waived', 'Invoices outstanding', 'Unpaid proformas', 'Proformas due', 'Balance credit', 'Total due (minus = credit)'],
+            array_map(fn ($r) => [$r['client'], $r['client_code'], $r['invoices'], $r['billed'], $r['received'], $r['waived'], $r['outstanding'], $r['quotes'] ?? 0, $r['quotes_due'] ?? 0, $r['balance_credit'] ?? 0, $r['total_due'] ?? $r['outstanding']], $data['by_client']), ['D', 'E', 'F', 'G', 'I', 'J', 'K']);
         if ($financialSummary) {
             $this->table($book, 'Invoices and quotes', ['Type', 'Invoice / quote', 'Client', 'Client code', 'Case', 'Date', 'Due date', 'Status', 'Billed / quoted', 'Received', 'Waived', 'Balance'],
                 array_map(fn ($r) => [$r['type'] ?? 'Invoice', $r['invoice'], $r['client'], $r['client_code'], $r['case'], $r['invoice_date'], $r['due_date'], $r['status'], $r['billed'], $r['received'], $r['waived'], $r['balance']], $data['invoices']),
@@ -101,7 +101,8 @@ class ExcelReport
         $kpis = [['Billed', $s['billed']], ['Received', $s['received']], ['Outstanding', $s['outstanding']], ['Waived', $s['waived']],
             ['Overdue amount', $s['overdue_amount']], ['Collection rate %', $s['collection_rate']], ['Invoices', $s['invoices']],
             ['Pending invoices', $s['pending_invoices']], ['Overdue invoices', $s['overdue_invoices']], ['Payments', $s['payments']],
-            ['Unpaid quotes', $s['quotes'] ?? 0], ['Unpaid quotes amount', $s['quotes_amount'] ?? 0], ['Total due (invoices + quotes)', $s['total_due'] ?? $s['outstanding']]];
+            ['Unpaid proformas', $s['quotes'] ?? 0], ['Unpaid proformas amount', $s['quotes_amount'] ?? 0], ['Balance credit', $s['balance_credit'] ?? 0],
+            [($s['total_due'] ?? 0) < -0.009 ? 'Balance credit (net)' : 'Total due (invoices + proformas − balance credit)', abs((float) ($s['total_due'] ?? $s['outstanding']))]];
         $sheet->setCellValue('A6', 'Key figures')->getStyle('A6')->getFont()->setBold(true);
         foreach ($kpis as $i => [$label, $value]) {
             $row = 7 + $i;

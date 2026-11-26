@@ -65,10 +65,20 @@
   <td class="tile"><b style="color:#b91c1c">{{ $inr($s['overdue_amount']) }}</b><span>Overdue · {{ $s['overdue_invoices'] }} invoices</span></td>
   <td class="tile"><b style="color:#6d28d9">{{ $inr($s['waived']) }}</b><span>Waived</span></td>
   @if (isset($s['quotes']))
-  <td class="tile"><b style="color:#7c3aed">{{ $inr($s['quotes_amount']) }}</b><span>Unpaid quotes · {{ $s['quotes'] }}</span></td>
-  <td class="tile"><b style="color:#1d4ed8">{{ $inr($s['total_due']) }}</b><span>Total due · invoices + quotes</span></td>
+  <td class="tile"><b style="color:#7c3aed">{{ $inr($s['quotes_amount']) }}</b><span>Unpaid proformas · {{ $s['quotes'] }}</span></td>
+  @if (isset($s['balance_credit']))<td class="tile"><b style="color:#047857">{{ $inr($s['balance_credit']) }}</b><span>Balance credit</span></td>@endif
+  <td class="tile"><b style="color:{{ $s['total_due'] < -0.009 ? '#047857' : '#b91c1c' }}">{{ $inr(abs($s['total_due'])) }}{{ $s['total_due'] < -0.009 ? ' Cr' : '' }}</b><span>{{ $s['total_due'] < -0.009 ? 'Balance credit (net)' : 'Total due' }}</span></td>
   @endif
 </tr></table>
+@if (isset($s['balance_credit']))
+<table style="margin:4px 0 6px auto; border-collapse:collapse; font-size:9px">
+  <tr><td style="padding:2px 8px">Unpaid invoices</td><td style="padding:2px 8px; text-align:right">{{ $inr($s['outstanding']) }}</td></tr>
+  <tr><td style="padding:2px 8px">Add: unpaid proformas</td><td style="padding:2px 8px; text-align:right">{{ $inr($s['quotes_amount']) }}</td></tr>
+  <tr><td style="padding:2px 8px">Less: balance credit</td><td style="padding:2px 8px; text-align:right">− {{ $inr($s['balance_credit']) }}</td></tr>
+  <tr style="font-weight:bold; font-size:11px; {{ $s['total_due'] < -0.009 ? 'background:#dcfce7; color:#047857' : 'background:#b91c1c; color:#fff' }}">
+    <td style="padding:3px 8px">{{ $s['total_due'] < -0.009 ? 'Balance credit' : 'Total due' }}</td><td style="padding:3px 8px; text-align:right">{{ $inr(abs($s['total_due'])) }}{{ $s['total_due'] < -0.009 ? ' Cr' : '' }}</td></tr>
+</table>
+@endif
 
 <table class="split" width="100%"><tr>
   <td width="58%">
@@ -141,11 +151,13 @@
 
 <h2>By client</h2>
 <table class="data">
-  <tr><th>Client</th><th class="r">Invoices</th><th class="r">Billed</th><th class="r">Received</th><th class="r">Waived</th><th class="r">Outstanding</th><th class="r">Quotes due</th><th class="r">Total due</th></tr>
+  <tr><th>Client</th><th class="r">Invoices</th><th class="r">Billed</th><th class="r">Received</th><th class="r">Waived</th><th class="r">Outstanding</th><th class="r">Proformas due</th><th class="r">Balance credit</th><th class="r">Total due</th></tr>
   @foreach ($data['by_client'] as $c)
     <tr><td>{{ $c['client'] }} <span class="muted">{{ $c['client_code'] }}</span></td><td class="r">{{ $c['invoices'] }}</td><td class="r">{{ $inr($c['billed']) }}</td>
         <td class="r">{{ $inr($c['received']) }}</td><td class="r">{{ $inr($c['waived']) }}</td><td class="r">{{ $inr($c['outstanding']) }}</td>
-        <td class="r">{{ $inr($c['quotes_due'] ?? 0) }}</td><td class="r"><b>{{ $inr($c['total_due'] ?? $c['outstanding']) }}</b></td></tr>
+        <td class="r">{{ $inr($c['quotes_due'] ?? 0) }}</td><td class="r" style="color:#047857">{{ ($c['balance_credit'] ?? 0) > 0 ? $inr($c['balance_credit']) : '—' }}</td>
+        @php $td = (float) ($c['total_due'] ?? $c['outstanding']); @endphp
+        <td class="r" style="color:{{ $td < -0.009 ? '#047857' : '#b91c1c' }}"><b>{{ $inr(abs($td)) }}{{ $td < -0.009 ? ' Cr' : '' }}</b></td></tr>
   @endforeach
 </table>
 
