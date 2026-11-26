@@ -115,7 +115,7 @@ class CollectionsPlanner
         if ($created->isEmpty()) {
             return;
         }
-        $created->load('client:id,client_code,legal_name,account_manager_id');
+        $created = (new \Illuminate\Database\Eloquent\Collection($created->all()))->load('client:id,client_code,legal_name,account_manager_id');
         foreach ($created->groupBy(fn ($r) => (int) $r->client?->account_manager_id) as $managerId => $drafts) {
             if ($managerId) {
                 Notifier::push([$managerId], 'collections', 'Payment reminders to review',
