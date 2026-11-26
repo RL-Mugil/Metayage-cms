@@ -156,4 +156,26 @@ class QuoteFirstBillingTest extends TestCase
         $this->expectException(\Illuminate\Http\Exceptions\HttpResponseException::class);
         QuoteFirst::check($this->client->id, null, null, $this->finance, 'new invoice');
     }
+
+    public function test_ledger_credit_and_proformas_give_the_total_due(): void
+    {
+        $net = fn (float $balance, float $quoted) => \App\Services\ClientStatement::withProformas(['balance' => $balance, 'quoted' => $quoted])['total_receivable'];
+        $this->assertEquals(61300, $net(-3600, 64900));    // credit with us is deducted from the proformas
+        $this->assertEquals(70000, $net(5100, 64900));     // a debit balance is added
+        $this->assertEquals(-2000, $net(-66900, 64900));   // still in credit: balance credit
+
+        $this->quote();
+        $statement = app(\App\Services\ClientStatement::class);
+        $lines = $statement->lines($this->client->id);
+        $quotes = $statement->openQuotes($this->admin, $this->client->id);
+        $summary = $statement->summary($lines);
+        $summary['quoted'] = round((float) collect($quotes)->sum('net_due'), 2);
+        $summary = \App\Services\ClientStatement::withProformas($summary);
+        $this->assertEquals(11800, $summary['total_receivable']);
+        $html = view('pdf.client-statement', ['title' => 'Statement of Account', 'client' => $this->client, 'clientName' => 'Gamma Labs', 'lines' => $lines,
+            'summary' => $summary, 'quotes' => $quotes, 'internal' => true, 'withProformas' => true, 'letterhead' => app(\App\Services\Letterhead::class)->get()])->render();
+        $this->assertStringContainsString('Total due', $html);
+        $this->assertStringContainsString('11,800.00', $html);
+        $this->assertStringContainsString('Add: proformas due', $html);
+    }
 }

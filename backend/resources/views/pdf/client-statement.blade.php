@@ -27,6 +27,10 @@
   .r { text-align: right; white-space: nowrap; }
   .tds { color: #92400e; }
   .adv { color: #15803d; }
+  table.net { margin: 10px 0 0 auto; border-collapse: collapse; min-width: 46%; }
+  table.net td { padding: 3px 8px; font-size: 9px; }
+  table.net tr.grand td { font-size: 11px; font-weight: bold; color: #fff; background: #b91c1c; }
+  table.net tr.grand.cr td { color: #15803d; background: #dcfce7; }
 </style>
 </head>
 <body>
@@ -50,8 +54,9 @@
   <td class="tile"><b>{{ number_format($summary['received'], 2) }}</b><span>Payments received</span></td>
   <td class="tile"><b>{{ number_format($summary['tds'], 2) }}</b><span>TDS withheld</span></td>
   @if ($summary['credit_notes'] > 0)<td class="tile"><b>{{ number_format($summary['credit_notes'], 2) }}</b><span>Credit notes</span></td>@endif
-  @if ($summary['advance'] > 0)<td class="tile"><b>{{ number_format($summary['advance'], 2) }}</b><span>Balance credit</span></td>@endif
-  <td class="tile {{ $summary['balance'] < -0.009 ? 'cr' : ($summary['balance'] > 0.009 ? 'due' : '') }}"><b>{{ number_format(abs($summary['balance']), 2) }}</b><span>{{ $summary['balance'] < -0.009 ? 'Credit with us' : 'Balance due' }}</span></td>
+  <td class="tile {{ $summary['balance'] < -0.009 ? 'cr' : ($summary['balance'] > 0.009 ? 'due' : '') }}"><b>{{ number_format(abs($summary['balance']), 2) }}</b><span>{{ $summary['balance'] < -0.009 ? 'Balance credit' : 'Balance due' }}</span></td>
+  @php $tr = (float) ($summary['total_receivable'] ?? $summary['balance']); @endphp
+  <td class="tile {{ $tr < -0.009 ? 'cr' : ($tr > 0.009 ? 'due' : '') }}"><b>{{ \App\Services\ClientStatement::balanceText($tr) }}</b><span>Total receivable</span></td>
 </tr></table>
 
 <table class="data">
@@ -62,7 +67,7 @@
   @forelse ($lines as $l)
     <tr>
       <td>{{ $l->transaction_date?->format('d-m-Y') }}</td>
-      <td class="{{ $l->document_type === 'TDS' ? 'tds' : (in_array($l->document_type, ['Balance credit', 'Advance'], true) ? 'adv' : '') }}">{{ $l->document_type }}</td>
+      <td class="{{ $l->document_type === 'TDS' ? 'tds' : (in_array($l->document_type, ['Balance credit', 'Advance'], true) ? 'adv' : '') }}">{{ \App\Services\ClientStatement::typeLabel($l->document_type) }}</td>
       <td>{{ $l->document_reference }}</td>
       <td class="r">{{ $money($l->debit) }}</td>
       <td class="r">{{ $money($l->credit) }}</td>
@@ -98,6 +103,14 @@
     @endif
   </table>
   <div class="muted" style="margin-top:4px">A proforma becomes a tax invoice once paid; it is not part of the balance above.</div>
+  @if (count($quotes))
+    @php $net = (float) ($summary['total_receivable'] ?? $summary['balance']); @endphp
+    <table class="net">
+      <tr><td>Ledger balance</td><td class="r">{{ \App\Services\ClientStatement::balanceText((float) $summary['balance']) }}</td></tr>
+      <tr><td>Add: proformas due</td><td class="r">{{ number_format((float) $summary['quoted'], 2) }}</td></tr>
+      <tr class="grand {{ $net < -0.009 ? 'cr' : '' }}"><td>{{ $net < -0.009 ? 'Balance credit' : 'Total due' }}</td><td class="r">{{ \App\Services\ClientStatement::balanceText($net) }}</td></tr>
+    </table>
+  @endif
 @endif
 </body>
 </html>

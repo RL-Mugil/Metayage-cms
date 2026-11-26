@@ -98,7 +98,8 @@ class ClientLedgerTest extends TestCase
         $this->assertEquals(-3600, $detail['ledger_summary']['balance']);
         $this->assertEquals(3000, $detail['ledger_summary']['tds']);
         $this->assertEquals(3600, $detail['ledger_summary']['advance']);
-        $this->assertEquals(45800, $detail['ledger_summary']['received']);
+        $this->assertEquals(49400, $detail['ledger_summary']['received']);   // payments incl. the ₹3,600 balance credit
+        $this->assertEquals(-3600, $detail['ledger_summary']['total_receivable']);   // no proformas: the ledger balance
     }
 
     public function test_an_advance_applied_later_is_not_counted_twice(): void
@@ -190,6 +191,11 @@ class ClientLedgerTest extends TestCase
         $this->assertStringNotContainsString('Zoho', $html);
         $this->assertStringContainsString('3,600.00 Cr', $html);
         $this->assertStringContainsString('TDS', $html);
+        // A balance credit reads as a Payment; its reference still says balance credit.
+        $this->assertSame('Payment', \App\Services\ClientStatement::typeLabel('Balance credit'));
+        $this->assertMatchesRegularExpression('/<td class="adv">Payment<\/td>\s*<td>P377 · balance credit<\/td>/u', $html);
+        $this->assertStringContainsString('Total receivable', $html);
+        $this->assertStringNotContainsString('Credit with us', $html);
         $this->assertTrue(\App\Models\AuditLog::where('action', 'download_statement')->exists());
     }
 }

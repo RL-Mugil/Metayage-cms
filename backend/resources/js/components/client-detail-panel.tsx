@@ -171,8 +171,8 @@ export function ClientDetailPanel({ clientId, onClose }: Props) {
               { label: "Granted", value: (data.projects as any[]).filter((p: any) => p.status === "Granted" || p.status === "Completed").length },
               { label: "Invoiced", value: `₹${Number(data.invoice_summary.total_invoiced).toLocaleString("en-IN", { maximumFractionDigits: 0 })}` },
               data.ledger_summary && Number(data.ledger_summary.balance) < -0.009
-                ? { label: "Credit with us", value: inr(data.ledger_summary.balance), tone: "text-green-600" }
-                : { label: "Balance", value: inr(data.ledger_summary ? data.ledger_summary.balance : data.invoice_summary.total_pending) },
+                ? { label: "Balance credit", value: inr(data.ledger_summary.balance), tone: "text-green-600" }
+                : { label: "Balance due", value: inr(data.ledger_summary ? data.ledger_summary.balance : data.invoice_summary.total_pending) },
             ].map((kpi: { label: string; value: string | number; tone?: string }) => (
               <div key={kpi.label} className="flex-1 text-center">
                 <p className="text-[10px] text-muted-foreground">{kpi.label}</p>
@@ -337,6 +337,7 @@ export function ClientDetailPanel({ clientId, onClose }: Props) {
                 // Proformas are never ledger lines and never in the balance: "with quotes" lists them apart, below.
                 const lines: LedgerLine[] = (data.ledger as LedgerLine[]).filter((l) => l.document_type !== "Quote");
                 const proformaDue = quotes.reduce((a, q) => a + Number(q.net_due ?? q.amount ?? 0), 0);
+                const totalReceivable = Number(summary?.balance ?? 0) + proformaDue;
                 return (
                   <div className="p-6 space-y-3">
                     <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -366,9 +367,11 @@ export function ClientDetailPanel({ clientId, onClose }: Props) {
                           ["Invoiced", summary.billed, ""],
                           ["Received", summary.received, "text-green-600"],
                           ["TDS withheld", summary.tds, "text-amber-700"],
-                          ...(withQuotes && quotes.length > 0 ? [["Unpaid proformas (not in balance)", proformaDue, "text-blue-600"]] : [["Credit notes", summary.credit_notes, ""]]),
-                          ["Balance credit", summary.advance, "text-green-600"],
-                          [Number(summary.balance) < -0.009 ? "Credit with us" : "Balance due", summary.balance, Number(summary.balance) < -0.009 ? "text-green-600" : Number(summary.balance) > 0.009 ? "text-red-600" : ""],
+                          ["Credit notes", summary.credit_notes, ""],
+                          // Ledger balance: credit (Cr) or due.
+                          [Number(summary.balance) < -0.009 ? "Balance credit" : "Balance due", summary.balance, Number(summary.balance) < -0.009 ? "text-green-600" : Number(summary.balance) > 0.009 ? "text-red-600" : ""],
+                          // Ledger balance plus proformas due.
+                          ["Total receivable", totalReceivable, totalReceivable < -0.009 ? "text-green-600" : totalReceivable > 0.009 ? "text-red-600" : ""],
                         ].map(([label, value, tone]) => (
                           <div key={String(label)} className="rounded-md border border-border bg-muted/20 px-2 py-1.5">
                             <p className="text-[9px] uppercase tracking-wide text-muted-foreground">{label as string}</p>
@@ -400,7 +403,7 @@ export function ClientDetailPanel({ clientId, onClose }: Props) {
                               <td className="py-2.5 pr-3 font-mono text-muted-foreground">{fmtDate(l.transaction_date ?? l.created_at)}</td>
                               <td className="py-2.5 pr-3 text-muted-foreground">
                                 {TYPE_BADGE[l.document_type]
-                                  ? <span className={`text-[10px] px-1.5 py-0.5 rounded border ${TYPE_BADGE[l.document_type]}`}>{l.document_type}</span>
+                                  ? <span className={`text-[10px] px-1.5 py-0.5 rounded border ${TYPE_BADGE[l.document_type]}`}>{["Balance credit", "Advance"].includes(l.document_type) ? "Payment" : l.document_type}</span>
                                   : l.document_type}
                               </td>
                               <td className="py-2.5 pr-3 font-mono text-gold text-[10px]">{l.document_reference}</td>
@@ -445,6 +448,12 @@ export function ClientDetailPanel({ clientId, onClose }: Props) {
                                 </tr>
                               ))}
                               <tr className="font-semibold"><td /><td className="py-2">Total proformas</td><td /><td className="py-2 pr-3 text-right font-mono">{inr(quotes.reduce((a, q) => a + Number(q.amount), 0))}</td><td /><td className="py-2 text-right font-mono">{inr(proformaDue)}</td></tr>
+                              <tr><td colSpan={4} /><td className="py-1 pr-3 text-right text-muted-foreground">Ledger balance</td><td className="py-1 text-right font-mono">{inr(Number(summary?.balance ?? 0))}{Number(summary?.balance ?? 0) < -0.009 ? " Cr" : ""}</td></tr>
+                              <tr><td colSpan={4} /><td className="py-1 pr-3 text-right text-muted-foreground">Add: proformas due</td><td className="py-1 text-right font-mono">{inr(proformaDue)}</td></tr>
+                              <tr className={totalReceivable < -0.009 ? "bg-green-100 text-green-700" : "bg-red-600 text-white"}>
+                                <td colSpan={4} /><td className="py-1.5 pr-3 text-right font-bold">{totalReceivable < -0.009 ? "Balance credit" : "Total due"}</td>
+                                <td className="py-1.5 pr-1 text-right font-mono font-bold">{inr(totalReceivable)}{totalReceivable < -0.009 ? " Cr" : ""}</td>
+                              </tr>
                             </tbody>
                           </table>
                         )}

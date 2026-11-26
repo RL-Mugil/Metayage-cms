@@ -43,7 +43,8 @@ class ClientStatement
             'billed' => round((float) $lines->filter(fn ($l) => ! in_array($l->document_type, ['Exchange difference', 'Quote'], true))->sum(fn ($l) => (float) $l->debit), 2),
             // Unpaid proformas are listed apart and never counted (filled in by the caller when shown).
             'quoted' => 0.0,
-            'received' => $sum('credit', ['Payment']),
+            // Payments received include balance credit (money in, not yet applied to an invoice).
+            'received' => $sum('credit', ['Payment', 'Balance credit', 'Advance']),
             'tds' => round((float) $lines->sum(fn ($l) => (float) $l->tds), 2),
             'credit_notes' => $sum('credit', ['Credit note']),
             'waived' => $sum('credit', ['Waiver']),
@@ -52,7 +53,23 @@ class ClientStatement
             // Exchange gain (+) / loss (-) on foreign-currency invoices.
             'exchange' => round((float) $lines->filter(fn ($l) => $l->document_type === 'Exchange difference')->sum(fn ($l) => (float) $l->debit - (float) $l->credit), 2),
             'balance' => round((float) ($lines->last()?->balance ?? 0), 2),
+            // Ledger balance plus proformas due (set by the caller when proformas are shown).
+            'total_receivable' => round((float) ($lines->last()?->balance ?? 0), 2),
         ];
+    }
+
+    /** The Type shown for a ledger line: a balance credit is money received, so it reads "Payment". */
+    public static function typeLabel(?string $documentType): string
+    {
+        return in_array($documentType, ['Balance credit', 'Advance'], true) ? 'Payment' : (string) $documentType;
+    }
+
+    /** Ledger balance plus proformas due: plus is due from the client, minus is credit with us. */
+    public static function withProformas(array $summary): array
+    {
+        $summary['total_receivable'] = round((float) $summary['balance'] + (float) ($summary['quoted'] ?? 0), 2);
+
+        return $summary;
     }
 
     /**
@@ -91,6 +108,7 @@ class ClientStatement
         $withProformas = $view !== 'plain';
         $quotes = $withProformas ? $this->openQuotes($user, $client->id) : [];
         $summary['quoted'] = round((float) collect($quotes)->sum('net_due'), 2);
+        $summary = self::withProformas($summary);
         $head = app(Letterhead::class)->get();
         $title = 'Statement of Account'.($internal ? ' (internal, with proformas)' : '');
         $name = 'Statement-'.preg_replace('/[^A-Za-z0-9_-]+/', '', (string) ($client->client_code ?: $client->id)).'-'.now()->format('Ymd')
@@ -133,17 +151,21 @@ class ClientStatement
 
         $r = 7;
         foreach ([['Invoiced', $summary['billed']], ['Payments received', $summary['received']], ['TDS withheld', $summary['tds']],
-            ['Credit notes', $summary['credit_notes']], ['Waived', $summary['waived']], ['Balance credit', $summary['advance']]] as [$label, $value]) {
-            if ($value == 0.0 && in_array($label, ['Credit notes', 'Waived', 'Balance credit'], true)) {
+            ['Credit notes', $summary['credit_notes']], ['Waived', $summary['waived']]] as [$label, $value]) {
+            if ($value == 0.0 && in_array($label, ['Credit notes', 'Waived'], true)) {
                 continue;
             }
             $sheet->setCellValue("A{$r}", $label)->setCellValue("B{$r}", $value);
             $sheet->getStyle("B{$r}")->getNumberFormat()->setFormatCode('#,##0.00');
             $r++;
         }
-        $sheet->setCellValue("A{$r}", $summary['balance'] < -0.009 ? 'Credit with us' : 'Balance due')->setCellValue("B{$r}", abs($summary['balance']));
+        $sheet->setCellValue("A{$r}", $summary['balance'] < -0.009 ? 'Balance credit' : 'Balance due')->setCellValue("B{$r}", abs($summary['balance']));
         $sheet->getStyle("A{$r}:B{$r}")->getFont()->setBold(true);
         $sheet->getStyle("B{$r}")->getNumberFormat()->setFormatCode('#,##0.00');
+        $r++;
+        $sheet->setCellValue("A{$r}", 'Total receivable')->setCellValue("B{$r}", self::balanceText((float) $summary['total_receivable']));
+        $sheet->getStyle("A{$r}:B{$r}")->getFont()->setBold(true);
+        $sheet->getStyle("B{$r}")->getAlignment()->setHorizontal('right');
         $r += 2;
 
         $columns = ['Date', 'Type', 'Reference', 'Debit', 'Credit', 'TDS', 'Balance'];
@@ -157,7 +179,7 @@ class ClientStatement
         $headStyle->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('1E3A5F');
         $first = ++$r;
         foreach ($lines as $l) {
-            $row = [$l->transaction_date?->format('d-m-Y'), $l->document_type, $l->document_reference,
+            $row = [$l->transaction_date?->format('d-m-Y'), self::typeLabel($l->document_type), $l->document_reference,
                 (float) $l->debit ?: null, (float) $l->credit ?: null, (float) $l->tds ?: null, self::balanceText((float) $l->balance)];
             if ($internal) {
                 $row[] = $l->notes;
@@ -190,7 +212,22 @@ class ClientStatement
                 $sheet->fromArray(['', 'Total proformas', '', round((float) collect($quotes)->sum('amount'), 2), null, $summary['quoted'], ''], null, "A{$r}", true);
                 $sheet->getStyle("A{$r}:G{$r}")->getFont()->setBold(true);
                 $sheet->getStyle("D{$r}:F{$r}")->getNumberFormat()->setFormatCode('#,##0.00');
-                $r++;
+                $r += 2;
+                // Ledger balance and proformas together: total due (red) or balance credit.
+                $net = (float) $summary['total_receivable'];
+                foreach ([['Ledger balance', self::balanceText((float) $summary['balance'])], ['Add: proformas due', number_format((float) $summary['quoted'], 2)],
+                    [$net < -0.009 ? 'BALANCE CREDIT' : 'TOTAL DUE', self::balanceText($net)]] as $i => [$label, $value]) {
+                    $sheet->setCellValue("E{$r}", $label)->setCellValue("F{$r}", $value);
+                    $sheet->getStyle("F{$r}")->getAlignment()->setHorizontal('right');
+                    if ($i === 2) {
+                        $style = $sheet->getStyle("E{$r}:F{$r}");
+                        $style->getFont()->setBold(true)->getColor()->setRGB($net < -0.009 ? '15803D' : 'FFFFFF');
+                        if ($net >= -0.009) {
+                            $style->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('B91C1C');
+                        }
+                    }
+                    $r++;
+                }
             }
             $r++;
         }

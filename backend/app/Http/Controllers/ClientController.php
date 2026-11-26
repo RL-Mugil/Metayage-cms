@@ -915,6 +915,11 @@ class ClientController extends Controller
 
         $statement = app(\App\Services\ClientStatement::class);
         $ledger = $statement->lines($client->id);
+        $quotesOpen = $statement->openQuotes($user, $client->id);
+        $ledgerSummary = $statement->summary($ledger);
+        $ledgerSummary['quoted'] = round((float) collect($quotesOpen)->sum('net_due'), 2);
+        // Total receivable = ledger balance + proformas due.
+        $ledgerSummary = \App\Services\ClientStatement::withProformas($ledgerSummary);
 
         return response()->json([
             'client'          => $client,
@@ -922,9 +927,9 @@ class ClientController extends Controller
             'invoice_summary' => $invoiceSummary,
             'invoices'        => $invoices,
             'ledger'          => $ledger,
-            'ledger_summary'  => $statement->summary($ledger),
+            'ledger_summary'  => $ledgerSummary,
             // Proformas sent but not invoiced: listed apart in "Ledger with quotes", never in the balance.
-            'quotes_open'     => $statement->openQuotes($user, $client->id),
+            'quotes_open'     => $quotesOpen,
         ]);
     }
 
