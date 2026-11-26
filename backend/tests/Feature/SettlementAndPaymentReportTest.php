@@ -186,7 +186,7 @@ class SettlementAndPaymentReportTest extends TestCase
         $path = tempnam(sys_get_temp_dir(), 'rep').'.xlsx';
         file_put_contents($path, $xlsx->getContent());
         $book = \PhpOffice\PhpSpreadsheet\IOFactory::load($path);
-        $this->assertSame(['Summary', 'Follow-up', 'Payments', 'Waivers', 'Ageing', 'By client'], $book->getSheetNames());
+        $this->assertSame(['Summary', 'Follow-up', 'Unpaid quotes', 'Payments', 'Waivers', 'Ageing', 'By client'], $book->getSheetNames());
         $this->assertNotNull($book->getSheetByName('Follow-up')->getAutoFilter()->getRange());
 
         $code = \App\Models\InternalDocumentSignature::where('document_type', 'report_export')->value('verification_code');
