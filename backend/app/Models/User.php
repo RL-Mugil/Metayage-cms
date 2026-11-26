@@ -16,7 +16,7 @@ use Illuminate\Support\Facades\DB;
 use Laravel\Sanctum\HasApiTokens;
 
 #[Fillable(['name', 'email', 'password', 'role', 'status', 'avatar_url', 'timezone', 'language', 'notification_prefs', 'google_calendar_token', 'google_calendar_email', 'patent_agent_no', 'mobile'])]
-#[Hidden(['password', 'remember_token', 'patent_agent_signature_path'])]
+#[Hidden(['password', 'remember_token', 'patent_agent_signature_path', 'internal_signature_pin_hash'])]
 class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */

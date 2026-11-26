@@ -112,9 +112,8 @@ class PayslipSigner
     {
         $signatory = $this->signatory();
         abort_unless($signatory['user'], 422, 'Set the payslip signatory in Settings → Payroll before publishing payslips.');
-        $employee = Employee::where('user_id', $signatory['user']->id)->first();
-        abort_unless($employee, 422, "The signatory login ({$signatory['user']->name}) is not linked to an employee record with a signature PIN.");
-        abort_unless($employee->verifyInternalSignaturePin($pin), 422, "That is not {$signatory['name']}'s signature PIN.");
+        abort_unless(\App\Support\SignaturePin::isSet($signatory['user']), 422, "The signatory login ({$signatory['user']->name}) has no signature PIN set yet.");
+        abort_unless(\App\Support\SignaturePin::verify($signatory['user'], $pin), 422, "That is not {$signatory['name']}'s signature PIN.");
 
         return $signatory;
     }

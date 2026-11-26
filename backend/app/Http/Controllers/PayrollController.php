@@ -597,11 +597,10 @@ class PayrollController extends Controller
         ]);
         $run = PayrollRun::with(['payslips' => fn ($q) => $q->where('withheld', false), 'payslips.employee'])->findOrFail($id);
         $verified = (bool) $validated['verified'];
-        $signingEmployee = Employee::where('user_id', $user->id)->first();
-        if (! $signingEmployee) {
-            return response()->json(['message' => 'Your user account is not linked to an employee signature PIN.'], 422);
+        if ($verified && ! \App\Support\SignaturePin::isSet($user)) {
+            return response()->json(['message' => 'Set your signature PIN first (Settings → Security → Internal signature PIN).'], 422);
         }
-        if ($verified && ! $signingEmployee->verifyInternalSignaturePin((string) ($validated['pin'] ?? ''))) {
+        if ($verified && ! \App\Support\SignaturePin::verify($user, (string) ($validated['pin'] ?? ''))) {
             return response()->json(['message' => 'The document PIN is incorrect.'], 422);
         }
 

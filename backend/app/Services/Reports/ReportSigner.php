@@ -41,9 +41,8 @@ class ReportSigner
     /** Throws 422 when the user has no signature PIN or the PIN is wrong. */
     public function sign(ReportExport $export, array $data, User $user, string $pin): InternalDocumentSignature
     {
-        $employee = Employee::where('user_id', $user->id)->first();
-        abort_unless($employee, 422, 'Your login is not linked to an employee record with a signature PIN. Download unsigned, or ask HR to link it.');
-        abort_unless($employee->verifyInternalSignaturePin($pin), 422, 'That signature PIN is not right.');
+        abort_unless(\App\Support\SignaturePin::isSet($user), 422, 'Set your signature PIN first (Settings → Security → Internal signature PIN), or download unsigned.');
+        abort_unless(\App\Support\SignaturePin::verify($user, $pin), 422, 'That signature PIN is not right.');
 
         return $this->signatures->sign(self::DOCUMENT_TYPE, $export->id, $this->fingerprint($export, $data), $user);
     }
@@ -58,9 +57,8 @@ class ReportSigner
         abort_if(\Illuminate\Support\Facades\Cache::get($lockKey, 0) >= 5, 429, 'Signing through Claude is locked for 30 minutes after 5 wrong PINs.');
         $signatory = app(\App\Services\Payroll\PayslipSigner::class)->signatory();
         $user = $signatory['user'];
-        $employee = $user ? Employee::where('user_id', $user->id)->first() : null;
-        abort_unless($employee && $employee->internal_signature_pin_hash, 422, 'The signatory has no signature PIN set up (Settings → Payroll).');
-        if (! $employee->verifyInternalSignaturePin($pin)) {
+        abort_unless($user && \App\Support\SignaturePin::isSet($user), 422, 'The signatory has no signature PIN set up (Settings → Payroll).');
+        if (! \App\Support\SignaturePin::verify($user, $pin)) {
             $fails = (int) \Illuminate\Support\Facades\Cache::get($lockKey, 0) + 1;
             \Illuminate\Support\Facades\Cache::put($lockKey, $fails, now()->addMinutes(30));
             \App\Models\AuditLog::create(['user_id' => $requestedBy->id, 'action' => 'report_sign_failed', 'subject_type' => 'ReportExport', 'subject_id' => $export->id,

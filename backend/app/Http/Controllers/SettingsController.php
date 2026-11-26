@@ -174,15 +174,14 @@ class SettingsController extends Controller
     public function resetInternalSignaturePin(Request $request)
     {
         $validated = $request->validate(['pin' => ['required', 'digits:4']]);
-        $employee = Employee::where('user_id', $request->user()->id)->firstOrFail();
-        $employee->setInternalSignaturePin($validated['pin']);
-        $employee->save();
+        // On the employee record, or on the login itself when it has none (a shared Accounts login).
+        $holder = \App\Support\SignaturePin::set($request->user(), $validated['pin']);
 
         AuditLog::create([
             'user_id' => $request->user()->id,
             'action' => 'reset_internal_signature_pin',
-            'subject_type' => 'Employee',
-            'subject_id' => $employee->id,
+            'subject_type' => $holder instanceof Employee ? 'Employee' : 'User',
+            'subject_id' => $holder->id,
             'ip_address' => $request->ip(),
             'user_agent' => $request->userAgent(),
         ]);

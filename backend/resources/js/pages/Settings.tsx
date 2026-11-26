@@ -1532,7 +1532,7 @@ export default function Settings() {
                 <p className="text-xs text-muted-foreground pt-1">Minimum 8 characters. You stay signed in after changing your password.</p>
                 <div className="mt-6 border-t border-border pt-5">
                   <h3 className="font-display text-base font-semibold">Internal signature PIN</h3>
-                  <p className="text-xs text-muted-foreground mt-1 mb-3">Used to verify your employee row before Bank Advice is signed. Default PIN: 0000.</p>
+                  <p className="text-xs text-muted-foreground mt-1 mb-3">Used to sign reports, payslips and Bank Advice. Staff with an employee record start with 0000; a login without one (e.g. a shared Accounts login) sets its own PIN here.</p>
                   <div className="flex max-w-xs gap-2">
                     <input inputMode="numeric" maxLength={4} value={signaturePin} onChange={(e) => setSignaturePin(e.target.value.replace(/\D/g, "").slice(0, 4))}
                       className="h-9 flex-1 rounded-md border border-border bg-background px-3 text-sm tracking-[0.35em] focus:outline-none focus:ring-1 focus:ring-gold" aria-label="Internal signature PIN" />
