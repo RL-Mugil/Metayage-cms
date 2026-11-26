@@ -36,6 +36,8 @@ Schedule::command('zoho:poll')->cron('2-59/5 * * * *')->timezone('Asia/Kolkata')
 // Deleted-in-Zoho invoices never show up in the modified-records poll; compare the full lists hourly (about 7 calls from the nightly allowance).
 Schedule::command('zoho:reconcile-deleted')->hourlyAt(17)->timezone('Asia/Kolkata')->withoutOverlapping(30)->onOneServer();
 // Customer payments and credit notes against Zoho's lists (a few list calls plus capped detail reads).
+// Payment reminders drafted each morning for the Client Managers / Accounts to review and send.
+Schedule::command('collections:prepare')->dailyAt('08:00')->timezone('Asia/Kolkata')->withoutOverlapping(30)->onOneServer();
 // Nightly: every client ledger against Zoho Books; Accounts is told when any differ.
 Schedule::command('finance:ledger-vs-zoho --alert')->dailyAt('04:00')->timezone('Asia/Kolkata')->withoutOverlapping(30)->onOneServer();
 Schedule::command('zoho:reconcile-payments')->dailyAt('02:30')->timezone('Asia/Kolkata')->withoutOverlapping(30)->onOneServer();

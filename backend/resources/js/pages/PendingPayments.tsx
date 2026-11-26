@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { api } from "@/lib/api-client";
 import { fmtDate } from "@/lib/date-utils";
 import { ReportDownloadDialog } from "@/components/reports/report-download-dialog";
+import { RemindersPanel } from "@/components/finance/reminders-panel";
 
 /** One unpaid invoice from the portal register (portal renewals and invoices imported from Zoho). */
 interface Row {
@@ -38,6 +39,8 @@ interface Row {
   client_name?: string | null;
   status_note?: string | null;
   status_note_at?: string | null;
+  promised_on?: string | null;
+  promise_broken?: boolean;
   project?: { id: number; docket_number: string; project_name: string } | null;
   client?: { id: number; company_name?: string; legal_name?: string; client_code?: string; contact_name?: string; contact_email?: string; phone?: string } | null;
   proof_document?: { id: number; file_name: string; storage_path: string } | null;
@@ -86,6 +89,7 @@ export default function PendingPayments() {
   const [payRow, setPayRow] = useState<Row | null>(null);
   const [waiveRow, setWaiveRow] = useState<Row | null>(null);
   const [noteRow, setNoteRow] = useState<Row | null>(null);
+  const [view, setView] = useState<"invoices" | "reminders">(() => new URLSearchParams(window.location.search).get("tab") === "reminders" ? "reminders" : "invoices");
   const [exportOpen, setExportOpen] = useState(false);
   const fileRefs = useRef<Record<number, HTMLInputElement | null>>({});
   const [fitRef, perPage] = useFitRows(46, 25, 0);
@@ -135,6 +139,14 @@ export default function PendingPayments() {
             <Download className="mr-1.5 h-4 w-4" /> Payment Collection report
           </Button>
         )}>
+        {isStaff && (
+          <div className="mb-2 inline-flex shrink-0 self-start rounded-md border border-border p-0.5 text-xs">
+            {([["invoices", "Unpaid invoices"], ["reminders", "Reminders"]] as const).map(([v, l]) => (
+              <button key={v} onClick={() => setView(v)} className={`rounded px-3 py-1 ${view === v ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>{l}</button>
+            ))}
+          </div>
+        )}
+        {isStaff && view === "reminders" ? <RemindersPanel /> : (
         <div className="flex min-h-0 flex-1 flex-col gap-2.5">
           {/* Chips */}
           <div className="flex shrink-0 flex-wrap gap-2">
@@ -264,6 +276,7 @@ export default function PendingPayments() {
                           {isStaff && r.zoho_writeback === "failed" && <span className="flex items-center gap-1 rounded bg-red-500/15 px-1.5 py-0.5 text-[10px] font-medium text-red-600" title={r.zoho_writeback_error ?? ""}><CloudOff className="h-3 w-3" />Not in Zoho</span>}
                           {isStaff && r.zoho_writeback === "pending" && <span className="rounded bg-slate-500/15 px-1.5 py-0.5 text-[10px] text-slate-600">Sending to Zoho…</span>}
                         </div>
+                        {r.promised_on && <div className={`mt-0.5 text-[10px] font-medium ${r.promise_broken ? "text-red-600" : "text-blue-600"}`}>{r.promise_broken ? "Promise broken: " : "Promised to pay by "}{fmtDate(r.promised_on)}</div>}
                         {r.status_note && <div className="mt-0.5 truncate text-[10px] text-muted-foreground" title={r.status_note}><MessageSquare className="mr-1 inline h-3 w-3" />{r.status_note}{r.status_note_at ? ` · ${fmtDate(r.status_note_at)}` : ""}</div>}
                       </td>
                       <td className="px-3 py-2">
@@ -310,6 +323,7 @@ export default function PendingPayments() {
             </table>
           </TableCard>
         </div>
+        )}
       </FitPage>
 
       {payRow && <MarkPaidDialog row={payRow} onClose={() => setPayRow(null)} onDone={() => { setPayRow(null); load(); }} />}
@@ -404,11 +418,19 @@ function WaiveDialog({ row, onClose, onDone }: { row: Row; onClose: () => void; 
 }
 
 function NoteDialog({ row, onClose, onDone }: { row: Row; onClose: () => void; onDone: () => void }) {
+  const { props } = usePage() as any;
+  const staff = !["client", "client_admin", "client_finance"].includes(props.auth?.user?.role);
   const [note, setNote] = useState("");
+  const [promised, setPromised] = useState("");
   const [saving, setSaving] = useState(false);
+  const [history, setHistory] = useState<{ id: number; note: string; promised_on: string | null; by: string | null; at: string }[]>([]);
+  useEffect(() => { if (staff) api.request<any[]>(`/pending-payments/${row.id}/follow-ups`).then(setHistory).catch(() => setHistory([])); }, [row.id, staff]);
   const save = async () => {
     setSaving(true);
-    try { await api.postRenewalStatusNote(row.id, note.trim()); toast.success("Follow-up saved"); onDone(); }
+    try {
+      await api.request(`/pending-payments/${row.id}/status-note`, { method: "POST", body: JSON.stringify({ status_note: note.trim(), promised_on: promised || null }) });
+      toast.success(promised ? `Follow-up saved; reminders pause until ${fmtDate(promised)}` : "Follow-up saved"); onDone();
+    }
     catch (e: any) { toast.error(e?.message ?? "Failed."); } finally { setSaving(false); }
   };
   return (
@@ -418,6 +440,18 @@ function NoteDialog({ row, onClose, onDone }: { row: Row; onClose: () => void; o
         {row.status_note && <p className="rounded-md bg-muted/50 px-3 py-2 text-xs">Last: {row.status_note}{row.status_note_at ? ` · ${fmtDate(row.status_note_at)}` : ""}</p>}
         <textarea autoFocus rows={3} value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Called accounts, paying by 13 Dec"
           className="w-full rounded-md border border-border bg-background p-2 text-sm" />
+        {staff && (
+          <label className="flex items-center justify-between gap-2 text-xs">Client promised to pay by (pauses reminders until then)
+            <input type="date" value={promised} min={new Date().toISOString().slice(0, 10)} onChange={(e) => setPromised(e.target.value)} className="h-8 rounded-md border border-border bg-background px-2" />
+          </label>
+        )}
+        {history.length > 0 && (
+          <div className="max-h-40 space-y-1 overflow-auto rounded-md border border-border/60 p-2 text-[11px]">
+            {history.map((h) => (
+              <p key={h.id}><span className="text-muted-foreground">{fmtDate(h.at)} · {h.by ?? "—"}:</span> {h.note}{h.promised_on ? <span className="text-blue-600"> (promised {fmtDate(h.promised_on)})</span> : null}</p>
+            ))}
+          </div>
+        )}
         <div className="flex justify-end gap-2">
           <Button variant="outline" onClick={onClose}>Cancel</Button>
           <Button className="bg-gold text-black hover:bg-gold/90" disabled={saving || !note.trim()} onClick={save}>{saving && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}Save</Button>

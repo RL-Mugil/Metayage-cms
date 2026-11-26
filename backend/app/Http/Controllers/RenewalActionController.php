@@ -462,15 +462,32 @@ class RenewalActionController extends Controller
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
-        $validated = $request->validate(['status_note' => 'required|string|max:500']);
+        $validated = $request->validate(['status_note' => 'required|string|max:500', 'promised_on' => 'nullable|date|after_or_equal:today']);
+        // A promise-to-pay date is recorded by staff (it pauses reminders until then).
+        $promised = $user->isClientRole() ? null : ($validated['promised_on'] ?? null);
 
-        $invoice->update([
-            'status_note'       => $validated['status_note'],
-            'status_note_by_id' => $user->id,
-            'status_note_at'    => now(),
-        ]);
+        \Illuminate\Support\Facades\DB::transaction(function () use ($invoice, $validated, $user, $promised) {
+            $invoice->update([
+                'status_note'       => $validated['status_note'],
+                'status_note_by_id' => $user->id,
+                'status_note_at'    => now(),
+            ] + ($promised ? ['promised_on' => $promised, 'promise_note' => $validated['status_note']] : []));
+            \App\Models\InvoiceFollowUp::create(['patent_invoice_in_id' => $invoice->id, 'user_id' => $user->id,
+                'note' => $validated['status_note'], 'promised_on' => $promised]);
+        });
 
         return response()->json($invoice->fresh());
+    }
+
+    /** The follow-up history of an invoice (newest first). */
+    public function followUps(Request $request, int $invoiceId)
+    {
+        $user = $request->user();
+        $invoice = PatentInvoiceIn::findOrFail($invoiceId);
+        abort_if($user->isClientRole() || ! $this->staffMaySee($user, $invoice), 403);
+
+        return response()->json(\App\Models\InvoiceFollowUp::with('user:id,name')->where('patent_invoice_in_id', $invoice->id)->latest('id')->limit(100)->get()
+            ->map(fn ($f) => ['id' => $f->id, 'note' => $f->note, 'promised_on' => $f->promised_on?->toDateString(), 'by' => $f->user?->name, 'at' => $f->created_at?->toIso8601String()]));
     }
 
     /**
@@ -575,6 +592,8 @@ class RenewalActionController extends Controller
                 $row->setAttribute('net_due', round(max(0, (float) $row->getAttribute('balance') - $advance / $rate), 2));
             }
             $row->setAttribute('days_overdue', $row->due_date && $row->due_date->lt($today) ? (int) $row->due_date->diffInDays($today) : 0);
+            // A promise to pay that has passed while the invoice is still unpaid.
+            $row->setAttribute('promise_broken', $row->promised_on && $row->promised_on->lt($today));
             if ($row->isFromZoho()) {
                 // Internal fees never go to the client side.
                 $row->makeHidden(['attorney_fees', 'consultant_fees', 'referral_fees', 'net_revenue']);

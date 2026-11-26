@@ -24,7 +24,7 @@ class PatentInvoiceIn extends Model
         'invoice_amount', 'attorney_fees', 'consultant_fees',
         'referral_fees', 'net_revenue', 'currency',
         // Renewal approve -> invoice -> proof -> confirm tracking (RenewalActionController)
-        'payment_status', 'proof_document_id', 'status_note', 'status_note_by_id', 'status_note_at',
+        'payment_status', 'proof_document_id', 'status_note', 'status_note_by_id', 'status_note_at', 'promised_on', 'promise_note',
         'payment_confirmed_at',
         // Imported from Zoho Books (ZohoRegisterImporter): the register is the single source of truth.
         'source', 'zoho_invoice_id', 'zoho_number', 'zoho_status', 'due_date',
@@ -61,6 +61,7 @@ class PatentInvoiceIn extends Model
         'referral_fees'       => 'decimal:2',
         'net_revenue'         => 'decimal:2',
         'status_note_at'      => 'datetime',
+        'promised_on'         => 'date:Y-m-d',
         'payment_confirmed_at' => 'datetime',
         'due_date'            => 'date:Y-m-d',
         'exchange_rate'       => 'decimal:6',

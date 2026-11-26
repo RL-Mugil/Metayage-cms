@@ -238,6 +238,14 @@ Route::middleware(['auth:sanctum', 'firm.context', 'throttle:120,1'])->group(fun
     Route::get('/finance/time-cost-rates', [\App\Http\Controllers\MatterCostController::class, 'rates']);
     Route::put('/finance/time-cost-rates', [\App\Http\Controllers\MatterCostController::class, 'saveRates']);
     Route::get('/finance/profitability', [\App\Http\Controllers\ProfitabilityController::class, 'index'])->middleware('throttle:60,1');
+    // Collections: payment reminders (drafted daily, sent after approval), client pause, settings, follow-up history.
+    Route::get('/collections/reminders', [\App\Http\Controllers\CollectionReminderController::class, 'index']);
+    Route::put('/collections/reminders/{id}', [\App\Http\Controllers\CollectionReminderController::class, 'update'])->whereNumber('id');
+    Route::post('/collections/reminders/send', [\App\Http\Controllers\CollectionReminderController::class, 'send'])->middleware('throttle:20,1');
+    Route::post('/collections/reminders/{id}/skip', [\App\Http\Controllers\CollectionReminderController::class, 'skip'])->whereNumber('id');
+    Route::put('/collections/clients/{clientId}', [\App\Http\Controllers\CollectionReminderController::class, 'clientSettings'])->whereNumber('clientId');
+    Route::put('/collections/settings', [\App\Http\Controllers\CollectionReminderController::class, 'saveSettings']);
+    Route::get('/pending-payments/{id}/follow-ups', [\App\Http\Controllers\RenewalActionController::class, 'followUps'])->whereNumber('id');
     // TDS tracker (Form 26AS / 16A).
     Route::get('/tds', [\App\Http\Controllers\TdsController::class, 'index']);
     Route::post('/tds/26as', [\App\Http\Controllers\TdsController::class, 'upload'])->middleware('throttle:10,1');
