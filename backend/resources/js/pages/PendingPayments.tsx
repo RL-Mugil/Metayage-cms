@@ -187,7 +187,7 @@ export default function PendingPayments() {
           </div>
           {isStaff && showChart && (
             <div className="shrink-0">
-              <Bars3D height={190} format={inrShort} activeLabel={extra.ageing.find((b) => b.key === age)?.band ?? null}
+              <Bars3D height={165} format={inrShort} activeLabel={extra.ageing.find((b) => b.key === age)?.band ?? null}
                 data={extra.ageing.map((b) => ({ label: b.band, values: { invoices: b.invoices, quotes: b.quotes } }))}
                 series={[{ key: "invoices", label: "Unpaid invoices (INR)", color: "#3b82f6" }, { key: "quotes", label: "Unpaid quotes (INR)", color: "#8b5cf6" }]}
                 onSelect={(label, key) => {

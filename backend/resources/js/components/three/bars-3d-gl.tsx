@@ -23,11 +23,11 @@ function useLabelTexture(text: string, color: string) {
   }, [text, color])
 }
 
-function Label({ text, position, color }: { text: string; position: [number, number, number]; color: string }) {
+function Label({ text, position, color, size = 1.6 }: { text: string; position: [number, number, number]; color: string; size?: number }) {
   const tex = useLabelTexture(text, color)
   useEffect(() => () => tex.dispose(), [tex])
   return (
-    <sprite position={position} scale={[1.6, 0.4, 1]}>
+    <sprite position={position} scale={[size, size / 4, 1]}>
       <spriteMaterial map={tex} transparent depthWrite={false} />
     </sprite>
   )
@@ -63,12 +63,18 @@ function Column({ x, z, w, h, color, delay, onHover, onClick, active }: {
   )
 }
 
-/** Eases the camera to the zoom distance. */
-function Rig({ zoom }: { zoom: number }) {
-  const { camera } = useThree()
+/** Frames the whole chart (width and height) and eases the camera there; zoom scales that distance. */
+function Rig({ zoom, width, tall }: { zoom: number; width: number; tall: number }) {
+  const { camera, size } = useThree()
   useFrame(() => {
-    camera.position.z = THREE.MathUtils.lerp(camera.position.z, zoom, 0.15)
-    camera.lookAt(0, 1.2, 0)
+    const cam = camera as THREE.PerspectiveCamera
+    const half = THREE.MathUtils.degToRad(cam.fov / 2)
+    const aspect = size.width / Math.max(1, size.height)
+    const fit = Math.max((width / 2 + 0.6) / (Math.tan(half) * aspect), (tall / 2 + 0.9) / Math.tan(half), 4)
+    const d = fit * zoom
+    cam.position.z = THREE.MathUtils.lerp(cam.position.z, d * 0.93, 0.15)
+    cam.position.y = THREE.MathUtils.lerp(cam.position.y, d * 0.36, 0.15)
+    cam.lookAt(0, tall * 0.42, 0)
   })
   return null
 }
@@ -79,9 +85,9 @@ function Rig({ zoom }: { zoom: number }) {
  */
 export default function Bars3DGL({ data, series, format = (n) => n.toLocaleString("en-IN"), onSelect, height = 300, activeLabel }: Bars3DProps) {
   const wrap = useRef<HTMLDivElement>(null)
-  const rot = useRef({ x: 0, y: -0.35 })
+  const rot = useRef({ x: 0, y: -0.25 })
   const drag = useRef<{ x: number; y: number } | null>(null)
-  const [zoom, setZoom] = useState(11)
+  const [zoom, setZoom] = useState(1)
   const [tip, setTip] = useState<{ x: number; y: number; label: string; series: string; value: number } | null>(null)
   const dark = typeof document !== "undefined" && document.documentElement.classList.contains("dark")
 
@@ -113,7 +119,7 @@ export default function Bars3DGL({ data, series, format = (n) => n.toLocaleStrin
           <ambientLight intensity={0.65} />
           <directionalLight position={[4, 8, 6]} intensity={1.3} castShadow />
           <directionalLight position={[-5, 3, -4]} intensity={0.35} color="#bfdbfe" />
-          <Rig zoom={zoom} />
+          <Rig zoom={zoom} width={width} tall={3.2} />
           <Turnable rot={rot}>
             <group position={[-width / 2 + gap / 2, 0, 0]}>
               {data.map((d, i) => (
@@ -126,7 +132,7 @@ export default function Bars3DGL({ data, series, format = (n) => n.toLocaleStrin
                         onHover={hover(d.label, s, v)} onClick={() => onSelect?.(d.label, s.key)} />
                     )
                   })}
-                  <Label text={d.label} position={[0, -0.28, w * 1.2]} color={dark ? "#cbd5e1" : "#334155"} />
+                  <Label text={d.label} position={[0, 0.16, (w * 0.86) / 2 + 0.32]} size={Math.min(1.6, gap * 0.95)} color={dark ? "#e2e8f0" : "#1e293b"} />
                 </group>
               ))}
             </group>
@@ -138,9 +144,9 @@ export default function Bars3DGL({ data, series, format = (n) => n.toLocaleStrin
           </Turnable>
         </Canvas>
         <div className="absolute right-2 top-2 flex gap-1">
-          <button className="rounded-md border border-border bg-background/80 p-1 hover:bg-muted" title="Zoom in" onClick={() => setZoom((z) => Math.max(5, z - 1.5))}><Plus className="h-3.5 w-3.5" /></button>
-          <button className="rounded-md border border-border bg-background/80 p-1 hover:bg-muted" title="Zoom out" onClick={() => setZoom((z) => Math.min(20, z + 1.5))}><Minus className="h-3.5 w-3.5" /></button>
-          <button className="rounded-md border border-border bg-background/80 p-1 hover:bg-muted" title="Reset view" onClick={() => { rot.current = { x: 0, y: -0.35 }; setZoom(11) }}><RotateCcw className="h-3.5 w-3.5" /></button>
+          <button className="rounded-md border border-border bg-background/80 p-1 hover:bg-muted" title="Zoom in" onClick={() => setZoom((z) => Math.max(0.45, z - 0.15))}><Plus className="h-3.5 w-3.5" /></button>
+          <button className="rounded-md border border-border bg-background/80 p-1 hover:bg-muted" title="Zoom out" onClick={() => setZoom((z) => Math.min(2.2, z + 0.15))}><Minus className="h-3.5 w-3.5" /></button>
+          <button className="rounded-md border border-border bg-background/80 p-1 hover:bg-muted" title="Reset view" onClick={() => { rot.current = { x: 0, y: -0.25 }; setZoom(1) }}><RotateCcw className="h-3.5 w-3.5" /></button>
         </div>
         <p className="pointer-events-none absolute bottom-1.5 left-2 text-[10px] text-muted-foreground">Drag to turn · click a column to open it</p>
         {tip && (
