@@ -13,9 +13,10 @@ use PhpOffice\PhpSpreadsheet\Worksheet\Drawing;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 
 /**
- * A client's statement (the ledger, INR): the lines, their totals, the proforma quotes sent
- * but not invoiced (internal view only: they are not in the balance) and the letterhead
- * PDF / Excel. The client view is ready to send; the internal view adds source notes and quotes.
+ * A client's statement (the ledger, INR): the lines, their totals and the letterhead PDF / Excel.
+ * Proformas (quotes sent, not yet invoiced) are never in the balance. Views: "plain" (ledger
+ * without proformas), "client" (ready to send: the ledger, then the proformas in a separate table
+ * at the bottom) and "internal" (the client view plus source notes).
  */
 class ClientStatement
 {
@@ -23,7 +24,7 @@ class ClientStatement
     public function lines(int $clientId): Collection
     {
         // The ₹0 "Opening Balance" seed row (kept for locking) is not a transaction: leave it out.
-        return ClientLedger::where('client_id', $clientId)
+        return ClientLedger::where('client_id', $clientId)->where('document_type', '!=', 'Quote')
             ->where(fn ($q) => $q->whereNotNull('source_key')->orWhere('document_type', '!=', 'Opening Balance')->orWhere('debit', '!=', 0)->orWhere('credit', '!=', 0))
             ->orderBy('transaction_date')->orderByRaw('CASE WHEN debit > 0 THEN 0 ELSE 1 END')->orderBy('id')
             ->get(['id', 'transaction_date', 'document_type', 'document_reference', 'debit', 'credit', 'tds', 'balance', 'notes', 'created_at']);
@@ -40,13 +41,14 @@ class ClientStatement
 
         return [
             'billed' => round((float) $lines->filter(fn ($l) => ! in_array($l->document_type, ['Exchange difference', 'Quote'], true))->sum(fn ($l) => (float) $l->debit), 2),
-            // Quote-first billing: unpaid quotes (proformas) on the statement.
-            'quoted' => round((float) $lines->where('document_type', 'Quote')->sum(fn ($l) => (float) $l->debit), 2),
+            // Unpaid proformas are listed apart and never counted (filled in by the caller when shown).
+            'quoted' => 0.0,
             'received' => $sum('credit', ['Payment']),
             'tds' => round((float) $lines->sum(fn ($l) => (float) $l->tds), 2),
             'credit_notes' => $sum('credit', ['Credit note']),
             'waived' => $sum('credit', ['Waiver']),
-            'advance' => $sum('credit', ['Advance']),
+            // Balance credit: received, not yet applied to an invoice.
+            'advance' => $sum('credit', ['Balance credit', 'Advance']),
             // Exchange gain (+) / loss (-) on foreign-currency invoices.
             'exchange' => round((float) $lines->filter(fn ($l) => $l->document_type === 'Exchange difference')->sum(fn ($l) => (float) $l->debit - (float) $l->credit), 2),
             'balance' => round((float) ($lines->last()?->balance ?? 0), 2),
@@ -72,7 +74,7 @@ class ClientStatement
                 'id' => $q->id, 'date' => $q->invoice_date ? $q->invoice_date->toDateString() : $q->created_at?->toDateString(),
                 'number' => $q->invoice_uin ?: $q->zoho_number ?: "Q-{$q->id}", 'status' => $q->status,
                 'amount' => $amount, 'currency' => $q->currency ?: 'INR', 'title' => $q->invention_title,
-                // Advance received and earmarked for this quote (INR), and what is still to pay.
+                // Balance credit earmarked for this proforma (INR), and what is still to pay.
                 'advance_linked' => $advance,
                 'advance_payments' => $mine->pluck('payment_number')->filter()->unique()->values()->all(),
                 'net_due' => round(max(0, $amount - $advance), 2),
@@ -86,21 +88,24 @@ class ClientStatement
         $lines = $this->lines($client->id);
         $summary = $this->summary($lines);
         $internal = $view === 'internal';
-        $quotes = $internal ? $this->openQuotes($user, $client->id) : [];
+        $withProformas = $view !== 'plain';
+        $quotes = $withProformas ? $this->openQuotes($user, $client->id) : [];
+        $summary['quoted'] = round((float) collect($quotes)->sum('net_due'), 2);
         $head = app(Letterhead::class)->get();
-        $title = 'Statement of Account'.($internal ? ' (internal, with quotes)' : '');
-        $name = 'Statement-'.preg_replace('/[^A-Za-z0-9_-]+/', '', (string) ($client->client_code ?: $client->id)).'-'.now()->format('Ymd').($internal ? '-internal' : '');
+        $title = 'Statement of Account'.($internal ? ' (internal, with proformas)' : '');
+        $name = 'Statement-'.preg_replace('/[^A-Za-z0-9_-]+/', '', (string) ($client->client_code ?: $client->id)).'-'.now()->format('Ymd')
+            .($internal ? '-internal' : ($withProformas ? '-with-proformas' : ''));
         $clientName = $client->legal_name ?: $client->company_name ?: $client->client_code;
 
         if ($format === 'xlsx') {
-            return ['bytes' => $this->excel($title, $clientName, $client, $lines, $summary, $quotes, $internal, $head),
+            return ['bytes' => $this->excel($title, $clientName, $client, $lines, $summary, $quotes, $internal, $head, $withProformas),
                 'name' => "{$name}.xlsx", 'mime' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'];
         }
 
         $pdf = \Barryvdh\DomPDF\Facade\Pdf::setOptions(['isRemoteEnabled' => false, 'isFontSubsettingEnabled' => true])
             ->loadView('pdf.client-statement', [
                 'title' => $title, 'client' => $client, 'clientName' => $clientName, 'lines' => $lines, 'summary' => $summary,
-                'quotes' => $quotes, 'internal' => $internal, 'letterhead' => $head,
+                'quotes' => $quotes, 'internal' => $internal, 'withProformas' => $withProformas, 'letterhead' => $head,
             ])->setPaper('a4', $internal ? 'landscape' : 'portrait');
 
         return ['bytes' => $pdf->output(), 'name' => "{$name}.pdf", 'mime' => 'application/pdf'];
@@ -112,7 +117,7 @@ class ClientStatement
         return number_format(abs($balance), 2).($balance < -0.009 ? ' Cr' : '');
     }
 
-    private function excel(string $title, string $clientName, Client $client, Collection $lines, array $summary, array $quotes, bool $internal, array $head): string
+    private function excel(string $title, string $clientName, Client $client, Collection $lines, array $summary, array $quotes, bool $internal, array $head, bool $withProformas = false): string
     {
         $book = new Spreadsheet();
         $book->getProperties()->setCreator($head['company_name'])->setTitle($title);
@@ -128,8 +133,8 @@ class ClientStatement
 
         $r = 7;
         foreach ([['Invoiced', $summary['billed']], ['Payments received', $summary['received']], ['TDS withheld', $summary['tds']],
-            ['Credit notes', $summary['credit_notes']], ['Waived', $summary['waived']], ['Advance (unused credit)', $summary['advance']]] as [$label, $value]) {
-            if ($value == 0.0 && in_array($label, ['Credit notes', 'Waived', 'Advance (unused credit)'], true)) {
+            ['Credit notes', $summary['credit_notes']], ['Waived', $summary['waived']], ['Balance credit', $summary['advance']]] as [$label, $value]) {
+            if ($value == 0.0 && in_array($label, ['Credit notes', 'Waived', 'Balance credit'], true)) {
                 continue;
             }
             $sheet->setCellValue("A{$r}", $label)->setCellValue("B{$r}", $value);
@@ -170,14 +175,20 @@ class ClientStatement
         $sheet->getStyle("G{$r}")->getAlignment()->setHorizontal('right');
         $r += 2;
 
-        if ($internal) {
-            $sheet->setCellValue("A{$r}", 'Proforma quotes sent, not invoiced (not in the balance)')->getStyle("A{$r}")->getFont()->setBold(true);
+        if ($withProformas) {
+            $sheet->setCellValue("A{$r}", 'Proformas (not yet invoiced — not included in the balance)')->getStyle("A{$r}")->getFont()->setBold(true);
             $r++;
-            $sheet->fromArray(['Date', 'Quote', 'Status', 'Amount', 'Advance earmarked', 'Net due', 'Title'], null, "A{$r}");
+            $sheet->fromArray(['Date', 'Proforma', 'Status', 'Amount', 'Balance credit earmarked', 'Net due', 'Title'], null, "A{$r}");
             $sheet->getStyle("A{$r}:G{$r}")->getFont()->setBold(true);
             $r++;
             foreach ($quotes ?: [['date' => '', 'number' => 'None', 'status' => '', 'amount' => null, 'advance_linked' => null, 'net_due' => null, 'title' => '']] as $q) {
                 $sheet->fromArray([$q['date'], $q['number'], $q['status'], $q['amount'], $q['advance_linked'] ?: null, $q['net_due'], $q['title']], null, "A{$r}", true);
+                $sheet->getStyle("D{$r}:F{$r}")->getNumberFormat()->setFormatCode('#,##0.00');
+                $r++;
+            }
+            if ($quotes) {
+                $sheet->fromArray(['', 'Total proformas', '', round((float) collect($quotes)->sum('amount'), 2), null, $summary['quoted'], ''], null, "A{$r}", true);
+                $sheet->getStyle("A{$r}:G{$r}")->getFont()->setBold(true);
                 $sheet->getStyle("D{$r}:F{$r}")->getNumberFormat()->setFormatCode('#,##0.00');
                 $r++;
             }

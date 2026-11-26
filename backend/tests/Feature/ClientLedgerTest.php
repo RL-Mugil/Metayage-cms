@@ -85,11 +85,11 @@ class ClientLedgerTest extends TestCase
         $this->assertSame('2026-08-25', $tds[0]->transaction_date->toDateString());
         $this->assertSame(0, RegisterPayment::where('estimated', true)->count());
 
-        // The ₹3,600 not applied to any invoice is an Advance credit.
-        $advance = $ledger->where('document_type', 'Advance')->values();
+        // The ₹3,600 not applied to any invoice is a balance credit.
+        $advance = $ledger->where('document_type', 'Balance credit')->values();
         $this->assertCount(1, $advance);
         $this->assertSame('3600.00', $advance[0]->credit);
-        $this->assertSame('P377 · unused credit', $advance[0]->document_reference);
+        $this->assertSame('P377 · balance credit', $advance[0]->document_reference);
 
         // Cash collected excludes TDS.
         $this->assertEquals(45800, app(\App\Services\FinanceFigures::class)->payments($this->partner, $this->client->id)->sum('amount_bcy'));
@@ -116,7 +116,7 @@ class ClientLedgerTest extends TestCase
         ])]);
 
         $ledger = ClientLedger::where('client_id', $this->client->id)->get();
-        $this->assertSame(0, $ledger->where('document_type', 'Advance')->count());
+        $this->assertSame(0, $ledger->where('document_type', 'Balance credit')->count());
         $this->assertSame('0.00', app(\App\Services\ClientStatement::class)->lines($this->client->id)->last()->balance);
     }
 
@@ -126,7 +126,7 @@ class ClientLedgerTest extends TestCase
         ZohoSnapshot::where('remote_id', 'pay-377')->firstOrFail()->delete();
 
         $ledger = ClientLedger::where('client_id', $this->client->id)->get();
-        $this->assertSame(0, $ledger->where('document_type', 'Advance')->count());
+        $this->assertSame(0, $ledger->where('document_type', 'Balance credit')->count());
         $this->assertSame(0, $ledger->where('document_type', 'TDS')->count());
         $this->assertFalse(RegisterPayment::where('zoho_payment_id', 'like', '%pay-377')->exists());
     }

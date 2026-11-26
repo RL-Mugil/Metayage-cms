@@ -118,23 +118,36 @@ class QuoteFirstBillingTest extends TestCase
         $this->assertSame(2800.0, $state['due']);
     }
 
-    public function test_on_open_quotes_are_on_the_ledger_and_leave_it_once_invoiced(): void
+    public function test_proformas_are_never_ledger_lines_and_are_listed_apart_on_the_statement(): void
     {
-        $quote = $this->quote();
-        app(ClientLedgerSync::class)->sync($this->client->id);
-        $this->assertSame(0, ClientLedger::where('client_id', $this->client->id)->where('document_type', 'Quote')->count());   // off: no quote line
-
+        $this->quote();
         $this->turnOn();
         app(ClientLedgerSync::class)->sync($this->client->id);
-        $line = ClientLedger::where('client_id', $this->client->id)->where('document_type', 'Quote')->first();
-        $this->assertNotNull($line);
-        $this->assertSame(11800.0, (float) $line->debit);
+        $this->assertSame(0, ClientLedger::where('client_id', $this->client->id)->where('document_type', 'Quote')->count());   // never counted
+        $this->assertEquals(0, (float) ClientLedger::where('client_id', $this->client->id)->orderByDesc('id')->value('balance'));
 
-        $quote->update(['converted_invoice_id' => PatentInvoiceIn::create(['type' => 'invoice', 'status' => 'Sent', 'source' => 'manual', 'client_id' => $this->client->id,
-            'invoice_uin' => '701M001INPAT/1', 'invoice_amount' => 11800, 'total_bcy' => 11800, 'balance_due' => 11800, 'exchange_rate' => 1, 'currency' => 'INR',
-            'invoice_date' => now()->toDateString(), 'payment_status' => 'Pending'])->id]);
-        app(ClientLedgerSync::class)->sync($this->client->id);
-        $this->assertSame(0, ClientLedger::where('client_id', $this->client->id)->where('document_type', 'Quote')->count());
+        $statement = app(\App\Services\ClientStatement::class);
+        $html = fn (string $view) => view('pdf.client-statement', (function () use ($statement, $view) {
+            $lines = $statement->lines($this->client->id);
+            $quotes = $view === 'plain' ? [] : $statement->openQuotes($this->admin, $this->client->id);
+            $summary = $statement->summary($lines);
+            $summary['quoted'] = round((float) collect($quotes)->sum('net_due'), 2);
+
+            return ['title' => 'Statement of Account', 'client' => $this->client, 'clientName' => 'Gamma Labs', 'lines' => $lines, 'summary' => $summary,
+                'quotes' => $quotes, 'internal' => false, 'withProformas' => $view !== 'plain', 'letterhead' => app(\App\Services\Letterhead::class)->get()];
+        })())->render();
+
+        $client = $html('client');
+        $this->assertStringContainsString('Proformas (not yet invoiced', $client);
+        $this->assertStringContainsString('701M001INPAT/Q1', $client);
+        $this->assertStringNotContainsString('Quote', $client);
+        $this->assertStringNotContainsString('701M001INPAT/Q1', $html('plain'));
+
+        // Both exports download for staff; "plain" has no proforma section.
+        Sanctum::actingAs($this->finance);
+        $this->get("/api/clients/{$this->client->id}/statement?format=pdf&view=plain")->assertOk();
+        $this->get("/api/clients/{$this->client->id}/statement?format=xlsx&view=internal")->assertOk();
+        $this->get("/api/clients/{$this->client->id}/detail")->assertOk()->assertJsonPath('quotes_open.0.number', '701M001INPAT/Q1');
     }
 
     public function test_a_new_invoice_before_payment_needs_a_reason_too(): void

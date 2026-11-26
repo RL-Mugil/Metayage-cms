@@ -91,7 +91,7 @@ class ZohoPaymentReconcileTest extends TestCase
         // Invoice 1,00,000 paid once; the 5,000 advance is credit with us.
         $last = app(\App\Services\ClientStatement::class)->lines($this->client->id)->last();
         $this->assertSame('-5000.00', $last->balance);
-        $this->assertTrue(ClientLedger::where('client_id', $this->client->id)->where('document_type', 'Advance')->where('credit', 5000)->exists());
+        $this->assertTrue(ClientLedger::where('client_id', $this->client->id)->where('document_type', 'Balance credit')->where('credit', 5000)->exists());
     }
 
     public function test_an_implausible_number_of_missing_payments_removes_nothing(): void

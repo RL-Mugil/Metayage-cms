@@ -330,8 +330,8 @@ export default function PendingPayments() {
                           </button>
                         )}
                         {r.advance_linked ? (
-                          <div className="text-[10px] text-green-600" title={`Advance received${r.advance_payments?.length ? ` (${r.advance_payments.join(", ")})` : ""}, earmarked for this quote`}>
-                            − advance {money(r.advance_linked, "INR")} · net {money(r.net_due ?? 0, r.currency)}
+                          <div className="text-[10px] text-green-600" title={`Balance credit received${r.advance_payments?.length ? ` (${r.advance_payments.join(", ")})` : ""}, earmarked for this proforma`}>
+                            − balance credit {money(r.advance_linked, "INR")} earmarked · net due {money(r.net_due ?? 0, r.currency)}
                           </div>
                         ) : null}
                       </td>

@@ -32,6 +32,7 @@ interface LedgerSummary { billed: number; received: number; tds: number; credit_
 
 const TYPE_BADGE: Record<string, string> = {
   TDS: "bg-amber-100 text-amber-800 border-amber-200",
+  "Balance credit": "bg-green-100 text-green-700 border-green-200",
   Advance: "bg-green-100 text-green-700 border-green-200",
   "Credit note": "bg-sky-100 text-sky-700 border-sky-200",
   Quote: "bg-muted text-muted-foreground border-border",
@@ -71,7 +72,8 @@ export function ClientDetailPanel({ clientId, onClose }: Props) {
   const isClientUser = String(role).startsWith("client");
 
   async function downloadStatement(format: "pdf" | "xlsx") {
-    const view = withQuotes && !isClientUser ? "internal" : "client";
+    // Without quotes: the plain ledger. With quotes: proformas listed apart (internal copy for staff).
+    const view = !withQuotes ? "plain" : isClientUser ? "client" : "internal";
     setDownloading(format);
     setDownloadError("");
     try {
@@ -332,31 +334,22 @@ export function ClientDetailPanel({ clientId, onClose }: Props) {
               {tab === "ledger" && (() => {
                 const summary: LedgerSummary | undefined = data.ledger_summary;
                 const quotes: OpenQuote[] = data.quotes_open ?? [];
-                const lines: LedgerLine[] = [...(data.ledger as LedgerLine[])];
-                if (withQuotes && !isClientUser) {
-                  // Proforma quotes are listed in date order but never change the balance.
-                  for (const q of quotes) {
-                    lines.push({ id: `q-${q.id}`, transaction_date: q.date, document_type: "Quote", document_reference: q.number,
-                      debit: q.amount, credit: 0, tds: 0, balance: null, quote: true,
-                      notes: q.advance_linked ? `Advance ${inr(q.advance_linked)} earmarked (${(q.advance_payments ?? []).join(", ")}) · net due ${inr(q.net_due ?? 0)}` : q.title });
-                  }
-                  lines.sort((a, b) => String(a.transaction_date ?? "").slice(0, 10).localeCompare(String(b.transaction_date ?? "").slice(0, 10)));
-                }
+                // Proformas are never ledger lines and never in the balance: "with quotes" lists them apart, below.
+                const lines: LedgerLine[] = (data.ledger as LedgerLine[]).filter((l) => l.document_type !== "Quote");
+                const proformaDue = quotes.reduce((a, q) => a + Number(q.net_due ?? q.amount ?? 0), 0);
                 return (
                   <div className="p-6 space-y-3">
                     <div className="flex items-center justify-between gap-2 flex-wrap">
-                      {!isClientUser ? (
-                        <div className="inline-flex rounded-md border border-border p-0.5 text-[11px]">
-                          {[["Ledger", false], ["Ledger with quotes", true]].map(([label, value]) => (
-                            <button key={String(label)} onClick={() => setWithQuotes(value as boolean)}
-                              className={`px-2.5 py-1 rounded ${withQuotes === value ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>
-                              {label as string}{value && quotes.length > 0 ? ` (${quotes.length})` : ""}
-                            </button>
-                          ))}
-                        </div>
-                      ) : <span />}
+                      <div className="inline-flex rounded-md border border-border p-0.5 text-[11px]">
+                        {[["Ledger without quotes", false], ["Ledger with quotes", true]].map(([label, value]) => (
+                          <button key={String(label)} onClick={() => setWithQuotes(value as boolean)}
+                            className={`px-2.5 py-1 rounded ${withQuotes === value ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+                            {label as string}{value && quotes.length > 0 ? ` (${quotes.length})` : ""}
+                          </button>
+                        ))}
+                      </div>
                       <div className="flex items-center gap-1.5">
-                        <span className="text-[10px] text-muted-foreground">{withQuotes && !isClientUser ? "Internal statement" : "Client statement"}</span>
+                        <span className="text-[10px] text-muted-foreground">{withQuotes ? (isClientUser ? "Statement with proformas" : "Internal statement, with proformas") : "Statement without proformas"}</span>
                         {(["pdf", "xlsx"] as const).map((f) => (
                           <button key={f} onClick={() => downloadStatement(f)} disabled={downloading !== null}
                             className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded border border-border hover:bg-muted/50 disabled:opacity-50">
@@ -373,8 +366,8 @@ export function ClientDetailPanel({ clientId, onClose }: Props) {
                           ["Invoiced", summary.billed, ""],
                           ["Received", summary.received, "text-green-600"],
                           ["TDS withheld", summary.tds, "text-amber-700"],
-                          ...(summary.quoted ? [["Unpaid proformas", summary.quoted, "text-blue-600"]] : [["Credit notes", summary.credit_notes, ""]]),
-                          ["Advance (unused)", summary.advance, "text-green-600"],
+                          ...(withQuotes && quotes.length > 0 ? [["Unpaid proformas (not in balance)", proformaDue, "text-blue-600"]] : [["Credit notes", summary.credit_notes, ""]]),
+                          ["Balance credit", summary.advance, "text-green-600"],
                           [Number(summary.balance) < -0.009 ? "Credit with us" : "Balance due", summary.balance, Number(summary.balance) < -0.009 ? "text-green-600" : Number(summary.balance) > 0.009 ? "text-red-600" : ""],
                         ].map(([label, value, tone]) => (
                           <div key={String(label)} className="rounded-md border border-border bg-muted/20 px-2 py-1.5">
@@ -402,8 +395,8 @@ export function ClientDetailPanel({ clientId, onClose }: Props) {
                         </thead>
                         <tbody>
                           {lines.map((l) => (
-                            <tr key={l.id} className={`border-b border-border/50 hover:bg-muted/20 ${l.quote ? "opacity-60 italic" : ""}`}
-                              title={l.quote ? "Proforma quote, not invoiced: not in the balance" : (l.notes ?? undefined)}>
+                            <tr key={l.id} className="border-b border-border/50 hover:bg-muted/20"
+                              title={l.notes ?? undefined}>
                               <td className="py-2.5 pr-3 font-mono text-muted-foreground">{fmtDate(l.transaction_date ?? l.created_at)}</td>
                               <td className="py-2.5 pr-3 text-muted-foreground">
                                 {TYPE_BADGE[l.document_type]
@@ -421,7 +414,7 @@ export function ClientDetailPanel({ clientId, onClose }: Props) {
                                 {Number(l.tds) > 0 ? inr(Number(l.tds)) : "—"}
                               </td>
                               <td className={`py-2.5 text-right font-mono font-semibold ${l.balance !== null && Number(l.balance) < -0.009 ? "text-green-600" : ""}`}>
-                                {l.quote ? <span className="text-[10px] font-normal text-muted-foreground">{l.notes?.startsWith("Advance") ? <span className="text-green-600">{l.notes}</span> : "not in balance"}</span> : balanceText(Number(l.balance))}
+                                {balanceText(Number(l.balance))}
                               </td>
                             </tr>
                           ))}
@@ -429,8 +422,34 @@ export function ClientDetailPanel({ clientId, onClose }: Props) {
                       </table>
                     )}
                     <p className="text-[10px] text-muted-foreground">
-                      TDS is tax the client withheld: it settles the invoice but is not cash received. "Cr" / Advance is money received and not yet applied to an invoice.
+                      TDS is tax the client withheld: it settles the invoice but is not cash received. "Cr" / Balance credit is money received and not yet applied to an invoice.
                     </p>
+                    {withQuotes && (
+                      <div className="space-y-1.5 pt-2">
+                        <p className="text-xs font-semibold">Proformas <span className="font-normal text-muted-foreground">— not yet invoiced, not included in the balance</span></p>
+                        {quotes.length === 0 ? <p className="text-[11px] text-muted-foreground">No proformas pending.</p> : (
+                          <table className="w-full text-xs">
+                            <thead><tr className="text-left border-b border-border text-muted-foreground">
+                              <th className="pb-2 font-medium">Date</th><th className="pb-2 font-medium">Proforma</th><th className="pb-2 font-medium">Status</th>
+                              <th className="pb-2 font-medium text-right">Amount</th><th className="pb-2 font-medium text-right">Balance credit earmarked</th><th className="pb-2 font-medium text-right">Net due</th>
+                            </tr></thead>
+                            <tbody className="table-rows-3d">
+                              {quotes.map((q) => (
+                                <tr key={q.id} className="border-b border-border/50" title={q.title ?? undefined}>
+                                  <td className="py-2 pr-3 font-mono text-muted-foreground">{fmtDate(q.date)}</td>
+                                  <td className="py-2 pr-3 font-mono text-[10px] text-blue-600">{q.number}</td>
+                                  <td className="py-2 pr-3 text-muted-foreground">{q.status}</td>
+                                  <td className="py-2 pr-3 text-right font-mono">{inr(Number(q.amount))}</td>
+                                  <td className="py-2 pr-3 text-right font-mono text-green-600">{q.advance_linked ? `${inr(Number(q.advance_linked))}${q.advance_payments?.length ? ` (${q.advance_payments.join(", ")})` : ""}` : "—"}</td>
+                                  <td className="py-2 text-right font-mono font-semibold">{inr(Number(q.net_due ?? q.amount))}</td>
+                                </tr>
+                              ))}
+                              <tr className="font-semibold"><td /><td className="py-2">Total proformas</td><td /><td className="py-2 pr-3 text-right font-mono">{inr(quotes.reduce((a, q) => a + Number(q.amount), 0))}</td><td /><td className="py-2 text-right font-mono">{inr(proformaDue)}</td></tr>
+                            </tbody>
+                          </table>
+                        )}
+                      </div>
+                    )}
                   </div>
                 );
               })()}

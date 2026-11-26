@@ -69,7 +69,7 @@ class PaymentsReceivedController extends Controller
         $data = $request->validate(['quote_id' => 'required|integer', 'amount' => 'required|numeric|min:0.01', 'note' => 'nullable|string|max:255']);
         \App\Support\FinancePeriod::assertOpen(now());
         $advance = $this->payments->advance($paymentId);
-        abort_if(! $advance || $advance['unused'] <= 0, 422, 'This payment has no unused amount to link.');
+        abort_if(! $advance || $advance['unused'] <= 0, 422, 'This payment has no balance credit to link.');
         abort_if(! $advance['client_id'], 422, 'This payment is not linked to a portal client yet. Link the Zoho customer to the client first.');
 
         $quote = PatentInvoiceIn::where('type', 'quote')->findOrFail($data['quote_id']);
@@ -82,7 +82,7 @@ class PaymentsReceivedController extends Controller
             // Lock this payment's links (Postgres can't lock an aggregate), then add them up.
             $others = (float) AdvanceQuoteLink::where('zoho_payment_id', $paymentId)->where('patent_invoice_in_id', '!=', $quote->id)
                 ->lockForUpdate()->get(['amount'])->sum('amount');
-            abort_if($amount > round($advance['unused'] - $others, 2) + 0.009, 422, 'More than the unused amount still free on this payment (₹'.number_format(max(0, $advance['unused'] - $others), 2).').');
+            abort_if($amount > round($advance['unused'] - $others, 2) + 0.009, 422, 'More than the balance credit still free on this payment (₹'.number_format(max(0, $advance['unused'] - $others), 2).').');
             $quoteAmount = (float) ($open->firstWhere('id', $quote->id)['amount'] ?? 0);
             $onQuote = (float) AdvanceQuoteLink::where('patent_invoice_in_id', $quote->id)->where('zoho_payment_id', '!=', $paymentId)->sum('amount');
             abort_if($amount > round($quoteAmount - $onQuote, 2) + 0.009, 422, 'More than the quote still needs (₹'.number_format(max(0, $quoteAmount - $onQuote), 2).').');
@@ -115,7 +115,7 @@ class PaymentsReceivedController extends Controller
         $export = \App\Models\ZohoQuoteExport::where('source_type', 'in')->where('source_id', $link->patent_invoice_in_id)->whereNotNull('invoice_id')->first();
         abort_unless($export, 422, 'The quote has not been turned into a Zoho invoice yet. Create the invoice first.');
         $advance = $this->payments->advance($link->zoho_payment_id);
-        abort_unless($advance && $advance['unused'] + 0.009 >= (float) $link->amount, 422, 'The payment no longer has that much unused in Zoho. Refresh and check.');
+        abort_unless($advance && $advance['unused'] + 0.009 >= (float) $link->amount, 422, 'The payment no longer has that much balance credit in Zoho. Refresh and check.');
 
         $zoho = app(\App\Services\ZohoBooksService::class);
         try {

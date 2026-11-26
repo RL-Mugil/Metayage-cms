@@ -91,22 +91,22 @@ export default function PaymentsReceived() {
   };
 
   const unlink = async (id: number) => {
-    try { await api.unlinkAdvance(id); toast.success("Advance unlinked from the quote"); load(); } catch (e: any) { toast.error(e?.message ?? "Failed."); }
+    try { await api.unlinkAdvance(id); toast.success("Balance credit unlinked from the proforma"); load(); } catch (e: any) { toast.error(e?.message ?? "Failed."); }
   };
 
   return (
     <AppLayout>
       <Head title="Payments Received" />
       <FitPage eyebrow="Billing" title="Payments Received"
-        summary="Every payment received, the invoices it settled, the TDS the client withheld, and any amount not yet applied to an invoice (advance)."
+        summary="Every payment received, the invoices it settled, the TDS the client withheld, and any amount not yet applied to an invoice (balance credit)."
         actions={<Link href="/pending-payments" className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline">Pending Payments →</Link>}>
         <div className="flex min-h-0 flex-1 flex-col gap-2.5">
           <div className="flex shrink-0 flex-wrap gap-2">
             {[
               { label: "Cash received", value: inr(totals.received), color: "#16a34a" },
               { label: "TDS withheld (not cash)", value: inr(totals.tds), color: "#d97706" },
-              { label: "Advance (unused)", value: inr(totals.unused), color: "#0ea5e9", onClick: () => setUnusedOnly((v) => !v), active: unusedOnly },
-              { label: "Advance not earmarked", value: inr(totals.unlinked), color: "#64748b" },
+              { label: "Balance credit", value: inr(totals.unused), color: "#0ea5e9", onClick: () => setUnusedOnly((v) => !v), active: unusedOnly },
+              { label: "Balance credit not earmarked", value: inr(totals.unlinked), color: "#64748b" },
               { label: "Payments", value: meta.total.toLocaleString("en-IN"), color: "#3b82f6" },
             ].map((c) => (
               <button key={c.label} type="button" onClick={c.onClick} disabled={!c.onClick}
@@ -135,7 +135,7 @@ export default function PaymentsReceived() {
               {(from || to) && <button onClick={() => { setFrom(""); setTo(""); }} className="text-muted-foreground hover:text-foreground" aria-label="Clear dates"><X className="h-3.5 w-3.5" /></button>}
             </div>
             <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-              <input type="checkbox" checked={unusedOnly} onChange={(e) => setUnusedOnly(e.target.checked)} /> With advance only
+              <input type="checkbox" checked={unusedOnly} onChange={(e) => setUnusedOnly(e.target.checked)} /> With balance credit only
             </label>
             <button className="text-[11px] text-muted-foreground hover:text-foreground" onClick={() => setShowChart((v) => !v)}>{showChart ? "Hide" : "Show"} 3D chart</button>
           </div>
@@ -143,7 +143,7 @@ export default function PaymentsReceived() {
             <div className="shrink-0">
               <Bars3D height={190} format={inrShort}
                 data={monthly.map((m) => ({ label: m.month, values: { received: m.received, tds: m.tds, unused: m.unused } }))}
-                series={[{ key: "received", label: "Received", color: "#16a34a" }, { key: "tds", label: "TDS withheld", color: "#d97706" }, { key: "unused", label: "Advance (unused)", color: "#0ea5e9" }]}
+                series={[{ key: "received", label: "Received", color: "#16a34a" }, { key: "tds", label: "TDS withheld", color: "#d97706" }, { key: "unused", label: "Balance credit", color: "#0ea5e9" }]}
                 onSelect={(label, key) => {
                   const m = monthly.find((x) => x.month === label);
                   if (!m) return;
@@ -173,7 +173,7 @@ export default function PaymentsReceived() {
                   <th className="px-3 py-2 text-right">Received</th>
                   <th className="px-3 py-2 text-left">Settled against</th>
                   <th className="px-3 py-2 text-right">TDS</th>
-                  <th className="px-3 py-2 text-left">Advance (unused)</th>
+                  <th className="px-3 py-2 text-left">Balance credit</th>
                 </tr>
               </thead>
               <tbody className="table-rows-3d">
@@ -263,7 +263,7 @@ function LinkDialog({ row, onClose, onDone }: { row: Payment; onClose: () => voi
     setSaving(true);
     try {
       await api.linkAdvanceToQuote(row.id, { quote_id: quoteId, amount: Number(amount), note: note.trim() || undefined });
-      toast.success("Advance earmarked for the quote");
+      toast.success("Balance credit earmarked for the proforma");
       onDone();
     } catch (e: any) {
       toast.error(e?.message ?? "Failed.");
@@ -275,10 +275,10 @@ function LinkDialog({ row, onClose, onDone }: { row: Payment; onClose: () => voi
   return (
     <Dialog open onOpenChange={(v) => !v && onClose()}>
       <DialogContent flip3d className="max-w-lg">
-        <DialogHeader><DialogTitle>Earmark {row.number}'s advance for a quote</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>Earmark {row.number}'s balance credit for a proforma</DialogTitle></DialogHeader>
         <p className="text-xs text-muted-foreground">
-          {inr(row.unlinked)} of this payment is not applied to any invoice. Zoho can't apply money to a proforma quote, so this is noted in the portal:
-          the quote shows the advance and its net due. Apply the payment in Zoho once the quote is invoiced.
+          {inr(row.unlinked)} of this payment is not applied to any invoice. Zoho can't apply money to a proforma, so this is noted in the portal:
+          the proforma shows the balance credit and its net due. Apply the payment in Zoho once the proforma is invoiced.
         </p>
         {quotes === null ? <Loader2 className="mx-auto h-5 w-5 animate-spin text-gold" /> : quotes.length === 0 ? (
           <p className="text-sm text-muted-foreground">{row.client?.name} has no open (sent, not invoiced) quotes.</p>

@@ -14,7 +14,7 @@ use Illuminate\Support\Facades\DB;
  * A client's ledger, rebuilt from the register, the way Zoho's customer statement reads:
  * each billed invoice is a debit; payments, TDS withheld by the client (type "TDS", also in
  * the TDS column: not cash until deposited) and credit notes are credits; money received but
- * not yet applied to any invoice is an "Advance" credit (Zoho's unused credit); the Zoho
+ * not yet applied to any invoice is a "Balance credit" (Zoho's unused credit); the Zoho
  * opening balance (owed before the books moved to Zoho) is an opening debit. A minus balance
  * is credit the client holds with us. Lines written by other flows (portal invoices/payments)
  * are kept. The running balance is recomputed in date order every time.
@@ -99,20 +99,13 @@ class ClientLedgerSync
                 }
             }
 
-            // Quote-first billing: an unpaid quote (proforma) is money due, until it becomes the tax invoice.
-            if (QuoteFirst::applies($clientId)) {
-                foreach (PatentInvoiceIn::openQuotes()->where('client_id', $clientId)->whereNotNull('invoice_date')->get() as $quote) {
-                    $wanted["quote:{$quote->id}"] = [
-                        'transaction_date' => $quote->invoice_date, 'document_type' => 'Quote',
-                        'document_reference' => $quote->invoice_uin ?: $quote->zoho_number ?: "Q-{$quote->id}",
-                        'debit' => round((float) ($quote->total_bcy ?? (float) $quote->invoice_amount * ((float) ($quote->exchange_rate ?? 1) ?: 1)), 2),
-                        'credit' => 0, 'tds' => 0, 'notes' => 'Proforma (not a tax invoice): the tax invoice follows payment',
-                    ];
-                    foreach (RegisterPayment::where('patent_invoice_in_id', $quote->id)->get() as $paid) {
-                        $wanted["reg-pay:{$paid->id}"] = ['transaction_date' => $paid->payment_date, 'document_type' => 'Payment',
-                            'document_reference' => trim(($paid->payment_number ?: 'Payment').' → '.($quote->invoice_uin ?: 'quote')),
-                            'debit' => 0, 'credit' => (float) $paid->amount_bcy, 'tds' => 0, 'notes' => 'Received against the proforma'];
-                    }
+            // Proformas (unpaid quotes) are never ledger lines: they are not counted in the balance and
+            // are listed apart (client panel, statements). Money already received on one is real, though.
+            foreach (PatentInvoiceIn::openQuotes()->where('client_id', $clientId)->get() as $quote) {
+                foreach (RegisterPayment::where('patent_invoice_in_id', $quote->id)->get() as $paid) {
+                    $wanted["reg-pay:{$paid->id}"] = ['transaction_date' => $paid->payment_date, 'document_type' => 'Payment',
+                        'document_reference' => trim(($paid->payment_number ?: 'Payment').' → '.($quote->invoice_uin ?: 'proforma')),
+                        'debit' => 0, 'credit' => (float) $paid->amount_bcy, 'tds' => 0, 'notes' => 'Received against the proforma'];
                 }
             }
 
@@ -158,10 +151,10 @@ class ClientLedgerSync
                 continue;
             }
             $lines["zoho-unused:{$p->remote_id}"] = [
-                'transaction_date' => $p->date->toDateString(), 'document_type' => 'Advance',
-                'document_reference' => trim(($p->payment_number ?: 'Payment').' · unused credit'),
+                'transaction_date' => $p->date->toDateString(), 'document_type' => 'Balance credit',
+                'document_reference' => trim(($p->payment_number ?: 'Payment').' · balance credit'),
                 'debit' => 0, 'credit' => round((float) $p->unused_amount * ((float) $p->exchange_rate ?: 1.0), 2), 'tds' => 0,
-                'notes' => 'Received, not yet applied to an invoice (advance)',
+                'notes' => 'Received, not yet applied to an invoice (balance credit)',
             ];
         }
         foreach (['creditnotes'] as $resource) {
@@ -182,10 +175,10 @@ class ClientLedgerSync
                         continue;
                     }
                     $lines["zoho-unused:{$snapshot->remote_id}"] = [
-                        'transaction_date' => $doc['date'], 'document_type' => 'Advance',
-                        'document_reference' => trim(($doc['payment_number'] ?? 'Payment').' · unused credit'),
+                        'transaction_date' => $doc['date'], 'document_type' => 'Balance credit',
+                        'document_reference' => trim(($doc['payment_number'] ?? 'Payment').' · balance credit'),
                         'debit' => 0, 'credit' => round($unused * $rate, 2), 'tds' => 0,
-                        'notes' => 'Received, not yet applied to an invoice (advance)',
+                        'notes' => 'Received, not yet applied to an invoice (balance credit)',
                     ];
                 } else {
                     $balance = (float) ($doc['balance'] ?? 0);
@@ -194,7 +187,7 @@ class ClientLedgerSync
                     }
                     $lines["zoho-cn-unused:{$snapshot->remote_id}"] = [
                         'transaction_date' => $doc['date'], 'document_type' => 'Credit note',
-                        'document_reference' => trim(($doc['creditnote_number'] ?? 'Credit note').' · unused credit'),
+                        'document_reference' => trim(($doc['creditnote_number'] ?? 'Credit note').' · balance credit'),
                         'debit' => 0, 'credit' => round($balance * $rate, 2), 'tds' => 0,
                         'notes' => 'Credit note not yet applied to an invoice',
                     ];

@@ -923,8 +923,8 @@ class ClientController extends Controller
             'invoices'        => $invoices,
             'ledger'          => $ledger,
             'ledger_summary'  => $statement->summary($ledger),
-            // Proforma quotes sent but not invoiced: internal "Ledger with quotes" view only.
-            'quotes_open'     => $user->isClientRole() ? [] : $statement->openQuotes($user, $client->id),
+            // Proformas sent but not invoiced: listed apart in "Ledger with quotes", never in the balance.
+            'quotes_open'     => $statement->openQuotes($user, $client->id),
         ]);
     }
 
@@ -943,8 +943,12 @@ class ClientController extends Controller
             return response()->json(['message' => 'Forbidden'], 403);
         }
         $this->authorize('view', $client);
-        $data = $request->validate(['format' => 'nullable|in:pdf,xlsx', 'view' => 'nullable|in:client,internal']);
-        $view = $user->isClientRole() ? 'client' : ($data['view'] ?? 'client');
+        // plain = ledger without proformas; client = ledger + proformas listed apart (ready to send); internal = client + notes.
+        $data = $request->validate(['format' => 'nullable|in:pdf,xlsx', 'view' => 'nullable|in:plain,client,internal']);
+        $view = $data['view'] ?? 'client';
+        if ($user->isClientRole() && $view === 'internal') {
+            $view = 'client';
+        }
 
         $file = app(\App\Services\ClientStatement::class)->render($client, $user, $data['format'] ?? 'pdf', $view);
         \App\Models\AuditLog::create([

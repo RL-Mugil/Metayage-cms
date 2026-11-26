@@ -88,7 +88,7 @@ class QuoteInvoicing
         if (! $link) {
             $free = (float) $advance['unused'] - (float) AdvanceQuoteLink::where('zoho_payment_id', $paymentId)->whereNull('applied_at')->sum('amount');
             $amount = round(min($free, QuoteFirst::paidState($quote)['due']), 2);
-            abort_if($amount <= 0, 422, 'This payment has no unused amount left.');
+            abort_if($amount <= 0, 422, 'This payment has no balance credit left.');
             $link = AdvanceQuoteLink::create(['zoho_payment_id' => $paymentId, 'payment_number' => $advance['number'], 'client_id' => $quote->client_id,
                 'patent_invoice_in_id' => $quote->id, 'amount' => $amount, 'created_by_id' => $user->id, 'note' => 'Payment for this quote']);
         }

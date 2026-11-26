@@ -50,7 +50,7 @@
   <td class="tile"><b>{{ number_format($summary['received'], 2) }}</b><span>Payments received</span></td>
   <td class="tile"><b>{{ number_format($summary['tds'], 2) }}</b><span>TDS withheld</span></td>
   @if ($summary['credit_notes'] > 0)<td class="tile"><b>{{ number_format($summary['credit_notes'], 2) }}</b><span>Credit notes</span></td>@endif
-  @if ($summary['advance'] > 0)<td class="tile"><b>{{ number_format($summary['advance'], 2) }}</b><span>Advance (unused credit)</span></td>@endif
+  @if ($summary['advance'] > 0)<td class="tile"><b>{{ number_format($summary['advance'], 2) }}</b><span>Balance credit</span></td>@endif
   <td class="tile {{ $summary['balance'] < -0.009 ? 'cr' : ($summary['balance'] > 0.009 ? 'due' : '') }}"><b>{{ number_format(abs($summary['balance']), 2) }}</b><span>{{ $summary['balance'] < -0.009 ? 'Credit with us' : 'Balance due' }}</span></td>
 </tr></table>
 
@@ -62,7 +62,7 @@
   @forelse ($lines as $l)
     <tr>
       <td>{{ $l->transaction_date?->format('d-m-Y') }}</td>
-      <td class="{{ $l->document_type === 'TDS' ? 'tds' : ($l->document_type === 'Advance' ? 'adv' : '') }}">{{ $l->document_type }}</td>
+      <td class="{{ $l->document_type === 'TDS' ? 'tds' : (in_array($l->document_type, ['Balance credit', 'Advance'], true) ? 'adv' : '') }}">{{ $l->document_type }}</td>
       <td>{{ $l->document_reference }}</td>
       <td class="r">{{ $money($l->debit) }}</td>
       <td class="r">{{ $money($l->credit) }}</td>
@@ -84,16 +84,20 @@
 </table>
 <div class="muted" style="margin-top:4px">TDS is tax withheld by you on our invoices and is shown separately from payments. "Cr" is credit held with us.</div>
 
-@if ($internal)
-  <h2>Proforma quotes sent, not invoiced (not in the balance)</h2>
+@if ($withProformas ?? $internal)
+  <h2>Proformas (not yet invoiced — not included in the balance)</h2>
   <table class="data">
-    <tr><th>Date</th><th>Quote</th><th>Status</th><th class="r">Amount</th><th class="r">Advance earmarked</th><th class="r">Net due</th><th>Title</th></tr>
+    <tr><th>Date</th><th>Proforma</th><th>Status</th><th class="r">Amount</th><th class="r">Balance credit earmarked</th><th class="r">Net due</th><th>Title</th></tr>
     @forelse ($quotes as $q)
       <tr><td>{{ $q['date'] }}</td><td>{{ $q['number'] }}</td><td>{{ $q['status'] }}</td><td class="r">{{ number_format($q['amount'], 2) }}</td><td class="r adv">{{ $q['advance_linked'] > 0 ? number_format($q['advance_linked'], 2).' ('.implode(', ', $q['advance_payments']).')' : '—' }}</td><td class="r">{{ number_format($q['net_due'], 2) }}</td><td>{{ $q['title'] }}</td></tr>
     @empty
-      <tr><td colspan="7" class="muted">No open quotes.</td></tr>
+      <tr><td colspan="7" class="muted">No proformas pending.</td></tr>
     @endforelse
+    @if (count($quotes))
+      <tr class="total"><td></td><td>Total proformas</td><td></td><td class="r">{{ number_format(collect($quotes)->sum('amount'), 2) }}</td><td></td><td class="r">{{ number_format($summary['quoted'], 2) }}</td><td></td></tr>
+    @endif
   </table>
+  <div class="muted" style="margin-top:4px">A proforma becomes a tax invoice once paid; it is not part of the balance above.</div>
 @endif
 </body>
 </html>
