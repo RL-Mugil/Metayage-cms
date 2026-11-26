@@ -226,6 +226,12 @@ class ClientLedgerSync
     public static function queue(int ...$clientIds): void
     {
         foreach (array_unique(array_filter($clientIds)) as $id) {
+            if (config('queue.default') === 'sync') {
+                // No worker (tests, local): rebuild now, as before.
+                app(self::class)->sync((int) $id);
+
+                continue;
+            }
             \App\Jobs\RebuildClientLedger::dispatch((int) $id)->afterCommit()->delay(now()->addSeconds(10));
         }
     }

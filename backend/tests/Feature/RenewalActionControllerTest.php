@@ -146,7 +146,8 @@ class RenewalActionControllerTest extends TestCase
             ->assertJsonPath('payment_status', 'Confirmed');
 
         $this->assertDatabaseHas('renewal_schedules', ['patent_invoice_in_id' => $invoice['id'], 'status' => 'Paid']);
-        $this->assertDatabaseHas('client_ledger', ['client_id' => $client->id, 'document_type' => 'Payment', 'document_reference' => $invoice['invoice_uin']]);
+        // The receipt is a register payment, so its ledger line comes from the register.
+        $this->assertDatabaseHas('client_ledger', ['client_id' => $client->id, 'document_type' => 'Payment', 'document_reference' => 'Payment → '.$invoice['invoice_uin']]);
 
         // Cannot confirm twice.
         $this->postJson("/api/pending-payments/{$invoice['id']}/confirm")->assertStatus(422);
