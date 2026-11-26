@@ -19,6 +19,54 @@ interface Controls {
   can: { unlock: boolean }
 }
 
+/** Export a month to TallyPrime (XML vouchers) with a summary Excel; ledger names editable. */
+function TallyCard({ months }: { months: Month[] }) {
+  const [month, setMonth] = useState(months.find((m) => m.month < new Date().toISOString().slice(0, 7))?.month ?? months[0]?.month ?? "")
+  const [summary, setSummary] = useState<{ locked: boolean; vouchers: number; by_type: Record<string, number>; ledgers: Record<string, string> } | null>(null)
+  const [editing, setEditing] = useState(false)
+  const [ledgers, setLedgers] = useState<Record<string, string>>({})
+  const [company, setCompany] = useState("")
+  useEffect(() => {
+    if (!month) return
+    api.request<any>(`/finance/tally-export?month=${month}&format=summary`).then((s) => { setSummary(s); setLedgers(s.ledgers) }).catch(() => setSummary(null))
+  }, [month])
+  const download = async (format: "xml" | "xlsx") => {
+    const res = await fetch(`/api/finance/tally-export?month=${month}&format=${format}`, { credentials: "same-origin" })
+    if (!res.ok) { toast.error("Export failed."); return }
+    const url = URL.createObjectURL(await res.blob())
+    const a = document.createElement("a"); a.href = url; a.download = `Tally-${month}.${format}`; a.click(); URL.revokeObjectURL(url)
+  }
+  const saveLedgers = async () => {
+    try { await api.request("/finance/tally-ledgers", { method: "PUT", body: JSON.stringify({ ...ledgers, company }) }); toast.success("Ledger names saved"); setEditing(false) }
+    catch (e: any) { toast.error(e?.message ?? "Failed.") }
+  }
+  return (
+    <section className="rounded-xl border border-border p-4">
+      <h3 className="mb-1 text-sm font-semibold">Export to Tally</h3>
+      <p className="mb-2 text-[11px] text-muted-foreground">A month's sales invoices, receipts, TDS, credit notes and exchange differences as TallyPrime vouchers (Import Data → Vouchers). Ledger names must match your Tally exactly; each client's ledger is its legal name.</p>
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        <select value={month} onChange={(e) => setMonth(e.target.value)} className="h-8 rounded-md border border-border bg-background px-2">
+          {months.map((m) => <option key={m.month} value={m.month}>{m.label}{m.locked ? " (closed)" : ""}</option>)}
+        </select>
+        <Button size="sm" className="h-8 bg-gold text-black hover:bg-gold/90" disabled={!summary?.vouchers} onClick={() => download("xml")}>Tally XML</Button>
+        <Button size="sm" variant="outline" className="h-8" disabled={!summary?.vouchers} onClick={() => download("xlsx")}>Summary Excel</Button>
+        <button className="text-[11px] text-muted-foreground underline" onClick={() => setEditing((v) => !v)}>Ledger names</button>
+      </div>
+      {summary && <p className="mt-1.5 text-[11px] text-muted-foreground">{summary.vouchers} vouchers: {Object.entries(summary.by_type).map(([t, n]) => `${n} ${t}`).join(", ") || "none"}
+        {!summary.locked && summary.vouchers > 0 && <span className="text-amber-600"> · this month is still open; close it first so the figures cannot change</span>}</p>}
+      {editing && (
+        <div className="mt-2 grid grid-cols-2 gap-1.5 text-[11px]">
+          <label className="col-span-2">Tally company name (optional)<input value={company} onChange={(e) => setCompany(e.target.value)} className="mt-0.5 h-7 w-full rounded border border-border bg-background px-2" /></label>
+          {Object.entries(ledgers).map(([k, v]) => (
+            <label key={k}>{k.replace(/_/g, " ")}<input value={v} onChange={(e) => setLedgers((l) => ({ ...l, [k]: e.target.value }))} className="mt-0.5 h-7 w-full rounded border border-border bg-background px-2" /></label>
+          ))}
+          <div className="col-span-2 flex justify-end"><Button size="sm" className="h-7" onClick={saveLedgers}>Save ledger names</Button></div>
+        </div>
+      )}
+    </section>
+  )
+}
+
 const inr = (v: number) => `₹${Math.abs(Number(v)).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`
 
 /**
@@ -141,6 +189,8 @@ export function FinanceControls() {
           </ul>
         )}
       </section>
+
+      <TallyCard months={data.months} />
 
       {/* Renewal quotes, quote first */}
       <section className="rounded-xl border border-border p-4 xl:col-span-2">

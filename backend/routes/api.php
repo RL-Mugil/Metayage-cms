@@ -259,6 +259,8 @@ Route::middleware(['auth:sanctum', 'firm.context', 'throttle:120,1'])->group(fun
     Route::delete('/advance-links/{id}', [\App\Http\Controllers\PaymentsReceivedController::class, 'unlink']);
     Route::post('/advance-links/{id}/apply', [\App\Http\Controllers\PaymentsReceivedController::class, 'apply'])->whereNumber('id')->middleware('throttle:zoho-write');
     Route::put('/finance/controls/renewal-quotes', [\App\Http\Controllers\FinanceControlsController::class, 'renewalQuotes']);
+    Route::get('/finance/tally-export', [\App\Http\Controllers\TallyExportController::class, 'export'])->middleware('throttle:20,1');
+    Route::put('/finance/tally-ledgers', [\App\Http\Controllers\TallyExportController::class, 'saveLedgers']);
 
     // Inventor role (Phase 3) — staff manage a case's inventors here.
     Route::get('/inventors', [\App\Http\Controllers\InventorController::class, 'index']);
