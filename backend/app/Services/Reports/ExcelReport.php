@@ -39,9 +39,12 @@ class ExcelReport
         $summary = $book->getActiveSheet()->setTitle('Summary');
         $this->summarySheet($summary, $title, $data, $letterhead, $signature, $sealPng);
 
-        $this->table($book, 'Follow-up', ['Invoice', 'Client', 'Client code', 'Contact', 'Email', 'Phone', 'Case', 'Invoice date', 'Due date', 'Days overdue', 'Status', 'Billed', 'Received', 'Waived', 'Balance', 'Last follow-up'],
-            array_map(fn ($r) => [$r['invoice'], $r['client'], $r['client_code'], $r['contact'], $r['email'], $r['phone'], $r['case'], $r['invoice_date'], $r['due_date'], $r['days_overdue'], $r['status'], $r['billed'], $r['received'], $r['waived'], $r['balance'], $r['follow_up']], $data['pending']),
-            ['L', 'M', 'N', 'O'], 'K');
+        $this->table($book, 'Follow-up', ['Type', 'Invoice / quote', 'Client', 'Client code', 'Contact', 'Email', 'Phone', 'Case', 'Date', 'Due date', 'Days overdue', 'Status', 'Billed / quoted', 'Received', 'Waived', 'Balance', 'Last follow-up'],
+            array_map(fn ($r) => [$r['type'] ?? 'Invoice', $r['invoice'], $r['client'], $r['client_code'], $r['contact'], $r['email'], $r['phone'], $r['case'], $r['invoice_date'], $r['due_date'], $r['days_overdue'], $r['status'], $r['billed'], $r['received'], $r['waived'], $r['balance'], $r['follow_up']], $data['pending']),
+            ['M', 'N', 'O', 'P'], 'L');
+        $this->table($book, 'Unpaid quotes', ['Quote', 'Client', 'Client code', 'Case', 'Quote date', 'Days since', 'Status', 'Quoted', 'Received', 'Due'],
+            array_map(fn ($r) => [$r['invoice'], $r['client'], $r['client_code'], $r['case'], $r['invoice_date'], $r['days_overdue'], $r['status'], $r['billed'], $r['received'], $r['balance']],
+                array_values(array_filter($data['pending'], fn ($r) => ($r['type'] ?? 'Invoice') === 'Quote'))), ['H', 'I', 'J'], 'G');
         $this->table($book, 'Payments', ['Date', 'Invoice', 'Client', 'Client code', 'Amount', 'Mode', 'Reference', 'Recorded'],
             array_map(fn ($r) => [$r['date'], $r['invoice'], $r['client'], $r['client_code'], $r['amount'], $r['mode'], $r['reference'], $r['source']], $data['payments']), ['E']);
         $this->table($book, 'Waivers', ['Date', 'Invoice', 'Client', 'Client code', 'Amount waived', 'Reason', 'Approved by'],
@@ -49,12 +52,12 @@ class ExcelReport
         $ageHead = array_keys($data['ageing'][0] ?? ['client' => 0, 'client_code' => 0, 'Not yet due' => 0, '1–30 days' => 0, '31–60 days' => 0, '61–90 days' => 0, '90+ days' => 0, 'Total' => 0, 'Invoices' => 0]);
         $this->table($book, 'Ageing', array_map(fn ($h) => ucwords(str_replace('_', ' ', $h)), $ageHead),
             array_map(fn ($r) => array_values($r), $data['ageing']), ['C', 'D', 'E', 'F', 'G', 'H']);
-        $this->table($book, 'By client', ['Client', 'Client code', 'Invoices', 'Billed', 'Received', 'Waived', 'Outstanding'],
-            array_map(fn ($r) => [$r['client'], $r['client_code'], $r['invoices'], $r['billed'], $r['received'], $r['waived'], $r['outstanding']], $data['by_client']), ['D', 'E', 'F', 'G']);
+        $this->table($book, 'By client', ['Client', 'Client code', 'Invoices', 'Billed', 'Received', 'Waived', 'Invoices outstanding', 'Unpaid quotes', 'Quotes due', 'Total due'],
+            array_map(fn ($r) => [$r['client'], $r['client_code'], $r['invoices'], $r['billed'], $r['received'], $r['waived'], $r['outstanding'], $r['quotes'] ?? 0, $r['quotes_due'] ?? 0, $r['total_due'] ?? $r['outstanding']], $data['by_client']), ['D', 'E', 'F', 'G', 'I', 'J']);
         if ($financialSummary) {
-            $this->table($book, 'Invoices', ['Invoice', 'Client', 'Client code', 'Case', 'Invoice date', 'Due date', 'Status', 'Billed', 'Received', 'Waived', 'Balance'],
-                array_map(fn ($r) => [$r['invoice'], $r['client'], $r['client_code'], $r['case'], $r['invoice_date'], $r['due_date'], $r['status'], $r['billed'], $r['received'], $r['waived'], $r['balance']], $data['invoices']),
-                ['H', 'I', 'J', 'K'], 'G');
+            $this->table($book, 'Invoices and quotes', ['Type', 'Invoice / quote', 'Client', 'Client code', 'Case', 'Date', 'Due date', 'Status', 'Billed / quoted', 'Received', 'Waived', 'Balance'],
+                array_map(fn ($r) => [$r['type'] ?? 'Invoice', $r['invoice'], $r['client'], $r['client_code'], $r['case'], $r['invoice_date'], $r['due_date'], $r['status'], $r['billed'], $r['received'], $r['waived'], $r['balance']], $data['invoices']),
+                ['I', 'J', 'K', 'L'], 'H');
         }
         $book->setActiveSheetIndex(0);
 
@@ -97,7 +100,8 @@ class ExcelReport
         $s = $data['summary'];
         $kpis = [['Billed', $s['billed']], ['Received', $s['received']], ['Outstanding', $s['outstanding']], ['Waived', $s['waived']],
             ['Overdue amount', $s['overdue_amount']], ['Collection rate %', $s['collection_rate']], ['Invoices', $s['invoices']],
-            ['Pending invoices', $s['pending_invoices']], ['Overdue invoices', $s['overdue_invoices']], ['Payments', $s['payments']]];
+            ['Pending invoices', $s['pending_invoices']], ['Overdue invoices', $s['overdue_invoices']], ['Payments', $s['payments']],
+            ['Unpaid quotes', $s['quotes'] ?? 0], ['Unpaid quotes amount', $s['quotes_amount'] ?? 0], ['Total due (invoices + quotes)', $s['total_due'] ?? $s['outstanding']]];
         $sheet->setCellValue('A6', 'Key figures')->getStyle('A6')->getFont()->setBold(true);
         foreach ($kpis as $i => [$label, $value]) {
             $row = 7 + $i;

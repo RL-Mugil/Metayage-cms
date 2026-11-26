@@ -138,6 +138,7 @@ export default function PendingPayments() {
 
   const totalLabel = Object.entries(extra.totals).map(([c, a]) => money(a, c)).join(" + ") || "₹0";
   const sumLabel = (t: Record<string, number>) => Object.entries(t).filter(([, a]) => a > 0).map(([c, a]) => money(a, c)).join(" + ") || "₹0";
+  const DOCS_ORDER: Doc[] = ["invoices", "quotes", "both"];
   const DOCS: { key: Doc; label: string; count: number; total: string; color: string }[] = [
     { key: "both", label: "Invoices + quotes", count: extra.counts.invoices + extra.counts.quotes, total: totalLabel, color: "#f59e0b" },
     { key: "invoices", label: "Unpaid invoices", count: extra.counts.invoices, total: sumLabel(extra.byDoc.invoices), color: "#3b82f6" },
@@ -151,40 +152,46 @@ export default function PendingPayments() {
     <AppLayout>
       <Head title="Pending Payments" />
       <FitPage eyebrow="Billing" title="Pending Payments"
-        summary={isClient ? "Invoices awaiting payment. Pay by bank transfer, then upload the payment proof here." : "Every unpaid invoice — portal renewals and Zoho Books — colour coded by how late it is."}
+        summary={isClient ? "Invoices awaiting payment. Pay by bank transfer, then upload the payment proof here." : "Every unpaid invoice and unpaid quote — portal and Zoho Books — colour coded by how late it is."}
         actions={isStaff && (
           <Button size="sm" className="bg-gold text-black hover:bg-gold/90" onClick={() => setExportOpen(true)}>
             <Download className="mr-1.5 h-4 w-4" /> Payment Collection report
           </Button>
         )}>
-        {isStaff && (
-          <div className="mb-2 inline-flex shrink-0 self-start rounded-md border border-border p-0.5 text-xs">
-            {([["invoices", "Unpaid invoices"], ["reminders", "Reminders"]] as const).map(([v, l]) => (
-              <button key={v} onClick={() => setView(v)} className={`rounded px-3 py-1 ${view === v ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>{l}</button>
-            ))}
-          </div>
-        )}
-        {isStaff && view === "reminders" ? <RemindersPanel /> : (
-        <div className="flex min-h-0 flex-1 flex-col gap-2.5">
-          {/* Invoices, quotes or both (each tab shows what the current filters leave) */}
-          <div className="flex shrink-0 flex-wrap items-stretch gap-2" style={{ perspective: 900 }}>
-            {DOCS.map((d) => (
-              <button key={d.key} type="button" onClick={() => setDoc(d.key)}
-                className={`card-3d glass flex min-w-[170px] flex-1 items-center gap-2.5 rounded-xl px-3 py-1.5 text-left ${doc === d.key ? "ring-2" : "opacity-80 hover:opacity-100"}`}
-                style={doc === d.key ? { boxShadow: `0 0 0 2px ${d.color}, var(--shadow-3d-lg)`, transform: "translateY(-2px) rotateX(4deg)" } : undefined}>
+        {/* Four tabs: unpaid invoices, unpaid quotes, both, and reminders (staff). Counts follow the filters. */}
+        <div className="mb-2 flex shrink-0 flex-wrap items-stretch gap-2" style={{ perspective: 900 }}>
+          {DOCS_ORDER.map((key) => {
+            const d = DOCS.find((x) => x.key === key)!;
+            const on = view === "invoices" && doc === key;
+            return (
+              <button key={key} type="button" onClick={() => { setView("invoices"); setDoc(key); }}
+                className={`card-3d glass flex min-w-[170px] flex-1 items-center gap-2.5 rounded-xl px-3 py-1.5 text-left ${on ? "" : "opacity-75 hover:opacity-100"}`}
+                style={on ? { boxShadow: `0 0 0 2px ${d.color}, var(--shadow-3d-lg)`, transform: "translateY(-2px) rotateX(4deg)" } : undefined}>
                 <span className="h-3 w-3 shrink-0 rounded" style={{ background: d.color, boxShadow: `0 0 10px ${d.color}` }} />
                 <span className="min-w-0">
+                  <span className="block text-[11px] font-semibold uppercase tracking-wider">{d.label}</span>
                   <span className="block font-display text-sm font-semibold leading-tight">{d.count.toLocaleString("en-IN")} · <span className="text-amber-600">{d.total}</span></span>
-                  <span className="block text-[9px] uppercase tracking-wider text-muted-foreground">{d.label}</span>
                 </span>
               </button>
-            ))}
-            {isStaff && (
-              <button type="button" onClick={() => setShowChart((v) => !v)} className="rounded-xl border border-border px-3 text-[11px] text-muted-foreground hover:text-foreground">
-                {showChart ? "Hide" : "Show"} 3D ageing
-              </button>
-            )}
-          </div>
+            );
+          })}
+          {isStaff && (
+            <button type="button" onClick={() => setView("reminders")}
+              className={`card-3d glass flex min-w-[150px] items-center gap-2.5 rounded-xl px-3 py-1.5 text-left ${view === "reminders" ? "" : "opacity-75 hover:opacity-100"}`}
+              style={view === "reminders" ? { boxShadow: "0 0 0 2px #10b981, var(--shadow-3d-lg)", transform: "translateY(-2px) rotateX(4deg)" } : undefined}>
+              <span className="h-3 w-3 shrink-0 rounded" style={{ background: "#10b981", boxShadow: "0 0 10px #10b981" }} />
+              <span><span className="block text-[11px] font-semibold uppercase tracking-wider">Reminders</span>
+                <span className="block text-[11px] text-muted-foreground">Payment reminder emails</span></span>
+            </button>
+          )}
+        </div>
+        {isStaff && view === "reminders" ? <RemindersPanel /> : (
+        <div className="flex min-h-0 flex-1 flex-col gap-2.5">
+          {isStaff && (
+            <button type="button" onClick={() => setShowChart((v) => !v)} className="shrink-0 self-start text-[11px] text-muted-foreground hover:text-foreground">
+              {showChart ? "Hide" : "Show"} 3D ageing
+            </button>
+          )}
           {isStaff && showChart && (
             <div className="shrink-0">
               <Bars3D height={165} format={inrShort} activeLabel={extra.ageing.find((b) => b.key === age)?.band ?? null}
@@ -392,7 +399,7 @@ export default function PendingPayments() {
       {exportOpen && (
         <ReportDownloadDialog
           report={{ id: "payment-collection", name: "Payment Collection", clientFilter: true, icon: TrendingUp, color: "text-green-500",
-            description: "Pending follow-up with client contacts, payments, waivers and ageing per client — same report as Reports → Payment Collection" }}
+            description: "Unpaid invoices and unpaid quotes to follow up, with client contacts, payments, waivers and ageing per client — same report as Reports → Payment Collection" }}
           clients={extra.clients}
           initialClientCode={extra.clients.find((c) => String(c.id) === String(clientId))?.code ?? ""}
           initialFrom={from} initialTo={to}

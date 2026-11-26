@@ -327,7 +327,7 @@ class ReportsController extends Controller
     {
         $data = app(\App\Services\Reports\PaymentReportData::class)->build($user, $from, $to, $this->clientIdFor($clientCode));
         $rows = collect($data['invoices'])->map(fn ($r) => [
-            'Invoice' => $r['invoice'], 'Client' => $r['client'], 'Client code' => $r['client_code'], 'Case' => $r['case'],
+            'Type' => $r['type'] ?? 'Invoice', 'Invoice' => $r['invoice'], 'Client' => $r['client'], 'Client code' => $r['client_code'], 'Case' => $r['case'],
             'Invoice date' => $r['invoice_date'], 'Due date' => $r['due_date'], 'Status' => $r['status'],
             'Billed' => $r['billed'], 'Received' => $r['received'], 'Waived' => $r['waived'], 'Balance' => $r['balance'],
         ]);
@@ -732,7 +732,7 @@ class ReportsController extends Controller
     {
         $data = app(\App\Services\Reports\PaymentReportData::class)->build($user, $from, $to, $this->clientIdFor($clientCode));
         $rows = collect($data['pending'])->map(fn ($r) => [
-            'Invoice' => $r['invoice'], 'Client' => $r['client'], 'Client code' => $r['client_code'], 'Contact' => $r['contact'],
+            'Type' => $r['type'] ?? 'Invoice', 'Invoice' => $r['invoice'], 'Client' => $r['client'], 'Client code' => $r['client_code'], 'Contact' => $r['contact'],
             'Email' => $r['email'], 'Phone' => $r['phone'], 'Due date' => $r['due_date'], 'Days overdue' => $r['days_overdue'],
             'Status' => $r['status'], 'Billed' => $r['billed'], 'Balance' => $r['balance'], 'Last follow-up' => $r['follow_up'],
         ]);

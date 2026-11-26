@@ -47,7 +47,7 @@ class PaymentReportData
             $days = $i->due_date && $i->due_date->lt($today) && $balance > 0.009 ? (int) $i->due_date->diffInDays($today) : 0;
 
             return [
-                'id' => $i->id, 'invoice' => $i->invoice_uin, 'client' => $clientName($i), 'client_code' => $i->client?->client_code,
+                'id' => $i->id, 'type' => 'Invoice', 'invoice' => $i->invoice_uin, 'client' => $clientName($i), 'client_code' => $i->client?->client_code,
                 'contact' => $i->client?->contact_name, 'email' => $i->client?->contact_email, 'phone' => $i->client?->phone,
                 'case' => $i->project?->docket_number ?? $i->docket_number, 'title' => $i->invention_title,
                 'invoice_date' => $i->invoice_date?->toDateString(), 'due_date' => $i->due_date?->toDateString(),
@@ -59,7 +59,34 @@ class PaymentReportData
             ];
         });
 
-        $pending = $rows->filter(fn ($r) => $r['balance'] > 0.009)->sortByDesc('days_overdue')->values();
+        // Unpaid quotes (sent / accepted, not yet invoiced): money due too, but not billed (no tax invoice yet).
+        // A quote is payable from its date; received = advances earmarked for it and payments on it.
+        $quoteQuery = PatentInvoiceIn::query()->openQuotes()->with('client:id,legal_name,company_name,client_code,contact_name,contact_email,phone', 'project:id,docket_number');
+        if ($user->isClientRole()) {
+            $quoteQuery->whereIn('client_id', Client::query()->visibleToUser($user)->select('id'));
+        } else {
+            \App\Support\DataAccess::scopeFinance($quoteQuery, $user);
+        }
+        $quotes = $quoteQuery->when($clientId, fn ($q) => $q->where('client_id', $clientId))->get()
+            ->filter(fn ($q) => (! $from && ! $to) || $inRange($q->invoice_date))
+            ->map(function (PatentInvoiceIn $q) use ($today, $clientName) {
+                $state = \App\Services\QuoteFirst::paidState($q);
+                $days = $q->invoice_date && $q->invoice_date->lt($today) && $state['due'] > 0.009 ? (int) $q->invoice_date->diffInDays($today) : 0;
+
+                return [
+                    'id' => $q->id, 'type' => 'Quote', 'invoice' => $q->invoice_uin ?: $q->zoho_number, 'client' => $clientName($q), 'client_code' => $q->client?->client_code,
+                    'contact' => $q->client?->contact_name, 'email' => $q->client?->contact_email, 'phone' => $q->client?->phone,
+                    'case' => $q->project?->docket_number ?? $q->docket_number, 'title' => $q->invention_title,
+                    'invoice_date' => $q->invoice_date?->toDateString(), 'due_date' => $q->invoice_date?->toDateString(),
+                    'days_overdue' => $days, 'age' => $this->ageBand($q->invoice_date, $today, $state['due']),
+                    'billed' => $state['total'], 'received' => $state['received'], 'waived' => 0.0, 'balance' => $state['due'], 'currency' => $q->currency ?: 'INR',
+                    'status' => $state['fully_paid'] ? 'Quote · paid, to invoice' : ($state['received'] > 0 ? 'Quote · part paid' : 'Quote · unpaid'),
+                    'follow_up' => $q->status_note, 'settlement' => null,
+                ];
+            })->filter(fn ($r) => $r['balance'] > 0.009)->values();
+
+        // Follow-up: unpaid invoices and unpaid quotes together, most overdue first.
+        $pending = $rows->filter(fn ($r) => $r['balance'] > 0.009)->concat($quotes)->sortByDesc('days_overdue')->values();
 
         $payments = RegisterPayment::query()->cash()
             ->whereIn('patent_invoice_in_id', $this->figures->registerInvoices($user, $clientId)->select('id'))
@@ -90,16 +117,24 @@ class PaymentReportData
                 $row[$label] = round($g->where('age', $key)->sum('balance'), 2);
             }
             $row['Total'] = round($g->sum('balance'), 2);
-            $row['Invoices'] = $g->count();
+            $row['Invoices'] = $g->where('type', 'Invoice')->count();
+            $row['Quotes'] = $g->where('type', 'Quote')->count();
 
             return $row;
         })->sortByDesc('Total')->values();
 
-        $byClient = $rows->groupBy('client')->map(fn (Collection $g, $client) => [
-            'client' => $client, 'client_code' => $g->first()['client_code'], 'invoices' => $g->count(),
-            'billed' => round($g->sum('billed'), 2), 'received' => round($g->sum('received'), 2),
-            'waived' => round($g->sum('waived'), 2), 'outstanding' => round($g->sum('balance'), 2),
-        ])->sortByDesc('outstanding')->values();
+        $quotesByClient = $quotes->groupBy('client');
+        $byClient = $rows->concat($quotes)->groupBy('client')->map(function (Collection $g, $client) use ($quotesByClient) {
+            $inv = $g->where('type', 'Invoice');
+            $quoted = round((float) ($quotesByClient[$client] ?? collect())->sum('balance'), 2);
+
+            return [
+                'client' => $client, 'client_code' => $g->first()['client_code'], 'invoices' => $inv->count(),
+                'billed' => round($inv->sum('billed'), 2), 'received' => round($inv->sum('received'), 2),
+                'waived' => round($inv->sum('waived'), 2), 'outstanding' => round($inv->sum('balance'), 2),
+                'quotes' => $g->where('type', 'Quote')->count(), 'quotes_due' => $quoted, 'total_due' => round($inv->sum('balance') + $quoted, 2),
+            ];
+        })->sortByDesc('total_due')->values();
 
         $billed = (float) $rows->sum('billed');
         $outstanding = (float) $rows->sum('balance');
@@ -120,12 +155,16 @@ class PaymentReportData
                 'overdue_invoices' => $pending->where('days_overdue', '>', 0)->count(),
                 'overdue_amount' => round((float) $pending->where('days_overdue', '>', 0)->sum('balance'), 2),
                 'payments' => $payments->count(), 'payments_amount' => round((float) $payments->sum('amount'), 2),
+                // Unpaid quotes (proformas) and the total due (invoices + quotes).
+                'quotes' => $quotes->count(), 'quotes_amount' => round((float) $quotes->sum('balance'), 2),
+                'total_due' => round($outstanding + (float) $quotes->sum('balance'), 2),
             ],
-            'ageing_totals' => collect($bands)->map(fn ($label, $key) => ['band' => $label, 'amount' => round((float) $pending->where('age', $key)->sum('balance'), 2), 'count' => $pending->where('age', $key)->count()])->values()->all(),
+            'ageing_totals' => collect($bands)->map(fn ($label, $key) => ['band' => $label, 'amount' => round((float) $pending->where('age', $key)->sum('balance'), 2), 'count' => $pending->where('age', $key)->count(),
+                'invoices' => round((float) $pending->where('age', $key)->where('type', 'Invoice')->sum('balance'), 2), 'quotes' => round((float) $pending->where('age', $key)->where('type', 'Quote')->sum('balance'), 2)])->values()->all(),
             'pending' => $pending->all(),
             'payments' => $payments->all(),
             'waivers' => $waivers->all(),
-            'invoices' => $rows->sortByDesc('invoice_date')->values()->all(),
+            'invoices' => $rows->concat($quotes)->sortByDesc('invoice_date')->values()->all(),
             'ageing' => $ageing->all(),
             'by_client' => $byClient->all(),
             'monthly' => $this->figures->monthly($user, $clientId),

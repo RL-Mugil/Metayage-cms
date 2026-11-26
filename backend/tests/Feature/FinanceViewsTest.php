@@ -134,4 +134,29 @@ class FinanceViewsTest extends TestCase
         $this->assertCount(5, $a['ageing']);
         $this->assertEquals(5900, array_sum(array_column($a['ageing'], 'quotes')));
     }
+
+    public function test_payment_reports_include_unpaid_quotes(): void
+    {
+        $data = app(\App\Services\Reports\PaymentReportData::class)->build($this->finance, null, null, null);
+        $quote = collect($data['pending'])->firstWhere('type', 'Quote');
+        $this->assertSame('801M002/Q1', $quote['invoice']);
+        $this->assertEquals(5900, $quote['balance']);
+        $this->assertCount(3, $data['pending']);                       // two unpaid invoices and the open quote
+        $this->assertSame(1, $data['summary']['quotes']);
+        $this->assertEquals(5900, $data['summary']['quotes_amount']);
+        $this->assertEquals(31800, $data['summary']['outstanding']);    // invoices only
+        $this->assertEquals(37700, $data['summary']['total_due']);
+        $this->assertEquals(31800, $data['summary']['billed'] - $data['summary']['received'] - $data['summary']['waived']);
+        $alpha = collect($data['by_client'])->firstWhere('client_code', '801M');
+        $this->assertEquals(5900, $alpha['quotes_due']);
+        $this->assertEquals(17700, $alpha['total_due']);
+
+        // The downloadable files render with the quote in them.
+        $xlsx = app(\App\Services\Reports\ExcelReport::class)->render('Payment Collection', $data, app(\App\Services\Letterhead::class)->get(), null, true);
+        $this->assertNotEmpty($xlsx);
+        $html = view('pdf.payment-report', ['title' => 'Payment Collection', 'data' => $data, 'cut' => [], 'letterhead' => app(\App\Services\Letterhead::class)->get(),
+            'signature' => null, 'seal' => '', 'financialSummary' => true])->render();
+        $this->assertStringContainsString('801M002/Q1', $html);
+        $this->assertStringContainsString('Unpaid quotes', $html);
+    }
 }

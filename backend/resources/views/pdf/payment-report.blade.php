@@ -64,6 +64,10 @@
   <td class="tile"><b style="color:#b45309">{{ $inr($s['outstanding']) }}</b><span>Outstanding · {{ $s['pending_invoices'] }} invoices</span></td>
   <td class="tile"><b style="color:#b91c1c">{{ $inr($s['overdue_amount']) }}</b><span>Overdue · {{ $s['overdue_invoices'] }} invoices</span></td>
   <td class="tile"><b style="color:#6d28d9">{{ $inr($s['waived']) }}</b><span>Waived</span></td>
+  @if (isset($s['quotes']))
+  <td class="tile"><b style="color:#7c3aed">{{ $inr($s['quotes_amount']) }}</b><span>Unpaid quotes · {{ $s['quotes'] }}</span></td>
+  <td class="tile"><b style="color:#1d4ed8">{{ $inr($s['total_due']) }}</b><span>Total due · invoices + quotes</span></td>
+  @endif
 </tr></table>
 
 <table class="split" width="100%"><tr>
@@ -85,20 +89,21 @@
     <table class="chart" width="100%">
       @foreach ($data['ageing_totals'] as $a)
         <tr><td width="34%">{{ $a['band'] }}</td>
-            <td><span class="bar" style="background:#f59e0b; width: {{ max(1, round($a['amount'] / $maxA * 110)) }}px"></span> {{ $inr($a['amount']) }} ({{ $a['count'] }})</td></tr>
+            <td><span class="bar" style="background:#f59e0b; width: {{ max(1, round($a['amount'] / $maxA * 110)) }}px"></span> {{ $inr($a['amount']) }} ({{ $a['count'] }})
+              @if (isset($a['quotes']) && $a['quotes'] > 0)<br><span class="muted">incl. quotes {{ $inr($a['quotes']) }}</span>@endif</td></tr>
       @endforeach
     </table>
   </td>
 </tr></table>
 
-<h2>Follow-up — pending invoices ({{ count($data['pending']) }})</h2>
+<h2>Follow-up — unpaid invoices and quotes ({{ count($data['pending']) }})</h2>
 <table class="data">
-  <tr><th>Invoice</th><th>Client</th><th>Contact</th><th>Due</th><th class="r">Days</th><th>Status</th><th class="r">Billed</th><th class="r">Balance</th></tr>
+  <tr><th>Type</th><th>Invoice / quote</th><th>Client</th><th>Contact</th><th>Due</th><th class="r">Days</th><th>Status</th><th class="r">Billed / quoted</th><th class="r">Balance</th></tr>
   @forelse ($data['pending'] as $r)
-    <tr><td>{{ $r['invoice'] }}</td><td>{{ $r['client'] }}</td><td>{{ $r['contact'] }}{{ $r['phone'] ? ' · '.$r['phone'] : '' }}</td>
+    <tr><td>{{ $r['type'] ?? 'Invoice' }}</td><td>{{ $r['invoice'] }}</td><td>{{ $r['client'] }}</td><td>{{ $r['contact'] }}{{ $r['phone'] ? ' · '.$r['phone'] : '' }}</td>
         <td>{{ $r['due_date'] }}</td><td class="r">{{ $r['days_overdue'] ?: '' }}</td><td><span class="pill {{ $pill($r['status']) }}">{{ $r['status'] }}</span></td>
         <td class="r">{{ $inr($r['billed']) }}</td><td class="r"><b>{{ $inr($r['balance']) }}</b></td></tr>
-  @empty <tr><td colspan="8" class="muted">Nothing pending.</td></tr> @endforelse
+  @empty <tr><td colspan="9" class="muted">Nothing pending.</td></tr> @endforelse
 </table>
 @if (($cut['pending'] ?? 0) > 0)<div class="more">{{ $cut['pending'] }} more pending invoices — see the Excel export.</div>@endif
 
@@ -123,11 +128,11 @@
 @endif
 
 @if ($financialSummary ?? false)
-<h2>Invoices</h2>
+<h2>Invoices and unpaid quotes</h2>
 <table class="data">
-  <tr><th>Invoice</th><th>Client</th><th>Invoice date</th><th>Status</th><th class="r">Billed</th><th class="r">Received</th><th class="r">Waived</th><th class="r">Balance</th></tr>
+  <tr><th>Type</th><th>Invoice / quote</th><th>Client</th><th>Date</th><th>Status</th><th class="r">Billed</th><th class="r">Received</th><th class="r">Waived</th><th class="r">Balance</th></tr>
   @foreach ($data['invoices'] as $i)
-    <tr><td>{{ $i['invoice'] }}</td><td>{{ $i['client'] }}</td><td>{{ $i['invoice_date'] }}</td><td><span class="pill {{ $pill($i['status']) }}">{{ $i['status'] }}</span></td>
+    <tr><td>{{ $i['type'] ?? 'Invoice' }}</td><td>{{ $i['invoice'] }}</td><td>{{ $i['client'] }}</td><td>{{ $i['invoice_date'] }}</td><td><span class="pill {{ $pill($i['status']) }}">{{ $i['status'] }}</span></td>
         <td class="r">{{ $inr($i['billed']) }}</td><td class="r">{{ $inr($i['received']) }}</td><td class="r">{{ $inr($i['waived']) }}</td><td class="r">{{ $inr($i['balance']) }}</td></tr>
   @endforeach
 </table>
@@ -136,10 +141,11 @@
 
 <h2>By client</h2>
 <table class="data">
-  <tr><th>Client</th><th class="r">Invoices</th><th class="r">Billed</th><th class="r">Received</th><th class="r">Waived</th><th class="r">Outstanding</th></tr>
+  <tr><th>Client</th><th class="r">Invoices</th><th class="r">Billed</th><th class="r">Received</th><th class="r">Waived</th><th class="r">Outstanding</th><th class="r">Quotes due</th><th class="r">Total due</th></tr>
   @foreach ($data['by_client'] as $c)
     <tr><td>{{ $c['client'] }} <span class="muted">{{ $c['client_code'] }}</span></td><td class="r">{{ $c['invoices'] }}</td><td class="r">{{ $inr($c['billed']) }}</td>
-        <td class="r">{{ $inr($c['received']) }}</td><td class="r">{{ $inr($c['waived']) }}</td><td class="r"><b>{{ $inr($c['outstanding']) }}</b></td></tr>
+        <td class="r">{{ $inr($c['received']) }}</td><td class="r">{{ $inr($c['waived']) }}</td><td class="r">{{ $inr($c['outstanding']) }}</td>
+        <td class="r">{{ $inr($c['quotes_due'] ?? 0) }}</td><td class="r"><b>{{ $inr($c['total_due'] ?? $c['outstanding']) }}</b></td></tr>
   @endforeach
 </table>
 
