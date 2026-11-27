@@ -40,8 +40,10 @@ class QuoteApprovals
         }
         $number = $quote->invoice_uin ?: $quote->zoho_number ?: "Q-{$quote->id}";
         $amount = self::amountText($quote);
+        // Addressed to the client's primary portal login (the column is required); any of their users may see it.
+        $approver = \App\Models\Client::whereKey($quote->client_id)->value('portal_user_id') ?: $requester;
         $approval = Approval::create([
-            'requester_id' => $requester, 'client_id' => $quote->client_id, 'project_id' => $quote->project_id,
+            'requester_id' => $requester, 'approver_id' => $approver, 'client_id' => $quote->client_id, 'project_id' => $quote->project_id,
             'type' => 'client', 'kind' => 'budget', 'status' => 'Pending',
             'title' => "Approve quote {$number} · {$amount}",
             'description' => trim(($quote->invention_title ?: '').($quote->docket_number ? " ({$quote->docket_number})" : '')).' Approving lets us start the work.',

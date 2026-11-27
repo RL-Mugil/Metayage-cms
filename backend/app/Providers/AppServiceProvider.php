@@ -128,10 +128,11 @@ class AppServiceProvider extends ServiceProvider
             if ($doc->type !== 'quote' || ! ($doc->wasRecentlyCreated || $doc->wasChanged(['status', 'converted_invoice_id', 'client_id']))) {
                 return;
             }
-            \Illuminate\Support\Facades\DB::afterCommit(fn () => rescue(function () use ($doc) {
+            // In its own savepoint: a failure here never breaks the save that triggered it.
+            \Illuminate\Support\Facades\DB::afterCommit(fn () => rescue(fn () => \Illuminate\Support\Facades\DB::transaction(function () use ($doc) {
                 \App\Services\QuoteApprovals::ensure($doc);
                 \App\Services\QuoteApprovals::sync($doc);
-            }, null, true));
+            }), null, true));
         });
 
         // Month close: a change that still reaches a locked month (a Zoho import) is flagged for review.
