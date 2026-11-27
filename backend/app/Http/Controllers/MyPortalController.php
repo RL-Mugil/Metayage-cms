@@ -2,65 +2,43 @@
 
 namespace App\Http\Controllers;
 
-use App\Mail\PortalInviteMail;
 use App\Models\Client;
 use App\Models\User;
+use App\Services\ClientPortalUsers;
+use App\Support\ClientAccess;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\Rules\Password as PasswordRule;
 
 /**
- * Self-service portal user management for client_admin users.
- * A client_admin can add/remove plain `client` users for their own company.
+ * Self-service portal users for a client's own logins with "Manage users & designations":
+ * add a colleague with a designation (ready-made or the client's own), remove one. Same rules
+ * and audit trail as the firm's Client Portal page (App\Services\ClientPortalUsers).
  */
 class MyPortalController extends Controller
 {
     private function resolveClientOrFail(Request $request): Client|\Illuminate\Http\JsonResponse
     {
         $user = $request->user();
-        if ($user->role !== 'client_admin') {
-            return response()->json(['message' => 'Forbidden'], 403);
+        if (! $user->isClientRole() || ! ClientAccess::can($user, 'manage_users')) {
+            return response()->json(['message' => 'Your portal access does not include managing users.'], 403);
         }
         $client = $request->attributes->get('portal_client') ?? Client::forUser($user);
         if (! $client) {
             return response()->json(['message' => 'No client record linked to your account.'], 404);
         }
+
         return $client;
     }
 
-    public function users(Request $request)
+    public function users(Request $request, ClientPortalUsers $portalUsers)
     {
         $client = $this->resolveClientOrFail($request);
         if ($client instanceof \Illuminate\Http\JsonResponse) return $client;
 
-        $emails = $client->contacts()->pluck('email')->filter()->values();
-        $users = User::query()
-            ->where(function ($query) use ($emails, $client) {
-                if ($emails->isNotEmpty()) {
-                    $query->whereIn('email', $emails);
-                }
-
-                if ($client->portal_user_id) {
-                    $method = $emails->isNotEmpty() ? 'orWhere' : 'where';
-                    $query->{$method}('id', $client->portal_user_id);
-                }
-            })
-            ->whereIn('role', User::CLIENT_ROLES)
-            // Postgres: DISTINCT + ORDER BY raw expression is invalid — plain column
-            // ordering keeps both. Desc puts 'client_finance' first, then
-            // 'client_admin', then 'client' — not admins-first anymore now that a
-            // third role exists, but avoids reintroducing the DISTINCT/ORDER BY error.
-            ->orderByDesc('role')
-            ->orderBy('name')
-            ->distinct()
-            ->get(['id', 'name', 'email', 'role', 'status', 'created_at']);
-
-        return response()->json($users);
+        return response()->json($portalUsers->list($client));
     }
 
-    public function store(Request $request)
+    public function store(Request $request, ClientPortalUsers $portalUsers)
     {
         $client = $this->resolveClientOrFail($request);
         if ($client instanceof \Illuminate\Http\JsonResponse) return $client;
@@ -68,71 +46,34 @@ class MyPortalController extends Controller
         $validated = $request->validate([
             'name'     => 'required|string|max:255',
             'email'    => 'required|email|max:255|unique:users,email',
+            'phone'    => 'nullable|string|max:30',
             'password' => ['required', 'max:100', PasswordRule::min(8)->mixedCase()->symbols()],
-            // client_admin is deliberately excluded — a client_admin can only provision
-            // full case-visibility or billing-only sub-users, never another admin.
+            'designation_id' => 'nullable|integer',
+            // Old form: a plain access level, mapped to the matching ready-made designation.
             'role'     => 'nullable|string|in:client,client_finance',
         ]);
+        if (empty($validated['designation_id'])) {
+            $validated['designation'] = ($validated['role'] ?? 'client') === 'client_finance' ? 'Accounts Person' : 'Other';
+        }
+        $designation = ClientPortalUsers::designationFor($client, $validated);
+        // Inventor logins need their Form 1 particulars: the firm adds those.
+        abort_if($designation->is_inventor, 422, 'Ask the firm to add an inventor login (their Form 1 details are needed).');
 
-        $newUser = User::create([
-            'name'     => $validated['name'],
-            'email'    => $validated['email'],
-            'password' => Hash::make($validated['password']),
-            'role'     => $validated['role'] ?? 'client',
-            'status'   => 'Active',
-        ]);
+        $row = $portalUsers->add($client, $validated, $request->user(), $request->ip(), $request->userAgent());
 
-        // Contact row links the new user to this client for all RBAC scoping.
-        DB::table('client_contacts')->upsert(
-            [['client_id' => $client->id, 'email' => $validated['email'], 'name' => $validated['name'], 'created_at' => now(), 'updated_at' => now()]],
-            ['email'],
-            ['client_id', 'name', 'updated_at']
-        );
-
-        // Credential emails disabled for now — the admin shares the password
-        // directly. Re-enable by uncommenting.
-        // try {
-        //     Mail::to($validated['email'])->send(new PortalInviteMail(
-        //         clientName: $validated['name'],
-        //         email:      $validated['email'],
-        //         password:   $validated['password'],
-        //         loginUrl:   config('app.url') . '/login',
-        //     ));
-        // } catch (\Throwable) {}
-
-        DB::table('ip_notifications')->insert([
-            'user_id'     => $request->user()->id,
-            'type'        => 'portal_invite',
-            'title'       => 'Portal user added',
-            'description' => "{$request->user()->name} added {$validated['name']} ({$validated['email']}) to the {$client->company_name} portal",
-            'meta'        => json_encode(['client_id' => $client->id, 'user_id' => $newUser->id]),
-            'created_at'  => now(),
-            'updated_at'  => now(),
-        ]);
-
-        return response()->json([
-            'ok'   => true,
-            'user' => $newUser->only(['id', 'name', 'email', 'role', 'status', 'created_at']),
-        ], 201);
+        return response()->json(['ok' => true, 'user' => $row], 201);
     }
 
-    public function destroy(Request $request, $userId)
+    public function destroy(Request $request, $userId, ClientPortalUsers $portalUsers)
     {
         $client = $this->resolveClientOrFail($request);
         if ($client instanceof \Illuminate\Http\JsonResponse) return $client;
 
         $target = User::findOrFail($userId);
-
-        // Only plain client/client_finance users of the same company can be removed —
-        // never admins, never yourself, never firm staff.
-        $belongs = $client->contacts()->where('email', $target->email)->exists();
-        if (! $belongs || ! in_array($target->role, ['client', 'client_finance'], true) || $target->id === $request->user()->id) {
-            return response()->json(['message' => 'You can only remove client users of your own company.'], 403);
+        if ($target->id === $request->user()->id || ! $target->isClientRole()) {
+            return response()->json(['message' => 'You can only remove other users of your own company.'], 403);
         }
-
-        $target->tokens()->delete();
-        $client->contacts()->where('email', $target->email)->delete();
-        $target->delete();
+        $portalUsers->remove($client, $target, $request->user(), $request->ip());
 
         return response()->json(['ok' => true]);
     }

@@ -116,9 +116,9 @@ export function ClientHub({ clientId }: { clientId?: number | null }) {
                 {r.decision ? (
                   <p className={`mt-2 text-xs font-medium ${r.decision === "renew" ? "text-emerald-600" : r.decision === "lapse" ? "text-red-600" : "text-amber-600"}`}>
                     {r.decision === "renew" ? "You chose to renew" : r.decision === "lapse" ? "You chose to let it lapse" : "You asked us for advice"} · {fmt(r.decided_at)}
-                    {data.can_decide && <button className="ml-2 text-[10px] text-muted-foreground underline" onClick={() => setData({ ...data, renewals: data.renewals.map((x) => x.renewal_id === r.renewal_id ? { ...x, decision: null } : x) })}>change</button>}
+                    {(data.can_renew ?? data.can_decide) && <button className="ml-2 text-[10px] text-muted-foreground underline" onClick={() => setData({ ...data, renewals: data.renewals.map((x) => x.renewal_id === r.renewal_id ? { ...x, decision: null } : x) })}>change</button>}
                   </p>
-                ) : data.can_decide ? (
+                ) : (data.can_renew ?? data.can_decide) ? (
                   <div className="mt-2 space-y-1.5">
                     <input value={note[r.renewal_id] ?? ""} onChange={(e) => setNote({ ...note, [r.renewal_id]: e.target.value })} placeholder="Note (optional)"
                       className="h-7 w-full rounded border border-border bg-background px-2 text-xs" />

@@ -40,7 +40,9 @@ class ClientHubController extends Controller
         $client = $this->client($request);
         $user = $request->user();
 
+        // Quotes are listed under quotes below (their approvals live in the Approvals tab).
         $approvals = Approval::with('project:id,docket_number,project_name')->where('client_id', $client->id)->where('type', 'client')
+            ->where(fn ($q) => $q->whereNull('subject_type')->orWhere('subject_type', '!=', \App\Services\QuoteApprovals::SUBJECT))
             ->whereRaw('LOWER(status) = ?', ['pending'])->latest()->limit(50)->get()
             ->map(fn ($a) => ['id' => $a->id, 'kind' => $a->kind, 'title' => $a->title, 'description' => $a->description,
                 'project_id' => $a->project_id, 'docket_number' => $a->project?->docket_number, 'submitted' => $a->created_at?->toDateString()]);
@@ -83,7 +85,8 @@ class ClientHubController extends Controller
             'counts' => ['approvals' => $approvals->count(), 'quotes' => $quotes->count(),
                 'renewals' => $renewals->whereNull('decision')->count(), 'invoices' => $invoices->count()],
             'payment_details' => self::paymentDetails(),
-            'can_decide' => in_array($user->role, array_merge(self::STAFF, ['client_admin']), true),
+            'can_decide' => in_array($user->role, self::STAFF, true) || ($user->isClientRole() && \App\Support\ClientAccess::can($user, 'approvals')),
+            'can_renew' => in_array($user->role, self::STAFF, true) || ($user->isClientRole() && \App\Support\ClientAccess::can($user, 'renewals')),
         ]);
     }
 
@@ -92,7 +95,7 @@ class ClientHubController extends Controller
     {
         $client = $this->client($request);
         $user = $request->user();
-        abort_unless(in_array($user->role, array_merge(self::STAFF, ['client_admin']), true), 403, 'Only a client admin can decide on renewals.');
+        abort_unless(in_array($user->role, self::STAFF, true) || ($user->isClientRole() && \App\Support\ClientAccess::can($user, 'renewals')), 403, 'Your portal access does not include renewal decisions.');
         $data = $request->validate(['decision' => 'required|in:'.implode(',', RenewalDecision::DECISIONS), 'note' => 'nullable|string|max:2000']);
         $schedule = RenewalSchedule::with('application:id,client_id,application_number')->findOrFail($scheduleId);
         abort_unless($schedule->application?->client_id === $client->id, 404);

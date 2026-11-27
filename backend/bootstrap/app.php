@@ -30,6 +30,7 @@ return Application::configure(basePath: dirname(__DIR__))
             \App\Http\Middleware\RestrictConnectorTokens::class,
             \App\Http\Middleware\EnsureUserIsActive::class,
             \App\Http\Middleware\EnsureClientPortalEnabled::class,
+            \App\Http\Middleware\ClientApiAccess::class,
             \App\Http\Middleware\EnforceMaintenanceMode::class,
         ]);
         $middleware->alias([

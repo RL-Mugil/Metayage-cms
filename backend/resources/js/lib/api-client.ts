@@ -219,7 +219,10 @@ export interface PortalUser {
   email: string
   phone: string | null
   role: string
-  designation: PortalDesignation | null
+  designation: PortalDesignation | string | null
+  /** The designation record (ready-made or the client's own) and the access its boxes give. */
+  designation_id?: number | null
+  permissions?: string[]
   access: string
   is_primary: boolean
   status: string
@@ -232,6 +235,8 @@ export interface NewPortalUser {
   email: string
   phone?: string
   designation: PortalDesignation
+  /** A designation by id (ready-made or the client's own); overrides the name. */
+  designation_id?: number | null
   password: string
   /** An Inventor login's Form 1 particulars (address required); also saved to the Inventors tab. */
   inventor?: Omit<InventorInput, 'client_id' | 'full_name' | 'email' | 'phone'>
@@ -318,6 +323,7 @@ export interface ClientHubData {
   counts: { approvals: number; quotes: number; renewals: number; invoices: number }
   payment_details: PaymentDetails
   can_decide: boolean
+  can_renew?: boolean
 }
 
 export interface TeamInsights {
@@ -2221,7 +2227,7 @@ export const api = {
   async deleteStaffUser(id: number): Promise<{ ok: boolean }> {
     return this.request(`/staff-users/${id}`, { method: 'DELETE' })
   },
-  async createMyPortalUser(data: { name: string; email: string; password: string; role?: "client" | "client_finance" }): Promise<any> {
+  async createMyPortalUser(data: { name: string; email: string; password: string; phone?: string; designation_id?: number | null; role?: "client" | "client_finance" }): Promise<any> {
     return this.request('/my-portal/users', { method: 'POST', body: JSON.stringify(data) })
   },
   async deleteMyPortalUser(userId: number): Promise<{ ok: boolean }> {

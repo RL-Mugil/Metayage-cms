@@ -65,6 +65,9 @@ const REPORT_TEMPLATES: ReportTemplate[] = [
   { id: "tds-pf-esi-summary", name: "TDS / PF / ESI Summary", description: "Statutory withholding totals per payroll run", icon: TrendingUp, color: "text-purple-400", roles: ["super_admin", "partner", "finance"] },
 ];
 
+/** Reports a client's own logins may run (always about their own client). */
+const CLIENT_REPORTS = new Set(["matter-status", "ip-deadline", "deadline-forecast", "overdue-cases", "financial-summary", "payment-collection"]);
+
 const CLIENT_FILTER_REPORTS = new Set([
   "client-portfolio",
   "matter-status",
@@ -122,7 +125,12 @@ export default function Reports() {
   const { props } = usePage<ReportsPageProps>();
   const role = props.auth?.user?.role ?? "";
   const canFinance = props.auth?.user?.access?.finance ?? false;
-  const availableTemplates = REPORT_TEMPLATES.filter((template) => template.roles.includes(role) && (!FINANCE_REPORTS.has(template.id) || canFinance));
+  // Client logins: reports about their own client only, by their access boxes.
+  const clientAccess: string[] | null = (props.auth?.user as any)?.client_access ?? null;
+  const isClientUser = role.startsWith("client");
+  const availableTemplates = isClientUser
+    ? REPORT_TEMPLATES.filter((t) => CLIENT_REPORTS.has(t.id) && (clientAccess ?? []).includes("reports") && (!FINANCE_REPORTS.has(t.id) || (clientAccess ?? []).includes("billing")))
+    : REPORT_TEMPLATES.filter((template) => template.roles.includes(role) && (!FINANCE_REPORTS.has(template.id) || canFinance));
   // Every report: one form, then the file downloads straight away (letterhead, signature seal).
   const [activeReport, setActiveReport] = useState<ReportTemplate | null>(null);
   const [verifyCode, setVerifyCode] = useState<string | null>(() => typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("verify"));
@@ -159,7 +167,7 @@ export default function Reports() {
       <PageHeader eyebrow="Insight" title="Reports" description="Download any report on the company letterhead, signed with your signature PIN" />
       {activeReport && (
         <ReportDownloadDialog
-          report={{ ...activeReport, clientFilter: CLIENT_FILTER_REPORTS.has(activeReport.id) }}
+          report={{ ...activeReport, clientFilter: !isClientUser && CLIENT_FILTER_REPORTS.has(activeReport.id) }}
           onClose={() => setActiveReport(null)}
           onDownloaded={loadHistory}
         />

@@ -71,6 +71,7 @@ Route::middleware(['auth', 'firm.context'])->group(function () {
     Route::get('/patent-portfolio', fn () => Inertia::render('PatentPortfolio'))->name('patent-portfolio');
     Route::get('/patent-lifecycle', fn () => Inertia::render('PatentLifecycle'))->name('patent-lifecycle');
     Route::get('/portal-users', fn () => Inertia::render('PortalUsers'))->name('portal-users');
+    Route::get('/portal-audit', fn () => Inertia::render('PortalAudit'))->name('portal-audit');
     Route::get('/staff-users', fn () => Inertia::render('StaffUsers'))->name('staff-users');
     Route::get('/audit-logs', fn () => Inertia::render('AuditLogs'))->name('audit-logs');
     Route::get('/recycle-bin', fn () => Inertia::render('RecycleBin'))->name('recycle-bin');

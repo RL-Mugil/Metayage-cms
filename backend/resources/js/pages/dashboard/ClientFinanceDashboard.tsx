@@ -29,7 +29,7 @@ export function ClientFinanceDashboard() {
 
   const feeRates = props.systemSettings?.renewal_fee_rates ?? { government_fee: 0, professional_fee: 0, currency: "INR" };
   // Renewal approval stays a client_admin action; client_finance sees fee detail read-only.
-  const canApprove = props.auth?.user?.role === "client_admin";
+  const canApprove = (props.auth?.user?.client_access ?? []).includes("renewals");
 
   const load = () => {
     api.getDashboardMetrics()

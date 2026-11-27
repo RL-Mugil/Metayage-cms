@@ -1,252 +1,122 @@
-import { Head } from "@inertiajs/react";
-import { useEffect, useState } from "react";
-import { Users, Plus, X, Loader2, CheckCircle, Trash2, Mail, ShieldCheck } from "lucide-react";
+import { Head, usePage } from "@inertiajs/react";
+import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Loader2, Plus, Trash2, Users } from "lucide-react";
+import { toast } from "sonner";
 import AppLayout from "@/layouts/AppLayout";
-import { PageHeader } from "@/components/page-header";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { FitPage } from "@/components/modern/fit-page";
+import { GlassCard } from "@/components/modern/glass-card";
 import { Button } from "@/components/ui/button";
-import { api } from "@/lib/api-client";
+import { api, type PortalUser } from "@/lib/api-client";
+import { AccessChips, assignDesignation, DesignationManager, DesignationSelect, useDesignations } from "@/components/clients/designation-manager";
 
-interface PortalUser {
-  id: number;
-  name: string;
-  email: string;
-  role: string;
-  status: string;
-  created_at: string;
-}
+const inputClass = "h-8 w-full rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold";
 
+/**
+ * A client's own Portal Users page (logins with "Manage users & designations"): add colleagues
+ * with a designation, change what someone can use, remove a login, and create the company's own
+ * designations with access checkboxes.
+ */
 export default function PortalUsers() {
-  const [users, setUsers] = useState<PortalUser[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const { props } = usePage() as any;
+  const me = props.auth?.user?.id;
+  const queryClient = useQueryClient();
+  const { data: users = [], isLoading, error } = useQuery<PortalUser[]>({ queryKey: ["my-portal-users"], queryFn: () => api.getMyPortalUsers() });
+  const { data: designationData } = useDesignations("mine");
+  const labels = Object.fromEntries((designationData?.permissions ?? []).map((p) => [p.key, p.label]));
+  const [adding, setAdding] = useState(false);
+  const refresh = () => { void queryClient.invalidateQueries({ queryKey: ["my-portal-users"] }); void queryClient.invalidateQueries({ queryKey: ["client-designations", "mine"] }); };
 
-  // Add user modal
-  const [showAdd, setShowAdd] = useState(false);
-  const [form, setForm] = useState<{ name: string; email: string; password: string; role: "client" | "client_finance" }>({ name: "", email: "", password: "", role: "client" });
-  const [saving, setSaving] = useState(false);
-  const [addError, setAddError] = useState("");
-  const [created, setCreated] = useState<{ email: string } | null>(null);
-
-  // Remove confirm
-  const [confirmRemove, setConfirmRemove] = useState<PortalUser | null>(null);
-  const [removing, setRemoving] = useState(false);
-
-  const load = () =>
-    api.getMyPortalUsers()
-      .then((u) => { setUsers(u); setError(""); })
-      .catch((e: any) => setError(e?.message || "Failed to load portal users."))
-      .finally(() => setLoading(false));
-
-  useEffect(() => { load(); }, []);
-
-  async function addUser() {
-    if (!form.name.trim() || !form.email.trim() || form.password.length < 6) return;
-    setSaving(true);
-    setAddError("");
-    try {
-      const res = await api.createMyPortalUser({ name: form.name.trim(), email: form.email.trim(), password: form.password, role: form.role });
-      setCreated({ email: res.user?.email ?? form.email });
-      load();
-    } catch (e: any) {
-      setAddError(e?.message || "Failed to add user.");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function removeUser() {
-    if (!confirmRemove) return;
-    setRemoving(true);
-    try {
-      await api.deleteMyPortalUser(confirmRemove.id);
-      setConfirmRemove(null);
-      load();
-    } catch (e: any) {
-      setError(e?.message || "Failed to remove user.");
-      setConfirmRemove(null);
-    } finally {
-      setRemoving(false);
-    }
-  }
+  const changeAccess = useMutation({
+    mutationFn: ({ user, id }: { user: PortalUser; id: number }) => assignDesignation("mine", user.id, id),
+    onSuccess: () => { toast.success("Access changed"); refresh(); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const remove = useMutation({
+    mutationFn: (user: PortalUser) => api.deleteMyPortalUser(user.id),
+    onSuccess: () => { toast.success("Login removed"); refresh(); },
+    onError: (e: Error) => toast.error(e.message),
+  });
 
   return (
     <AppLayout>
       <Head title="Portal Users" />
-      <PageHeader
-        eyebrow="Account"
-        title="Portal Users"
-        description="Add or remove people from your company who can access this portal."
-        actions={
-          <Button onClick={() => { setShowAdd(true); setForm({ name: "", email: "", password: "", role: "client" }); setCreated(null); setAddError(""); }}>
-            <Plus className="h-4 w-4 mr-2" /> Add User
-          </Button>
-        }
-      />
+      <FitPage fit={false} eyebrow="Account" title="Portal Users" summary="Your colleagues who use this portal, and what each designation may use"
+        actions={!adding && <Button size="sm" className="bg-gold text-black hover:bg-gold/90" onClick={() => setAdding(true)}><Plus className="mr-1.5 h-4 w-4" />Add a user</Button>}>
+        <div className="space-y-4">
+          {adding && <AddUser onCancel={() => setAdding(false)} onSaved={() => { setAdding(false); refresh(); }} />}
 
-      {/* Add user modal */}
-      {showAdd && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-xl m-4">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-border">
-              <h2 className="font-display text-lg font-semibold">Add Portal User</h2>
-              <button onClick={() => setShowAdd(false)}><X className="h-5 w-5 text-muted-foreground" /></button>
-            </div>
-            {created ? (
-              <div className="px-6 py-4 space-y-4">
-                <div className="text-center">
-                  <CheckCircle className="h-10 w-10 text-green-500 mx-auto mb-3" />
-                  <div className="font-semibold">User Added!</div>
-                  <p className="text-xs text-muted-foreground mt-2">
-                    Share the password you set with them directly.<br />
-                    They can change it later in Settings → Security.
-                  </p>
-                </div>
-                <div className="rounded-lg border border-gold/30 bg-gold/5 px-4 py-2.5 flex justify-between text-sm">
-                  <span className="text-muted-foreground">Login email</span>
-                  <span className="font-mono font-medium">{created.email}</span>
-                </div>
-                <Button className="w-full" variant="outline" onClick={() => setShowAdd(false)}>Close</Button>
-              </div>
-            ) : (
-              <>
-                <div className="px-6 py-4 space-y-3">
-                  {addError && <p className="text-xs text-red-500">{addError}</p>}
-                  <section>
-                    <h3 className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground mb-2 flex items-center gap-1.5">
-                      <span className="w-4 h-4 rounded-full bg-gold text-black flex items-center justify-center text-[9px] font-bold">1</span>
-                      User Details
-                    </h3>
-                    <div className="grid grid-cols-4 gap-2">
-                      <div className="col-span-2">
-                        <div className="text-[10px] text-muted-foreground mb-0.5">Full Name</div>
-                        <input type="text" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))}
-                          placeholder="Jane Smith"
-                          className="w-full h-8 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
-                      </div>
-                      <div className="col-span-2">
-                        <div className="text-[10px] text-muted-foreground mb-0.5">Work Email</div>
-                        <input type="email" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))}
-                          placeholder="jane@yourcompany.com"
-                          className="w-full h-8 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
-                      </div>
-                      <div className="col-span-2">
-                        <div className="text-[10px] text-muted-foreground mb-0.5">Set Password</div>
-                        <input type="text" value={form.password} onChange={e => setForm(p => ({ ...p, password: e.target.value }))}
-                          placeholder="Min. 6 characters — share it with them"
-                          className="w-full h-8 rounded border border-border bg-background px-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-gold" />
-                        <p className="text-[10px] text-muted-foreground mt-1">They can change it later in Settings → Security.</p>
-                      </div>
-                      <div className="col-span-2">
-                        <div className="text-[10px] text-muted-foreground mb-0.5">Access</div>
-                        <select value={form.role} onChange={e => setForm(p => ({ ...p, role: e.target.value as "client" | "client_finance" }))}
-                          className="w-full h-8 rounded border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-gold">
-                          <option value="client">Full access — cases, deadlines, approvals, billing</option>
-                          <option value="client_finance">Finance only — billing and invoices</option>
-                        </select>
-                      </div>
-                    </div>
-                  </section>
-                </div>
-                <div className="flex gap-2 px-6 py-4 border-t border-border justify-end">
-                  <Button variant="outline" onClick={() => setShowAdd(false)}>Cancel</Button>
-                  <Button className="bg-gold hover:bg-gold/90 text-black min-w-[120px]"
-                    disabled={!form.name.trim() || !form.email.trim() || form.password.length < 6 || saving} onClick={addUser}>
-                    {saving ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Adding…</> : <>Add User</>}
-                  </Button>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Remove confirm modal */}
-      {confirmRemove && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="bg-background/95 border border-[var(--glass-border)] rounded-2xl shadow-3d-lg backdrop-blur-xl w-full max-w-sm p-6 m-4">
-            <h2 className="font-display text-lg font-semibold mb-2">Remove User?</h2>
-            <p className="text-sm text-muted-foreground mb-4">
-              <strong>{confirmRemove.name}</strong> ({confirmRemove.email}) will lose access to the portal immediately.
-            </p>
-            <div className="flex gap-2">
-              <Button className="bg-destructive text-white hover:bg-destructive/90 flex-1" disabled={removing} onClick={removeUser}>
-                {removing ? <Loader2 className="h-4 w-4 animate-spin" /> : "Remove"}
-              </Button>
-              <Button variant="outline" onClick={() => setConfirmRemove(null)}>Cancel</Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <div className="px-4 py-4 sm:px-8 sm:py-5 space-y-5">
-        {error && (
-          <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">{error}</div>
-        )}
-
-        <Card className="border-border">
-          <CardHeader>
-            <CardTitle className="font-display flex items-center gap-2">
-              <Users className="h-4 w-4 text-gold" /> Your Team ({users.length})
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-0">
-            {loading ? (
-              <div className="flex items-center justify-center py-16">
-                <Loader2 className="h-6 w-6 animate-spin text-gold" />
-              </div>
-            ) : users.length === 0 ? (
-              <p className="text-sm text-muted-foreground px-4 py-10 text-center">No portal users yet.</p>
-            ) : (
-              <table className="w-full text-sm">
-                <thead className="bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground">
-                  <tr>
-                    <th className="px-4 py-3 text-left">Name</th>
-                    <th className="px-4 py-3 text-left">Email</th>
-                    <th className="px-4 py-3 text-left">Role</th>
-                    <th className="px-4 py-3 text-left">Added</th>
-                    <th className="px-4 py-3 text-left">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="table-rows-3d">
-                  {users.map((u) => (
-                    <tr key={u.id} className="border-t border-border hover:bg-muted/20">
-                      <td className="px-4 py-3 font-medium">{u.name}</td>
-                      <td className="px-4 py-3 text-muted-foreground">
-                        <span className="flex items-center gap-1.5"><Mail className="h-3 w-3" />{u.email}</span>
-                      </td>
-                      <td className="px-4 py-3">
-                        {u.role === "client_admin" ? (
-                          <Badge className="bg-gold/15 text-gold border-gold/30 flex items-center gap-1 w-fit">
-                            <ShieldCheck className="h-3 w-3" /> Admin
-                          </Badge>
-                        ) : u.role === "client_finance" ? (
-                          <Badge variant="secondary">Finance only</Badge>
-                        ) : (
-                          <Badge variant="secondary">Member</Badge>
+          <GlassCard className="card-3d" title="Users" icon={<Users className="h-4 w-4 text-gold" />} subtitle="Change someone's designation to change what they can use">
+            <div className="p-3 pt-0">
+              {isLoading ? <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-gold" /></div>
+                : error ? <p className="py-6 text-center text-sm text-red-600">{(error as Error).message}</p>
+                : (
+                  <div className="divide-y divide-border rounded-xl border border-border">
+                    {users.map((u) => (
+                      <div key={u.id} className="flex flex-wrap items-start gap-3 p-3 text-xs">
+                        <div className="min-w-0 flex-1">
+                          <p className="flex flex-wrap items-center gap-1.5 text-sm font-medium">
+                            {u.name}
+                            {u.is_primary && <span className="rounded bg-gold/15 px-1.5 py-0.5 text-[10px] font-normal text-gold">Primary</span>}
+                            {u.id === me && <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-normal">You</span>}
+                          </p>
+                          <p className="text-muted-foreground">{[u.email, u.phone].filter(Boolean).join(" · ")}</p>
+                          {u.permissions && <div className="mt-1"><AccessChips permissions={u.permissions} labels={labels} /></div>}
+                        </div>
+                        <label className="flex shrink-0 items-center gap-1 text-[10px] text-muted-foreground">Designation
+                          {u.id === me || u.role === "inventor"
+                            ? <span className="rounded border border-border px-1.5 py-1 text-foreground">{u.designation ?? "—"}</span>
+                            : <DesignationSelect scope="mine" value={u.designation_id} onChange={(id) => changeAccess.mutate({ user: u, id })} />}
+                        </label>
+                        {!u.is_primary && u.id !== me && u.role !== "inventor" && (
+                          <Button size="icon" variant="ghost" className="h-7 w-7" title="Remove login" disabled={remove.isPending}
+                            onClick={() => { if (window.confirm(`Remove ${u.name}'s portal login?`)) remove.mutate(u); }}><Trash2 className="h-3.5 w-3.5" /></Button>
                         )}
-                      </td>
-                      <td className="px-4 py-3 text-muted-foreground text-xs">
-                        {u.created_at ? new Date(u.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "—"}
-                      </td>
-                      <td className="px-4 py-3">
-                        {(u.role === "client" || u.role === "client_finance") && (
-                          <Button size="sm" variant="outline"
-                            className="text-xs h-7 text-destructive border-destructive/40 hover:bg-destructive/10"
-                            onClick={() => setConfirmRemove(u)}>
-                            <Trash2 className="h-3 w-3 mr-1" /> Remove
-                          </Button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+                      </div>
+                    ))}
+                    {users.length === 0 && <p className="py-6 text-center text-muted-foreground">No users yet.</p>}
+                  </div>
+                )}
+            </div>
+          </GlassCard>
+
+          <GlassCard className="card-3d">
+            <div className="p-4"><DesignationManager scope="mine" canManage /></div>
+          </GlassCard>
+        </div>
+      </FitPage>
     </AppLayout>
+  );
+}
+
+function AddUser({ onCancel, onSaved }: { onCancel: () => void; onSaved: () => void }) {
+  const [f, setF] = useState({ name: "", email: "", phone: "", password: "", designation_id: null as number | null });
+  const save = useMutation({
+    mutationFn: () => api.createMyPortalUser({ name: f.name.trim(), email: f.email.trim(), phone: f.phone.trim() || undefined, password: f.password, designation_id: f.designation_id }),
+    onSuccess: () => { toast.success(`Login created for ${f.email}. Share the password with them directly.`); onSaved(); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const problem = !f.name.trim() ? "Enter a name" : !/^\S+@\S+\.\S+$/.test(f.email.trim()) ? "Enter a valid email"
+    : f.password.length < 8 ? "Password: at least 8 characters, upper and lower case and a symbol" : !f.designation_id ? "Choose a designation" : null;
+  const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement>) => setF({ ...f, [k]: e.target.value });
+  return (
+    <GlassCard className="card-3d border border-gold/40" title="Add a user">
+      <div className="grid gap-2 p-4 pt-0 sm:grid-cols-5">
+        <label className="text-[10px] text-muted-foreground">Designation
+          <DesignationSelect scope="mine" value={f.designation_id} onChange={(id) => setF({ ...f, designation_id: id })} className={inputClass} />
+        </label>
+        <label className="text-[10px] text-muted-foreground">Name<input value={f.name} onChange={set("name")} className={inputClass} /></label>
+        <label className="text-[10px] text-muted-foreground">Email (login)<input type="email" value={f.email} onChange={set("email")} className={inputClass} /></label>
+        <label className="text-[10px] text-muted-foreground">Phone<input value={f.phone} onChange={set("phone")} className={inputClass} /></label>
+        <label className="text-[10px] text-muted-foreground">Password<input value={f.password} onChange={set("password")} className={`${inputClass} font-mono`} /></label>
+        <div className="flex gap-2 sm:col-span-5">
+          <Button size="sm" className="h-7 text-xs" disabled={save.isPending || !!problem} title={problem ?? undefined} onClick={() => save.mutate()}>
+            {save.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : "Create login"}
+          </Button>
+          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={onCancel}>Cancel</Button>
+          {problem && <span className="self-center text-[10px] text-muted-foreground">{problem}</span>}
+        </div>
+      </div>
+    </GlassCard>
   );
 }

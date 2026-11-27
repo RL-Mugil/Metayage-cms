@@ -27,6 +27,27 @@ class ReportsController extends Controller
     /** Firm staff: each sees the cases they may see (App\Support\DataAccess). */
     private const STAFF = ['super_admin', 'partner', 'director', 'manager', 'hr', 'finance', 'associate', 'paralegal', 'galvanizer'];
 
+    /**
+     * Reports a client's own logins may run (with the "Reports" access box), always about their
+     * own client only; the finance ones also need "Invoices, payments & statement".
+     */
+    private const CLIENT_REPORTS = ['matter-status', 'ip-deadline', 'deadline-forecast', 'overdue-cases', 'financial-summary', 'payment-collection'];
+
+    /** Columns about the firm's internal staffing, left out of a client's reports. */
+    private const INTERNAL_COLUMN = '/manager|assignee|engineer|attorney|pcm|scm|owner|staff|internal|hours|rate/i';
+
+    /** May this user run this report type? */
+    private static function allowedFor(\App\Models\User $user, string $type): bool
+    {
+        if ($user->isClientRole()) {
+            return in_array($type, self::CLIENT_REPORTS, true) && \App\Support\ClientAccess::can($user, 'reports')
+                && (! in_array($type, self::FINANCE_REPORTS, true) || \App\Support\ClientAccess::can($user, 'billing'));
+        }
+
+        return in_array($user->role, self::REPORT_ACCESS[$type] ?? [], true)
+            && (! in_array($type, self::FINANCE_REPORTS, true) || \App\Support\DataAccess::canOpenFinance($user));
+    }
+
     /** Finance reports also need finance access (all finance, circle, or CM / SCM cases). */
     private const FINANCE_REPORTS = ['financial-summary', 'payment-collection', 'zoho-summary'];
 
@@ -170,9 +191,15 @@ class ReportsController extends Controller
             $from ??= now()->startOfDay();
         }
 
-        $allowedRoles = self::REPORT_ACCESS[$type] ?? ['super_admin'];
-        abort_unless(in_array($user->role, $allowedRoles, true), 403, 'Forbidden');
-        abort_if(in_array($type, self::FINANCE_REPORTS, true) && ! \App\Support\DataAccess::canOpenFinance($user), 403, 'Finance reports need finance access (Settings → Financial access).');
+        abort_if(! $user->isClientRole() && in_array($type, self::FINANCE_REPORTS, true) && in_array($user->role, self::REPORT_ACCESS[$type] ?? [], true)
+            && ! \App\Support\DataAccess::canOpenFinance($user), 403, 'Finance reports need finance access (Settings → Financial access).');
+        abort_unless(self::allowedFor($user, $type), 403, 'Forbidden');
+        if ($user->isClientRole()) {
+            // A client's report is always about their own client.
+            $own = $request->attributes->get('portal_client') ?? Client::forUser($user);
+            abort_unless($own && $own->client_code, 403, 'No client record linked to your account.');
+            $clientCode = strtoupper((string) $own->client_code);
+        }
 
         if ($clientCode && ! Client::query()->where('client_code', $clientCode)->exists()) {
             throw ValidationException::withMessages([
@@ -203,6 +230,18 @@ class ReportsController extends Controller
     }
 
     private function buildReportPayload(string $type, $user, int $perPage, int $page, ?Carbon $from, ?Carbon $to, ?string $clientCode): array
+    {
+        $payload = $this->buildReportPayloadFor($type, $user, $perPage, $page, $from, $to, $clientCode);
+        if ($user->isClientRole() && ! empty($payload['rows'])) {
+            // A client's copy leaves out the firm's internal staffing columns.
+            $payload['rows'] = collect($payload['rows'])->map(fn ($row) => is_array($row)
+                ? array_filter($row, fn ($key) => ! preg_match(self::INTERNAL_COLUMN, (string) $key), ARRAY_FILTER_USE_KEY) : $row)->values()->all();
+        }
+
+        return $payload;
+    }
+
+    private function buildReportPayloadFor(string $type, $user, int $perPage, int $page, ?Carbon $from, ?Carbon $to, ?string $clientCode): array
     {
         $payload = match ($type) {
             'client-portfolio' => $this->clientPortfolio($user, $perPage, $page, $from, $to, $clientCode),
@@ -809,10 +848,7 @@ class ReportsController extends Controller
     /** The report types and names a user may run (Claude connector: list_reports). @return array<string, string> */
     public static function availableTo(\App\Models\User $user): array
     {
-        return collect(self::REPORT_NAMES)
-            ->filter(fn ($name, $type) => in_array($user->role, self::REPORT_ACCESS[$type] ?? [], true)
-                && (! in_array($type, self::FINANCE_REPORTS, true) || \App\Support\DataAccess::canOpenFinance($user)))
-            ->all();
+        return collect(self::REPORT_NAMES)->filter(fn ($name, $type) => self::allowedFor($user, $type))->all();
     }
 
     /** Download a saved report again from its snapshot (keeps its signature; can be signed now). */
@@ -822,7 +858,7 @@ class ReportsController extends Controller
         @ini_set('memory_limit', '512M');
         $user = $request->user();
         $export = ReportExport::where('generated_by_id', $user->id)->findOrFail($id);
-        abort_unless(in_array($user->role, self::REPORT_ACCESS[$export->report_type] ?? ['super_admin'], true), 403, 'Forbidden');
+        abort_unless(self::allowedFor($user, (string) $export->report_type), 403, 'Forbidden');
         $data = (array) ($export->snapshot ?? []);
         if (in_array($export->report_type, self::SIGNED_TYPES, true) && ! isset($data['summary'])) {
             // Saved before the register-based version: rebuild from the same filters (no signature on it yet).

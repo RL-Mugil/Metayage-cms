@@ -37,8 +37,9 @@ class ApprovalController extends Controller
         if ($a->status !== 'Pending') {
             return false;
         }
-        if ($user->role === 'client_admin') {
-            return true;
+        // Client logins whose designation has "Approve quotes & approvals".
+        if ($user->isClientRole()) {
+            return \App\Support\ClientAccess::can($user, 'approvals');
         }
         return $user->isInventor() && $a->kind === 'technical';
     }
@@ -642,7 +643,7 @@ class ApprovalController extends Controller
         if ($validated['type'] === 'Client') {
             $approval = Approval::findOrFail($validated['id']);
 
-            if ($user->role === 'client_admin') {
+            if ($user->isClientRole() && \App\Support\ClientAccess::can($user, 'approvals')) {
                 $ownClient = $request->attributes->get('portal_client') ?? Client::forUser($user);
                 if (! $ownClient || (int) $approval->client_id !== (int) $ownClient->id) {
                     return response()->json(['message' => 'Forbidden'], 403);
@@ -660,7 +661,7 @@ class ApprovalController extends Controller
                 }
                 $resolverLabel = $user->name . ' (inventor)';
             } else {
-                return response()->json(['message' => 'Only your portal admin can approve or reject.'], 403);
+                return response()->json(['message' => 'Your portal access does not include approvals. Ask your portal admin.'], 403);
             }
 
             if ($approval->status !== 'Pending') {

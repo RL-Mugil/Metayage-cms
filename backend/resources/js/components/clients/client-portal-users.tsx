@@ -5,19 +5,20 @@ import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { api, type NewPortalUser, type PortalDesignation, type PortalUser } from "@/lib/api-client"
 import { defaultInventorParticulars, InventorParticularsFields, inventorProblem } from "@/components/inventors/inventor-picker"
+import { AccessChips, assignDesignation, DesignationManager, DesignationSelect, useDesignations } from "@/components/clients/designation-manager"
 
 /** Firm roles that create, reset and remove portal logins (ClientPortalUsers::MANAGE_ROLES). */
 export const PORTAL_MANAGE_ROLES = ["super_admin", "partner", "manager", "hr"]
 
 export const PORTAL_DESIGNATIONS: PortalDesignation[] = ["Manager", "CFO", "CTO", "Accounts Person", "Inventor", "Other"]
 
-/** What each designation can see in the portal (fixed by designation). */
+/** What each ready-made designation can use (its access boxes; editable designations add their own). */
 export const DESIGNATION_ACCESS: Record<PortalDesignation, string> = {
-  Manager: "Admin: cases, documents, invoices and payments; manages the client's team",
-  CFO: "Finance: invoices, payments and ledger only",
-  "Accounts Person": "Finance: invoices, payments and ledger only",
-  CTO: "Standard: cases, documents and invoices",
-  Other: "Standard: cases, documents and invoices",
+  Manager: "Everything: cases, documents, approvals, renewals, billing, reports, AI, users and audit log",
+  CFO: "Billing, reports, documents, discussions, approvals and renewal decisions",
+  "Accounts Person": "Billing, reports, documents, discussions and approvals",
+  CTO: "Cases, tasks, documents, discussions and approvals",
+  Other: "Cases, tasks, documents, discussions and billing",
   Inventor: "Inventor: only the cases they are named on; also added to the Inventors tab",
 }
 
@@ -41,7 +42,16 @@ export function ClientPortalUsers({ clientId, canManage }: { clientId: number; c
     queryFn: () => api.getPortalClientUsers(clientId),
   })
   const [adding, setAdding] = useState(false)
+  const [showAccess, setShowAccess] = useState(false)
   const [resetting, setResetting] = useState<number | null>(null)
+  const scope = { clientId }
+  const { data: designationData } = useDesignations(scope)
+  const labels = Object.fromEntries((designationData?.permissions ?? []).map((p) => [p.key, p.label]))
+  const changeAccess = useMutation({
+    mutationFn: ({ user, designationId }: { user: PortalUser; designationId: number }) => assignDesignation(scope, user.id, designationId),
+    onSuccess: () => { toast.success("Access changed"); refresh() },
+    onError: (failure: Error) => toast.error(failure.message),
+  })
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: portalUsersKey(clientId) })
     void queryClient.invalidateQueries({ queryKey: ["client-inventors", clientId] })
@@ -59,11 +69,15 @@ export function ClientPortalUsers({ clientId, canManage }: { clientId: number; c
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-2">
-        <p className="text-xs text-muted-foreground">People at this client who log in to the portal. What they see follows their designation.</p>
-        {canManage && !adding && (
-          <Button size="sm" onClick={() => setAdding(true)}><Plus className="mr-1 h-3.5 w-3.5" />Add user</Button>
-        )}
+        <p className="text-xs text-muted-foreground">People at this client who log in to the portal. What they can use follows their designation's access boxes.</p>
+        <div className="flex gap-1.5">
+          <Button size="sm" variant="outline" onClick={() => setShowAccess((v) => !v)}>{showAccess ? "Hide" : "Designations &"} access</Button>
+          {canManage && !adding && (
+            <Button size="sm" onClick={() => setAdding(true)}><Plus className="mr-1 h-3.5 w-3.5" />Add user</Button>
+          )}
+        </div>
       </div>
+      {showAccess && <DesignationManager scope={scope} canManage={canManage} />}
 
       {adding && <PortalUserForm clientId={clientId} onCancel={() => setAdding(false)} onSaved={() => { setAdding(false); refresh() }} />}
 
@@ -83,7 +97,14 @@ export function ClientPortalUsers({ clientId, canManage }: { clientId: number; c
                     {user.status !== "Active" && <span className="text-[10px] font-normal text-amber-600">{user.status}</span>}
                   </p>
                   <p className="text-muted-foreground">{[user.email, user.phone].filter(Boolean).join(" · ")}</p>
+                  {user.permissions && <div className="mt-1"><AccessChips permissions={user.permissions} labels={labels} /></div>}
                 </div>
+                {canManage && (
+                  <label className="flex shrink-0 items-center gap-1 text-[10px] text-muted-foreground">Designation
+                    <DesignationSelect scope={scope} value={user.designation_id} inventor={user.role === "inventor"}
+                      onChange={(id) => changeAccess.mutate({ user, designationId: id })} />
+                  </label>
+                )}
                 {canManage && (
                   <div className="flex shrink-0 gap-1">
                     <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => setResetting(resetting === user.id ? null : user.id)}>
@@ -173,6 +194,8 @@ export function portalUserPayload(user: NewPortalUser): NewPortalUser {
 
 function PortalUserForm({ clientId, onCancel, onSaved }: { clientId: number; onCancel: () => void; onSaved: () => void }) {
   const [user, setUser] = useState<NewPortalUser>(blankPortalUser())
+  const { data: designationData } = useDesignations({ clientId })
+  const own = (designationData?.designations ?? []).filter((d) => !d.ready_made)
   const save = useMutation({
     mutationFn: () => api.addPortalClientUser(clientId, portalUserPayload(user)),
     onSuccess: (result) => { toast.success(`Portal login created for ${result.user.email}. Share the password with them directly.`); onSaved() },
@@ -182,6 +205,15 @@ function PortalUserForm({ clientId, onCancel, onSaved }: { clientId: number; onC
   return (
     <div className="space-y-2 rounded-md border border-border bg-muted/20 p-3">
       <PortalUserFields value={user} onChange={setUser} />
+      {own.length > 0 && user.designation !== "Inventor" && (
+        <label className="block text-[10px] text-muted-foreground">Or one of this client's own designations
+          <select value={user.designation_id ?? ""} onChange={(e) => setUser({ ...user, designation_id: e.target.value ? Number(e.target.value) : null })}
+            className="mt-0.5 h-8 w-full max-w-xs rounded border border-border bg-background px-2 text-xs">
+            <option value="">Use the designation above</option>
+            {own.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+          </select>
+        </label>
+      )}
       <div className="flex gap-2">
         <Button size="sm" className="h-7 text-xs" disabled={save.isPending || !!problem} title={problem ?? undefined} onClick={() => save.mutate()}>
           {save.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : "Create login"}

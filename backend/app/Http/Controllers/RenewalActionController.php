@@ -121,8 +121,9 @@ class RenewalActionController extends Controller
     public function approve(Request $request, $projectId)
     {
         $user = $request->user();
-        if ($user->role !== 'client_admin') {
-            return response()->json(['message' => 'Forbidden'], 403);
+        // Client logins whose designation has "Renewal decisions".
+        if (! $user->isClientRole() || ! \App\Support\ClientAccess::can($user, 'renewals')) {
+            return response()->json(['message' => 'Your portal access does not include renewal decisions.'], 403);
         }
 
         $client = $request->attributes->get('portal_client') ?? Client::forUser($user);

@@ -52,10 +52,46 @@ class RestrictClientPages
         'inventor' => ['/projects/'],
     ];
 
+    /**
+     * Client logins (client / client_admin / client_finance): each page needs one access
+     * checkbox of the login's designation (App\Support\ClientAccess). Pages not listed here
+     * (dashboard, notifications, settings, feedback, My Team) are open to every client login.
+     */
+    private const PAGE_PERMISSION = [
+        '/patent-portfolio' => 'cases', '/patent-lifecycle' => 'cases', '/projects' => 'cases', '/projects/' => 'cases',
+        '/tasks' => 'tasks', '/tasks/' => 'tasks', '/kanban' => 'tasks', '/calendar' => 'tasks',
+        '/documents' => 'documents', '/documents/' => 'documents',
+        '/discussions' => 'discussions', '/discussions/' => 'discussions',
+        '/approvals' => 'approvals',
+        '/financial' => 'billing', '/pending-payments' => 'billing',
+        '/reports' => 'reports',
+        '/portal-users' => 'manage_users',
+        '/portal-audit' => 'audit_log',
+    ];
+
+    private const ALWAYS_OPEN = ['/', '/team', '/feedback', '/notifications', '/settings', '/logout'];
+
     public function handle(Request $request, Closure $next): mixed
     {
         $user = $request->user();
-        if ($user && ($user->isClientRole() || $user->isInventor())) {
+        if ($user && $user->isClientRole()) {
+            $path = '/' . ltrim($request->path(), '/');
+            if (in_array($path, self::ALWAYS_OPEN, true)) {
+                return $next($request);
+            }
+            $permission = self::PAGE_PERMISSION[$path] ?? null;
+            if ($permission === null) {
+                foreach (self::PAGE_PERMISSION as $page => $perm) {
+                    if (str_ends_with($page, '/') && str_starts_with($path, $page)) {
+                        $permission = $perm;
+                        break;
+                    }
+                }
+            }
+
+            return $permission !== null && \App\Support\ClientAccess::can($user, $permission) ? $next($request) : redirect('/');
+        }
+        if ($user && $user->isInventor()) {
             $path = '/' . ltrim($request->path(), '/');
             $allowedPaths = self::ALLOWED[$user->role] ?? self::ALLOWED['client'];
             $allowedPrefixes = self::ALLOWED_PREFIXES[$user->role] ?? self::ALLOWED_PREFIXES['client'];

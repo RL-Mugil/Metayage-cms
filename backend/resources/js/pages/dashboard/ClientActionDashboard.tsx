@@ -36,7 +36,7 @@ export function ClientActionDashboard() {
   const { data: billing } = useClientBilling();
 
   const feeRates = props.systemSettings?.renewal_fee_rates ?? { government_fee: 0, professional_fee: 0, currency: "INR" };
-  const canApprove = props.auth?.user?.role === "client_admin";
+  const canApprove = (props.auth?.user?.client_access ?? []).includes("renewals");
 
   const load = () => { api.getDashboardMetrics().then((m: any) => setMetrics(m?.metrics ?? {})).catch(() => setMetrics({})); };
   useEffect(() => {

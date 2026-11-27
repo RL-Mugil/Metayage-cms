@@ -32,6 +32,8 @@ class HandleInertiaRequests extends Middleware
                     'avatar_url' => $user->avatar_url,
                     // What this login may see (App\Support\DataAccess) — drives the sidebar and pages.
                     'access'     => fn () => \App\Support\DataAccess::forFrontend($user),
+                    // Client logins: their designation's access checkboxes (sidebar and pages).
+                    'client_access' => fn () => $user->isClientRole() || $user->isInventor() ? \App\Support\ClientAccess::permissions($user) : null,
                     'unread_notifications' => fn () => DB::table('ip_notifications')
                         ->where('user_id', $user->id)
                         ->whereNull('read_at')

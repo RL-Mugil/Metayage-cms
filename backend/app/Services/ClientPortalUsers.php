@@ -114,7 +114,7 @@ class ClientPortalUsers
                     $q->orWhere('id', $client->portal_user_id);
                 }
             })
-            ->get(['id', 'name', 'email', 'role', 'status', 'created_at'])
+            ->get(['id', 'name', 'email', 'role', 'status', 'created_at', 'client_designation_id'])
             ->map(function (User $user) use ($contacts, $client, $inventorUserIds) {
                 $contact = $contacts->get(strtolower($user->email));
 
@@ -123,7 +123,7 @@ class ClientPortalUsers
             });
 
         $listed = $users->pluck('id')->all();
-        $inventors = Inventor::where('client_id', $client->id)->whereNotNull('user_id')->with('user:id,name,email,role,status,created_at')->get()
+        $inventors = Inventor::where('client_id', $client->id)->whereNotNull('user_id')->with('user:id,name,email,role,status,created_at,client_designation_id')->get()
             ->filter(fn (Inventor $inventor) => $inventor->user && ! in_array($inventor->user->id, $listed, true))
             ->map(fn (Inventor $inventor) => $this->row($inventor->user, 'Inventor', $inventor->phone, false) + ['is_inventor' => true]);
 
@@ -138,8 +138,10 @@ class ClientPortalUsers
      */
     public function add(Client $client, array $data, User $actor, ?string $ip = null, ?string $userAgent = null): array
     {
-        $designation = $data['designation'];
-        $role = self::ROLE_FOR[$designation] ?? throw ValidationException::withMessages(['designation' => 'Choose a designation.']);
+        // The designation (ready-made or the client's own) and its access checkboxes decide the role.
+        $designationRow = self::designationFor($client, $data);
+        $designation = $designationRow->name;
+        $role = \App\Support\ClientAccess::roleFor((array) $designationRow->permissions, (bool) $designationRow->is_inventor);
         $email = trim((string) $data['email']);
         $password = (string) $data['password'];
         $name = trim((string) $data['name']);
@@ -160,6 +162,8 @@ class ClientPortalUsers
                 'name' => $name, 'email' => $email, 'password' => Hash::make($password),
                 'role' => $role, 'status' => 'Active', 'mobile' => $phone,
             ]);
+            $user->client_designation_id = $designationRow->id;
+            $user->save();
 
             if ($role === 'inventor') {
                 // Listed in the client's Inventors tab, ready to be picked on cases and Form 1.
@@ -186,7 +190,7 @@ class ClientPortalUsers
                 'action'       => 'portal_user_added',
                 'subject_type' => 'Client',
                 'subject_id'   => $client->id,
-                'metadata'     => ['user_id' => $user->id, 'email' => $email, 'designation' => $designation, 'role' => $role],
+                'metadata'     => ['user_id' => $user->id, 'email' => $email, 'designation' => $designation, 'role' => $role, 'client_id' => $client->id],
                 'ip_address'   => $ip,
                 'user_agent'   => $userAgent,
             ]);
@@ -252,15 +256,61 @@ class ClientPortalUsers
         });
     }
 
+    /** The designation picked in a form: by id (ready-made or this client's own) or by ready-made name. */
+    public static function designationFor(Client $client, array $data): \App\Models\ClientDesignation
+    {
+        if (! empty($data['designation_id'])) {
+            $row = \App\Models\ClientDesignation::forClient($client->id)->whereKey((int) $data['designation_id'])->first();
+        } else {
+            $row = \App\Models\ClientDesignation::whereNull('client_id')->where('name', (string) ($data['designation'] ?? ''))->first();
+        }
+
+        return $row ?? throw ValidationException::withMessages(['designation' => 'Choose a designation.']);
+    }
+
+    /**
+     * Change a login's designation (and so its access). An inventor login stays an inventor; a
+     * login cannot change its own designation (another admin or the firm does).
+     */
+    public function changeDesignation(Client $client, User $user, \App\Models\ClientDesignation $designation, User $actor, ?string $ip = null): array
+    {
+        if (! $this->belongsTo($client, $user)) {
+            throw ValidationException::withMessages(['user' => 'This user is not linked to this client.']);
+        }
+        if ($actor->id === $user->id) {
+            throw ValidationException::withMessages(['user' => 'You cannot change your own access. Ask another admin or the firm.']);
+        }
+        if ((bool) $designation->is_inventor !== ($user->role === 'inventor')) {
+            throw ValidationException::withMessages(['designation' => 'An inventor login keeps the Inventor designation; other logins cannot become inventors here.']);
+        }
+        $before = ['role' => $user->role, 'designation_id' => $user->client_designation_id];
+        DB::transaction(function () use ($client, $user, $designation, $actor, $ip, $before) {
+            $user->role = \App\Support\ClientAccess::roleFor((array) $designation->permissions, (bool) $designation->is_inventor);
+            $user->client_designation_id = $designation->id;
+            $user->save();
+            ClientContact::where('client_id', $client->id)->whereRaw('LOWER(email) = ?', [strtolower($user->email)])
+                ->update(['designation' => $designation->name, 'title' => $designation->name]);
+            AuditLog::create(['user_id' => $actor->id, 'action' => 'portal_user_access_changed', 'subject_type' => 'Client', 'subject_id' => $client->id,
+                'metadata' => ['user_id' => $user->id, 'designation' => $designation->name, 'before' => $before, 'role' => $user->role, 'client_id' => $client->id],
+                'ip_address' => $ip]);
+        });
+
+        return $this->row($user->fresh(), $designation->name, null, (int) $client->portal_user_id === $user->id);
+    }
+
     private function row(User $user, ?string $designation, ?string $phone, bool $primary): array
     {
+        $designationRow = $user->client_designation_id ? \App\Models\ClientDesignation::find($user->client_designation_id) : null;
+
         return [
             'id'          => $user->id,
             'name'        => $user->name,
             'email'       => $user->email,
             'phone'       => $phone,
             'role'        => $user->role,
-            'designation' => $designation,
+            'designation' => $designationRow?->name ?? $designation,
+            'designation_id' => $designationRow?->id,
+            'permissions' => \App\Support\ClientAccess::permissions($user),
             'access'      => self::ACCESS_LABEL[$user->role] ?? $user->role,
             'is_primary'  => $primary,
             'status'      => $user->status,

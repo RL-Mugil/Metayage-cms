@@ -358,6 +358,12 @@ Route::middleware(['auth:sanctum', 'firm.context', 'throttle:120,1'])->group(fun
     Route::get('/my-portal/users', [\App\Http\Controllers\MyPortalController::class, 'users']);
     Route::post('/my-portal/users', [\App\Http\Controllers\MyPortalController::class, 'store']);
     Route::delete('/my-portal/users/{userId}', [\App\Http\Controllers\MyPortalController::class, 'destroy']);
+    Route::put('/my-portal/users/{userId}', [\App\Http\Controllers\ClientDesignationController::class, 'assign'])->whereNumber('userId');
+    Route::get('/my-portal/designations', [\App\Http\Controllers\ClientDesignationController::class, 'index']);
+    Route::post('/my-portal/designations', [\App\Http\Controllers\ClientDesignationController::class, 'store']);
+    Route::put('/my-portal/designations/{designationId}', [\App\Http\Controllers\ClientDesignationController::class, 'update'])->whereNumber('designationId');
+    Route::delete('/my-portal/designations/{designationId}', [\App\Http\Controllers\ClientDesignationController::class, 'destroy'])->whereNumber('designationId');
+    Route::get('/my-portal/audit', [\App\Http\Controllers\ClientAuditController::class, 'index']);
 
     // AI Chat — stricter limit: 10 requests per minute
     Route::post('/ai/query', [AIController::class, 'query'])->middleware('throttle:20,1');
@@ -552,6 +558,11 @@ Route::middleware(['auth:sanctum', 'firm.context', 'throttle:120,1'])->group(fun
     Route::get('/portal/clients/{id}/users', [\App\Http\Controllers\PortalController::class, 'clientUsers']);
     Route::post('/portal/clients/{id}/users', [\App\Http\Controllers\PortalController::class, 'addClientUser']);
     Route::delete('/portal/clients/{id}/users/{userId}', [\App\Http\Controllers\PortalController::class, 'removeClientUser']);
+    Route::put('/portal/clients/{id}/users/{userId}', [\App\Http\Controllers\ClientDesignationController::class, 'staffAssign'])->whereNumber(['id', 'userId']);
+    Route::get('/portal/clients/{id}/designations', [\App\Http\Controllers\ClientDesignationController::class, 'staffIndex'])->whereNumber('id');
+    Route::post('/portal/clients/{id}/designations', [\App\Http\Controllers\ClientDesignationController::class, 'staffStore'])->whereNumber('id');
+    Route::put('/portal/clients/{id}/designations/{designationId}', [\App\Http\Controllers\ClientDesignationController::class, 'staffUpdate'])->whereNumber(['id', 'designationId']);
+    Route::delete('/portal/clients/{id}/designations/{designationId}', [\App\Http\Controllers\ClientDesignationController::class, 'staffDestroy'])->whereNumber(['id', 'designationId']);
     Route::get('/portal/recent-activity', [\App\Http\Controllers\PortalController::class, 'recentActivity']);
     Route::post('/portal/clients/{id}/users/{userId}/reset-password', [\App\Http\Controllers\PortalController::class, 'resetUserPassword']);
     Route::get('/portal/my-team', [\App\Http\Controllers\PortalController::class, 'myTeam']);

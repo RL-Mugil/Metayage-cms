@@ -14,46 +14,41 @@ import {
 } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
 
-// Dedicated nav for external client portal users (client / client_admin).
-const clientGroups = (isAdmin: boolean) => [
-  {
-    label: "Overview",
-    items: [
+// Nav for client portal logins: each item needs one access checkbox of the login's designation
+// (auth.user.client_access, App\Support\ClientAccess); items without one are open to every client login.
+const clientGroups = (perms: string[]) => {
+  const has = (p?: string) => !p || perms.includes(p);
+  const groups: { label: string; items: { to: string; title: string; icon: any; perm?: string }[] }[] = [
+    { label: "Overview", items: [
       { to: "/", title: "Dashboard", icon: LayoutDashboard },
-      { to: "/patent-portfolio", title: "Patent Portfolio", icon: Award },
-      { to: "/patent-lifecycle", title: "Patent Lifecycle", icon: GitBranch },
-    ],
-  },
-  {
-    label: "My Cases",
-    items: [
-      { to: "/projects", title: "My Cases", icon: Briefcase },
-      { to: "/tasks", title: "Tasks", icon: ListChecks },
-      { to: "/kanban", title: "Kanban Board", icon: LayoutGrid },
-      { to: "/calendar", title: "Calendar", icon: CalendarDays },
-    ],
-  },
-  {
-    label: "Workspace",
-    items: [
+      { to: "/patent-portfolio", title: "Patent Portfolio", icon: Award, perm: "cases" },
+      { to: "/patent-lifecycle", title: "Patent Lifecycle", icon: GitBranch, perm: "cases" },
+    ] },
+    { label: "My Cases", items: [
+      { to: "/projects", title: "My Cases", icon: Briefcase, perm: "cases" },
+      { to: "/tasks", title: "Tasks", icon: ListChecks, perm: "tasks" },
+      { to: "/kanban", title: "Kanban Board", icon: LayoutGrid, perm: "tasks" },
+      { to: "/calendar", title: "Calendar", icon: CalendarDays, perm: "tasks" },
+    ] },
+    { label: "Workspace", items: [
       { to: "/team", title: "My Team", icon: Building2 },
-      { to: "/documents", title: "Documents", icon: FolderLock },
-      { to: "/discussions", title: "Discussions", icon: MessagesSquare },
-      { to: "/approvals", title: "Approvals", icon: CheckCircle2 },
-      { to: "/financial", title: "Invoices & Payments", icon: Wallet },
-      { to: "/pending-payments", title: "Pending Payments", icon: CreditCard },
-    ],
-  },
-  {
-    label: "Account",
-    items: [
-      ...(isAdmin ? [{ to: "/portal-users", title: "Portal Users", icon: Users }] : []),
+      { to: "/documents", title: "Documents", icon: FolderLock, perm: "documents" },
+      { to: "/discussions", title: "Discussions", icon: MessagesSquare, perm: "discussions" },
+      { to: "/approvals", title: "Approvals", icon: CheckCircle2, perm: "approvals" },
+      { to: "/financial", title: "Invoices & Payments", icon: Wallet, perm: "billing" },
+      { to: "/pending-payments", title: "Pending Payments", icon: CreditCard, perm: "billing" },
+      { to: "/reports", title: "Reports", icon: FileBarChart2, perm: "reports" },
+    ] },
+    { label: "Account", items: [
+      { to: "/portal-users", title: "Portal Users", icon: Users, perm: "manage_users" },
+      { to: "/portal-audit", title: "Audit Log", icon: ShieldCheck, perm: "audit_log" },
       { to: "/feedback", title: "Feedback", icon: Star },
       { to: "/notifications", title: "Notifications", icon: Bell },
       { to: "/settings", title: "Settings", icon: Settings },
-    ],
-  },
-];
+    ] },
+  ];
+  return groups.map((g) => ({ ...g, items: g.items.filter((it) => has(it.perm)) })).filter((g) => g.items.length > 0);
+};
 
 // Billing-only nav for the client_finance role — no case/kanban/approval
 // visibility, matching RestrictClientPages' allowlist for this role.
@@ -243,12 +238,10 @@ export function AppSidebar() {
         </Link>
       </SidebarHeader>
       <SidebarContent ref={contentRef}>
-        {(user?.role === "client_finance"
-          ? financeGroups
-          : user?.role === "inventor"
+        {(user?.role === "inventor"
           ? inventorGroups
-          : ["client", "client_admin"].includes(user?.role)
-          ? clientGroups(user?.role === "client_admin")
+          : ["client", "client_admin", "client_finance"].includes(user?.role)
+          ? clientGroups(user?.client_access ?? [])
           : groups
         ).map((g) => {
           return (

@@ -217,7 +217,9 @@ class PortalController extends Controller
             'name'        => 'required|string|max:255',
             'email'       => 'required|email|max:255|unique:users,email',
             'phone'       => 'nullable|string|max:30',
-            'designation' => ['required', Rule::in(ClientPortalUsers::DESIGNATIONS)],
+            // A ready-made designation by name, or any designation (incl. the client's own) by id.
+            'designation' => ['required_without:designation_id', 'nullable', Rule::in(ClientPortalUsers::DESIGNATIONS)],
+            'designation_id' => 'nullable|integer',
             'password'    => 'required|string|min:8|max:100',
             // An Inventor's Form 1 particulars; checked in ClientPortalUsers::inventorParticulars().
             'inventor'    => 'nullable|array',
