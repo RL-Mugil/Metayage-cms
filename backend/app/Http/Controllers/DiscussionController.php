@@ -109,6 +109,8 @@ class DiscussionController extends Controller
             ]);
             return $thread;
         });
+        // A client's discussion: the client's users and the firm's people on the client take part and are told.
+        $this->joinAndNotify($thread, $user, "New discussion: {$thread->title}", mb_substr($validated['message'], 0, 300));
 
         return response()->json($thread->load('messages.author:id,name'), 201);
     }
@@ -151,6 +153,7 @@ class DiscussionController extends Controller
             'content'   => $validated['message'],
         ]);
         $thread->touch();
+        $this->joinAndNotify($thread, $user, "Reply in: {$thread->title}", $user->name.': '.mb_substr($validated['message'], 0, 300));
 
         return response()->json([
             'id'     => $message->id,
@@ -158,6 +161,21 @@ class DiscussionController extends Controller
             'time'   => 'Just now',
             'text'   => $message->content,
         ], 201);
+    }
+
+    /** Add the client's discussion members as participants and notify them (not the author). */
+    private function joinAndNotify(DiscussionThread $thread, \App\Models\User $author, string $title, string $text): void
+    {
+        if (! $thread->client_id || ! ($client = \App\Models\Client::find($thread->client_id))) {
+            return;
+        }
+        rescue(function () use ($thread, $author, $title, $text, $client) {
+            $members = \App\Support\ClientTeam::memberIds($client);
+            $thread->participants()->syncWithoutDetaching($members);
+            \App\Support\Notifier::push(array_values(array_diff($members, [$author->id])), 'discussion', $title, $text, '/discussions', ['thread_id' => $thread->id]);
+        }, null, true);
+        \App\Models\AuditLog::create(['user_id' => $author->id, 'action' => 'discussion_post', 'subject_type' => 'DiscussionThread', 'subject_id' => $thread->id,
+            'metadata' => ['client_id' => $thread->client_id], 'ip_address' => request()?->ip(), 'user_agent' => request()?->userAgent()]);
     }
 
     public function update(Request $request, $id)

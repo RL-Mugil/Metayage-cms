@@ -2,6 +2,7 @@ import { Head, usePage } from "@inertiajs/react";
 import { useEffect, useState, useCallback, useRef } from "react";
 import { FitPage } from "@/components/modern/fit-page";
 import { KpiStrip } from "@/components/modern/kpi-strip";
+import { ClientBillingPanel } from "@/components/client/client-billing-panel";
 import { Bars3D, inrShort } from "@/components/three/chart-3d";
 import { SegmentTabs } from "@/components/modern/segment-tabs";
 import { createPortal } from "react-dom";
@@ -15,7 +16,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { api, downloadCSV } from "@/lib/api-client";
 import type { Quotation, PatentInvoiceIn, ZohoOpeningBalanceRow, FinancialStats } from "@/lib/api-client";
-import { ZohoBooksPanel } from "@/components/zoho-books-panel";
 import { ZohoRecordSync, ZohoSyncStatus } from "@/components/zoho-sync-controls";
 import { ZohoQuoteExport } from "@/components/zoho-quote-export";
 import { ProjectCombobox } from "@/components/project-combobox";
@@ -994,9 +994,9 @@ export default function Financial() {
 
   return (
     <AppLayout>
-      <Head title="Financial Suite" />
-      <FitPage fit={false} eyebrow="Finance" title="Financial Suite"
-        summary={`${fmt(stats.total_billed ?? 0)} billed · ${fmt(stats.total_received ?? 0)} received · ${fmt(stats.total_outstanding ?? 0)} outstanding · ${stats.overdue_count ?? 0} overdue`}
+      <Head title={isClientUser ? "Invoices & Payments" : "Financial Suite"} />
+      <FitPage fit={false} eyebrow={isClientUser ? "Billing" : "Finance"} title={isClientUser ? "Invoices & Payments" : "Financial Suite"}
+        summary={isClientUser ? "What you owe, your unpaid invoices and proformas, payments and statement" : `${fmt(stats.total_billed ?? 0)} billed · ${fmt(stats.total_received ?? 0)} received · ${fmt(stats.total_outstanding ?? 0)} outstanding · ${stats.overdue_count ?? 0} overdue`}
         actions={
           <>
             {!isClientUser && (
@@ -1009,8 +1009,9 @@ export default function Financial() {
         }>
 
       {isClientUser && (
-        <div className="pb-3">
-          <ZohoBooksPanel title="Your Billing — Live from Zoho Books" fetchSummary={() => api.getZohoMySummary()} />
+        <div className="pb-4">
+          {/* The portal's own billing first: what you owe, unpaid invoices and proformas, your statement. */}
+          <ClientBillingPanel />
         </div>
       )}
 
@@ -1299,7 +1300,7 @@ export default function Financial() {
         {/* Tab bar */}
         <SegmentTabs value={activeTab as "india" | "zoho" | "controls"} onChange={(v) => setActiveTab(v)} options={[
           { value: "india", label: <span className="flex items-center gap-1.5"><IndianRupee className="h-3.5 w-3.5" />Indian Patents</span> },
-          { value: "zoho", label: <span className="flex items-center gap-1.5"><DollarSign className="h-3.5 w-3.5" />Zoho Books</span> },
+          ...(!isClientUser ? [{ value: "zoho" as const, label: <span className="flex items-center gap-1.5"><DollarSign className="h-3.5 w-3.5" />Zoho Books</span> }] : []),
           ...(isAccounts ? [{ value: "controls" as const, label: <span className="flex items-center gap-1.5"><CheckCircle className="h-3.5 w-3.5" />Close &amp; controls</span> }] : []),
         ]} />
 

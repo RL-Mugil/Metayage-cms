@@ -152,7 +152,7 @@ class ClientHubController extends Controller
         $data = $scorecard->build($client, $request->user(), $month);
         $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.client-scorecard', ['card' => $data])->setPaper('a4');
 
-        return $pdf->download("Scorecard-{$client->client_code}-{$month->format('Y-m')}.pdf");
+        return $pdf->download("Monthly-Report-{$client->client_code}-{$month->format('Y-m')}.pdf");
     }
 
     /** @return array<string, string|null> */
@@ -211,6 +211,6 @@ class ClientHubController extends Controller
     {
         User::where(fn ($q) => $q->where('id', $client->account_manager_id)->orWhereIn('role', ['partner', 'super_admin']))
             ->where('status', 'Active')->pluck('id')->unique()
-            ->each(fn ($id) => Notification::create(['user_id' => $id, 'title' => $title, 'message' => mb_substr($message, 0, 1000), 'channel' => 'in-app', 'is_read' => false, 'action_url' => $url]));
+            ->pipe(fn ($ids) => \App\Support\Notifier::push($ids, 'client', $title, mb_substr($message, 0, 1000), $url));   // the bell (live), not the old table
     }
 }

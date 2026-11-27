@@ -340,36 +340,10 @@ class RenewalActionController extends Controller
         }
 
         $quote = PatentInvoiceIn::where('client_id', $client->id)->where('type', 'quote')->findOrFail($invoiceId);
-        if ($quote->status === 'Cancelled') {
-            return response()->json(['message' => 'This quote has been cancelled.'], 422);
-        }
+        $data = $request->validate(['action' => 'nullable|in:Approved,Rejected', 'comment' => 'nullable|string|max:2000']);
 
-        $quote->update(['status' => 'Accepted']);
-
-        AuditLog::create([
-            'user_id' => $user->id, 'action' => 'client_approve_renewal_quote',
-            'subject_type' => 'PatentInvoiceIn', 'subject_id' => $quote->id,
-            'metadata' => ['docket_number' => $quote->docket_number, 'invoice_uin' => $quote->invoice_uin],
-            'ip_address' => $request->ip(), 'user_agent' => $request->userAgent(),
-        ]);
-
-        $project = $quote->project_id ? Project::find($quote->project_id) : null;
-        $recipientIds = collect([
-            $project?->assigned_partner_id, $project?->assigned_manager_id,
-            $project?->secondary_manager_id, $project?->patent_engineer_id,
-        ])->merge(User::whereIn('role', ['super_admin', 'partner', 'director', 'paralegal'])->pluck('id'))
-          ->filter()->unique();
-
-        Notifier::push(
-            $recipientIds,
-            'renewal',
-            "Client approved renewal quote: {$quote->docket_number}",
-            ($client->company_name ?? $client->legal_name ?? 'Client') . " approved the renewal quote {$quote->invoice_uin} for {$quote->docket_number}. Raise the final invoice when ready.",
-            '/financial',
-            ['invoice_id' => $quote->id, 'project_id' => $project?->id],
-        );
-
-        return response()->json($quote->fresh());
+        // Same as approving it from the Approvals tab: the quote's approval is resolved too.
+        return response()->json(\App\Services\QuoteApprovals::decide($quote, $data['action'] ?? 'Approved', $user, $data['comment'] ?? null));
     }
 
     /** Client uploads a payment proof document (already uploaded via POST /documents) against a pending renewal invoice. */

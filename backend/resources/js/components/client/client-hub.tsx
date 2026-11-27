@@ -17,7 +17,7 @@ type Ask = { kind: "invoice" | "deadline" | "stage" | "renewal" | "quote" | "cas
 /**
  * Client hub: one inbox of what is waiting on the client — approvals, quotes, renewal
  * decisions and invoices to pay — each with an "Ask us" button that opens a discussion,
- * plus the monthly scorecard PDF. Staff pass clientId to act for a client.
+ * plus the monthly report PDF. Staff pass clientId to act for a client.
  */
 export function ClientHub({ clientId }: { clientId?: number | null }) {
   const [data, setData] = useState<ClientHubData | null>(null)
@@ -178,7 +178,7 @@ function ScorecardButton({ clientId }: { clientId?: number | null }) {
       <select value={month} onChange={(e) => setMonth(e.target.value)} className="h-8 rounded-md border border-border bg-background px-2 text-xs">
         {months.map((m) => <option key={m} value={m}>{new Date(`${m}-01T00:00:00`).toLocaleDateString("en-IN", { month: "short", year: "numeric" })}</option>)}
       </select>
-      <Button size="sm" variant="outline" onClick={download} disabled={busy}>{busy ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Download className="mr-1 h-3.5 w-3.5" />} Monthly scorecard</Button>
+      <Button size="sm" variant="outline" onClick={download} disabled={busy}>{busy ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Download className="mr-1 h-3.5 w-3.5" />} Monthly report</Button>
     </div>
   )
 }

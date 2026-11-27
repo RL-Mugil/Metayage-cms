@@ -501,6 +501,12 @@ class SendDeadlineRemindersCommand extends Command
                 ? "{$renewal->display_label} for {$label} is due in {$days} day(s) — within the "
                     . ($application?->jurisdiction === 'IN' ? 'Indian' : 'foreign attorney') . " payment lead window ({$leadDays}d). Get payment moving now."
                 : "{$renewal->display_label} for {$label} is due in {$days} day(s).";
+            // The client's own portal users are told too (once per reminder day).
+            if ($client && \Illuminate\Support\Facades\Cache::add("client-renewal:{$renewal->id}:d{$days}", true, now()->addDays(3))) {
+                \App\Services\ClientNotifier::push($client->id, 'renewal', "Renewal due in {$days} days: {$label}",
+                    "{$renewal->display_label} for {$label} is due on ".Carbon::parse($renewal->due_date)->format('d M Y').'. Approve the renewal in the portal to keep it in force.',
+                    '/', ['renewal_id' => $renewal->id, 'days_remaining' => $days]);
+            }
 
             foreach ($recipients as $uid) {
                 $this->remind(

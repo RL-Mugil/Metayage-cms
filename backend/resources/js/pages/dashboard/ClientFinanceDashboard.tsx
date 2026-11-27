@@ -11,6 +11,7 @@ import { statusColor } from "@/lib/utils";
 import { fmtDate } from "@/lib/date-utils";
 import { ActionItem, ActionItemRow, RenewalApproveModal, formatCurrency } from "@/components/action-item-row";
 import { ClientHub } from "@/components/client/client-hub";
+import { ClientBillingPanel } from "@/components/client/client-billing-panel";
 
 /**
  * Billing-only dashboard for the client_finance role — no drafting/technical
@@ -81,7 +82,7 @@ export function ClientFinanceDashboard() {
       )}
 
       <div className="px-4 py-4 sm:px-8 sm:py-6 space-y-6">
-        <Card className="border-gold/30">
+        <Card className="card-3d border-gold/30">
           <CardHeader className="pb-2">
             <CardTitle className="font-display">Waiting on you</CardTitle>
             <p className="text-xs text-muted-foreground">Approve, decide on renewals, pay, or ask us about anything here.</p>
@@ -89,58 +90,11 @@ export function ClientFinanceDashboard() {
           <CardContent><ClientHub /></CardContent>
         </Card>
 
-        <div className="grid gap-4 md:grid-cols-4">
-          <StatCard label="Zoho Receivables" value={formatCurrency(metrics.zoho_total_receivables ?? metrics.zoho_outstanding ?? 0)} icon={Landmark} accent="info" subtitle={`Invoice ${formatCurrency(metrics.zoho_outstanding ?? 0)} · Opening ${formatCurrency(metrics.zoho_opening_balance ?? 0)}`} />
-          <StatCard label="Collected (MTD)" value={formatCurrency(metrics.zoho_collected_mtd ?? 0)} icon={Wallet} accent="success" />
-          <StatCard label={(metrics.ledger_balance ?? 0) < -0.009 ? "Credit with us" : "Ledger Balance"} value={formatCurrency(Math.abs(metrics.ledger_balance ?? 0))} icon={Scale} accent="neutral" />
-        </div>
-
-        <Card className="border-border">
-          <CardHeader>
-            <CardTitle className="font-display flex items-center justify-between gap-2">
-              <span>Invoices to pay</span>
-              <span className="text-sm font-medium text-muted-foreground">Total due {formatCurrency(totalDue)}</span>
-            </CardTitle>
-            <p className="text-xs text-muted-foreground mt-1">Pay by bank transfer, then upload the payment proof so we can confirm it.</p>
-          </CardHeader>
-          <CardContent className="p-0">
-            {pendingInvoices.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-10">No pending invoices.</p>
-            ) : (
-              <table className="w-full text-sm">
-                <thead className="bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground">
-                  <tr>
-                    <th className="px-4 py-2 text-left">Invoice</th>
-                    <th className="px-4 py-2 text-left">Status</th>
-                    <th className="px-4 py-2 text-right">Total</th>
-                    <th className="px-4 py-2 text-right">Balance Due</th>
-                    <th className="px-4 py-2 text-left">Due Date</th>
-                    <th className="px-4 py-2 text-right"></th>
-                  </tr>
-                </thead>
-                <tbody className="table-rows-3d">
-                  {pendingInvoices.map((inv: any) => (
-                    <tr key={inv.id} className="border-t border-border hover:bg-muted/30">
-                      <td className="px-4 py-3 font-mono text-xs">{inv.invoice_code}</td>
-                      <td className="px-4 py-3"><Badge variant={statusColor(inv.status)}>{inv.status}</Badge></td>
-                      <td className="px-4 py-3 text-right font-medium">{formatCurrency(parseFloat(inv.total_amount ?? 0))}</td>
-                      <td className="px-4 py-3 text-right text-muted-foreground">{formatCurrency(parseFloat(inv.balance_due ?? 0))}</td>
-                      <td className="px-4 py-3 text-muted-foreground font-mono text-xs">{fmtDate(inv.due_date)}</td>
-                      <td className="px-4 py-3 text-right">
-                        <Link href="/pending-payments" className="inline-flex items-center gap-1 rounded-md bg-gold px-2.5 py-1 text-xs font-medium text-black hover:bg-gold/90">
-                          <Upload className="h-3 w-3" />Pay / upload proof
-                        </Link>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </CardContent>
-        </Card>
+        {/* The portal's own billing: total payable, unpaid invoices and proformas, statement (3D). */}
+        <ClientBillingPanel />
 
         {renewalItems.length > 0 && (
-          <Card className="border-red-500/30">
+          <Card className="card-3d border-red-500/30">
             <CardHeader>
               <CardTitle className="font-display flex items-center gap-2 text-red-600">
                 <AlertTriangle className="h-4 w-4" /> Upcoming Renewals
@@ -153,7 +107,7 @@ export function ClientFinanceDashboard() {
           </Card>
         )}
 
-        <Card className="border-border">
+        <Card className="card-3d border-border">
           <CardHeader>
             <CardTitle className="font-display flex items-center gap-2"><Clock className="h-4 w-4" /> Action Required</CardTitle>
             <p className="text-xs text-muted-foreground mt-1">Payments and invoices awaiting your attention</p>

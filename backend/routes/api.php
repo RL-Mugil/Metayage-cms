@@ -127,6 +127,7 @@ Route::middleware(['auth:sanctum', 'firm.context', 'throttle:120,1'])->group(fun
     Route::get('/settings/switches', [\App\Http\Controllers\FeatureSwitchController::class, 'index']);
     // Client hub: approvals, quotes, renewal decisions, invoices to pay, questions, scorecard PDF.
     Route::get('/client-hub', [\App\Http\Controllers\ClientHubController::class, 'index']);
+    Route::get('/my-billing', [\App\Http\Controllers\ClientBillingController::class, 'summary']);
     Route::post('/client-hub/renewals/{scheduleId}/decision', [\App\Http\Controllers\ClientHubController::class, 'decide']);
     Route::post('/client-hub/comment', [\App\Http\Controllers\ClientHubController::class, 'comment']);
     Route::get('/client-hub/scorecard', [\App\Http\Controllers\ClientHubController::class, 'scorecard'])->middleware('throttle:20,1');

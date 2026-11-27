@@ -60,7 +60,9 @@ class ThreadChatAccess
         }
 
         $authorIds = $thread->messages()->distinct()->pluck('author_id')->filter();
+        // A client's discussion lists its members (client users + the firm's people on the client).
+        $memberIds = $thread->client_id ? $thread->participants()->pluck('users.id') : collect();
 
-        return User::whereIn('id', $authorIds)->get(['id', 'name', 'role', 'avatar_url']);
+        return User::whereIn('id', $authorIds->merge($memberIds)->unique()->values())->get(['id', 'name', 'role', 'avatar_url']);
     }
 }

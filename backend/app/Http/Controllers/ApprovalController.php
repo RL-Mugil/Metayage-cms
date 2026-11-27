@@ -81,7 +81,8 @@ class ApprovalController extends Controller
                 'requester'   => $a->requester?->name ?? '—',
                 'title'       => $a->title,
                 'description' => $a->title . ($a->description ? " — {$a->description}" : ''),
-                'amount'      => null,
+                'amount'      => $a->subject_type === \App\Services\QuoteApprovals::SUBJECT ? (float) \App\Models\PatentInvoiceIn::whereKey($a->subject_id)->value('invoice_amount') : null,
+                'quote_id'    => $a->subject_type === \App\Services\QuoteApprovals::SUBJECT ? $a->subject_id : null,
                 'from_date'   => null,
                 'to_date'     => null,
                 'submitted'   => $a->created_at?->toDateString(),
@@ -134,7 +135,8 @@ class ApprovalController extends Controller
                 'title'       => $a->title,
                 'description' => ($a->client?->company_name ? "For {$a->client->company_name}: " : '')
                     . $a->title . ($a->description ? " — {$a->description}" : ''),
-                'amount'      => null,
+                'amount'      => $a->subject_type === \App\Services\QuoteApprovals::SUBJECT ? (float) \App\Models\PatentInvoiceIn::whereKey($a->subject_id)->value('invoice_amount') : null,
+                'quote_id'    => $a->subject_type === \App\Services\QuoteApprovals::SUBJECT ? $a->subject_id : null,
                 'from_date'   => null,
                 'to_date'     => null,
                 'submitted'   => $a->created_at?->toDateString(),
@@ -663,6 +665,14 @@ class ApprovalController extends Controller
 
             if ($approval->status !== 'Pending') {
                 return response()->json(['message' => "Already {$approval->status}."], 422);
+            }
+
+            // A quote's approval: approving here accepts the quote (same as the dashboard button).
+            if ($approval->subject_type === \App\Services\QuoteApprovals::SUBJECT && $approval->subject_id) {
+                $quote = \App\Models\PatentInvoiceIn::where('type', 'quote')->where('client_id', $approval->client_id)->findOrFail($approval->subject_id);
+                \App\Services\QuoteApprovals::decide($quote, $validated['action'], $user, $validated['comment'] ?? null);
+
+                return response()->json(['ok' => true]);
             }
 
             $approval->update([

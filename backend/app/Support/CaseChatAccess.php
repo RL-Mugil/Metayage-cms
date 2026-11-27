@@ -77,7 +77,8 @@ class CaseChatAccess
         }
         $client = $project->relationLoaded('client') ? $project->client : Client::find($project->client_id);
 
-        return $client !== null && (int) $client->portal_user_id === (int) $user->id;
+        // Every portal login of the case's client (not only the primary one).
+        return $client !== null && in_array((int) $user->id, array_map('intval', $client->portalUserIds()), true);
     }
 
     /**
@@ -110,9 +111,8 @@ class CaseChatAccess
 
         // Include the client-portal user, if any.
         $client = $project->relationLoaded('client') ? $project->client : Client::find($project->client_id);
-        if ($client && $client->portal_user_id) {
-            $portalUser = User::find($client->portal_user_id, ['id', 'name', 'email', 'role', 'avatar_url']);
-            if ($portalUser) {
+        if ($client) {
+            foreach (User::whereIn('id', $client->portalUserIds() ?: [0])->get(['id', 'name', 'email', 'role', 'avatar_url']) as $portalUser) {
                 $users->push($portalUser);
             }
         }

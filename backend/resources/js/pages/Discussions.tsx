@@ -234,12 +234,12 @@ export default function Discussions() {
       <PageHeader
         eyebrow="Engagement"
         title="Discussions"
-        description="Team conversations and direct messages — real-time."
-        actions={!isClientUser && mode === "threads" ? (
+        description={isClientUser ? "Talk to the team working on your account: discussions and direct messages." : "Team conversations and direct messages — real-time."}
+        actions={mode === "threads" ? (
           <Button onClick={() => setShowNewForm((v) => !v)}><Plus className="h-4 w-4 mr-2" />New Discussion</Button>
-        ) : !isClientUser ? (
+        ) : (
           <Button onClick={() => setShowContacts(true)}><Plus className="h-4 w-4 mr-2" />New Message</Button>
-        ) : undefined}
+        )}
       />
 
       <div className="px-4 py-4 sm:px-8 sm:py-5">
@@ -248,8 +248,8 @@ export default function Discussions() {
 
           {/* ── Left panel ── */}
           <div className={`${selectedThreadId ? "hidden md:flex" : "flex"} w-full md:w-72 flex-shrink-0 flex-col border-r border-border`}>
-            {/* Mode switch */}
-            {!isClientUser && (
+            {/* Mode switch (clients: their discussions and messages to the people on their account) */}
+            {(
               <div className="flex gap-1 p-2 border-b border-border">
                 <button onClick={() => { setMode("threads"); setSelectedThreadId(null); }}
                   className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-xs font-medium ${mode === "threads" ? "bg-gold text-background" : "text-muted-foreground hover:bg-muted/50"}`}>

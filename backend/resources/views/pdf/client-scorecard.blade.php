@@ -20,7 +20,7 @@
 </head>
 <body>
   <table width="100%"><tr>
-    <td><h1>Monthly scorecard</h1><div class="muted">{{ $card['client'] }} ({{ $card['client_code'] }}) · {{ $card['month'] }}</div></td>
+    <td><h1>Monthly report</h1><div class="muted">{{ $card['client'] }} ({{ $card['client_code'] }}) · {{ $card['month'] }}</div></td>
     <td class="right muted">Generated {{ $card['generated'] }}</td>
   </tr></table>
 

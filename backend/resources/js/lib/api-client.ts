@@ -455,12 +455,12 @@ export const api = {
     const response = await fetch(`/api/client-hub/scorecard?${q}`, { headers: { Accept: 'application/pdf' }, credentials: 'same-origin' })
     if (!response.ok) {
       const err = await response.json().catch(() => ({}))
-      throw new Error((err as { message?: string }).message || 'Scorecard download failed')
+      throw new Error((err as { message?: string }).message || 'Monthly report download failed')
     }
     const url = URL.createObjectURL(await response.blob())
     const link = document.createElement('a')
     link.href = url
-    link.download = `Scorecard-${month}.pdf`
+    link.download = `Monthly-Report-${month}.pdf`
     link.click()
     URL.revokeObjectURL(url)
   },

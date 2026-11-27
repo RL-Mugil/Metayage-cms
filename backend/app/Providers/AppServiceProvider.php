@@ -104,9 +104,35 @@ class AppServiceProvider extends ServiceProvider
             if ($p->kind === \App\Models\RegisterPayment::TDS || $p->wasChanged('kind')) {
                 rescue(fn () => app(\App\Services\TdsTracker::class)->syncPayment($p), null, true);
             }
+            // The client is told a payment was received (recent ones only, so an import of old records stays quiet).
+            if ($p->wasRecentlyCreated && $p->kind === \App\Models\RegisterPayment::CASH && $p->payment_date && $p->payment_date->gte(now()->subDays(7)->startOfDay())) {
+                $invoice = $p->invoice;
+                \App\Services\ClientNotifier::push($p->client_id ?: $invoice?->client_id, 'payment', 'Payment received',
+                    'We received ₹'.number_format((float) $p->amount_bcy, 2).($invoice?->invoice_uin ? " against {$invoice->invoice_uin}" : '').'. Thank you.',
+                    '/financial', ['payment_id' => $p->id]);
+            }
+        });
+        // A new invoice raised for the client (recent ones only).
+        \App\Models\PatentInvoiceIn::created(function (\App\Models\PatentInvoiceIn $doc): void {
+            if ($doc->type === 'invoice' && $doc->client_id && ! in_array($doc->status, ['Draft', 'Cancelled'], true)
+                && $doc->invoice_date && $doc->invoice_date->gte(now()->subDays(7)->startOfDay())) {
+                $amount = ($doc->currency && $doc->currency !== 'INR' ? $doc->currency.' ' : '₹').number_format((float) $doc->invoice_amount, 2);
+                \Illuminate\Support\Facades\DB::afterCommit(fn () => \App\Services\ClientNotifier::push($doc->client_id, 'invoice', "New invoice {$doc->invoice_uin}",
+                    "Invoice {$doc->invoice_uin} for {$amount}".($doc->docket_number ? " ({$doc->docket_number})" : '').' is ready in Invoices & Payments.', '/financial', ['invoice_id' => $doc->id]));
+            }
         });
 
         \App\Models\PatentInvoiceIn::saved(fn () => \App\Services\MatterProfitability::bump());
+        // A quote sent to a client waits in the client's Approvals; moving on elsewhere closes it.
+        \App\Models\PatentInvoiceIn::saved(function (\App\Models\PatentInvoiceIn $doc) {
+            if ($doc->type !== 'quote' || ! ($doc->wasRecentlyCreated || $doc->wasChanged(['status', 'converted_invoice_id', 'client_id']))) {
+                return;
+            }
+            \Illuminate\Support\Facades\DB::afterCommit(fn () => rescue(function () use ($doc) {
+                \App\Services\QuoteApprovals::ensure($doc);
+                \App\Services\QuoteApprovals::sync($doc);
+            }, null, true));
+        });
 
         // Month close: a change that still reaches a locked month (a Zoho import) is flagged for review.
         \App\Models\PatentInvoiceIn::updated(function (\App\Models\PatentInvoiceIn $row): void {

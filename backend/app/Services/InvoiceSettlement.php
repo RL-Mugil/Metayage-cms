@@ -101,9 +101,8 @@ class InvoiceSettlement
             AuditLog::create(['user_id' => $user->id, 'action' => 'waiver_requested', 'subject_type' => 'PatentInvoiceIn', 'subject_id' => $row->id,
                 'metadata' => ['amount' => $amount, 'reason' => $reason], 'ip_address' => $ip, 'user_agent' => $agent]);
             User::whereIn('role', self::WAIVE_APPROVE_ROLES)->where('status', 'Active')->where('id', '!=', $user->id)->pluck('id')
-                ->each(fn ($id) => Notification::create(['user_id' => $id, 'title' => 'Waiver approval needed',
-                    'message' => "{$user->name} asks to waive ".($row->currency ?: 'INR').' '.number_format($amount, 2)." on {$row->invoice_uin}: {$reason}",
-                    'channel' => 'in-app', 'is_read' => false, 'action_url' => '/pending-payments?waivers=1']));
+                ->pipe(fn ($ids) => \App\Support\Notifier::push($ids, 'waiver', 'Waiver approval needed',
+                    "{$user->name} asks to waive ".($row->currency ?: 'INR').' '.number_format($amount, 2)." on {$row->invoice_uin}: {$reason}", '/pending-payments?waivers=1'));
         });
         $this->afterChange($invoice->fresh(), false);
     }
@@ -138,9 +137,8 @@ class InvoiceSettlement
             AuditLog::create(['user_id' => $user->id, 'action' => $approve ? 'waiver_approved' : 'waiver_rejected', 'subject_type' => 'PatentInvoiceIn', 'subject_id' => $row->id,
                 'metadata' => ['amount' => $amount, 'reason' => $row->waiver_reason, 'note' => $note], 'ip_address' => $ip, 'user_agent' => $agent]);
             if ($row->waiver_requested_by_id) {
-                Notification::create(['user_id' => $row->waiver_requested_by_id, 'title' => $approve ? 'Waiver approved' : 'Waiver rejected',
-                    'message' => "{$user->name} ".($approve ? 'approved' : 'rejected')." the waiver on {$row->invoice_uin}".($note ? ": {$note}" : '.'),
-                    'channel' => 'in-app', 'is_read' => false, 'action_url' => '/pending-payments']);
+                \App\Support\Notifier::push($row->waiver_requested_by_id, 'waiver', $approve ? 'Waiver approved' : 'Waiver rejected',
+                    "{$user->name} ".($approve ? 'approved' : 'rejected')." the waiver on {$row->invoice_uin}".($note ? ": {$note}" : '.'), '/pending-payments');
             }
         });
         $this->afterChange($invoice->fresh());

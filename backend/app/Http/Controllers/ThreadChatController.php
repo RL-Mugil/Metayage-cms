@@ -161,9 +161,12 @@ class ThreadChatController extends Controller
     {
         $me = $request->user();
         if ($me->isClientRole()) {
-            return response()->json(['data' => []]);
+            // A client's users message the firm's people on their client (case team, Client Manager, Accounts, paralegals, directors).
+            $client = \App\Models\Client::forUser($me);
+
+            return response()->json(['data' => $client ? \App\Support\ClientTeam::staff($client)->values() : []]);
         }
-        $users = User::whereIn('role', User::STAFF_ROLES)
+        $users = User::whereIn('role', User::FIRM_STAFF_ROLES)
             ->where('id', '!=', $me->id)
             ->whereRaw('LOWER(status) = ?', ['active'])
             ->orderBy('name')
@@ -175,7 +178,10 @@ class ThreadChatController extends Controller
     public function openDm(Request $request, int $userId)
     {
         $me = $request->user();
-        if ($me->isClientRole()) abort(403);
+        if ($me->isClientRole()) {
+            $client = \App\Models\Client::forUser($me);
+            abort_unless($client && \App\Support\ClientTeam::staff($client)->contains('id', $userId), 403, 'You can message the people working on your account.');
+        }
         if ($userId === $me->id) abort(422, 'You cannot message yourself.');
         $other = User::findOrFail($userId);
 

@@ -55,7 +55,7 @@ class ClientHubTest extends TestCase
         $this->postJson("/api/client-hub/renewals/{$this->renewal->id}/decision", ['decision' => 'renew', 'note' => 'Go ahead'])->assertOk();
         $this->assertSame('renew', RenewalDecision::where('renewal_schedule_id', $this->renewal->id)->value('decision'));
         $this->assertDatabaseHas('audit_logs', ['action' => 'renewal_decision', 'subject_id' => $this->renewal->id]);
-        $this->assertTrue(Notification::where('user_id', $this->partner->id)->where('title', 'Renewal decision')->exists());
+        $this->assertTrue(\Illuminate\Support\Facades\DB::table('ip_notifications')->where('user_id', $this->partner->id)->where('title', 'Renewal decision')->exists());
         $this->assertSame(0, $this->getJson('/api/client-hub')->json('counts.renewals'));
 
         // Asking instead opens a discussion on the case.
@@ -90,7 +90,7 @@ class ClientHubTest extends TestCase
         $thread = DiscussionThread::with('messages')->findOrFail($id);
         $this->assertSame($this->project->id, $thread->project_id);
         $this->assertSame('Why this amount?', $thread->messages->first()->content);
-        $this->assertTrue(Notification::where('user_id', $this->partner->id)->where('title', 'Client question')->exists());
+        $this->assertTrue(\Illuminate\Support\Facades\DB::table('ip_notifications')->where('user_id', $this->partner->id)->where('title', 'Client question')->exists());
     }
 
     public function test_payment_details_finance_edits_client_reads(): void
