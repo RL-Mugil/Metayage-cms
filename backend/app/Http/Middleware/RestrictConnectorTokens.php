@@ -22,6 +22,10 @@ class RestrictConnectorTokens
             if (in_array(McpController::ABILITY, $abilities, true) && ! in_array('*', $abilities, true)) {
                 return response()->json(['message' => 'This token is for the read-only Claude connector only.'], 403);
             }
+            // A client API key reads the client API only.
+            if (in_array(\App\Http\Controllers\ClientApiController::ABILITY, $abilities, true) && ! in_array('*', $abilities, true) && ! $request->is('api/client-api/*')) {
+                return response()->json(['message' => 'This key is for the read-only client API only (/api/client-api/v1/...).'], 403);
+            }
         }
 
         return $next($request);

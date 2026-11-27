@@ -25,6 +25,10 @@ class ClientApiAccess
         '#^api/reports(/|$)#' => 'reports',
         '#^api/my-portal/(users|designations)#' => 'manage_users',
         '#^api/my-portal/audit#' => 'audit_log',
+        '#^api/my-portal/api-keys#' => 'claude_api',
+        '#^api/client-api/#' => 'claude_api',
+        '#^api/oauth/connections#' => 'claude_api',
+        '#^api/ai(/|$)#' => 'ai',
     ];
 
     public function handle(Request $request, Closure $next): mixed

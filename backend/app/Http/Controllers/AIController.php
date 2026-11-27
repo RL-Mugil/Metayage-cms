@@ -15,7 +15,13 @@ class AIController extends Controller
 {
     private function denied(Request $request): bool
     {
-        return ! in_array($request->user()->role, User::FIRM_STAFF_ROLES, true);
+        $user = $request->user();
+        // Client logins with the "AI Assistant" access box (their own data only: App\Ai\ClientTools).
+        if ($user->isClientRole()) {
+            return ! \App\Support\ClientAccess::can($user, 'ai');
+        }
+
+        return ! in_array($user->role, User::FIRM_STAFF_ROLES, true);
     }
 
     /** Which providers are set up, and the Claude connector address. */

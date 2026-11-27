@@ -1,4 +1,4 @@
-import { Head, Link } from "@inertiajs/react";
+import { Head, Link, usePage } from "@inertiajs/react";
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { Bot, Send, Sparkles, Loader2, Plug, Copy, Check, ShieldCheck, Wrench, RotateCcw } from "lucide-react";
 import AppLayout from "@/layouts/AppLayout";
@@ -34,7 +34,22 @@ const QUICK_PROMPTS = [
   "Compliance items due this month",
 ];
 
+/** Client logins: questions about their own account. */
+const CLIENT_PROMPTS = [
+  "What do I owe right now?",
+  "Which deadlines fall in the next 60 days?",
+  "Which quotes are waiting for my approval?",
+  "List my open cases",
+  "Which renewals are coming up this year?",
+  "Show my overdue invoices",
+];
+const CLIENT_WELCOME: Message = {
+  role: "assistant",
+  content: "Hello! Ask me about your cases, deadlines, renewals, approvals and what you owe. I only see your own account, and I can't change anything: approve or pay in the portal pages.",
+};
+
 const TOOL_LABEL: Record<string, string> = {
+  my_cases: "your cases", my_deadlines: "your deadlines", my_billing: "your billing", my_approvals: "your approvals",
   search_clients: "clients", get_client: "client details", search_cases: "cases", get_case: "case details",
   upcoming_deadlines: "deadlines", compliance_items: "compliance", list_tasks: "tasks", case_analytics: "case analytics",
   team_workload: "workload", finance_summary: "finance summary", outstanding_invoices: "outstanding invoices",
@@ -157,7 +172,11 @@ function ConnectClaude({ providers }: { providers: AIProviders | null }) {
 export default function AI() {
   const [providers, setProviders] = useState<AIProviders | null>(null);
   const [tab, setTab] = useState<Tab>("claude");
-  const [messages, setMessages] = useState<Message[]>([WELCOME]);
+  const { props } = usePage() as any;
+  const isClientUser = String(props.auth?.user?.role ?? "").startsWith("client");
+  const welcome = isClientUser ? CLIENT_WELCOME : WELCOME;
+  const quickPrompts = isClientUser ? CLIENT_PROMPTS : QUICK_PROMPTS;
+  const [messages, setMessages] = useState<Message[]>([welcome]);
   const [inputValue, setInputValue] = useState("");
   const [loading, setLoading] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -178,7 +197,7 @@ export default function AI() {
 
   async function sendQuery(query: string) {
     if (!query.trim() || loading || !provider) return;
-    const history = messages.filter((m) => m !== WELCOME && !m.error).map((m) => ({ role: m.role, content: m.content })).slice(-10);
+    const history = messages.filter((m) => m !== welcome && !m.error).map((m) => ({ role: m.role, content: m.content })).slice(-10);
     setMessages((prev) => [...prev, { role: "user", content: query }]);
     setInputValue("");
     setLoading(true);
@@ -229,7 +248,7 @@ export default function AI() {
           <aside className="hidden w-72 flex-shrink-0 flex-col gap-3 md:flex">
             <div className="mb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Try asking</div>
             <div className="flex flex-col gap-2">
-              {QUICK_PROMPTS.map((prompt) => (
+              {quickPrompts.map((prompt) => (
                 <button key={prompt} onClick={() => sendQuery(prompt)} disabled={loading || !ready}
                   className="rounded-lg border border-border px-3 py-2.5 text-left text-sm text-foreground transition-colors hover:border-gold/40 hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-50">
                   <Sparkles className="mr-2 inline h-3.5 w-3.5 text-gold" />{prompt}
@@ -237,7 +256,7 @@ export default function AI() {
               ))}
             </div>
             {messages.length > 1 && (
-              <Button variant="ghost" size="sm" className="justify-start text-muted-foreground" onClick={() => setMessages([WELCOME])}>
+              <Button variant="ghost" size="sm" className="justify-start text-muted-foreground" onClick={() => setMessages([welcome])}>
                 <RotateCcw className="mr-2 h-3.5 w-3.5" /> New conversation
               </Button>
             )}

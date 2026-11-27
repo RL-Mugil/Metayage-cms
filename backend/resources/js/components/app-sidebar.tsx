@@ -38,6 +38,8 @@ const clientGroups = (perms: string[]) => {
       { to: "/financial", title: "Invoices & Payments", icon: Wallet, perm: "billing" },
       { to: "/pending-payments", title: "Pending Payments", icon: CreditCard, perm: "billing" },
       { to: "/reports", title: "Reports", icon: FileBarChart2, perm: "reports" },
+      { to: "/ai", title: "AI Assistant", icon: Sparkles, perm: "ai" },
+      { to: "/my-integrations", title: "Claude & API", icon: Plug, perm: "claude_api" },
     ] },
     { label: "Account", items: [
       { to: "/portal-users", title: "Portal Users", icon: Users, perm: "manage_users" },

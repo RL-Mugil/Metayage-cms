@@ -124,8 +124,11 @@ class McpController extends Controller
         if (! $user instanceof User || ! $token instanceof PersonalAccessToken || ! in_array(self::ABILITY, (array) $token->abilities, true)) {
             return $unauthorized('Sign in to the portal from Claude to connect.');
         }
-        if (! in_array($user->role, User::FIRM_STAFF_ROLES, true) || ($user->status ?? 'Active') !== 'Active') {
-            return response()->json(['error' => 'forbidden', 'error_description' => 'Only active firm staff may connect Claude.'], 403);
+        $allowed = in_array($user->role, User::FIRM_STAFF_ROLES, true)
+            // A client's login with "Claude, API & integrations" (their own data only: App\Ai\ClientTools).
+            || ($user->isClientRole() && \App\Support\ClientAccess::can($user, 'claude_api') && \App\Models\Client::forUser($user)?->portal_enabled);
+        if (! $allowed || ($user->status ?? 'Active') !== 'Active') {
+            return response()->json(['error' => 'forbidden', 'error_description' => 'This login may not connect Claude.'], 403);
         }
         if (! Keys::mcpEnabled()) {
             return response()->json(['error' => 'unavailable', 'error_description' => 'The Claude connector is turned off on the Integrations page.'], 503);

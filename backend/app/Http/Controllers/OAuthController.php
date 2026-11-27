@@ -115,8 +115,9 @@ class OAuthController extends Controller
 
     private function staffError(User $user): ?string
     {
-        if (! in_array($user->role, User::FIRM_STAFF_ROLES, true)) {
-            return 'Only firm staff can connect Claude to the portal.';
+        $client = $user->isClientRole() && \App\Support\ClientAccess::can($user, 'claude_api');
+        if (! in_array($user->role, User::FIRM_STAFF_ROLES, true) && ! $client) {
+            return 'Your portal access does not include connecting Claude. Ask your portal admin.';
         }
         if (! Keys::mcpEnabled()) {
             return 'The Claude connector is turned off. Ask your System Admin to turn it on in Integrations.';

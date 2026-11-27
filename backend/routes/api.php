@@ -364,6 +364,11 @@ Route::middleware(['auth:sanctum', 'firm.context', 'throttle:120,1'])->group(fun
     Route::put('/my-portal/designations/{designationId}', [\App\Http\Controllers\ClientDesignationController::class, 'update'])->whereNumber('designationId');
     Route::delete('/my-portal/designations/{designationId}', [\App\Http\Controllers\ClientDesignationController::class, 'destroy'])->whereNumber('designationId');
     Route::get('/my-portal/audit', [\App\Http\Controllers\ClientAuditController::class, 'index']);
+    Route::get('/my-portal/api-keys', [\App\Http\Controllers\ClientApiController::class, 'keys']);
+    Route::post('/my-portal/api-keys', [\App\Http\Controllers\ClientApiController::class, 'createKey'])->middleware('throttle:10,1');
+    Route::delete('/my-portal/api-keys/{id}', [\App\Http\Controllers\ClientApiController::class, 'revokeKey'])->whereNumber('id');
+    // Read-only client API (a client API key, ability client:read): their own cases, deadlines, billing, approvals.
+    Route::get('/client-api/v1/{endpoint}', [\App\Http\Controllers\ClientApiController::class, 'read'])->where('endpoint', '[a-z]+')->middleware('throttle:60,1');
 
     // AI Chat — stricter limit: 10 requests per minute
     Route::post('/ai/query', [AIController::class, 'query'])->middleware('throttle:20,1');

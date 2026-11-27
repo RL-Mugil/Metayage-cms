@@ -48,11 +48,19 @@ class ToolRegistry
         Tools\MyHr::class,
     ];
 
+    /** A client's own logins get only these (their own client, within their access boxes). */
+    private const CLIENT_TOOLS = [
+        \App\Ai\ClientTools\MyCases::class,
+        \App\Ai\ClientTools\MyDeadlines::class,
+        \App\Ai\ClientTools\MyBilling::class,
+        \App\Ai\ClientTools\MyApprovals::class,
+    ];
+
     /** @return array<string, Tool> */
     public function for(User $user): array
     {
         $tools = [];
-        foreach (self::TOOLS as $class) {
+        foreach ($user->isClientRole() ? self::CLIENT_TOOLS : self::TOOLS as $class) {
             $tool = app($class);
             if ($tool->availableTo($user)) {
                 $tools[$tool->name()] = $tool;

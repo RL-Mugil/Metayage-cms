@@ -27,6 +27,9 @@ class ClientAuditController extends Controller
         'client_designation_created' => 'Created a designation', 'client_designation_updated' => 'Changed a designation',
         'client_designation_deleted' => 'Deleted a designation', 'report_download' => 'Downloaded a report',
         'reset_internal_signature_pin' => 'Changed the signature PIN',
+        'ai_query' => 'Asked the AI Assistant', 'ai_tool_call' => 'AI / Claude / API read data',
+        'api_key_created' => 'Created an API key', 'api_key_revoked' => 'Revoked an API key',
+        'oauth_connected' => 'Connected Claude', 'oauth_revoked' => 'Disconnected Claude',
     ];
 
     public function index(Request $request): JsonResponse

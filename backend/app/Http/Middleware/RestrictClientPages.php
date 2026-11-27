@@ -67,6 +67,8 @@ class RestrictClientPages
         '/reports' => 'reports',
         '/portal-users' => 'manage_users',
         '/portal-audit' => 'audit_log',
+        '/ai' => 'ai',
+        '/my-integrations' => 'claude_api',
     ];
 
     private const ALWAYS_OPEN = ['/', '/team', '/feedback', '/notifications', '/settings', '/logout'];
