@@ -157,7 +157,7 @@ class ClientPortalUsers
             throw ValidationException::withMessages(['email' => "{$email} is a contact of another client."]);
         }
 
-        $user = DB::transaction(function () use ($client, $actor, $designation, $role, $email, $password, $name, $phone, $contact, $particulars, $ip, $userAgent) {
+        $user = DB::transaction(function () use ($client, $actor, $designation, $designationRow, $role, $email, $password, $name, $phone, $contact, $particulars, $ip, $userAgent) {
             $user = User::create([
                 'name' => $name, 'email' => $email, 'password' => Hash::make($password),
                 'role' => $role, 'status' => 'Active', 'mobile' => $phone,
